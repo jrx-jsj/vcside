@@ -2403,6 +2403,13 @@ void App::docsPanel() {
   };
   const ImVec4 legal = theme::colv(theme::Role::SynMnemonic), illegal = theme::colv(theme::Role::SynIllegal),
                unstable = theme::colv(theme::Role::SynUnstable), plain = theme::colv(theme::Role::UiText);
+  // the root: clicking it goes back to the general notes
+  ImGuiTreeNodeFlags rootFlags = ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth;
+  if (docTopic_.empty()) rootFlags |= ImGuiTreeNodeFlags_Selected;
+  bool rootOpen = ImGui::TreeNodeEx("VCS##docroot", rootFlags);
+  if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) docTopic_.clear(), docQuery_.clear();
+  if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", T("The Atari 2600: general notes"));
+  if (rootOpen) {
   ImGui::SetNextItemOpen(true, ImGuiCond_Once);
   if (ImGui::TreeNode(T("Instructions"))) {
     const char* groups[] = {N_("Legal"), N_("Illegal (stable)"), N_("Illegal (unstable)")};
@@ -2439,6 +2446,8 @@ void App::docsPanel() {
   if (ImGui::TreeNode(T("TV standards"))) {
     for (auto& t : kb_.tvStandards()) item("T:" + t.id, t.id, plain);
     ImGui::TreePop();
+  }
+  ImGui::TreePop();
   }
   ImGui::EndChild();
 
@@ -2573,7 +2582,14 @@ void App::docsPanel() {
       provenance(kb_, t->sources);
     }
   } else {
+    ImGui::PushFont(mono_);
+    ImGui::TextColored(theme::colv(theme::Role::MsgName), "VCS");
+    ImGui::PopFont();
+    ImGui::SameLine();
+    ImGui::TextUnformatted(T("The Atari 2600: general notes"));
+    ImGui::SeparatorText(T("6507 CPU"));
     for (auto& n : kb_.cpuNotes()) bullet(n);
+    ImGui::SeparatorText("TIA");
     for (auto& n : kb_.tiaNotes()) bullet(n);
   }
   ImGui::EndChild();

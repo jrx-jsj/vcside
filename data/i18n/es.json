@@ -15,6 +15,7 @@
     "({0} scanlines)": "({0} líneas de barrido)",
     ".byte only": "solo .byte",
     "2600 RAM": "RAM de la 2600",
+    "6507 CPU": "CPU 6507",
     "[ILLEGAL, UNSTABLE]": "[ILEGAL, INESTABLE]",
     "[ILLEGAL]": "[ILEGAL]",
     "A copy of \"{0}\"": "Una copia de «{0}»",
@@ -539,6 +540,7 @@
     "The 512 KB Chameleon Cart (STM32G0B0RE) has 144 KB of RAM. Stella, Gopher2600 and the PlusCart load the whole ROM into RAM.": "El Chameleon Cart de 512 KB (STM32G0B0RE) tiene 144 KB de RAM. Stella, Gopher2600 y el PlusCart cargan toda la ROM en RAM.",
     "The animation {0} has no steps.": "La animación {0} no tiene pasos.",
     "The animation {0} needs two batari Basic variables (its counter and its step): choose them in the animation.": "La animación {0} necesita dos variables de batari Basic (su contador y su paso): elígelas en la animación.",
+    "The Atari 2600: general notes": "La Atari 2600: notas generales",
     "The background changes per row: it needs `set kernel_options pfcolors background` (and then the playfield keeps one colour).": "El fondo cambia por fila: necesita `set kernel_options pfcolors background` (y entonces el playfield se queda con un solo color).",
     "The background changes per row: the kernel options would have to be pfcolors and background, and then the playfield keeps one colour.": "El fondo cambia por fila: las opciones de kernel tendrían que ser pfcolors y background, y entonces el playfield se queda con un solo color.",
     "The ball's colour is the playfield's (COLUPF).": "El color de la bola es el del playfield (COLUPF).",
@@ -684,5 +686,5 @@
     "{0}:{1}: no code at or after this line; breakpoint ignored.": "{0}:{1}: no hay código en esta línea ni después; se ignora el punto de ruptura.",
     "{0}:{1}: no listing to place the breakpoint: build first.": "{0}:{1}: no hay listado para situar el punto de ruptura: compila antes."
   },
-  "total": 681
+  "total": 683
 }
