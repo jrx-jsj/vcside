@@ -12,6 +12,11 @@ data-label="x y width height" attribute (the label, in 1024 units). For every
 size it is redrawn with blocks snapped to that size's pixel grid, so the
 letters always have hard edges, never antialiasing.
 
+The grip bands under the label are a <g id="grip"> group with
+data-grip="x y width step height rows". From GRIP_MIN px up they spell "IDE"
+as gaps cut out of the bands (with a solid band above, below and at each
+side); smaller sizes get five plain bands. Also snapped to the pixel grid.
+
 Output in assets/icon/: vcside-<n>.png (16..1024; 256 and 512 are the Linux
 icons), vcside.ico (Windows), vcside.icns (macOS, via iconutil), plus
 data/vcside.png (256 px), which the program loads as its window icon.
@@ -40,6 +45,15 @@ FONT = {
     "S": [".XXXX", "X....", "X....", ".XXX.", "....X", "....X", "XXXX."],
 }
 TEXT = "VCS"
+
+# 3/4x5 font for the word cut out of the grip bands.
+GRIP_FONT = {
+    "I": ["XXX", ".X.", ".X.", ".X.", "XXX"],
+    "D": ["XXX.", "X..X", "X..X", "X..X", "XXX."],
+    "E": ["XXXX", "X...", "XXX.", "X...", "XXXX"],
+}
+GRIP_WORD = "IDE"
+GRIP_MIN = 128
 ASPECT = 1.25  # pixels a little wider than tall, like the 2600 playfield
 
 
@@ -80,15 +94,59 @@ def text_blocks(label, size):
     return "".join(rects)
 
 
+def grip_blocks(grip, size):
+    """Grip bands, in 1024 units, aligned to the pixel grid of `size` px."""
+    bx, by, bw, step, bh, rows = grip
+    rows = int(rows)
+    u = 1024 / size
+    rects = []
+    if size < GRIP_MIN:
+        # Five plain bands, inset from the IDE block.
+        x0, x1 = round((bx + 40) / u), round((bx + bw - 40) / u)
+        for r in range(5):
+            y0 = round((by + 20 + r * 48) / u)
+            rects.append((x0, y0, x1 - x0, max(1, round((by + 40 + r * 48) / u) - y0)))
+    else:
+        x0, x1 = round(bx / u), round((bx + bw) / u)
+        cols = sum(len(GRIP_FONT[c][0]) for c in GRIP_WORD) + len(GRIP_WORD) - 1
+        cw = max(1, int((bw / u) / (cols + 2)))
+        tx = x0 + ((x1 - x0) - cols * cw) // 2
+        for r in range(rows):
+            y0 = round((by + r * step) / u)
+            h = max(1, round((by + r * step + bh) / u) - y0)
+            lr = r - (rows - 5) // 2          # font row, letters centred vertically
+            gaps = []
+            c = 0
+            for ch in GRIP_WORD:
+                if 0 <= lr < 5:
+                    gaps += [c + k for k, v in enumerate(GRIP_FONT[ch][lr]) if v == "X"]
+                c += len(GRIP_FONT[ch][0]) + 1
+            cur = x0
+            for g in gaps:
+                gx = tx + g * cw
+                if gx > cur:
+                    rects.append((cur, y0, gx - cur, h))
+                cur = max(cur, gx + cw)
+            if x1 > cur:
+                rects.append((cur, y0, x1 - cur, h))
+    return "".join(f'<rect x="{x * u:g}" y="{y * u:g}" width="{w * u:g}" height="{h * u:g}"/>'
+                   for x, y, w, h in rects)
+
+
+GRIP_RE = re.compile(r'(<g id="grip"[^>]*data-grip="([^"]+)"[^>]*>)(.*?)(</g>)', re.S)
 LABEL_RE = re.compile(r'(<g id="label-text"[^>]*data-label="([^"]+)"[^>]*>)(.*?)(</g>)', re.S)
 
 
 def svg_for_size(svg, size):
+    m = GRIP_RE.search(svg)
+    if m:
+        grip = [float(v) for v in m.group(2).split()]
+        svg = svg[:m.start(3)] + grip_blocks(grip, size) + svg[m.end(3):]
     m = LABEL_RE.search(svg)
-    if not m:
-        return svg
-    label = [float(v) for v in m.group(2).split()]
-    return svg[:m.start(3)] + text_blocks(label, size) + svg[m.end(3):]
+    if m:
+        label = [float(v) for v in m.group(2).split()]
+        svg = svg[:m.start(3)] + text_blocks(label, size) + svg[m.end(3):]
+    return svg
 
 
 def render(svg_text, size, out):
