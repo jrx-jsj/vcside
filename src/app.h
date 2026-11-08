@@ -6,6 +6,7 @@
 #include <imgui.h>
 
 #include <deque>
+#include <filesystem>
 #include <functional>
 #include <map>
 #include <set>
@@ -104,7 +105,12 @@ class App {
   void openFolder(const std::string& dir);
   OpenFile* openFile(const std::string& path, int line = 0);
   bool saveFile(OpenFile& f);
-  gfx::Target gfxTarget() const;
+  // What the graphics editor checks against: a kernel of one's own for assembly, or the
+  // kernel and options the main .bas sets (read again when the file changes).
+  gfx::Profile gfxProfile();
+  std::string gfxProfileFile_;
+  std::filesystem::file_time_type gfxProfileTime_{};
+  gfx::Profile gfxProfile_;
   gfx::Tv gfxTv() const;
   void saveAll();
   void build(int thenRun);  // 0 = no, 1 = run, 2 = debug

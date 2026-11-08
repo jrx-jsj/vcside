@@ -24,11 +24,16 @@ std::string hexColour(int colour);  // "$1E"
 // ---------------------------------------------------------------------------
 // Sprites
 
-// The five objects that move freely.
-enum class Obj { P0, P1, M0, M1, BL };
+// The five objects that move freely, and the extra players of kernels that reuse the
+// TIA's player 1 down the screen (batari Basic's multisprite, DPC+ and PXE): P2-P16.
+enum class Obj { P0, P1, M0, M1, BL, P2, P3, P4, P5, P6, P7, P8, P9, P10, P11, P12, P13, P14, P15, P16 };
+constexpr int kObjects = 20;
 const char* objName(Obj o);
 bool isPlayer(Obj o);
-// The register a colour goes to: COLUP0 for P0 and M0, COLUP1 for P1 and M1, COLUPF for BL.
+int playerNumber(Obj o);  // 0-16, -1 for missiles and ball
+Obj playerObj(int n);
+// The register a colour goes to: COLUP0 for P0 and M0, COLUP1 for P1, M1 and the extra
+// players (the kernel rewrites it), COLUPF for BL.
 const char* colourRegister(Obj o);
 
 struct Layer {
@@ -99,22 +104,59 @@ void pfBit(int col, int* reg, int* bit);
 struct Asset {
   std::vector<Sprite> sprites;
   std::vector<Playfield> playfields;
+  std::string kernel;  // "" = the project's; otherwise a kernelId()
 };
 
 std::string toJson(const Asset& a);
 bool fromJson(const std::string& text, Asset* a, std::string* error);
 
 // ---------------------------------------------------------------------------
-// Targets, warnings and export
+// Kernels: what the program that draws the graphics can show.
 
-enum class Target { Dasm, Basic };
+enum class Kernel { Dasm, Standard, Multisprite, DPCPlus, PXE };
+const char* kernelId(Kernel k);    // "dasm", "standard", "multisprite", "dpc+", "pxe"
+const char* kernelName(Kernel k);  // for people
+bool kernelFromId(const std::string& id, Kernel* k);
+
+// batari Basic's `set kernel_options` and constants that change the standard kernel.
+struct KernelOptions {
+  bool player1colors = false, playercolors = false, pfcolors = false, pfheights = false;
+  bool background = false, noBlankLines = false, readpaddle = false;
+  int pfres = 0;  // const pfres, 0 = not set
+  std::string text() const;  // "player1colors pfcolors, pfres 12"
+};
+
+struct Profile {
+  Kernel kernel = Kernel::Dasm;
+  KernelOptions options;
+
+  bool basic() const { return kernel != Kernel::Dasm; }
+  int players() const;                  // 2, 6, 10 or 17
+  bool has(Obj o) const;                // the kernel draws it (with these options)
+  std::string missing(Obj o) const;     // why not, if it does not
+  bool rowColours(Obj o) const;         // a colour per row
+  bool shapedMissiles() const;          // missiles and ball keep their shape (DASM) or are blocks
+  bool topFirst() const;                // player data: top row first in the source
+  int pfFirst() const;                  // first screen column the kernel shows (0 or 4)
+  int pfColumns() const;                // 40, 32 or 16 (16 = left half, mirrored)
+  bool pfMirrorOnly() const;
+  bool pfAsymmetric() const;            // halves can differ
+  bool pfRowModes() const;              // repeat/mirror per row (only a kernel of one's own)
+  bool pfRowColours() const;
+  bool bkRowColours() const;
+  int pfRowsDefault() const;            // rows the kernel shows by default (0 = any)
+  int pfRowsMax() const;
+  std::string describe() const;         // "batari Basic, standard kernel (player1colors pfcolors)"
+};
+// The kernel and options a batari Basic program sets (`set kernel`, `set kernel_options`, `const pfres`).
+Profile profileFromBasic(const std::string& source);
 
 struct Issue {
   enum Severity { Info, Warning, Error } severity = Warning;
   std::string text;
 };
-std::vector<Issue> check(const Sprite& s, Target t);
-std::vector<Issue> check(const Playfield& p, Target t);
+std::vector<Issue> check(const Sprite& s, const Profile& k);
+std::vector<Issue> check(const Playfield& p, const Profile& k);
 
 struct ExportOptions {
   bool upsideDown = true;  // tables bottom row first, as most kernels read them (and PlayerPal)
@@ -123,14 +165,16 @@ struct ExportOptions {
 // so the table can be read back (and pasted into PlayerPal).
 std::string exportDasm(const Sprite& s, const ExportOptions& o = {});
 std::string exportDasm(const Playfield& p, const ExportOptions& o = {});
-// batari Basic: player0:/player1: blocks with their colours, playfield:, pfcolors:, bkcolors:.
-std::string exportBasic(const Sprite& s);
-std::string exportBasic(const Playfield& p);
+// batari Basic: playerN: blocks with their colours, playfield:, pfcolors:, bkcolors:, as the
+// kernel of the profile reads them (row order, width, which blocks exist).
+std::string exportBasic(const Sprite& s, const Profile& k);
+std::string exportBasic(const Playfield& p, const Profile& k);
 std::string identifier(const std::string& name);  // "my hero" -> "my_hero"
 
 // ---------------------------------------------------------------------------
 // Import from text (assembly tables, batari Basic blocks). What was recognised goes
-// into the asset; *what says it in a line (empty = nothing found).
-bool importText(const std::string& text, Asset* out, std::string* what);
+// into the asset; *what says it in a line (empty = nothing found). The kernel decides the
+// row order of batari Basic blocks; a program that sets its kernel overrides it.
+bool importText(const std::string& text, Asset* out, std::string* what, const Profile& kernel = {});
 
 }  // namespace vcs::gfx

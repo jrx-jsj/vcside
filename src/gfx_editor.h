@@ -15,10 +15,12 @@ namespace vcs {
 class GfxEditor {
  public:
   bool load(const std::string& path, std::string* error);
-  // Writes the .vcsgfx and, for DASM, the tables next to it (<name>.gfx.asm) for the
-  // program to include. *generated: the file written, if any.
-  bool save(const std::string& path, gfx::Target target, std::string* error, std::string* generated = nullptr);
-  void render(gfx::Tv tv, gfx::Target target);
+  // Writes the .vcsgfx and, for a kernel of one's own, the tables next to it
+  // (<name>.gfx.asm) for the program to include. *generated: the file written, if any.
+  // project: what the project's program draws with; the asset may choose another kernel.
+  bool save(const std::string& path, const gfx::Profile& project, std::string* error, std::string* generated = nullptr);
+  void render(gfx::Tv tv, const gfx::Profile& project);
+  gfx::Profile profile(const gfx::Profile& project) const;  // the asset's kernel, or the project's
   bool dirty() const { return dirty_; }
   void undo();
   void redo();
@@ -28,9 +30,9 @@ class GfxEditor {
   static gfx::Asset blank();  // one 8x8 sprite on P0
 
  private:
-  void toolbar(gfx::Tv tv, gfx::Target target);
-  void spriteView(gfx::Sprite& s, gfx::Tv tv, gfx::Target target);
-  void playfieldView(gfx::Playfield& p, gfx::Tv tv, gfx::Target target);
+  void toolbar(const gfx::Profile& project);
+  void spriteView(gfx::Sprite& s, gfx::Tv tv);
+  void playfieldView(gfx::Playfield& p, gfx::Tv tv);
   void issues(const std::vector<gfx::Issue>& list);
   bool colourButton(const char* id, int colour, gfx::Tv tv, int* out, bool allowInherit, float size);
   void drawSprite(const gfx::Sprite& s, int frame, int phase, ImVec2 origin, float cw, float ch, gfx::Tv tv, int bk,
@@ -38,6 +40,7 @@ class GfxEditor {
   void changed() { changed_ = true; dirty_ = true; }
   void endFrame();
 
+  gfx::Profile k_;        // the kernel of this frame
   gfx::Asset asset_, committed_;
   std::vector<gfx::Asset> undo_, redo_;
   bool dirty_ = false, changed_ = false;

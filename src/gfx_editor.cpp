@@ -67,7 +67,15 @@ bool GfxEditor::load(const std::string& path, std::string* error) {
   return true;
 }
 
-bool GfxEditor::save(const std::string& path, Target target, std::string* error, std::string* generated) {
+Profile GfxEditor::profile(const Profile& project) const {
+  Kernel k;
+  if (asset_.kernel.empty() || !kernelFromId(asset_.kernel, &k) || k == project.kernel) return project;
+  Profile p;
+  p.kernel = k;
+  return p;
+}
+
+bool GfxEditor::save(const std::string& path, const Profile& project, std::string* error, std::string* generated) {
   std::ofstream out(path, std::ios::binary);
   if (!out) {
     if (error) *error = F("Cannot write {0}", {path});
@@ -75,7 +83,7 @@ bool GfxEditor::save(const std::string& path, Target target, std::string* error,
   }
   out << toJson(asset_);
   out.close();
-  if (target == Target::Dasm) {
+  if (!profile(project).basic()) {
     // the tables for the program, next to the .vcsgfx
     fs::path p(path);
     std::string inc = (p.parent_path() / (p.stem().string() + ".gfx.asm")).string();
@@ -166,7 +174,8 @@ bool GfxEditor::colourButton(const char* id, int colour, Tv tv, int* out, bool a
 // ---------------------------------------------------------------------------
 // The whole editor
 
-void GfxEditor::render(Tv tv, Target target) {
+void GfxEditor::render(Tv tv, const Profile& project) {
+  k_ = profile(project);
   ImGuiIO& io = ImGui::GetIO();
   bool focused = ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows);
   if (focused && io.KeyCtrl && !ImGui::IsAnyItemActive()) {
@@ -177,11 +186,11 @@ void GfxEditor::render(Tv tv, Target target) {
   item_ = std::clamp(item_, 0, std::max(0, items - 1));
   ImGui::SetCursorPos(ImVec2(8, 6));
   ImGui::BeginGroup();
-  toolbar(tv, target);
+  toolbar(project);
   ImGui::Separator();
-  if (item_ < (int)asset_.sprites.size()) spriteView(asset_.sprites[item_], tv, target);
+  if (item_ < (int)asset_.sprites.size()) spriteView(asset_.sprites[item_], tv);
   else if (item_ - (int)asset_.sprites.size() < (int)asset_.playfields.size())
-    playfieldView(asset_.playfields[item_ - asset_.sprites.size()], tv, target);
+    playfieldView(asset_.playfields[item_ - asset_.sprites.size()], tv);
   ImGui::EndGroup();
   endFrame();
 }
@@ -193,7 +202,7 @@ static void nextTo(const char* label, float spacing = -1) {
   if (right < ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x) ImGui::SameLine(0, spacing);
 }
 
-void GfxEditor::toolbar(Tv, Target target) {
+void GfxEditor::toolbar(const Profile& project) {
   auto itemName = [&](int i) {
     if (i < (int)asset_.sprites.size()) return F("Sprite: {0}", {asset_.sprites[i].name});
     return F("Playfield: {0}", {asset_.playfields[i - asset_.sprites.size()].name});
@@ -230,6 +239,20 @@ void GfxEditor::toolbar(Tv, Target target) {
     changed();
   }
   ImGui::EndDisabled();
+  // the kernel the graphics are for
+  std::string kname = asset_.kernel.empty() ? F("Kernel: the project's ({0})", {kernelName(project.kernel)}) : F("Kernel: {0}", {kernelName(k_.kernel)});
+  nextTo(kname.c_str(), 24);
+  ImGui::SetNextItemWidth(std::min(ImGui::CalcTextSize(kname.c_str()).x + 40, 360.0f));
+  if (ImGui::BeginCombo("##kernel", kname.c_str())) {
+    if (ImGui::Selectable(F("The project's ({0})", {project.describe()}).c_str(), asset_.kernel.empty())) asset_.kernel.clear(), changed();
+    for (int i = 0; i < 5; i++)
+      if (ImGui::Selectable(kernelName((Kernel)i), asset_.kernel == kernelId((Kernel)i)))
+        asset_.kernel = kernelId((Kernel)i), changed();
+    ImGui::EndCombo();
+  }
+  if (ImGui::IsItemHovered())
+    ImGui::SetTooltip("%s", F("What draws these graphics: {0}. The editor offers what it can show, and the warnings and the batari Basic copy follow it. The options (kernel_options, pfres) are read from the project's main program.",
+                              {k_.describe()}).c_str());
   nextTo(T("Import"), 24);
   if (ImGui::Button(T("Import"))) ImGui::OpenPopup("import");
   if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", T("Reads the clipboard: assembly tables (VCSIDE, PlayerPal) or batari Basic blocks (player0:, playfield:...)."));
@@ -242,7 +265,7 @@ void GfxEditor::toolbar(Tv, Target target) {
       const char* clip = ImGui::GetClipboardText();
       Asset got;
       std::string what;
-      if (clip && importText(clip, &got, &what)) {
+      if (clip && importText(clip, &got, &what, k_)) {
         int at = (int)asset_.sprites.size();
         asset_.sprites.insert(asset_.sprites.end(), got.sprites.begin(), got.sprites.end());
         asset_.playfields.insert(asset_.playfields.end(), got.playfields.begin(), got.playfields.end());
@@ -272,10 +295,10 @@ void GfxEditor::toolbar(Tv, Target target) {
       copy(sprite ? exportDasm(asset_.sprites[item_]) : exportDasm(asset_.playfields[item_ - asset_.sprites.size()]), "DASM");
     }
     if (ImGui::MenuItem(T("batari Basic"))) {
-      copy(sprite ? exportBasic(asset_.sprites[item_]) : exportBasic(asset_.playfields[item_ - asset_.sprites.size()]), "batari Basic");
+      copy(sprite ? exportBasic(asset_.sprites[item_], k_) : exportBasic(asset_.playfields[item_ - asset_.sprites.size()], k_), "batari Basic");
     }
     ImGui::Separator();
-    ImGui::TextDisabled("%s", target == Target::Dasm ? T("On save, every item also goes to <file>.gfx.asm for the program to include.")
+    ImGui::TextDisabled("%s", !k_.basic() ? T("On save, every item also goes to <file>.gfx.asm for the program to include.")
                                                      : T("batari Basic: paste the blocks where the program sets its graphics."));
     ImGui::EndPopup();
   }
@@ -315,13 +338,15 @@ static void spriteBounds(const Sprite& s, int b[4], int margin) {
 }
 
 // Draws the sprite as the TIA would: per pixel the first object in priority order
-// (P0, M0, P1, M1, BL) that is on; a missile in the colour its player sets on that line.
+// (P0, M0, P1 and the players a kernel draws with it, M1, BL) that is on; a missile in the colour its player sets on that line.
 void GfxEditor::drawSprite(const Sprite& s, int frame, int phase, ImVec2 o, float cw, float ch, Tv tv, int bk, int highlight,
                            int b[4]) {
   ImDrawList* dl = ImGui::GetWindowDrawList();
   ImU32 bkc = col(tv, bk);
   dl->AddRectFilled(o, ImVec2(o.x + (b[2] - b[0]) * cw, o.y + (b[3] - b[1]) * ch), bkc);
-  static const Obj order[] = {Obj::P0, Obj::M0, Obj::P1, Obj::M1, Obj::BL};
+  static const Obj order[] = {Obj::P0,  Obj::M0,  Obj::P1,  Obj::P2,  Obj::P3,  Obj::P4,  Obj::P5,
+                              Obj::P6,  Obj::P7,  Obj::P8,  Obj::P9,  Obj::P10, Obj::P11, Obj::P12,
+                              Obj::P13, Obj::P14, Obj::P15, Obj::P16, Obj::M1,  Obj::BL};
   for (int y = b[1]; y < b[3]; y++)
     for (int x = b[0]; x < b[2]; x++) {
       int winner = -1;
@@ -335,11 +360,13 @@ void GfxEditor::drawSprite(const Sprite& s, int frame, int phase, ImVec2 o, floa
       }
       if (winner < 0) continue;
       const Layer& w = s.layers[winner];
-      int c = w.colour(frame, y - w.dy);
+      // as the kernel shows it: one colour for an object that cannot change it per row
+      auto colourAt = [&](const Layer& l, int row) { return l.colour(frame, k_.rowColours(l.obj) ? row : 0); };
+      int c = colourAt(w, y - w.dy);
       if (w.obj == Obj::M0 || w.obj == Obj::M1)
         for (auto& p : s.layers)
           if (p.obj == (w.obj == Obj::M0 ? Obj::P0 : Obj::P1) && p.phase == w.phase && y - p.dy >= 0 && y - p.dy < p.height)
-            c = p.colour(frame, y - p.dy);
+            c = colourAt(p, y - p.dy);
       ImU32 pc = col(tv, c);
       if (highlight >= 0 && winner != highlight && othersDim_) pc = mix(pc, bkc, 0.55f);
       ImVec2 a(o.x + (x - b[0]) * cw, o.y + (y - b[1]) * ch);
@@ -347,7 +374,18 @@ void GfxEditor::drawSprite(const Sprite& s, int frame, int phase, ImVec2 o, floa
     }
 }
 
-void GfxEditor::spriteView(Sprite& s, Tv tv, Target target) {
+// The label of an object in the menus: "P0  player", "M1  missile"...
+static std::string objLabel(Obj o) {
+  return std::string(objName(o)) + "  " + (isPlayer(o) ? T("player") : o == Obj::BL ? T("ball") : T("missile"));
+}
+// The objects in the order the menus show them: the TIA's five, then the extra players.
+static std::vector<Obj> objectList(const Profile& k) {
+  std::vector<Obj> v = {Obj::P0, Obj::P1, Obj::M0, Obj::M1, Obj::BL};
+  for (int n = 2; n < k.players(); n++) v.push_back(playerObj(n));
+  return v;
+}
+
+void GfxEditor::spriteView(Sprite& s, Tv tv) {
   layer_ = std::clamp(layer_, 0, std::max(0, (int)s.layers.size() - 1));
   frame_ = std::clamp(frame_, 0, s.frames - 1);
   float h = ImGui::GetContentRegionAvail().y;
@@ -374,8 +412,8 @@ void GfxEditor::spriteView(Sprite& s, Tv tv, Target target) {
     ImVec2 po = ImGui::GetCursorScreenPos();
     ImGui::Dummy(ImVec2((pb[2] - pb[0]) * pcw, (pb[3] - pb[1]) * pch));
     drawSprite(s, pf, phase, po, pcw, pch, tv, previewBk_, -1, pb);
-    ImGui::SeparatorText(target == Target::Dasm ? T("Warnings (DASM)") : T("Warnings (batari Basic)"));
-    issues(check(s, target));
+    ImGui::SeparatorText(T("Warnings"));
+    issues(check(s, k_));
   };
 
   // --- left: the sprite, its layers and the selected layer
@@ -394,10 +432,11 @@ void GfxEditor::spriteView(Sprite& s, Tv tv, Target target) {
   ImGui::SeparatorText(T("Layers"));
   static const ImVec4 objColour[] = {ImVec4(0.95f, 0.75f, 0.3f, 1), ImVec4(0.45f, 0.8f, 1, 1), ImVec4(0.95f, 0.55f, 0.2f, 1),
                                      ImVec4(0.3f, 0.6f, 1, 1), ImVec4(0.6f, 0.9f, 0.5f, 1)};
+  auto objCol = [&](Obj o) { return (int)o < 5 ? objColour[(int)o] : ImVec4(0.6f, 0.75f, 1, 1); };  // extra players: P1's family
   for (int i = 0; i < (int)s.layers.size(); i++) {
     auto& l = s.layers[i];
     ImGui::PushID(i);
-    ImGui::PushStyleColor(ImGuiCol_Text, objColour[(int)l.obj]);
+    ImGui::PushStyleColor(ImGuiCol_Text, objCol(l.obj));
     ImGui::TextUnformatted(objName(l.obj));
     ImGui::PopStyleColor();
     ImGui::SameLine(36);
@@ -409,11 +448,10 @@ void GfxEditor::spriteView(Sprite& s, Tv tv, Target target) {
   }
   if (ImGui::Button(T("Add"))) ImGui::OpenPopup("add");
   if (ImGui::BeginPopup("add")) {
-    for (int k = 0; k < 5; k++) {
-      Obj o = (Obj)k;
+    for (Obj o : objectList(k_)) {
       bool used = std::any_of(s.layers.begin(), s.layers.end(), [&](const Layer& l) { return l.obj == o && l.phase == 0; });
-      std::string label = std::string(objName(o)) + "  " + (isPlayer(o) ? T("player") : o == Obj::BL ? T("ball") : T("missile"));
-      if (ImGui::MenuItem(label.c_str(), used ? T("used in phase 1") : "")) {
+      std::string why = k_.missing(o);
+      if (ImGui::MenuItem(objLabel(o).c_str(), used ? T("used in phase 1") : "", false, why.empty()) && why.empty()) {
         Layer l;
         l.obj = o;
         int hgt = s.layers.empty() ? 8 : s.layers[layer_].height;
@@ -431,6 +469,7 @@ void GfxEditor::spriteView(Sprite& s, Tv tv, Target target) {
         layer_ = (int)s.layers.size() - 1;
         changed();
       }
+      if (!why.empty() && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("%s", why.c_str());
     }
     ImGui::EndPopup();
   }
@@ -451,11 +490,19 @@ void GfxEditor::spriteView(Sprite& s, Tv tv, Target target) {
   if (!s.layers.empty()) {
     Layer& l = s.layers[layer_];
     ImGui::SeparatorText(T("Layer"));
-    int o = (int)l.obj;
+    Obj chosen = l.obj;
     ImGui::SetNextItemWidth(120);
-    if (ImGui::Combo(T("object"), &o, "P0\0P1\0M0\0M1\0BL\0")) {
+    if (ImGui::BeginCombo(T("object"), objName(l.obj))) {
+      for (Obj o : objectList(k_)) {
+        std::string why = k_.missing(o);
+        if (ImGui::Selectable(objLabel(o).c_str(), o == l.obj, why.empty() ? 0 : ImGuiSelectableFlags_Disabled)) chosen = o;
+        if (!why.empty() && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("%s", why.c_str());
+      }
+      ImGui::EndCombo();
+    }
+    if (chosen != l.obj) {
       bool wasPlayer = isPlayer(l.obj);
-      l.obj = (Obj)o;
+      l.obj = chosen;
       if (wasPlayer != isPlayer(l.obj)) {
         l.size = 1;
         for (auto& f : l.bits)
@@ -555,7 +602,8 @@ void GfxEditor::spriteView(Sprite& s, Tv tv, Target target) {
     // the row colours of the layer, next to its rows
     ImVec2 end = ImGui::GetCursorScreenPos();
     float sw = std::min(ch - 2, 18.0f);
-    for (int r = 0; r < l.height; r++) {
+    int colourRows = k_.rowColours(l.obj) ? l.height : 1;  // otherwise one colour for the object
+    for (int r = 0; r < colourRows; r++) {
       ImGui::SetCursorScreenPos(ImVec2(o.x + size.x + 8, o.y + (l.dy - b[1] + r) * ch + (ch - sw) / 2));
       int c = l.colours[frame_][r], nc;
       std::string id = "c" + std::to_string(r);
@@ -568,6 +616,8 @@ void GfxEditor::spriteView(Sprite& s, Tv tv, Target target) {
         changed();
       }
     }
+    if (colourRows == 1 && l.height > 1 && ImGui::IsItemHovered())
+      ImGui::SetTooltip("%s", F("{0}: one colour for the whole object in this kernel.", {objName(l.obj)}).c_str());
     ImGui::SetCursorScreenPos(end);
   }
   ImGui::Dummy(ImVec2(0, 6));
@@ -617,7 +667,18 @@ void GfxEditor::spriteView(Sprite& s, Tv tv, Target target) {
 // ---------------------------------------------------------------------------
 // Playfields
 
-void GfxEditor::playfieldView(Playfield& p, Tv tv, Target target) {
+void GfxEditor::playfieldView(Playfield& p, Tv tv) {
+  // the columns this kernel shows (a multisprite row: the left half, mirrored)
+  int firstCol = k_.pfFirst(), lastCol = 39 - firstCol;
+  bool mirrorOnly = k_.pfMirrorOnly();
+  // what the kernel shows: its columns (mirrored if it can only mirror) and the colours it can change
+  auto shown = [&](int r, int c) {
+    if (mirrorOnly && c >= 20) c = 39 - c;
+    return c >= firstCol && c <= lastCol && p.pixel(r, c);
+  };
+  bool pfRows = k_.pfRowColours(), bkRows = k_.bkRowColours();
+  auto pfShown = [&](int r) { return p.pfAt(pfRows ? r : 0); };
+  auto bkShown = [&](int r) { return p.bkAt(bkRows ? r : 0); };
   float h = ImGui::GetContentRegionAvail().y;
   bool narrow = ImGui::GetContentRegionAvail().x < 1000;
   auto preview = [&](float width) {
@@ -628,12 +689,12 @@ void GfxEditor::playfieldView(Playfield& p, Tv tv, Target target) {
     ImDrawList* pdl = ImGui::GetWindowDrawList();
     for (int r = 0; r < (int)p.rows.size(); r++) {
       float y = po.y + r * pch;
-      pdl->AddRectFilled(ImVec2(po.x, y), ImVec2(po.x + 40 * pcw, y + pch), col(tv, p.bkAt(r)));
+      pdl->AddRectFilled(ImVec2(po.x, y), ImVec2(po.x + 40 * pcw, y + pch), col(tv, bkShown(r)));
       for (int c = 0; c < 40; c++)
-        if (p.pixel(r, c)) pdl->AddRectFilled(ImVec2(po.x + c * pcw, y), ImVec2(po.x + (c + 1) * pcw, y + pch), col(tv, p.pfAt(r)));
+        if (shown(r, c)) pdl->AddRectFilled(ImVec2(po.x + c * pcw, y), ImVec2(po.x + (c + 1) * pcw, y + pch), col(tv, pfShown(r)));
     }
-    ImGui::SeparatorText(target == Target::Dasm ? T("Warnings (DASM)") : T("Warnings (batari Basic)"));
-    issues(check(p, target));
+    ImGui::SeparatorText(T("Warnings"));
+    issues(check(p, k_));
   };
   auto props = [&] {
     std::string name = p.name;
@@ -641,7 +702,7 @@ void GfxEditor::playfieldView(Playfield& p, Tv tv, Target target) {
     if (ImGui::InputText("##name", &name) && !name.empty()) p.name = name, changed();
     int rows = (int)p.rows.size();
     ImGui::SetNextItemWidth(110);
-    if (ImGui::DragInt(T("rows"), &rows, 0.2f, 1, 192)) {
+    if (ImGui::DragInt(T("rows"), &rows, 0.2f, 1, k_.pfRowsMax())) {
       PfRow last = p.rows.back();
       last.pf = last.bk = -1;
       p.rows.resize(rows, last);
@@ -657,6 +718,26 @@ void GfxEditor::playfieldView(Playfield& p, Tv tv, Target target) {
     if (colourButton("bk", p.bkColour, tv, &nc, false, ImGui::GetFrameHeight())) p.bkColour = nc, changed();
     ImGui::SameLine();
     ImGui::TextUnformatted(T("background (COLUBK)"));
+    if (k_.pfRowsDefault()) {
+      ImGui::SameLine();
+      if (ImGui::SmallButton(std::to_string(k_.pfRowsDefault()).c_str())) {
+        PfRow last = p.rows.back();
+        last.pf = last.bk = -1;
+        p.rows.resize(k_.pfRowsDefault(), last);
+        changed();
+      }
+      if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", T("The rows the program shows"));
+    }
+    if (mirrorOnly) {
+      ImGui::Dummy(ImVec2(0, 8));
+      if (ImGui::Button(T("Mirror every row"))) {
+        for (int r = 0; r < (int)p.rows.size(); r++) p.setAsymmetric(r, false), p.rows[r].mode = PfMode::Mirror;
+        changed();
+      }
+      ImGui::Dummy(ImVec2(0, 8));
+      ImGui::TextWrapped("%s", T("This kernel draws the left half from column 5 and mirrors it: draw on the left, the right half follows."));
+      return;
+    }
     ImGui::SeparatorText(T("All rows"));
     if (ImGui::Button(T("Mirror"))) {
       for (int r = 0; r < (int)p.rows.size(); r++)
@@ -703,11 +784,11 @@ void GfxEditor::playfieldView(Playfield& p, Tv tv, Target target) {
     bool hovered = ImGui::IsItemHovered(), active = ImGui::IsItemActive();
     for (int r = 0; r < (int)p.rows.size(); r++) {
       float y = o.y + r * ch;
-      dl->AddRectFilled(ImVec2(o.x, y), ImVec2(o.x + size.x, y + ch), col(tv, p.bkAt(r)));
-      ImU32 fg = col(tv, p.pfAt(r));
+      dl->AddRectFilled(ImVec2(o.x, y), ImVec2(o.x + size.x, y + ch), col(tv, bkShown(r)));
+      ImU32 fg = col(tv, pfShown(r));
       for (int c = 0; c < 40; c++)
         if (p.pixel(r, c)) {
-          ImU32 pc = c >= 20 && !p.rows[r].asymmetric ? mix(fg, col(tv, p.bkAt(r)), 0.25f) : fg;  // a copy of the left half
+          ImU32 pc = c >= 20 && !p.rows[r].asymmetric ? mix(fg, col(tv, bkShown(r)), 0.25f) : fg;  // a copy of the left half
           dl->AddRectFilled(ImVec2(o.x + c * cw, y), ImVec2(o.x + (c + 1) * cw, y + ch), pc);
         }
       char num[8];
@@ -721,22 +802,27 @@ void GfxEditor::playfieldView(Playfield& p, Tv tv, Target target) {
     }
     for (int r = 0; r <= (int)p.rows.size(); r++)
       dl->AddLine(ImVec2(o.x, o.y + r * ch), ImVec2(o.x + size.x, o.y + r * ch), IM_COL32(128, 128, 128, 30));
-    if (target == Target::Basic) {
-      // the columns batari Basic's standard kernel does not show
-      for (int side = 0; side < 2; side++) {
-        float x0 = o.x + (side ? 36 : 0) * cw;
-        dl->AddRectFilled(ImVec2(x0, o.y), ImVec2(x0 + 4 * cw, o.y + size.y), IM_COL32(0, 0, 0, 110));
-        dl->PushClipRect(ImVec2(x0, o.y), ImVec2(x0 + 4 * cw, o.y + size.y), true);
-        for (float d = -size.y; d < 4 * cw; d += 8) dl->AddLine(ImVec2(x0 + d, o.y + size.y), ImVec2(x0 + d + size.y, o.y), IM_COL32(255, 255, 255, 30));
-        dl->PopClipRect();
-      }
-    }
+    // the columns the kernel does not show, hatched; they cannot be drawn on
+    auto hatch = [&](int c0, int c1) {
+      if (c1 <= c0) return;
+      float x0 = o.x + c0 * cw, x1 = o.x + c1 * cw;
+      dl->AddRectFilled(ImVec2(x0, o.y), ImVec2(x1, o.y + size.y), IM_COL32(0, 0, 0, 110));
+      dl->PushClipRect(ImVec2(x0, o.y), ImVec2(x1, o.y + size.y), true);
+      for (float d = -size.y; d < x1 - x0; d += 8) dl->AddLine(ImVec2(x0 + d, o.y + size.y), ImVec2(x0 + d + size.y, o.y), IM_COL32(255, 255, 255, 30));
+      dl->PopClipRect();
+    };
+    hatch(0, firstCol);
+    hatch(lastCol + 1, 40);
     ImVec2 m = ImGui::GetMousePos();
     int mc = (int)std::floor((m.x - o.x) / cw), mr = (int)std::floor((m.y - o.y) / ch);
     if (hovered && (ImGui::IsMouseClicked(ImGuiMouseButton_Left) || ImGui::IsMouseClicked(ImGuiMouseButton_Right)))
       paintValue_ = ImGui::IsMouseClicked(ImGuiMouseButton_Right) ? 0 : !p.pixel(mr, mc);
-    if (active && paintValue_ >= 0 && mr >= 0 && mr < (int)p.rows.size() && mc >= 0 && mc < 40 && p.pixel(mr, mc) != (paintValue_ == 1)) {
-      p.setPixel(mr, mc, paintValue_ == 1);
+    // a mirrored-only kernel: the right half is drawn through its left counterpart
+    int pc = mirrorOnly && mc >= 20 ? 39 - mc : mc;
+    bool drawable = pc >= firstCol && pc <= lastCol;
+    if (active && paintValue_ >= 0 && drawable && mr >= 0 && mr < (int)p.rows.size() && p.pixel(mr, pc) != (paintValue_ == 1)) {
+      if (mirrorOnly && (p.rows[mr].asymmetric || p.rows[mr].mode != PfMode::Mirror)) p.setAsymmetric(mr, false), p.rows[mr].mode = PfMode::Mirror;
+      p.setPixel(mr, pc, paintValue_ == 1);
       changed();
     }
     if (!active) paintValue_ = -1;
@@ -753,6 +839,7 @@ void GfxEditor::playfieldView(Playfield& p, Tv tv, Target target) {
       ImGui::PushID(r);
       ImGui::SetCursorScreenPos(ImVec2(o.x + size.x + 8, o.y + r * ch + (ch - bh) / 2));
       ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4, std::max(0.0f, (bh - ImGui::GetTextLineHeight()) / 2)));
+      if (!mirrorOnly) {
       if (ImGui::Button(row.mode == PfMode::Mirror ? "M" : "R", ImVec2(bh + 6, bh))) {
         // keep what the screen shows: a symmetric row changes its right half, an asymmetric one keeps it
         bool asym = row.asymmetric;
@@ -775,12 +862,15 @@ void GfxEditor::playfieldView(Playfield& p, Tv tv, Target target) {
       if (ImGui::Button("A", ImVec2(bh + 6, bh))) p.setAsymmetric(r, !asym), changed();
       ImGui::PopStyleColor();
       if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", asym ? T("Asymmetric: the right half is drawn on its own. Click to copy the left half again.") : T("Symmetric: the right half follows the left one"));
-      ImGui::PopStyleVar();
       ImGui::SameLine(0, 6);
+      }
+      ImGui::PopStyleVar();
+      // the row colours the kernel can change
       int c;
-      if (colourButton("pf", r == 0 && row.pf < 0 ? p.pfColour : row.pf, tv, &c, r > 0, bh)) row.pf = c, changed();
-      ImGui::SameLine(0, 2);
-      if (colourButton("bk", r == 0 && row.bk < 0 ? p.bkColour : row.bk, tv, &c, r > 0, bh)) row.bk = c, changed();
+      bool pfRow = pfRows, bkRow = bkRows;
+      if (pfRow && colourButton("pf", r == 0 && row.pf < 0 ? p.pfColour : row.pf, tv, &c, r > 0, bh)) row.pf = c, changed();
+      if (pfRow && bkRow) ImGui::SameLine(0, 2);
+      if (bkRow && colourButton("bk", r == 0 && row.bk < 0 ? p.bkColour : row.bk, tv, &c, r > 0, bh)) row.bk = c, changed();
       ImGui::PopID();
     }
     ImGui::SetCursorScreenPos(ImVec2(o.x - 28, o.y + size.y + 8));

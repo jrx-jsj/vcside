@@ -795,15 +795,17 @@ static void testGfx() {
   big.size = 2;
   big.reflect = true;
   CHECK(big.width() == 16 && big.pixel(0, 1, 4) && big.pixel(0, 1, 11) && !big.pixel(0, 1, 3));
-  auto iss = check(sp, Target::Dasm);
+  Profile own, std;
+  std.kernel = Kernel::Standard;
+  auto iss = check(sp, own);
   CHECK(hasIssue(iss, Issue::Warning, "COLUP0"));  // M0 row 2 is $88, P0's is $1E
   CHECK(!hasIssue(iss, Issue::Error, ""));
   sp.layers.push_back(a);  // a second P0 in the same phase
-  CHECK(hasIssue(check(sp, Target::Dasm), Issue::Error, "P0"));
+  CHECK(hasIssue(check(sp, own), Issue::Error, "P0"));
   sp.layers.back().phase = 1;
-  iss = check(sp, Target::Dasm);
+  iss = check(sp, own);
   CHECK(!hasIssue(iss, Issue::Error, "") && hasIssue(iss, Issue::Warning, "30 Hz"));
-  CHECK(hasIssue(check(sp, Target::Basic), Issue::Warning, "flicker"));
+  CHECK(hasIssue(check(sp, std), Issue::Warning, "alternate the phases"));
   sp.layers.pop_back();
   sp.insertFrame(1, 0);
   CHECK(sp.frames == 2 && sp.layers[0].bits[1] == sp.layers[0].bits[0]);
@@ -848,13 +850,69 @@ static void testGfx() {
     auto& l = imp.sprites[0].layers[0];
     CHECK(l.bits[0][0] == 0x3C && l.bits[0][1] == 0x18 && l.colour(0, 0) == 0x1A && l.bits[1][0] == 0x7E && l.colour(1, 1) == 0x46);
   }
-  // batari Basic export and import
-  std::string b = exportBasic(sp);
-  CHECK(b.find("  player0:\n  %11111111\n  %00111100\n  %10000001\nend\n  player0color:\n  $44\n  $1E\n  $1E\nend\n") != std::string::npos);
+  // batari Basic export and import. The standard kernel without options: one colour per
+  // player, rows bottom first, missiles as blocks.
+  std::string b = exportBasic(sp, std);
+  CHECK(b.find("  player0:\n  %11111111\n  %00111100\n  %10000001\nend\n  COLUP0 = $1E : rem every frame\n") != std::string::npos);
   CHECK(b.find("missile0height = 2") != std::string::npos);
+  CHECK(hasIssue(check(sp, std), Issue::Warning, "playercolors"));
+  // playercolors: a colour per row, at the cost of both missiles
+  Profile pc = profileFromBasic(" rem set kernel PXE\n  set kernel_options playercolors pfcolors ; colours\n  const pfres = 12\n");
+  CHECK(pc.kernel == Kernel::Standard && pc.options.playercolors && pc.options.pfcolors && !pc.options.player1colors && pc.options.pfres == 12);
+  CHECK(pc.rowColours(Obj::P0) && !pc.has(Obj::M0) && !pc.has(Obj::M1) && pc.has(Obj::BL) && pc.pfRowColours() && pc.pfRowsDefault() == 12);
+  CHECK(hasIssue(check(sp, pc), Issue::Error, "M0"));
+  b = exportBasic(sp, pc);
+  CHECK(b.find("  player0color:\n  $44\n  $1E\n  $1E\nend\n") != std::string::npos && b.find("rem M0: not drawn") != std::string::npos);
   imp = Asset();
   CHECK(importText(b, &imp, &what) && imp.sprites.size() == 1 && imp.sprites[0].layers[0].bits[0] == sp.layers[0].bits[0] &&
         imp.sprites[0].layers[0].colour(0, 2) == 0x44);
+  Profile bg = profileFromBasic("set kernel_options pfcolors backgroundchange\n");
+  CHECK(!bg.pfRowColours() && bg.bkRowColours());
+  CHECK(!profileFromBasic("set kernel_options player1colors\n").has(Obj::M1) && profileFromBasic("set kernel_options player1colors\n").has(Obj::M0));
+  // DPC+: rows top first, a colour table always, ten players
+  Profile dpc = profileFromBasic("  set kernel DPC+\n");
+  CHECK(dpc.kernel == Kernel::DPCPlus && dpc.players() == 10 && dpc.has(Obj::P9) && !dpc.has(Obj::P10) && dpc.topFirst());
+  b = exportBasic(sp, dpc);
+  CHECK(b.find("  player0:\n  %10000001\n  %00111100\n  %11111111\nend\n  player0color:\n  $1E\n  $1E\n  $44\nend\n") != std::string::npos);
+  imp = Asset();
+  CHECK(importText(b, &imp, &what, dpc) && imp.sprites.size() == 1 && imp.sprites[0].layers[0].bits[0] == sp.layers[0].bits[0]);
+  imp = Asset();
+  CHECK(importText("  set kernel DPC+\n" + b, &imp, &what) && imp.sprites.size() == 1 && imp.sprites[0].layers[0].bits[0] == sp.layers[0].bits[0]);
+  // PXE: up to P16; the extra players exist only in the kernels that draw them
+  Profile pxe = profileFromBasic("set kernel PXE\n");
+  Sprite many = sp;
+  many.layers = {a};
+  many.layers[0].obj = Obj::P12;
+  many.layers.push_back(a);
+  many.layers[1].obj = Obj::P3;
+  CHECK(!hasIssue(check(many, pxe), Issue::Error, "") && hasIssue(check(many, pxe), Issue::Warning, "player 1"));
+  CHECK(hasIssue(check(many, std), Issue::Error, "P12") && hasIssue(check(many, dpc), Issue::Error, "P12"));
+  b = exportBasic(many, pxe);
+  CHECK(b.find("  player12:\n  %10000001\n") != std::string::npos && b.find("player12color:") != std::string::npos);
+  imp = Asset();
+  CHECK(importText(b, &imp, &what, pxe) && imp.sprites.size() == 1 && imp.sprites[0].layers.size() == 2);
+  if (imp.sprites.size() == 1 && imp.sprites[0].layers.size() == 2)
+    CHECK(imp.sprites[0].layers[0].obj == Obj::P3 && imp.sprites[0].layers[1].obj == Obj::P12 && imp.sprites[0].layers[1].bits[0] == a.bits[0]);
+  // DASM labels: P12 is the player 12, P1b a second P1 layer
+  many.layers[1].obj = Obj::P1;
+  many.layers.push_back(many.layers[1]);
+  many.layers[2].phase = 1;
+  d = exportDasm(many);
+  CHECK(d.find("hero_P12_Frame0") != std::string::npos && d.find("hero_P1_Frame0") != std::string::npos && d.find("hero_P1b_Frame0") != std::string::npos);
+  imp = Asset();
+  CHECK(importText(d, &imp, &what) && imp.sprites.size() == 1 && imp.sprites[0].layers.size() == 3);
+  if (imp.sprites.size() == 1 && imp.sprites[0].layers.size() == 3)
+    CHECK(imp.sprites[0].layers[0].obj == Obj::P12 && imp.sprites[0].layers[1].obj == Obj::P1 && imp.sprites[0].layers[2].obj == Obj::P1 &&
+          imp.sprites[0].layers[2].phase == 1);
+  // multisprite: one colour per player, missiles one line high
+  Profile ms = profileFromBasic("set kernel multisprite\n");
+  CHECK(ms.players() == 6 && !ms.rowColours(Obj::P1) && ms.pfMirrorOnly() && ms.pfColumns() == 16);
+  many.layers = {a, a};
+  many.layers[1].obj = Obj::P4;
+  b = exportBasic(many, ms);
+  CHECK(b.find("  COLUP4 = ") != std::string::npos && b.find("player4color") == std::string::npos);
+  many.layers[1].obj = Obj::P1;
+  CHECK(exportBasic(many, ms).find("  _COLUP1 = ") != std::string::npos);
   // playfields: DASM tables and batari Basic blocks both come back
   Playfield p2;
   p2.name = "level";
@@ -875,16 +933,31 @@ static void testGfx() {
       for (int c = 0; c < 40; c++) same &= q.pixel(r, c) == p2.pixel(r, c);
     CHECK(same && q.name == "level" && q.pfAt(1) == 0x86 && q.rows[1].asymmetric && !q.rows[0].asymmetric);
   }
-  b = exportBasic(p2);
+  b = exportBasic(p2, own);  // a kernel of one's own copied as batari Basic: the standard kernel with what it needs
   CHECK(b.find("  playfield:\n  .X...................X..........\n") != std::string::npos && b.find("pfcolors:") != std::string::npos);
   imp = Asset();
   CHECK(importText(b, &imp, &what) && imp.playfields.size() == 1 && imp.playfields[0].pixel(0, 5) && imp.playfields[0].pixel(1, 33) &&
         imp.playfields[0].pfAt(1) == 0x86);
-  auto bi = check(p2, Target::Basic);
-  CHECK(hasIssue(bi, Issue::Info, "pfres") && hasIssue(bi, Issue::Info, "pfcolors"));
+  auto bi = check(p2, std);
+  CHECK(hasIssue(bi, Issue::Warning, "pfres") && hasIssue(bi, Issue::Warning, "pfcolors"));
+  CHECK(!hasIssue(check(p2, pc), Issue::Warning, "pfcolors") && hasIssue(check(p2, pc), Issue::Warning, "pfres = 2"));
+  CHECK(!hasIssue(check(p2, dpc), Issue::Warning, "rows"));
   p2.setPixel(0, 1, true);
-  CHECK(hasIssue(check(p2, Target::Basic), Issue::Warning, "columns"));
-  CHECK(hasIssue(check(p2, Target::Dasm), Issue::Info, "CTRLPF"));
+  CHECK(hasIssue(check(p2, std), Issue::Warning, "columns"));
+  CHECK(hasIssue(check(p2, own), Issue::Info, "CTRLPF"));
+  // multisprite playfields: 16 columns from column 5, mirrored
+  Playfield mp;
+  mp.rows.resize(2);
+  mp.setPixel(0, 4, true);
+  mp.setPixel(1, 19, true);
+  CHECK(!hasIssue(check(mp, ms), Issue::Warning, "mirrored") && !hasIssue(check(mp, ms), Issue::Warning, "columns"));
+  b = exportBasic(mp, ms);
+  CHECK(b.find("  playfield:\n  X...............\n  ...............X\nend\n  COLUPF = ") != std::string::npos);
+  imp = Asset();
+  CHECK(importText(b, &imp, &what) && imp.playfields.size() == 1 && imp.playfields[0].pixel(0, 4) && imp.playfields[0].pixel(0, 35) &&
+        imp.playfields[0].pixel(1, 20) && !imp.playfields[0].rows[0].asymmetric);
+  mp.rows[0].mode = PfMode::Repeat;
+  CHECK(hasIssue(check(mp, ms), Issue::Warning, "mirrored"));
   CHECK(!importText("lda #1\n", &imp, &what) && what.empty());
 
   // the exported tables assemble (when DASM is installed)

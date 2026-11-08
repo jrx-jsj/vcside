@@ -169,6 +169,7 @@ void App::openFolder(const std::string& dir) {
 
 OpenFile* App::openFile(const std::string& pathIn, int line) {
   std::string path = fs::weakly_canonical(pathIn).string();
+  for (auto& o : files_) o->requestFocus = false;  // the file opened last is the one shown
   for (size_t i = 0; i < files_.size(); i++)
     if (files_[i]->path == path) {
       activeFile_ = (int)i;
@@ -215,15 +216,24 @@ OpenFile* App::openFile(const std::string& pathIn, int line) {
   return files_.back().get();
 }
 
-gfx::Target App::gfxTarget() const {
-  return project_ && project_->language == Language::BatariBasic ? gfx::Target::Basic : gfx::Target::Dasm;
+gfx::Profile App::gfxProfile() {
+  if (!project_ || project_->language != Language::BatariBasic) return {};
+  std::string main = project_->abs(project_->main);
+  std::error_code ec;
+  auto t = fs::last_write_time(main, ec);
+  if (main != gfxProfileFile_ || t != gfxProfileTime_) {
+    gfxProfileFile_ = main;
+    gfxProfileTime_ = t;
+    gfxProfile_ = gfx::profileFromBasic(ec ? std::string() : readFile(main));
+  }
+  return gfxProfile_;
 }
 gfx::Tv App::gfxTv() const { return gfx::tvFromProject(project_ ? project_->tv : "NTSC"); }
 
 bool App::saveFile(OpenFile& f) {
   if (f.gfx) {
     std::string err, generated;
-    if (!f.gfx->save(f.path, gfxTarget(), &err, &generated)) {
+    if (!f.gfx->save(f.path, gfxProfile(), &err, &generated)) {
       output_ += err + "\n";
       return false;
     }
@@ -1165,7 +1175,7 @@ void App::frame() {
         GfxEditor g;
         std::string err;
         g.asset() = GfxEditor::blank();
-        if (g.save(p, gfxTarget(), &err)) openFile(p);
+        if (g.save(p, gfxProfile(), &err)) openFile(p);
         else output_ += err + "\n";
       }
       else if (kind.rfind("tool:", 0) == 0) {
@@ -1611,7 +1621,7 @@ void App::editorsPanel() {
         }
         if (f.gfx) {
           ImGui::BeginChild("##gfx", ImVec2(0, 0), 0, ImGuiWindowFlags_NoScrollbar);
-          f.gfx->render(gfxTv(), gfxTarget());
+          f.gfx->render(gfxTv(), gfxProfile());
           ImGui::EndChild();
         } else if (f.editor.render("##code", editorFont())) {
           lint(f);

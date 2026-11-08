@@ -62,12 +62,15 @@ std::string hexColour(int colour) {
 // Sprites
 
 const char* objName(Obj o) {
-  static const char* n[] = {"P0", "P1", "M0", "M1", "BL"};
+  static const char* n[kObjects] = {"P0", "P1", "M0", "M1", "BL", "P2", "P3", "P4", "P5", "P6",
+                                    "P7", "P8", "P9", "P10", "P11", "P12", "P13", "P14", "P15", "P16"};
   return n[(int)o];
 }
-bool isPlayer(Obj o) { return o == Obj::P0 || o == Obj::P1; }
+bool isPlayer(Obj o) { return o == Obj::P0 || o == Obj::P1 || (int)o >= (int)Obj::P2; }
+int playerNumber(Obj o) { return o == Obj::P0 ? 0 : o == Obj::P1 ? 1 : (int)o >= (int)Obj::P2 ? (int)o - (int)Obj::P2 + 2 : -1; }
+Obj playerObj(int n) { return n == 0 ? Obj::P0 : n == 1 ? Obj::P1 : (Obj)((int)Obj::P2 + n - 2); }
 const char* colourRegister(Obj o) {
-  return o == Obj::P0 || o == Obj::M0 ? "COLUP0" : o == Obj::P1 || o == Obj::M1 ? "COLUP1" : "COLUPF";
+  return o == Obj::P0 || o == Obj::M0 ? "COLUP0" : o == Obj::BL ? "COLUPF" : "COLUP1";
 }
 static int objIndex(Obj o) { return (int)o; }
 
@@ -208,6 +211,7 @@ static uint64_t rowBits(const std::string& s, bool msbFirst) {
 std::string toJson(const Asset& a) {
   json j;
   j["vcsgfx"] = 1;
+  if (!a.kernel.empty()) j["kernel"] = a.kernel;
   j["sprites"] = json::array();
   for (auto& s : a.sprites) {
     json js = {{"name", s.name}, {"frames", s.frames}, {"line_height", s.lineHeight}, {"frame_ticks", s.frameTicks}};
@@ -244,6 +248,7 @@ bool fromJson(const std::string& text, Asset* a, std::string* error) {
   try {
     json j = json::parse(text);
     Asset out;
+    out.kernel = j.value("kernel", "");
     for (auto& js : j.value("sprites", json::array())) {
       Sprite s;
       s.name = js.value("name", s.name);
@@ -253,7 +258,7 @@ bool fromJson(const std::string& text, Asset* a, std::string* error) {
       for (auto& jl : js.value("layers", json::array())) {
         Layer l;
         std::string o = jl.value("object", "P0");
-        for (int k = 0; k < 5; k++)
+        for (int k = 0; k < kObjects; k++)
           if (o == objName((Obj)k)) l.obj = (Obj)k;
         l.name = jl.value("name", "");
         l.dx = jl.value("dx", 0);
@@ -306,6 +311,148 @@ bool fromJson(const std::string& text, Asset* a, std::string* error) {
 }
 
 // ---------------------------------------------------------------------------
+// Kernels. What each batari Basic kernel shows was checked with test programs built
+// with batari Basic 1.9 and run in Stella 7.0 (row order, columns, colours), and in the
+// kernels' sources (includes/*.asm, *.h).
+
+const char* kernelId(Kernel k) {
+  static const char* n[] = {"dasm", "standard", "multisprite", "dpc+", "pxe"};
+  return n[(int)k];
+}
+const char* kernelName(Kernel k) {
+  switch (k) {
+    case Kernel::Dasm: return T("assembly (a kernel of one's own)");
+    case Kernel::Standard: return T("batari Basic, standard kernel");
+    case Kernel::Multisprite: return T("batari Basic, multisprite kernel");
+    case Kernel::DPCPlus: return T("batari Basic, DPC+ kernel");
+    case Kernel::PXE: return T("batari Basic, PXE kernel");
+  }
+  return "";
+}
+bool kernelFromId(const std::string& id, Kernel* k) {
+  for (int i = 0; i < 5; i++)
+    if (id == kernelId((Kernel)i)) return *k = (Kernel)i, true;
+  return false;
+}
+
+std::string KernelOptions::text() const {
+  std::string s;
+  auto add = [&](bool on, const char* n) {
+    if (on) s += (s.empty() ? "" : " ") + std::string(n);
+  };
+  add(player1colors, "player1colors");
+  add(playercolors, "playercolors");
+  add(pfcolors, "pfcolors");
+  add(pfheights, "pfheights");
+  add(background, "background");
+  add(noBlankLines, "no_blank_lines");
+  add(readpaddle, "readpaddle");
+  if (pfres) s += (s.empty() ? "" : ", ") + std::string("pfres ") + std::to_string(pfres);
+  return s;
+}
+
+int Profile::players() const {
+  switch (kernel) {
+    case Kernel::Multisprite: return 6;
+    case Kernel::DPCPlus: return 10;
+    case Kernel::PXE: return 17;
+    default: return 2;
+  }
+}
+
+std::string Profile::missing(Obj o) const {
+  int n = playerNumber(o);
+  if (n >= 0) return n < players() ? "" : F("{0} draws {1} players (P0-P{2}).", {kernelName(kernel), std::to_string(players()), std::to_string(players() - 1)});
+  if (kernel != Kernel::Standard) return "";
+  // the standard kernel spends the missiles' time on other things
+  if (o == Obj::M1 && (options.player1colors || options.playercolors)) return T("The kernel option player1colors (or playercolors) uses missile 1's time.");
+  if (o == Obj::M0 && options.playercolors) return T("The kernel option playercolors uses both missiles' time.");
+  if (o == Obj::M0 && (options.noBlankLines || options.readpaddle)) return T("The kernel options no_blank_lines and readpaddle use missile 0's time.");
+  return "";
+}
+bool Profile::has(Obj o) const { return missing(o).empty(); }
+
+bool Profile::rowColours(Obj o) const {
+  switch (kernel) {
+    case Kernel::Dasm: return true;
+    case Kernel::Standard:
+      if (o == Obj::P0) return options.playercolors;
+      if (o == Obj::P1) return options.player1colors || options.playercolors;
+      return false;
+    case Kernel::Multisprite: return false;
+    default: return isPlayer(o);  // DPC+ and PXE: playerNcolor:
+  }
+}
+bool Profile::shapedMissiles() const { return kernel == Kernel::Dasm; }
+bool Profile::topFirst() const { return kernel == Kernel::Dasm || kernel == Kernel::DPCPlus || kernel == Kernel::PXE; }
+int Profile::pfFirst() const { return kernel == Kernel::Dasm ? 0 : 4; }
+int Profile::pfColumns() const { return kernel == Kernel::Dasm ? 40 : kernel == Kernel::Multisprite ? 16 : 32; }
+bool Profile::pfMirrorOnly() const { return kernel == Kernel::Multisprite; }
+bool Profile::pfAsymmetric() const { return kernel != Kernel::Multisprite; }
+bool Profile::pfRowModes() const { return kernel == Kernel::Dasm; }
+bool Profile::pfRowColours() const {
+  if (kernel == Kernel::Standard) return options.pfcolors && !options.background;
+  return kernel != Kernel::Multisprite;
+}
+bool Profile::bkRowColours() const {
+  if (kernel == Kernel::Standard) return options.pfcolors && options.background;  // the same table, to COLUBK
+  return kernel == Kernel::Dasm || kernel == Kernel::DPCPlus || kernel == Kernel::PXE;
+}
+int Profile::pfRowsDefault() const {
+  if (kernel == Kernel::Standard) return options.pfres ? options.pfres : 11;
+  if (kernel == Kernel::Multisprite) return 11;
+  return 0;
+}
+int Profile::pfRowsMax() const {
+  switch (kernel) {
+    case Kernel::Standard: return 32;  // pfres above 12 needs cartridge RAM
+    case Kernel::Multisprite: return 44;
+    case Kernel::DPCPlus:
+    case Kernel::PXE: return 176;
+    default: return 192;
+  }
+}
+std::string Profile::describe() const {
+  std::string o = kernel == Kernel::Standard ? options.text() : "";
+  return o.empty() ? kernelName(kernel) : std::string(kernelName(kernel)) + " (" + o + ")";
+}
+
+Profile profileFromBasic(const std::string& source) {
+  Profile p;
+  p.kernel = Kernel::Standard;
+  std::istringstream in(source);
+  for (std::string line; std::getline(in, line);) {
+    std::string l;
+    for (char c : line.substr(0, line.find(';'))) l += (char)std::tolower((unsigned char)c);
+    std::istringstream w(l);
+    std::string a, b;
+    w >> a >> b;
+    if (a == "rem") continue;
+    if (a == "set" && b == "kernel") {
+      std::string k;
+      w >> k;
+      if (k == "multisprite") p.kernel = Kernel::Multisprite;
+      else if (k == "dpc+") p.kernel = Kernel::DPCPlus;
+      else if (k == "pxe") p.kernel = Kernel::PXE;
+    } else if (a == "set" && b == "kernel_options") {
+      for (std::string o; w >> o;) {
+        p.options.player1colors |= o == "player1colors";
+        p.options.playercolors |= o == "playercolors";
+        p.options.pfcolors |= o == "pfcolors";
+        p.options.pfheights |= o == "pfheights";
+        p.options.background |= o == "background" || o == "backgroundchange";
+        p.options.noBlankLines |= o == "no_blank_lines";
+        p.options.readpaddle |= o == "readpaddle";
+      }
+    } else if (a == "const" && b.rfind("pfres", 0) == 0) {
+      size_t eq = l.find('=');
+      if (eq != std::string::npos) p.options.pfres = std::atoi(l.c_str() + eq + 1);
+    }
+  }
+  return p;
+}
+
+// ---------------------------------------------------------------------------
 // Warnings
 
 static std::string rowList(const std::vector<int>& rows) {
@@ -326,18 +473,23 @@ static bool coloursVary(const Layer& l) {
   return false;
 }
 
-std::vector<Issue> check(const Sprite& s, Target t) {
+std::vector<Issue> check(const Sprite& s, const Profile& k) {
   std::vector<Issue> out;
   int phases = s.phases();
+  // objects the kernel does not draw
+  std::set<int> told;
+  for (auto& l : s.layers)
+    if (!k.has(l.obj) && told.insert((int)l.obj).second)
+      out.push_back({Issue::Error, F("{0} is not available: {1}", {objName(l.obj), k.missing(l.obj)})});
   // one object per phase
   for (int p = 0; p < phases; p++) {
-    int used[5] = {0, 0, 0, 0, 0};
+    int used[kObjects] = {};
     for (auto& l : s.layers)
       if (l.phase == p) used[objIndex(l.obj)]++;
-    for (int k = 0; k < 5; k++)
-      if (used[k] > 1)
+    for (int o = 0; o < kObjects; o++)
+      if (used[o] > 1)
         out.push_back({Issue::Error, F("Phase {0} uses {1} in {2} layers: the TIA has only one {1}. Move one of them to another phase.",
-                                       {std::to_string(p + 1), objName((Obj)k), std::to_string(used[k])})});
+                                       {std::to_string(p + 1), objName((Obj)o), std::to_string(used[o])})});
   }
   if (phases > 1) {
     std::vector<int> empty;
@@ -346,6 +498,19 @@ std::vector<Issue> check(const Sprite& s, Target t) {
     out.push_back({Issue::Warning, F("{0} flicker phases: each layer shows one frame in {0} ({1} Hz on NTSC, {2} Hz on PAL) and flickers.",
                                      {std::to_string(phases), std::to_string(60 / phases), std::to_string(50 / phases)})});
     if (!empty.empty()) out.push_back({Issue::Warning, F("Phases without layers: {0}. The other layers flicker more than they need to.", {rowList(empty)})});
+  }
+  // the kernels with more players draw them all with the TIA's player 1
+  if (k.players() > 2) {
+    bool shared = false;
+    for (size_t a = 0; a < s.layers.size() && !shared; a++)
+      for (size_t b = a + 1; b < s.layers.size() && !shared; b++) {
+        const Layer &la = s.layers[a], &lb = s.layers[b];
+        shared = la.phase == lb.phase && playerNumber(la.obj) >= 1 && playerNumber(lb.obj) >= 1 && la.obj != lb.obj &&
+                 la.dy < lb.dy + lb.height && lb.dy < la.dy + la.height;
+      }
+    if (shared)
+      out.push_back({Issue::Warning, F("P1 to P{0} are all drawn with the TIA's player 1: where two of them share lines the kernel shows them on alternate frames (they flicker). Put them in different rows, or combine P0 with one of them.",
+                                       {std::to_string(k.players() - 1)})});
   }
   // a missile shares its player's colour register
   for (auto& m : s.layers) {
@@ -387,7 +552,7 @@ std::vector<Issue> check(const Sprite& s, Target t) {
       break;
     }
   }
-  if (t == Target::Dasm) {
+  if (!k.basic()) {
     // what the kernel has to write per line
     for (int p = 0; p < phases; p++) {
       int writes = 0;
@@ -401,36 +566,46 @@ std::vector<Issue> check(const Sprite& s, Target t) {
         out.push_back({Issue::Warning, F("Phase {0} changes {1} registers on the same lines (graphics and colours): about {2} cycles of loads and stores of the 76 a line has. It may need a two-line kernel.",
                                          {std::to_string(p + 1), std::to_string(writes), std::to_string(writes * 8)})});
     }
-  } else {
-    for (auto& l : s.layers) {
-      if (isPlayer(l.obj)) continue;
-      // batari Basic's missiles and ball are a block: height and width
-      bool block = true;
-      for (int f = 0; f < s.frames && block; f++) {
-        int first = -1, last = -1;
-        for (int r = 0; r < l.height; r++)
-          if (rowHasPixels(l, f, r)) {
-            if (first < 0) first = r;
-            if (last >= 0 && last != r - 1) block = false;
-            last = r;
-          }
-        if (f > 0 && l.bits[f] != l.bits[0]) block = false;
-      }
-      if (!block)
-        out.push_back({Issue::Warning, F("batari Basic draws {0} as a solid block (a height and a width): its shape here is not kept, only its height.", {objName(l.obj)})});
-    }
-    if (phases > 1)
-      out.push_back({Issue::Warning, T("batari Basic does not flicker by itself: each phase is exported on its own, and the program has to alternate them every frame.")});
-    for (auto& l : s.layers)
-      if (isPlayer(l.obj) && coloursVary(l))
-        out.push_back({Issue::Info, F("{0} changes colour per row: it needs `set kernel_options {1}`.",
-                                      {objName(l.obj), l.obj == Obj::P0 ? "playercolors" : "player1colors"})});
-    if (s.layers.size() > 1) out.push_back({Issue::Info, T("The layers' positions are exported as comments: the program places each object relative to the first one.")});
+    return out;
   }
+  for (auto& l : s.layers) {
+    if (isPlayer(l.obj) || !k.has(l.obj)) continue;
+    if (k.kernel == Kernel::Multisprite && l.obj != Obj::BL) {
+      out.push_back({Issue::Warning, F("The multisprite kernel draws {0} one line high: only its position is kept.", {objName(l.obj)})});
+      continue;
+    }
+    // batari Basic's missiles and ball are a block: height and width
+    bool block = true;
+    for (int f = 0; f < s.frames && block; f++) {
+      int first = -1, last = -1;
+      for (int r = 0; r < l.height; r++)
+        if (rowHasPixels(l, f, r)) {
+          if (first < 0) first = r;
+          if (last >= 0 && last != r - 1) block = false;
+          last = r;
+        }
+      if (f > 0 && l.bits[f] != l.bits[0]) block = false;
+    }
+    if (!block)
+      out.push_back({Issue::Warning, F("batari Basic draws {0} as a solid block (a height and a width): its shape here is not kept, only its height.", {objName(l.obj)})});
+  }
+  if (k.kernel == Kernel::Standard && k.options.playercolors && !k.options.player1colors)
+    out.push_back({Issue::Warning, T("The kernel option playercolors works together with player1colors: `set kernel_options player1colors playercolors`.")});
+  if (phases > 1)
+    out.push_back({Issue::Warning, T("batari Basic does not alternate the phases by itself: each one is exported on its own, and the program has to switch them every frame.")});
+  for (auto& l : s.layers) {
+    if (!isPlayer(l.obj) || !k.has(l.obj) || !coloursVary(l) || k.rowColours(l.obj)) continue;
+    if (k.kernel == Kernel::Standard)
+      out.push_back({Issue::Warning, F("{0} changes colour per row, and the program does not set `set kernel_options {1}`: only the first row's colour is kept.",
+                                       {objName(l.obj), l.obj == Obj::P0 ? "playercolors" : "player1colors"})});
+    else
+      out.push_back({Issue::Warning, F("{0} changes colour per row, but this kernel gives each player one colour: only the first row's is kept.", {objName(l.obj)})});
+  }
+  if (s.layers.size() > 1) out.push_back({Issue::Info, T("The layers' positions are exported as comments: the program places each object relative to the first one.")});
   return out;
 }
 
-std::vector<Issue> check(const Playfield& p, Target t) {
+std::vector<Issue> check(const Playfield& p, const Profile& k) {
   std::vector<Issue> out;
   std::vector<int> asym, modeChange, pfChange, bkChange;
   for (int r = 0; r < (int)p.rows.size(); r++) {
@@ -439,7 +614,7 @@ std::vector<Issue> check(const Playfield& p, Target t) {
     if (r > 0 && p.pfAt(r) != p.pfAt(r - 1)) pfChange.push_back(r + 1);
     if (r > 0 && p.bkAt(r) != p.bkAt(r - 1)) bkChange.push_back(r + 1);
   }
-  if (t == Target::Dasm) {
+  if (!k.basic()) {
     if (!asym.empty()) {
       out.push_back({Issue::Info, F("Asymmetric rows: {0}. On every line of them PF0, PF1 and PF2 are written again in the middle of the line, each one in its own window of cycles.", {rowList(asym)})});
       bool mirrorAsym = std::any_of(p.rows.begin(), p.rows.end(), [](const PfRow& r) { return r.asymmetric && r.mode == PfMode::Mirror; });
@@ -451,17 +626,48 @@ std::vector<Issue> check(const Playfield& p, Target t) {
     int writes = 3 + (asym.empty() ? 0 : 3) + (pfChange.empty() ? 0 : 1) + (bkChange.empty() ? 0 : 1);
     if (writes >= 7)
       out.push_back({Issue::Warning, F("Some lines change {0} registers (playfield and colours): together with sprites it may not fit in one line.", {std::to_string(writes)})});
-  } else {
-    bool outer = false;
-    for (int r = 0; r < (int)p.rows.size(); r++)
-      for (int c : {0, 1, 2, 3, 36, 37, 38, 39}) outer |= p.pixel(r, c);
-    if (outer)
-      out.push_back({Issue::Warning, T("batari Basic's standard kernel shows columns 5 to 36 only (32 wide; PF0 is not used): the four outer columns of each side are lost.")});
-    if (p.rows.size() != 11)
-      out.push_back({Issue::Info, F("{0} rows: batari Basic shows 11 unless the program sets `const pfres = {0}` (only some values are allowed, and more rows take more RAM).", {std::to_string(p.rows.size())})});
-    out.push_back({Issue::Info, T("batari Basic sets the height of the rows itself; the line height here is only for the preview.")});
-    if (!pfChange.empty() || p.rows[0].pf >= 0) out.push_back({Issue::Info, T("The rows have their own colours: pfcolors: needs `set kernel_options pfcolors`.")});
-    if (!bkChange.empty()) out.push_back({Issue::Info, T("The background changes per row: bkcolors: needs the kernel options pfcolors and backgroundchange.")});
+    return out;
+  }
+  // columns the kernel does not show
+  int first = k.pfFirst(), last = k.pfMirrorOnly() ? 19 : 39 - first;
+  std::vector<int> lost, notMirror;
+  for (int r = 0; r < (int)p.rows.size(); r++) {
+    bool l = false, m = false;
+    for (int c = 0; c < 40; c++) {
+      bool shown = c >= first && c <= last;
+      if (k.pfMirrorOnly() && c >= 20) shown = 39 - c >= first, m |= p.pixel(r, c) != p.pixel(r, 39 - c);
+      l |= !shown && p.pixel(r, c);
+    }
+    if (l) lost.push_back(r + 1);
+    if (m) notMirror.push_back(r + 1);
+  }
+  if (!lost.empty())
+    out.push_back({Issue::Warning, F("This kernel shows columns {0} to {1} only: what is outside them is lost (rows {2}).",
+                                     {std::to_string(first + 1), std::to_string(40 - first), rowList(lost)})});
+  if (!notMirror.empty())
+    out.push_back({Issue::Warning, F("The multisprite kernel's playfield is mirrored (the right half is the left one reversed); these rows are not: {0}.", {rowList(notMirror)})});
+  int rows = (int)p.rows.size();
+  if (rows > k.pfRowsMax())
+    out.push_back({Issue::Error, F("{0} rows: this kernel shows {1} at most.", {std::to_string(rows), std::to_string(k.pfRowsMax())})});
+  else if (k.pfRowsDefault() && rows != k.pfRowsDefault()) {
+    if (k.kernel == Kernel::Standard)
+      out.push_back({Issue::Warning, F("{0} rows, and the program shows {1}: it needs `const pfres = {0}` (only some values are allowed, and more rows take more RAM).",
+                                       {std::to_string(rows), std::to_string(k.pfRowsDefault())})});
+    else
+      out.push_back({Issue::Warning, F("{0} rows: this kernel shows {1}.", {std::to_string(rows), std::to_string(k.pfRowsDefault())})});
+  }
+  out.push_back({Issue::Info, T("batari Basic sets the height of the rows itself; the line height here is only for the preview.")});
+  bool pfVary = !pfChange.empty(), bkVary = !bkChange.empty();
+  if (pfVary && !k.pfRowColours()) {
+    if (k.kernel != Kernel::Standard) out.push_back({Issue::Warning, T("This kernel gives the playfield one colour: only the first row's is kept.")});
+    else if (k.options.background) out.push_back({Issue::Warning, T("With the kernel option background the table of colours goes to the background: the playfield keeps one colour.")});
+    else out.push_back({Issue::Warning, T("The rows have their own colours, and the program does not set `set kernel_options pfcolors`: only the first row's is kept.")});
+  }
+  if (bkVary && !k.bkRowColours()) {
+    if (k.kernel == Kernel::Standard)
+      out.push_back({Issue::Warning, k.options.pfcolors ? T("The background changes per row: the kernel options would have to be pfcolors and background, and then the playfield keeps one colour.")
+                                                        : T("The background changes per row: it needs `set kernel_options pfcolors background` (and then the playfield keeps one colour).")});
+    else out.push_back({Issue::Warning, T("This kernel does not change the background per row: only the first row's is kept.")});
   }
   return out;
 }
@@ -476,7 +682,7 @@ std::string identifier(const std::string& name) {
   return s;
 }
 
-// "P0", "P0_helmet", "P02" (a second P0 layer, in another phase)
+// "P0", "P0_helmet", "P0b" (a second P0 layer, in another phase)
 static std::string layerId(const Layer& l, const std::vector<Layer>& all) {
   int same = 0, mine = 0;
   for (auto& o : all)
@@ -485,7 +691,7 @@ static std::string layerId(const Layer& l, const std::vector<Layer>& all) {
       same++;
     }
   std::string id = objName(l.obj);
-  if (same > 1) id += std::to_string(mine + 1);
+  if (same > 1 && mine > 0) id += (char)('a' + std::min(mine, 25));
   if (!l.name.empty()) id += "_" + identifier(l.name);
   return id;
 }
@@ -570,72 +776,123 @@ std::string exportDasm(const Playfield& p, const ExportOptions& o) {
   return out.str();
 }
 
-std::string exportBasic(const Sprite& s) {
+// The profile to use when the asset is for a kernel of one's own and still copied as
+// batari Basic: the standard kernel with the options the graphics need.
+static Profile basicFor(const Sprite& s, const Profile& k) {
+  if (k.basic()) return k;
+  Profile b;
+  b.kernel = Kernel::Standard;
+  for (auto& l : s.layers)
+    if (coloursVary(l)) (l.obj == Obj::P0 ? b.options.playercolors : b.options.player1colors) = true;
+  return b;
+}
+static Profile basicFor(const Playfield& p, const Profile& k) {
+  if (k.basic()) return k;
+  Profile b;
+  b.kernel = Kernel::Standard;
+  for (int r = 1; r < (int)p.rows.size(); r++) b.options.pfcolors |= p.pfAt(r) != p.pfAt(0);
+  b.options.pfcolors |= p.rows[0].pf >= 0;
+  return b;
+}
+
+static std::string basicName(Obj o) {
+  int n = playerNumber(o);
+  if (n >= 0) return "player" + std::to_string(n);
+  return o == Obj::M0 ? "missile0" : o == Obj::M1 ? "missile1" : "ball";
+}
+
+// The variable for a player's colour or size: COLUP0, _COLUP1 in the kernels with more
+// players (their COLUP1 is the TIA's, rewritten down the screen), COLUP2...
+static std::string playerVar(const char* reg, int n, const Profile& k) {
+  if (n == 1 && k.players() > 2) return "_" + std::string(reg) + "1";
+  return reg + std::to_string(n);
+}
+
+std::string exportBasic(const Sprite& s, const Profile& in) {
+  Profile k = basicFor(s, in);
   std::ostringstream out;
-  out << "  rem " << s.name << ": " << s.frames << " frame(s), " << s.phases() << " phase(s)\n";
+  out << "  rem " << s.name << ": " << s.frames << " frame(s), " << s.phases() << " phase(s); " << k.describe() << "\n";
   const Layer* first = nullptr;
   for (auto& l : s.layers)
-    if (isPlayer(l.obj) && !first) first = &l;
+    if (isPlayer(l.obj) && k.has(l.obj) && !first) first = &l;
   for (int ph = 0; ph < s.phases(); ph++)
     for (int f = 0; f < s.frames; f++) {
       out << "  rem frame " << f + 1 << (s.phases() > 1 ? ", phase " + std::to_string(ph + 1) : "") << "\n";
       for (auto& l : s.layers) {
-        if (l.phase != ph) continue;
-        std::string pn = l.obj == Obj::P0 ? "player0" : l.obj == Obj::P1 ? "player1" : "";
-        if (pn.empty()) continue;
+        if (l.phase != ph || !isPlayer(l.obj) || !k.has(l.obj)) continue;
+        std::string pn = basicName(l.obj);
+        auto row = [&](int i) { return k.topFirst() ? i : l.height - 1 - i; };
         out << "  " << pn << ":\n";
-        for (int r = l.height - 1; r >= 0; r--) out << "  " << bin8(l.bits[f][r]) << "\n";  // bottom row first
+        for (int i = 0; i < l.height; i++) out << "  " << bin8(l.bits[f][row(i)]) << "\n";
         out << "end\n";
-        if (coloursVary(l)) {
+        if (k.rowColours(l.obj)) {
           out << "  " << pn << "color:\n";
-          for (int r = l.height - 1; r >= 0; r--) out << "  " << hexColour(l.colour(f, r)) << "\n";
+          for (int i = 0; i < l.height; i++) out << "  " << hexColour(l.colour(f, row(i))) << "\n";
           out << "end\n";
         } else {
-          out << "  COLUP" << (l.obj == Obj::P0 ? "0" : "1") << " = " << hexColour(l.colour(f, 0)) << "\n";
+          // the kernel and the score reload the colour registers: set them before every drawscreen
+          out << "  " << playerVar("COLUP", playerNumber(l.obj), k) << " = " << hexColour(l.colour(f, 0)) << " : rem every frame\n";
         }
       }
     }
   for (auto& l : s.layers) {
-    std::string o = l.obj == Obj::P0 ? "player0" : l.obj == Obj::P1 ? "player1" : l.obj == Obj::M0 ? "missile0" : l.obj == Obj::M1 ? "missile1" : "ball";
-    if (isPlayer(l.obj)) {
-      if (l.size > 1) out << "  NUSIZ" << (l.obj == Obj::P0 ? "0" : "1") << " = " << (l.size == 4 ? "$07" : "$05") << "\n";
-      if (l.reflect) out << "  REFP" << (l.obj == Obj::P0 ? "0" : "1") << " = 8\n";
-    } else {
+    std::string o = basicName(l.obj);
+    if (!k.has(l.obj)) {
+      out << "  rem " << objName(l.obj) << ": not drawn by this kernel\n";
+      continue;
+    }
+    int n = playerNumber(l.obj);
+    if (n >= 0) {
+      int nusiz = (l.size == 4 ? 7 : l.size == 2 ? 5 : 0);
+      bool refpInNusiz = k.kernel == Kernel::DPCPlus || k.kernel == Kernel::PXE;  // their NUSIZ bit 3 reflects
+      if (refpInNusiz && l.reflect) nusiz |= 8;
+      if (nusiz) out << "  " << playerVar("NUSIZ", n, k) << " = $" << std::hex << std::uppercase << nusiz << std::dec << "\n";
+      if (l.reflect && !refpInNusiz) {
+        if (n <= 1 && k.kernel == Kernel::Standard) out << "  REFP" << n << " = 8\n";
+        else out << "  rem " << o << ": reflected\n";
+      }
+    } else if (k.kernel != Kernel::Multisprite || l.obj == Obj::BL) {
       int h = 0;
       for (int r = 0; r < l.height; r++) h += rowHasPixels(l, 0, r);
       out << "  " << o << "height = " << h << "\n";
     }
     if (first && &l != first)
-      out << "  rem " << o << "x = " << (first->obj == Obj::P0 ? "player0x" : "player1x") << " + " << l.dx - first->dx << " : "
-          << o << "y = " << (first->obj == Obj::P0 ? "player0y" : "player1y") << " + " << l.dy - first->dy << "\n";
+      out << "  rem " << o << "x = " << basicName(first->obj) << "x + " << l.dx - first->dx << " : " << o << "y = "
+          << basicName(first->obj) << "y + " << l.dy - first->dy << "\n";
   }
   return out.str();
 }
 
-std::string exportBasic(const Playfield& p) {
+std::string exportBasic(const Playfield& p, const Profile& in) {
+  Profile k = basicFor(p, in);
   std::ostringstream out;
-  out << "  rem " << p.name << "\n  playfield:\n";
-  for (int r = 0; r < (int)p.rows.size(); r++) {
+  int rows = (int)p.rows.size();
+  out << "  rem " << p.name << "; " << k.describe() << "\n  playfield:\n";
+  int c0 = k.pfFirst(), c1 = c0 + k.pfColumns();
+  for (int r = 0; r < rows; r++) {
     out << "  ";
-    for (int c = 4; c < 36; c++) out << (p.pixel(r, c) ? 'X' : '.');
+    for (int c = c0; c < c1; c++) out << (p.pixel(r, c) ? 'X' : '.');
     out << "\n";
   }
   out << "end\n";
-  bool pfVary = p.rows[0].pf >= 0, bkVary = false;
-  for (int r = 1; r < (int)p.rows.size(); r++) pfVary |= p.pfAt(r) != p.pfAt(0), bkVary |= p.bkAt(r) != p.bkAt(0);
-  if (pfVary) {
-    out << "  pfcolors:\n";
-    for (int r = 0; r < (int)p.rows.size(); r++) out << "  " << hexColour(p.pfAt(r)) << "\n";
+  auto table = [&](const char* block, auto colour) {
+    out << "  " << block << ":\n";
+    for (int r = 0; r < rows; r++) out << "  " << hexColour(colour(r)) << "\n";
     out << "end\n";
-  } else {
-    out << "  COLUPF = " << hexColour(p.pfColour) << "\n";
-  }
-  if (bkVary) {
-    out << "  bkcolors:\n";
-    for (int r = 0; r < (int)p.rows.size(); r++) out << "  " << hexColour(p.bkAt(r)) << "\n";
-    out << "end\n";
-  } else {
-    out << "  COLUBK = " << hexColour(p.bkColour) << "\n";
+  };
+  bool bkVary = false;
+  for (int r = 1; r < rows; r++) bkVary |= p.bkAt(r) != p.bkAt(0);
+  if (k.pfRowColours()) table("pfcolors", [&](int r) { return p.pfAt(r); });
+  else out << "  COLUPF = " << hexColour(p.pfAt(0)) << "\n";
+  if (k.kernel == Kernel::Standard && k.bkRowColours()) table("pfcolors", [&](int r) { return p.bkAt(r); });  // option background: to COLUBK
+  else if (k.bkRowColours() && bkVary) table("bkcolors", [&](int r) { return p.bkAt(r); });
+  else out << "  COLUBK = " << hexColour(p.bkAt(0)) << "\n";
+  if (k.kernel == Kernel::DPCPlus || k.kernel == Kernel::PXE) {
+    // the height of the rows: the data fetchers advance FRACINC/256 rows a line, over 176 lines
+    int inc = std::clamp((int)std::lround(rows * 256.0 / 176), 1, 255);
+    std::string n = std::to_string(inc);
+    out << "  rem row height (" << rows << " rows), before every drawscreen:\n  DF0FRACINC = " << n << " : DF1FRACINC = " << n
+        << " : DF2FRACINC = " << n << " : DF3FRACINC = " << n << " : DF4FRACINC = " << n << " : DF6FRACINC = " << n << "\n";
   }
   return out.str();
 }
@@ -664,8 +921,11 @@ int parseValue(const std::string& t) {
 }
 }  // namespace
 
-bool importText(const std::string& text, Asset* out, std::string* what) {
-  static const std::regex bbStart(R"(^\s*(?:if\b.*\bthen\s+)?(player[01](?:color)?|playfield|pfcolors|bkcolors)\s*:\s*$)", std::regex::icase);
+bool importText(const std::string& text, Asset* out, std::string* what, const Profile& hint) {
+  // a whole program says its kernel itself
+  Profile kernel = hint;
+  if (std::regex_search(text, std::regex(R"(\bset\s+kernel\s)", std::regex::icase))) kernel = profileFromBasic(text);
+  static const std::regex bbStart(R"(^\s*(?:if\b.*\bthen\s+)?(player(?:1[0-6]|[0-9])(?:-\d+)?(?:color)?|playfield|pfcolors|bkcolors)\s*:\s*$)", std::regex::icase);
   static const std::regex asmData(R"(^\s+(?:\.byte|dc\.b|\.db|byte|\.BYTE|DC\.B)\s+(.*)$)", std::regex::icase);
   static const std::regex label(R"(^([A-Za-z_.][\w.]*):?\s*(?:;.*)?$)");
   static const std::regex colourComment(R"(;\s*\$([0-9A-Fa-f]{2}))");
@@ -732,6 +992,11 @@ bool importText(const std::string& text, Asset* out, std::string* what) {
       Playfield p;
       p.rows.assign(b.rows.size(), PfRow{});
       for (size_t r = 0; r < b.rows.size(); r++) {
+        if (b.rows[r].size() <= 16) {  // the multisprite kernel: the left half from column 4, mirrored
+          p.rows[r].bits = (rowBits(b.rows[r], false) & 0xFFFF) << 4;
+          p.rows[r].mode = PfMode::Mirror;
+          continue;
+        }
         p.rows[r].asymmetric = true;
         p.rows[r].bits = rowBits(b.rows[r], false) << 4;  // bB columns are the screen's 4-35
       }
@@ -756,16 +1021,21 @@ bool importText(const std::string& text, Asset* out, std::string* what) {
       break;
     }
 
-  // batari Basic players: each block is a frame (bottom row first), colours pair in order
+  // batari Basic players: each block is a frame, colours pair in order. The standard and
+  // multisprite kernels read the rows bottom first, DPC+ and PXE top first.
   {
     Sprite s;
     s.name = "sprite";
-    for (Obj o : {Obj::P0, Obj::P1}) {
-      std::string k = o == Obj::P0 ? "player0" : "player1";
+    bool top = kernel.topFirst() && kernel.basic();
+    for (int pn = 0; pn < 17; pn++) {
+      Obj o = playerObj(pn);
+      std::string k = "player" + std::to_string(pn);
       std::vector<const Block*> g, c;
       for (auto& b : blocks) {
-        if (b.kind == k) g.push_back(&b);
-        if (b.kind == k + "color") c.push_back(&b);
+        std::string kind = b.kind;
+        if (size_t d = kind.find('-'); d != std::string::npos) kind.erase(d, kind.find_first_not_of("0123456789", d + 1) - d);  // player1-3: the first
+        if (kind == k) g.push_back(&b);
+        if (kind == k + "color") c.push_back(&b);
       }
       if (g.empty()) continue;
       Layer l;
@@ -776,9 +1046,9 @@ bool importText(const std::string& text, Asset* out, std::string* what) {
       l.resize((int)g.size(), h);
       for (size_t f = 0; f < g.size(); f++) {
         int n = (int)g[f]->values.size();
-        for (int i = 0; i < n; i++) l.bits[f][h - 1 - i] = (uint8_t)g[f]->values[i];
+        for (int i = 0; i < n; i++) l.bits[f][top ? i : h - 1 - i] = (uint8_t)g[f]->values[i];
         if (f < c.size())
-          for (int i = 0; i < (int)c[f]->values.size() && i < h; i++) l.colours[f][h - 1 - i] = c[f]->values[i];
+          for (int i = 0; i < (int)c[f]->values.size() && i < h; i++) l.colours[f][top ? i : h - 1 - i] = c[f]->values[i];
       }
       s.layers.push_back(l);
     }
@@ -860,9 +1130,9 @@ bool importText(const std::string& text, Asset* out, std::string* what) {
       if (g.empty()) continue;
       Layer l;
       std::smatch m;
-      static const std::regex obj(R"(^(.*?)_(P0|P1|M0|M1|BL)\d*(?:_(\w+))?$)");
+      static const std::regex obj(R"(^(.*?)_(P1[0-6]|P[0-9]|M0|M1|BL)[b-z]?(?:_(\w+))?$)");
       if (std::regex_match(key, m, obj)) {
-        for (int k = 0; k < 5; k++)
+        for (int k = 0; k < kObjects; k++)
           if (m[2].str() == objName((Obj)k)) l.obj = (Obj)k;
         l.name = m[3].str();
         if (s.name.empty()) s.name = m[1].str();
