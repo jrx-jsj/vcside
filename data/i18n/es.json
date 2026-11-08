@@ -3,6 +3,7 @@
   "name": "Español",
   "strings": {
     "(+1) page crossing; branches: +1 taken, +2 taken to another page": "(+1) al cruzar de página; saltos: +1 si se toman, +2 si van a otra página",
+    "(bank {0})": "(banco {0})",
     "(fullest bank {0} %)": "(banco más lleno: {0} %)",
     "(zero page/absolute guessed: unknown symbol, build to resolve)": "(página cero o absoluto supuesto: símbolo desconocido, compila para resolverlo)",
     "({0} scanlines)": "({0} líneas de barrido)",
@@ -14,6 +15,7 @@
     "Aa": "Aa",
     "About VCSIDE": "Acerca de VCSIDE",
     "About {0}": "Acerca de {0}",
+    "Address the CPU sees ($F1A0, F1A0 or a label), optionally followed by the bank: $F1A0 1": "Dirección que ve la CPU ($F1A0, F1A0 o una etiqueta), y si quieres el banco: $F1A0 1",
     "allow": "permitir",
     "Also known as: {0}": "También llamado: {0}",
     "arm-none-eabi-gcc, for C games on ELF cartridges with vcsLib.": "arm-none-eabi-gcc, para juegos en C en cartuchos ELF con vcsLib.",
@@ -41,6 +43,7 @@
     "Cartridge formats": "Formatos de cartucho",
     "Cartridge RAM": "RAM del cartucho",
     "Choose...": "Elegir...",
+    "Clear all breakpoints": "Quitar todos los puntos de ruptura",
     "Close": "Cerrar",
     "Close file": "Cerrar archivo",
     "Col": "Col",
@@ -79,6 +82,8 @@
     "forbid": "prohibir",
     "Format": "Formato",
     "found": "encontrado",
+    "Go to address": "Ir a dirección",
+    "Go to address...": "Ir a dirección...",
     "Go to definition": "Ir a la definición",
     "Go to line": "Ir a la línea",
     "Go to line...": "Ir a la línea...",
@@ -108,6 +113,7 @@
     "Move lines up": "Subir líneas",
     "Name": "Nombre",
     "New project...": "Proyecto nuevo...",
+    "No code at that address in the last build.": "No hay código en esa dirección en la última compilación.",
     "No definition found for {0}": "No se encuentra la definición de {0}",
     "No project open.": "No hay ningún proyecto abierto.",
     "No results": "Sin resultados",
@@ -153,6 +159,7 @@
     "Sources": "Fuentes",
     "Space": "Espacio",
     "stable only": "solo estables",
+    "Stella takes only one breakpoint on its command line. To set all {0}, type this in its prompt (it is on the clipboard):": "Stella solo admite un punto de ruptura en su línea de órdenes. Para poner los {0}, escribe esto en su consola (está en el portapapeles):",
     "symbol": "símbolo",
     "Template not found in {0}": "No se encuentra la plantilla en {0}",
     "The ROM does not exist yet: build first ({0}).": "La ROM aún no existe: compila primero ({0}).",
@@ -164,6 +171,7 @@
     "This line: {0}, {1} bytes, {2} cycles": "Esta línea: {0}, {1} bytes, {2} ciclos",
     "Timing": "Temporización",
     "Timing: {0}": "Temporización: {0}",
+    "Toggle breakpoint": "Poner/quitar punto de ruptura",
     "Toggle comment": "Comentar / descomentar",
     "Tools": "Herramientas",
     "Tools...": "Herramientas...",
@@ -196,7 +204,11 @@
     "{0} not found. Install it or set its path in Settings > Tools.": "No se encuentra {0}. Instálalo o indica su ruta en Ajustes > Herramientas.",
     "{0} of {1}": "{0} de {1}",
     "{0} unknown": "{0} desconocidos",
-    "{0}: {1} bytes": "{0}: {1} bytes"
+    "{0}: {1} bytes": "{0}: {1} bytes",
+    "{0}:{1}: breakpoint at {2}{3}, the code of line {4}.": "{0}:{1}: punto de ruptura en {2}{3}, el código de la línea {4}.",
+    "{0}:{1}: breakpoint at {2}{3}.": "{0}:{1}: punto de ruptura en {2}{3}.",
+    "{0}:{1}: no code at or after this line; breakpoint ignored.": "{0}:{1}: no hay código en esta línea ni después; se ignora el punto de ruptura.",
+    "{0}:{1}: no listing to place the breakpoint: build first.": "{0}:{1}: no hay listado para situar el punto de ruptura: compila antes."
   },
-  "total": 195
+  "total": 207
 }

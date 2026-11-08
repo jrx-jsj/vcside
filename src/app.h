@@ -7,6 +7,7 @@
 
 #include <deque>
 #include <map>
+#include <set>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -14,6 +15,7 @@
 #include <vector>
 
 #include "builder_parse.h"
+#include "debugmap.h"
 #include "editor/text_editor.h"
 #include "kb.h"
 #include "menu.h"
@@ -51,6 +53,7 @@ class App {
   void testDoc(const std::string& word) { showDoc(word); }
   std::string testMenuDump() { return nativeMenu_ ? nativeMenuDump() : std::string(); }
   bool testMenu(const std::string& path) { return nativeMenu_ && nativeMenuPerform(path); }
+  void testGoToAddress(const std::string& a) { showGoToAddress_ = true, pendingAddress_ = a; }
   void testFocus(const std::string& panel) { ImGui::SetWindowFocus(("###" + panel).c_str()); }
   void testDefinition(const std::string& w) {
     if (activeFile_ >= 0) gotoDefinition(w, files_[activeFile_]->path, files_[activeFile_]->editor.cursor().line);
@@ -92,6 +95,12 @@ class App {
   void startSpace();
   void pollSpace();
   void loadSymbols();
+  std::string resolveSource(const std::string& listingName) const;  // file name in the listing -> absolute path
+  // breakpoints: per file (absolute path, 0-based lines), kept in <project>.vcsproj.user
+  void loadUserState();
+  void saveUserState();
+  std::vector<std::string> debugArgs(const std::string& emulator);  // writes the scripts, returns extra arguments
+  void goToAddressDialog();
   void lint(OpenFile& f);
   void showDoc(const std::string& word);
   bool gotoDefinition(const std::string& word, const std::string& fromFile, int fromLine);
@@ -130,6 +139,11 @@ class App {
   bool outputScroll_ = false;
   std::vector<Diagnostic> diagnostics_;
   std::map<std::string, int> symbols_;
+  AddressMap addresses_;
+  std::map<std::string, std::set<int>> breakpoints_;
+  bool showGoToAddress_ = false;
+  char goToAddress_[64] = "";
+  std::string pendingAddress_;  // tests
   std::string lastStatus_;
   Job spaceJob_;               // second DASM run (-f2) for the space report
   bool spaceRunning_ = false;

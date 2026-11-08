@@ -145,6 +145,7 @@ void App::openProject(const std::string& file) {
   symbols_.clear();
   diagnostics_.clear();
   loadSymbols();
+  loadUserState();
   addRecent(p.file);
   openFile(p.abs(p.main));
   SDL_SetWindowTitle(window_, ("VCSIDE - " + p.name).c_str());
@@ -185,6 +186,7 @@ OpenFile* App::openFile(const std::string& pathIn, int line) {
   }
   f->requestFocus = true;
   if (line > 0) f->editor.goTo(line - 1);
+  if (auto it = breakpoints_.find(path); it != breakpoints_.end()) f->editor.setBreakpoints(it->second);
   lint(*f);
   files_.push_back(std::move(f));
   activeFile_ = (int)files_.size() - 1;
@@ -327,6 +329,10 @@ void App::run(bool debug) {
   if (!project_) return;
   std::string err;
   auto args = project_->runArgs(tools_, debug, &err);
+  if (debug && !args.empty()) {
+    auto extra = debugArgs(project_->emulator);
+    args.insert(args.end() - 1, extra.begin(), extra.end());  // before the ROM
+  }
   if (args.empty() || !launchDetached(args, project_->dir, &err)) {
     output_ += err + "\n";
     lastStatus_ = err;
@@ -341,7 +347,151 @@ void App::loadSymbols() {
   std::string sym = project_->stem() + ".sym";
   std::error_code ec;
   if (fs::exists(sym, ec)) symbols_ = parseDasmSymbols(readFile(sym));
+  addresses_ = AddressMap();
+  std::string lst = project_->stem() + ".lst";
+  if (project_->language == Language::Dasm && fs::exists(lst, ec)) {
+    long bank = 4096;
+    if (const CartFormat* f = kb_.format(project_->format); f && f->space.known) bank = f->space.bankSize;
+    addresses_.load(readFile(lst), [this](const std::string& s) { return lookupSymbol(s); }, bank);
+    addresses_.resolveFiles([this](const std::string& n) { return resolveSource(n); });
+  }
 }
+
+std::string App::resolveSource(const std::string& name) const {
+  fs::path p(name);
+  std::error_code ec;
+  if (!p.is_absolute() && project_) {
+    std::vector<std::string> dirs = {project_->dir};
+    for (auto& d : project_->includeDirs) dirs.push_back(project_->abs(d));
+    for (auto& d : dirs)
+      if (fs::exists(fs::path(d) / name, ec)) {
+        p = fs::path(d) / name;
+        break;
+      }
+  }
+  return fs::weakly_canonical(p, ec).string();
+}
+
+// ---------------------------------------------------------------------------
+// Breakpoints and debugging
+
+void App::loadUserState() {
+  breakpoints_.clear();
+  if (!project_) return;
+  json j;
+  try {
+    std::ifstream f(project_->file + ".user");
+    if (f) j = json::parse(f);
+  } catch (...) {
+  }
+  if (!j.is_object() || !j.contains("breakpoints")) return;
+  for (auto& [file, lines] : j["breakpoints"].items()) {
+    std::set<int> s;
+    for (auto& l : lines)
+      if (l.is_number_integer() && l.get<int>() > 0) s.insert(l.get<int>() - 1);
+    std::error_code ec;
+    if (!s.empty()) breakpoints_[fs::weakly_canonical(fs::path(project_->dir) / file, ec).string()] = s;
+  }
+}
+
+void App::saveUserState() {
+  if (!project_) return;
+  json bps = json::object();
+  for (auto& [file, lines] : breakpoints_) {
+    if (lines.empty()) continue;
+    std::error_code ec;
+    auto rel = fs::relative(file, project_->dir, ec);
+    json arr = json::array();
+    for (int l : lines) arr.push_back(l + 1);
+    bps[ec ? file : rel.generic_string()] = arr;
+  }
+  std::ofstream(project_->file + ".user") << json{{"breakpoints", bps}}.dump(2) << "\n";
+}
+
+// Sends the editor's breakpoints to the emulator. Gopher2600 reads a script
+// with -script; Stella's command line takes a single -break, so it gets the first
+// one (one-bank ROMs) plus a script to run from its prompt with exec.
+std::vector<std::string> App::debugArgs(const std::string& emulator) {
+  for (auto& f : files_)
+    if (!f->editor.breakpoints().empty() || breakpoints_.count(f->path)) breakpoints_[f->path] = f->editor.breakpoints();
+  std::vector<Breakpoint> bps;
+  for (auto& [file, lines] : breakpoints_)
+    for (int l : lines) {
+      auto isCode = [this](const ListedLine& ll) {
+        // the listing keeps the label in its own column: look for a word that is an instruction
+        std::istringstream w(ll.source);
+        for (std::string t; w >> t;) {
+          if (t[0] == ';') break;
+          std::string m = upper(t.substr(0, t.find('.')));
+          if (kb_.instruction(m)) return true;
+        }
+        return false;
+      };
+      std::string rel = fs::path(file).filename().string();
+      if (addresses_.empty()) {
+        output_ += F("{0}:{1}: no listing to place the breakpoint: build first.", {rel, std::to_string(l + 1)}) + "\n";
+        continue;
+      }
+      auto bp = addresses_.breakpointAt(file, l + 1, isCode);
+      if (!bp) {
+        output_ += F("{0}:{1}: no code at or after this line; breakpoint ignored.", {rel, std::to_string(l + 1)}) + "\n";
+        continue;
+      }
+      char where[48];
+      snprintf(where, sizeof where, "$%04lX", bp->cpu);
+      std::string bank = addresses_.banks() > 1 ? " " + F("(bank {0})", {std::to_string(bp->bank)}) : "";
+      if (bp->at->line != l + 1)
+        output_ += F("{0}:{1}: breakpoint at {2}{3}, the code of line {4}.", {rel, std::to_string(l + 1), where, bank, std::to_string(bp->at->line)}) + "\n";
+      else
+        output_ += F("{0}:{1}: breakpoint at {2}{3}.", {rel, std::to_string(l + 1), where, bank}) + "\n";
+      bps.push_back(*bp);
+    }
+  std::vector<std::string> args;
+  std::error_code ec;
+  if (emulator == "gopher2600") {
+    std::string path = project_->stem() + ".gopher2600.script";
+    if (bps.empty()) {
+      fs::remove(path, ec);
+      return args;
+    }
+    std::ofstream out(path);
+    for (auto& b : bps) {
+      char line[64];
+      if (addresses_.banks() > 1) snprintf(line, sizeof line, "BREAK PC $%04lX & BANK %d\n", b.cpu, b.bank);
+      else snprintf(line, sizeof line, "BREAK PC $%04lX\n", b.cpu);
+      out << line;
+    }
+    args = {"-script", path};
+  } else if (emulator == "stella") {
+    std::string path = project_->stem() + ".stella.script";
+    if (bps.empty()) {
+      fs::remove(path, ec);
+      return args;
+    }
+    {
+      std::ofstream out(path);
+      for (auto& b : bps) {
+        char line[64];
+        snprintf(line, sizeof line, "break $%04lX %d\n", b.cpu, b.bank);
+        out << line;
+      }
+    }
+    if (addresses_.banks() == 1) {
+      char a[16];
+      snprintf(a, sizeof a, "$%04lX", bps[0].cpu);
+      args = {"-break", a};
+    }
+    if (bps.size() > 1 || addresses_.banks() > 1) {
+      // Stella's prompt groups an argument with {...}, not with quotes
+      std::string cmd = path.find(' ') == std::string::npos ? "exec " + path : "exec {" + path + "}";
+      SDL_SetClipboardText(cmd.c_str());
+      output_ += F("Stella takes only one breakpoint on its command line. To set all {0}, type this in its prompt (it is on the clipboard):",
+                   {std::to_string(bps.size())}) + "\n  " + cmd + "\n";
+    }
+  }
+  return args;
+}
+
 
 std::optional<int> App::lookupSymbol(const std::string& name) const {
   auto it = symbols_.find(name);
@@ -624,6 +774,7 @@ void App::frame() {
     while (e < (int)l.size() && (std::isalnum((unsigned char)l[e]) || l[e] == '_')) e++;
     if (e > s) showDoc(l.substr(s, e - s));
   }
+  if (io.KeyCtrl && io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_G, false) && !addresses_.empty()) showGoToAddress_ = true;
   if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_S, false)) {
     if (io.KeyShift) saveAll();
     else if (activeFile_ >= 0) saveFile(*files_[activeFile_]);
@@ -641,6 +792,7 @@ void App::frame() {
   toolsDialog();
   aboutDialog();
   closeDialogs();
+  goToAddressDialog();
 }
 
 // The menu bar as data: ImGui draws it on Windows and Linux, macOS puts it in the
@@ -719,6 +871,7 @@ MenuBar App::buildMenuBar(bool native) {
       item(T("Find next"), "F3", onEditor([](TextEditor& e) { e.findNext(false); })),
       item(T("Find previous"), "Shift+F3", onEditor([](TextEditor& e) { e.findNext(true); })),
       item(T("Go to line..."), "Ctrl+G", onEditor([](TextEditor& e) { e.openGoto(); })),
+      item(T("Go to address..."), "Ctrl+Shift+G", [this] { showGoToAddress_ = true; }, !addresses_.empty()),
       item(T("Go to definition"), "F12", [this] {
         if (activeFile_ < 0) return;
         auto& f = *files_[activeFile_];
@@ -737,7 +890,14 @@ MenuBar App::buildMenuBar(bool native) {
   std::vector<MenuItem> b = {item(T("Build"), "F7", [this] { build(0); }, p),
                              item(T("Build and run"), "F5", [this] { build(1); }, p),
                              item(T("Build and debug"), "F6", [this] { build(2); }, p),
-                             item(T("Run"), "", [this] { run(false); }, p)};
+                             item(T("Run"), "", [this] { run(false); }, p),
+                             MenuItem::sep(),
+                             item(T("Toggle breakpoint"), "F9", onEditor([](TextEditor& e) { e.toggleBreakpoint(e.cursor().line); }), hasFile),
+                             item(T("Clear all breakpoints"), "", [this] {
+                               for (auto& f : files_) f->editor.setBreakpoints({});
+                               breakpoints_.clear();
+                               saveUserState();
+                             })};
   if (project_) {
     auto set = [this](std::function<void(Project&)> f) {
       return [this, f] {
@@ -981,6 +1141,10 @@ void App::editorsPanel() {
           f.requestFocus = false;
         }
         if (f.editor.render("##code", mono_)) lint(f);
+        if (f.editor.takeBreakpointsChanged()) {
+          breakpoints_[f.path] = f.editor.breakpoints();
+          saveUserState();
+        }
         ImGui::EndTabItem();
       }
       if (!keep) closeRequest_ = i;
@@ -1094,6 +1258,51 @@ void App::problemsPanel() {
     }
   }
   ImGui::End();
+}
+
+// From an address the emulator shows (PC, a break, a crash) to its source line.
+void App::goToAddressDialog() {
+  if (showGoToAddress_) {
+    ImGui::OpenPopup(T("Go to address"));
+    showGoToAddress_ = false;
+    snprintf(goToAddress_, sizeof goToAddress_, "%s", pendingAddress_.c_str());
+    pendingAddress_.clear();
+  }
+  ImGui::SetNextWindowSize(ImVec2(ImGui::GetFontSize() * 26, 0), ImGuiCond_Appearing);
+  if (!ImGui::BeginPopupModal(T("Go to address"), nullptr, ImGuiWindowFlags_AlwaysAutoResize)) return;
+  ImGui::TextWrapped("%s", T("Address the CPU sees ($F1A0, F1A0 or a label), optionally followed by the bank: $F1A0 1"));
+  if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
+  bool enter = ImGui::InputText("##addr", goToAddress_, sizeof goToAddress_, ImGuiInputTextFlags_EnterReturnsTrue);
+  // parse "addr [bank]"
+  std::istringstream in(goToAddress_);
+  std::string a, b;
+  in >> a >> b;
+  std::optional<int> addr;
+  if (!a.empty()) {
+    std::string e = a;
+    if (e.size() > 2 && (e[0] == '0') && (e[1] == 'x' || e[1] == 'X')) e = "$" + e.substr(2);
+    else if (e[0] != '$' && std::all_of(e.begin(), e.end(), [](char c) { return std::isxdigit((unsigned char)c); })) e = "$" + e;
+    addr = evalExpr(e, [this](const std::string& s) { return lookupSymbol(s); });
+    if (!addr) addr = evalExpr(a, [this](const std::string& s) { return lookupSymbol(s); });
+  }
+  int bank = b.empty() ? -1 : std::atoi(b.c_str());
+  std::vector<const ListedLine*> hits;
+  if (addr) hits = addresses_.linesAt(*addr, bank);
+  bool go = false;
+  const ListedLine* target = nullptr;
+  if (!a.empty() && hits.empty()) ImGui::TextDisabled("%s", T("No code at that address in the last build."));
+  for (size_t i = 0; i < hits.size() && i < 12; i++) {
+    std::string label = fs::path(hits[i]->file).filename().string() + ":" + std::to_string(hits[i]->line);
+    if (addresses_.banks() > 1) label += "  " + F("(bank {0})", {std::to_string(addresses_.bankOf(*hits[i]))});
+    if (ImGui::Selectable(label.c_str(), i == 0)) target = hits[i], go = true;
+  }
+  if (enter && !hits.empty()) target = hits[0], go = true;
+  if (go && target) {
+    openFile(target->file, target->line);
+    ImGui::CloseCurrentPopup();
+  }
+  if (ImGui::IsKeyPressed(ImGuiKey_Escape) || ImGui::Button(T("Cancel"))) ImGui::CloseCurrentPopup();
+  ImGui::EndPopup();
 }
 
 static void spaceBar(const SpaceReport::Area& a, int warnPercent) {

@@ -9,6 +9,7 @@
 #include "cycles.h"
 #include "kb.h"
 #include "space.h"
+#include "debugmap.h"
 
 static int failures = 0, checks = 0;
 #define CHECK(cond)                                                     \
@@ -281,6 +282,78 @@ static void testSpace(const KnowledgeBase& kb) {
   CHECK(!rep.summary().empty() || rep.banks.empty());
 }
 
+static void testDebugMap() {
+  // F8: ORG $0000/$1000 with RORG $F000 (DASM 2.20 listing), a macro and an include.
+  const std::string lst =
+      "------- FILE main.asm LEVEL 1 PASS 1\n"
+      "      9  0000 ????\t\t\t\t      SEG\tBank0\n"
+      "     10  0000\t\t\t\t\t      ORG\t$0000\n"
+      "     11  0000\t\t\t\t\t      RORG\t$F000\n"
+      "     12  0000\t\t       a9 01\t   B0\t      lda\t#1\n"
+      "     13  0002\t\t\t\t   Loop\t\n"
+      "     14  0002\t\t       85 80\t\t      sta\t$80\n"
+      "     15  0004\t\t       ea ea ea ea*\t      ds\t100, $EA\n"
+      "     16  0000 ????\t\t\t\t      SEG\tBank1\n"
+      "     17  1000\t\t\t\t\t      ORG\t$1000\n"
+      "     18  1000\t\t\t\t\t      RORG\t$F000\n"
+      "     19  1000\t\t       a9 02\t   B1\t      lda\t#2\n"
+      "      0  1002\t\t\t\t\t      FOO\n"
+      "      1  1002\t\t       ea\t\t      nop\n"
+      "      2  1003\t\t       ea\t\t      nop\n"
+      "     21  1004\t\t       ea\t\t      nop\n"
+      "------- FILE inc.h LEVEL 2 PASS 1\n"
+      "      0  1005\t\t\t\t\t      include\t\"inc.h\"\n"
+      "      1  1005\t\t       85 81\t\t      sta\t$81\n"
+      "------- FILE main.asm\n"
+      "     23  1007\t\t       ea\t\t      nop\n";
+  AddressMap map;
+  map.load(lst, [](const std::string&) -> std::optional<int> { return std::nullopt; }, 4096);
+  CHECK(map.banks() == 2);
+  auto code = [](const ListedLine& l) { return l.source.find("ds") == std::string::npos; };
+  auto bp = map.breakpointAt("main.asm", 12, code);
+  CHECK(bp && bp->cpu == 0xF000 && bp->bank == 0);
+  bp = map.breakpointAt("main.asm", 13, code);  // label line: next instruction
+  CHECK(bp && bp->cpu == 0xF002 && bp->at->line == 14);
+  bp = map.breakpointAt("main.asm", 19, code);
+  CHECK(bp && bp->cpu == 0xF000 && bp->bank == 1);
+  bp = map.breakpointAt("main.asm", 20, code);  // macro call: its first instruction
+  CHECK(bp && bp->cpu == 0xF002 && bp->bank == 1);
+  bp = map.breakpointAt("main.asm", 21, code);
+  CHECK(bp && bp->cpu == 0xF004);
+  bp = map.breakpointAt("inc.h", 1, code);
+  CHECK(bp && bp->cpu == 0xF005 && bp->bank == 1);
+  bp = map.breakpointAt("main.asm", 23, code);
+  CHECK(bp && bp->cpu == 0xF007);
+  CHECK(!map.breakpointAt("main.asm", 24, code));
+  auto at = map.linesAt(0xF002);
+  CHECK(at.size() == 2);  // bank 0 (line 14) and bank 1 (the macro)
+  at = map.linesAt(0x1002, 0);  // a mirror of $F002
+  CHECK(at.size() == 1 && at[0]->line == 14);
+  at = map.linesAt(0xF003, 1);  // inside the second nop of the macro
+  CHECK(at.size() == 1 && at[0]->line == 20);
+  map.resolveFiles([](const std::string& f) { return "/p/" + f; });
+  CHECK(map.breakpointAt("/p/inc.h", 1, code));
+
+  // Breakpoints follow the text.
+  TextEditor e;
+  e.setText("a\nb\nc\nd");
+  e.toggleBreakpoint(2);
+  CHECK(e.breakpoints() == std::set<int>{2});
+  e.goTo(0);
+  e.duplicateLines();  // a a b c d
+  CHECK(e.breakpoints() == std::set<int>{3});
+  e.goTo(3);
+  e.deleteLines();  // the line with the breakpoint goes
+  CHECK(e.breakpoints().empty());
+  e.undo();
+  e.toggleBreakpoint(4);
+  e.goTo(1);
+  e.moveLines(1);
+  CHECK(e.breakpoints() == std::set<int>{4});
+  e.toggleBreakpoint(4);
+  CHECK(e.breakpoints().empty() && e.takeBreakpointsChanged() && !e.takeBreakpointsChanged());
+}
+
 int main() {
   KnowledgeBase kb;
   std::string err;
@@ -292,6 +365,7 @@ int main() {
   testParsers();
   testEditor();
   testSpace(kb);
+  testDebugMap();
   std::printf("%d checks, %d failures\n", checks, failures);
   return failures ? 1 : 0;
 }

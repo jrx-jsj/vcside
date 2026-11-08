@@ -4,7 +4,9 @@
 // diagnostics, hover help and completion.
 #pragma once
 #include <functional>
+#include <cstdint>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -103,6 +105,14 @@ class TextEditor {
   // Word under the cursor (for F12 / F1).
   std::string wordAtCursor() const;
 
+  // Breakpoints (0-based lines): click in the left margin or F9. They follow the
+  // text when lines are inserted or deleted above them.
+  void toggleBreakpoint(int line);
+  void setBreakpoints(const std::set<int>& lines);
+  const std::set<int>& breakpoints();
+  // True once after the breakpoints changed (toggled, or moved by an edit).
+  bool takeBreakpointsChanged() { bool c = bpChanged_; bpChanged_ = false; return c; }
+
  private:
   struct Snapshot {
     std::vector<std::string> lines;
@@ -126,6 +136,7 @@ class TextEditor {
   void setSelection(Coord a, Coord b);
   void updateCompletion();
   void acceptCompletion();
+  void syncBreakpoints();
 
   std::vector<std::string> lines_{""};
   Coord cursor_, selStart_, selEnd_, anchor_;
@@ -137,6 +148,10 @@ class TextEditor {
   int gutterChars_ = 0;
   EditorHooks hooks_;
   std::map<int, std::pair<bool, std::string>> markers_;
+  std::set<int> bps_;
+  std::vector<std::string> bpBase_;  // text the breakpoint lines refer to
+  size_t bpVersion_ = 0;
+  bool bpChanged_ = false;
   std::vector<Completion> completions_;
   int completionSel_ = 0;
   bool completionOpen_ = false;

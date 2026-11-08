@@ -61,6 +61,23 @@ El autocompletado, la ayuda flotante y el panel de documentación salen de estos
 
 Al seleccionar un bloque de ensamblador se suman los ciclos mínimos y máximos (cruce de página, ramas tomadas), los bytes y la posición en la línea (76 ciclos por línea, 228 relojes de color). Se muestra en la barra de estado y como columna junto al código.
 
+## Emuladores y depuración
+
+Comprobado con Stella 7.0 y Gopher2600 v0.56.1, en su código fuente y probándolos.
+
+- **Símbolos:** los dos cargan solos el `.sym` que está junto a la ROM con su mismo nombre. Stella, además, el `.lst`.
+- **Puntos de ruptura:** se ponen en el margen o con F9 y se guardan en `<proyecto>.vcsproj.user`.
+  - Con F6, cada uno se lleva a la primera instrucción de su línea o de las siguientes.
+  - La dirección y el banco salen del listado de DASM: el listado da la dirección de `ORG`, así que se sigue `RORG`/`REND` en cada segmento. Las líneas de una macro se asignan a la línea que la llama.
+- **Gopher2600:** `DEBUG -script <archivo>` ejecuta el guion al arrancar el depurador, con líneas `BREAK PC $F100 & BANK 1`. No guarda nada en su configuración.
+- **Stella:**
+  - **Sin guion por ROM:** el `<rom>.script` que carga al entrar en el depurador se busca en su carpeta de usuario (`userdir`, `Debugger::autoExec`), no junto a la ROM como dice el manual. Por defecto, en macOS esa carpeta es el Escritorio, así que VCSIDE no escribe ahí.
+  - **Opciones que no se pasan:** las opciones de la línea de órdenes se guardan en su configuración al salir (`Settings::load`/`save`), así que VCSIDE no pasa `-userdir` ni nada que no sea de esa partida.
+  - **Lo que sí se pasa:** `-bs`, `-format`, `-debug` y `-break` no se guardan. `-break` admite un solo punto, sin banco, así que se usa solo con ROMs de un banco.
+  - **El resto de puntos:** van a `build/<rom>.stella.script` (`break $F100 1`), y la orden `exec <ruta>` se copia al portapapeles para pegarla en la consola de Stella. Su consola agrupa argumentos con `{…}`, no con comillas.
+- **Ir a dirección** (Ctrl+Shift+G): de una dirección (o etiqueta) y, si se quiere, un banco, a su línea. Tiene en cuenta los espejos de la 6507 ($F000 = $1000).
+- **Pendiente:** recibir del emulador la dirección donde se ha parado (no tienen un canal para avisar a otra aplicación); batari Basic y ELF.
+
 ## Avisos de espacio
 
 Tras cada compilación con DASM, el IDE mide cuánto espacio queda (`src/space.*`). Los datos de cada formato (tamaños de ROM válidos, tamaño de banco, direcciones reservadas, RAM extra y sus ventanas) están en el objeto `space` de `formats.json`.

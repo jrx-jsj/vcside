@@ -147,8 +147,9 @@ int main(int argc, char** argv) {
   // --lang CODE switches the interface language, --focus PANEL (output, problems,
   // space, docs...) brings a panel to the front before the capture.
   // --imgui-menu draws the menus with ImGui on macOS too; --menu "File/Save" chooses a
-  // system menu item; --menu-dump prints the system menu bar.
-  std::string shot, select, doc, find, def, focus, menu;
+  // system menu item; --menu-dump prints the system menu bar; --goto-address TEXT
+  // opens "Go to address" with that text.
+  std::string shot, select, doc, find, def, focus, menu, gotoAddr;
   bool menuDump = false;
   bool findReplace = false;
   bool doBuild = false;
@@ -164,6 +165,7 @@ int main(int argc, char** argv) {
     else if (a == "--lang" && i + 1 < argc) vcs::setLanguage(argv[++i]), app.refreshMenus();
     else if (a == "--menu" && i + 1 < argc) menu = argv[++i];
     else if (a == "--menu-dump") menuDump = true;
+    else if (a == "--goto-address" && i + 1 < argc) gotoAddr = argv[++i];
     else if (a == "--imgui-menu") continue;
     else app.openPath(a);
   }
@@ -176,6 +178,7 @@ int main(int argc, char** argv) {
       if (frame == 8 && !doc.empty()) app.testDoc(doc);
       if (frame == 9 && !find.empty()) app.testFind(find, findReplace);
       if (frame == 9 && !def.empty()) app.testDefinition(def);
+      if (frame == 9 && !gotoAddr.empty()) app.testGoToAddress(gotoAddr);
       if (frame == 9 && !menu.empty() && !app.testMenu(menu)) SDL_Log("menu item not found or disabled: %s", menu.c_str());
       if (frame == 12 && menuDump) std::fputs(app.testMenuDump().c_str(), stdout), std::fflush(stdout), menuDump = false;
       if (frame > 10 && shotFrame < 0 && !app.testBusy()) shotFrame = frame + 5;

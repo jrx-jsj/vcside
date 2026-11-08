@@ -8,7 +8,12 @@ A small native IDE for making Atari 2600 games, on macOS, Windows and Linux. It 
 
 - **Projects**: `.vcsproj` files (JSON) with language, main file, ROM, cartridge format, TV standard, emulator and illegal-opcode policy. New projects come from a template for DASM, batari Basic or C for ELF.
 - **Build** with DASM (F7). Errors and unresolved symbols go to *Problems*, and clicking one opens the line. ELF projects use their own `build_command` (e.g. `make`).
-- **Run** in Stella or Gopher2600 (F5 build and run, F6 debug). The cartridge format and TV standard are passed on the command line.
+- **Run** in Stella or Gopher2600 (F5 build and run, F6 debug). The cartridge format and TV standard are passed on the command line, and both emulators load the `.sym` symbols of the build.
+- **Breakpoints**: click in the left margin or press F9. F6 places each one on its instruction's address and bank (from the listing, following `RORG`) and passes them to the emulator:
+  - Gopher2600 gets them all in a script (`-script`);
+  - Stella's command line takes one (`-break`, one-bank ROMs). For the rest, VCSIDE writes `build/<rom>.stella.script` and copies `exec <path>` to the clipboard to paste into Stella's prompt.
+  - They are kept in `<project>.vcsproj.user` (add it to `.gitignore` if you don't want to share it).
+- **Go to address** (Ctrl+Shift+G): from an address the emulator shows (PC, a break) to its source line, in every bank where it exists.
 - **Tools** are found in `PATH` and the usual install folders, or set by hand in *Settings → Tools*. Missing ones link to their official download page.
 - **Editor**:
   - DASM syntax colouring, with illegal opcodes in their own colours (purple for stable ones, red for unstable ones).

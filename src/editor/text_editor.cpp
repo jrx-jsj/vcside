@@ -114,6 +114,55 @@ void TextEditor::pushUndo(bool mergeTyping) {
   textVersion_++;
 }
 
+// Moves the breakpoints with the text: the lines before and after the changed
+// block are matched, so breakpoints below an insertion or deletion move with it.
+void TextEditor::syncBreakpoints() {
+  if (bpVersion_ == textVersion_) return;
+  bpVersion_ = textVersion_;
+  if (bps_.empty()) {
+    bpBase_.clear();
+    return;
+  }
+  const auto& a = bpBase_;
+  const auto& b = lines_;
+  size_t n = std::min(a.size(), b.size()), p = 0, q = 0;
+  while (p < n && a[p] == b[p]) p++;
+  while (q < n - p && a[a.size() - 1 - q] == b[b.size() - 1 - q]) q++;
+  long oldEnd = (long)a.size() - (long)q, newEnd = (long)b.size() - (long)q;
+  long delta = (long)b.size() - (long)a.size();
+  std::set<int> moved;
+  for (int l : bps_) {
+    if (l < (long)p) moved.insert(l);
+    else if (l >= oldEnd) moved.insert((int)(l + delta));
+    else if (l < newEnd) moved.insert(l);  // inside the changed block: stays if the line still exists
+  }
+  if (moved != bps_) bpChanged_ = true;
+  bps_ = std::move(moved);
+  bpBase_ = lines_;
+}
+
+void TextEditor::toggleBreakpoint(int line) {
+  if (line < 0 || line >= (int)lines_.size()) return;
+  syncBreakpoints();
+  if (!bps_.erase(line)) bps_.insert(line);
+  bpBase_ = lines_;
+  bpVersion_ = textVersion_;
+  bpChanged_ = true;
+}
+
+void TextEditor::setBreakpoints(const std::set<int>& lines) {
+  bps_.clear();
+  for (int l : lines)
+    if (l >= 0 && l < (int)lines_.size()) bps_.insert(l);
+  bpBase_ = lines_;
+  bpVersion_ = textVersion_;
+}
+
+const std::set<int>& TextEditor::breakpoints() {
+  syncBreakpoints();
+  return bps_;
+}
+
 void TextEditor::undo() {
   if (undo_.empty()) return;
   redo_.push_back({lines_, cursor_});
@@ -709,7 +758,9 @@ bool TextEditor::render(const char* id, ImFont* font) {
   int numChars = std::max(4, (int)std::to_string(lines_.size()).size() + 1);
   float numW = numChars * charW_;
   float cycW = gutterChars_ * charW_;
-  float gutterW = numW + cycW + charW_ * 1.5f;
+  float bpW = charW_ * 1.8f;  // breakpoint column
+  float gutterW = bpW + numW + cycW + charW_ * 1.5f;
+  syncBreakpoints();
 
   int maxCols = 0;
   for (int i = 0; i < (int)lines_.size(); i++) maxCols = std::max(maxCols, visualCol(i, (int)lines_[i].size()));
@@ -721,8 +772,9 @@ bool TextEditor::render(const char* id, ImFont* font) {
     if (here && kio.KeyCtrl && !kio.KeyAlt) {
       if (ImGui::IsKeyPressed(ImGuiKey_F, false)) openFind(false);
       if (ImGui::IsKeyPressed(ImGuiKey_H, false) || (kio.KeyShift && ImGui::IsKeyPressed(ImGuiKey_F, false))) openFind(true);
-      if (ImGui::IsKeyPressed(ImGuiKey_G, false)) openGoto();
+      if (!kio.KeyShift && ImGui::IsKeyPressed(ImGuiKey_G, false)) openGoto();  // Ctrl+Shift+G: go to address (app)
     }
+    if (here && ImGui::IsKeyPressed(ImGuiKey_F9, false)) toggleBreakpoint(cursor_.line);
     if (here && ImGui::IsKeyPressed(ImGuiKey_F3)) {
       if (bar_ == Bar::None) openFind(false), focusBar_ = false;
       findNext(kio.KeyShift);
@@ -760,7 +812,10 @@ bool TextEditor::render(const char* id, ImFont* font) {
   };
 
   // mouse
-  if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && io.KeyCtrl && hooks_.gotoDefinition) {
+  bool inMargin = io.MousePos.x < ImGui::GetWindowPos().x + bpW + numW;
+  if (hovered && inMargin && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+    toggleBreakpoint(std::clamp((int)std::floor((io.MousePos.y - origin.y) / lineH_), 0, (int)lines_.size() - 1));
+  } else if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && io.KeyCtrl && hooks_.gotoDefinition) {
     Coord c = mouseCoord();
     moveCursor(c, false);
     std::string w = wordAt(c);
@@ -848,12 +903,14 @@ bool TextEditor::render(const char* id, ImFont* font) {
     auto mk = markers_.find(i + 1);
     ImU32 numCol = mk != markers_.end() ? (mk->second.first ? IM_COL32(240, 90, 90, 255) : IM_COL32(230, 190, 80, 255))
                    : i == cursor_.line ? IM_COL32(200, 200, 200, 255) : IM_COL32(110, 110, 110, 255);
-    dl->AddText(font, fontSize, ImVec2(gx, y + 1), numCol, num);
+    if (bps_.count(i))
+      dl->AddCircleFilled(ImVec2(gx + bpW * 0.5f, y + lineH_ * 0.5f), std::min(bpW, lineH_) * 0.32f, IM_COL32(220, 60, 60, 255));
+    dl->AddText(font, fontSize, ImVec2(gx + bpW, y + 1), numCol, num);
     if (cycW > 0 && hooks_.gutter) {
       std::string g = hooks_.gutter(i, lines_[i]);
       if (!g.empty()) {
         float w = ImGui::CalcTextSize(g.c_str()).x;
-        dl->AddText(font, fontSize, ImVec2(gx + numW + cycW - w, y + 1), IM_COL32(150, 150, 90, 255), g.c_str());
+        dl->AddText(font, fontSize, ImVec2(gx + bpW + numW + cycW - w, y + 1), IM_COL32(150, 150, 90, 255), g.c_str());
       }
     }
   }

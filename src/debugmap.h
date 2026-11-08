@@ -1,0 +1,58 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 VCSIDE contributors
+// Source lines <-> CPU addresses and banks, from DASM's listing. Used to send the
+// editor's breakpoints to the emulators and to go from an address back to its line.
+//
+// The listing gives the address in the ROM image (ORG); the CPU sees the
+// relocated one (RORG), so RORG/REND are followed per segment. Lines of a macro
+// expansion are given to the line that calls the macro.
+#pragma once
+#include <functional>
+#include <optional>
+#include <string>
+#include <vector>
+
+#include "cycles.h"
+
+namespace vcs {
+
+struct ListedLine {
+  std::string file;  // as DASM printed it (resolve it with AddressMap::resolveFiles)
+  int line = 0;      // 1-based
+  long phys = 0;     // address in the image (ORG)
+  long cpu = 0;      // address the 6507 sees (RORG)
+  int bytes = 0;
+  std::string source;  // the source text of the line (label, mnemonic, operand)
+};
+
+struct Breakpoint {
+  long cpu = 0;
+  int bank = 0;
+  const ListedLine* at = nullptr;
+};
+
+class AddressMap {
+ public:
+  // bankSize: from the cartridge format (4096 by default)
+  void load(const std::string& listing, const SymbolLookup& lookup, long bankSize);
+  void resolveFiles(const std::function<std::string(const std::string&)>& resolve);
+  bool empty() const { return lines_.empty(); }
+  int banks() const { return banks_; }
+  int bankOf(const ListedLine& l) const { return bankSize_ > 0 ? (int)((l.phys - base_) / bankSize_) : 0; }
+
+  // Breakpoint for a source line: the first line with code at or after it, in the
+  // same file and before the next line with code of another file position (so a
+  // breakpoint on a label or comment goes to the next instruction). isCode
+  // decides which listed lines count (e.g. instructions, not .byte).
+  std::optional<Breakpoint> breakpointAt(const std::string& file, int line,
+                                         const std::function<bool(const ListedLine&)>& isCode) const;
+  // Listed lines whose code starts at a CPU address (one per bank where it exists).
+  std::vector<const ListedLine*> linesAt(long cpu, int bank = -1) const;
+
+ private:
+  std::vector<ListedLine> lines_;
+  long base_ = 0, bankSize_ = 4096;
+  int banks_ = 1;
+};
+
+}  // namespace vcs
