@@ -24,6 +24,7 @@ A small native IDE for making Atari 2600 games, on macOS, Windows and Linux. It 
   - warnings for full banks, wrong ROM sizes and code on bank-switch hotspots, with the source line when possible;
   - thresholds per project: `space_warn_percent` and `stack_reserve` in the `.vcsproj`.
 - **Illegal-opcode policy** per project: allow, stable only, warn or forbid.
+- **Menus** in the system menu bar on macOS (application menu with About, Tools and Language; Window menu), and in the window on Windows and Linux. Ctrl shortcuts are Cmd on macOS; Replace is Cmd+Shift+F there, since Cmd+H hides the app.
 - **Interface languages**: English, plus catalogs in `data/i18n/` (Spanish included). Catalogs can be partial, and anything missing falls back to English.
 
 ## Building

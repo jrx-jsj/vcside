@@ -8,6 +8,7 @@
 #include <string>
 
 #include "app.h"
+#include "menu.h"
 #include "i18n.h"
 #include "imgui.h"
 #include "imgui_impl_opengl3.h"
@@ -71,6 +72,7 @@ static void applyStyle() {
 }
 
 int main(int argc, char** argv) {
+  vcs::nativeEarlyInit();
   if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
     SDL_Log("SDL_Init: %s", SDL_GetError());
     return 1;
@@ -135,14 +137,19 @@ int main(int argc, char** argv) {
   ImGui::GetPlatformIO().Platform_OpenInShellFn = [](ImGuiContext*, const char* url) { return SDL_OpenURL(url); };
   SDL_StartTextInput(window);
 
+  bool imguiMenu = false;
+  for (int i = 1; i < argc; i++) imguiMenu |= std::string(argv[i]) == "--imgui-menu";
   vcs::App app;
-  app.init(window, mono);
+  app.init(window, mono, imguiMenu);
   // Options for automatic tests: --shot file.bmp saves the window and quits;
   // --build builds first, --select A-B selects lines, --doc WORD shows its documentation,
   // --find/--replace TEXT opens the find bar, --definition WORD jumps to it,
   // --lang CODE switches the interface language, --focus PANEL (output, problems,
   // space, docs...) brings a panel to the front before the capture.
-  std::string shot, select, doc, find, def, focus;
+  // --imgui-menu draws the menus with ImGui on macOS too; --menu "File/Save" chooses a
+  // system menu item; --menu-dump prints the system menu bar.
+  std::string shot, select, doc, find, def, focus, menu;
+  bool menuDump = false;
   bool findReplace = false;
   bool doBuild = false;
   for (int i = 1; i < argc; i++) {
@@ -154,7 +161,10 @@ int main(int argc, char** argv) {
     else if ((a == "--find" || a == "--replace") && i + 1 < argc) findReplace = a == "--replace", find = argv[++i];
     else if (a == "--build") doBuild = true;
     else if (a == "--focus" && i + 1 < argc) focus = argv[++i];
-    else if (a == "--lang" && i + 1 < argc) vcs::setLanguage(argv[++i]);
+    else if (a == "--lang" && i + 1 < argc) vcs::setLanguage(argv[++i]), app.refreshMenus();
+    else if (a == "--menu" && i + 1 < argc) menu = argv[++i];
+    else if (a == "--menu-dump") menuDump = true;
+    else if (a == "--imgui-menu") continue;
     else app.openPath(a);
   }
   int frame = 0, shotFrame = -1;
@@ -166,6 +176,8 @@ int main(int argc, char** argv) {
       if (frame == 8 && !doc.empty()) app.testDoc(doc);
       if (frame == 9 && !find.empty()) app.testFind(find, findReplace);
       if (frame == 9 && !def.empty()) app.testDefinition(def);
+      if (frame == 9 && !menu.empty() && !app.testMenu(menu)) SDL_Log("menu item not found or disabled: %s", menu.c_str());
+      if (frame == 12 && menuDump) std::fputs(app.testMenuDump().c_str(), stdout), std::fflush(stdout), menuDump = false;
       if (frame > 10 && shotFrame < 0 && !app.testBusy()) shotFrame = frame + 5;
       if (frame == shotFrame - 3 && !focus.empty()) app.testFocus(focus);
     }

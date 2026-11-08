@@ -33,7 +33,7 @@ def source_strings():
     found = {}
     for d, _, files in os.walk(SRC):
         for f in files:
-            if not f.endswith((".cpp", ".h")):
+            if not f.endswith((".cpp", ".h", ".mm")):
                 continue
             path = os.path.join(d, f)
             text = open(path, encoding="utf-8").read()

@@ -16,6 +16,7 @@
 #include "builder_parse.h"
 #include "editor/text_editor.h"
 #include "kb.h"
+#include "menu.h"
 #include "process.h"
 #include "project.h"
 #include "space.h"
@@ -34,7 +35,9 @@ struct OpenFile {
 
 class App {
  public:
-  bool init(SDL_Window* window, ImFont* mono);
+  // imguiMenu: draw the menus with ImGui even where the system has a menu bar (tests)
+  bool init(SDL_Window* window, ImFont* mono, bool imguiMenu = false);
+  void refreshMenus() { if (nativeMenu_) nativeMenuRefresh(); }
   void frame();  // draws one frame of UI
   bool wantsQuit() const { return quit_; }
   void requestQuit();
@@ -46,6 +49,8 @@ class App {
   bool testBusy() const { return building_ || spaceRunning_; }
   void testSelect(int firstLine, int lastLine);
   void testDoc(const std::string& word) { showDoc(word); }
+  std::string testMenuDump() { return nativeMenu_ ? nativeMenuDump() : std::string(); }
+  bool testMenu(const std::string& path) { return nativeMenu_ && nativeMenuPerform(path); }
   void testFocus(const std::string& panel) { ImGui::SetWindowFocus(("###" + panel).c_str()); }
   void testDefinition(const std::string& w) {
     if (activeFile_ >= 0) gotoDefinition(w, files_[activeFile_]->path, files_[activeFile_]->editor.cursor().line);
@@ -61,6 +66,7 @@ class App {
  private:
   // panels
   void menuBar();
+  MenuBar buildMenuBar(bool native);
   void dockspace();
   void projectPanel();
   void editorsPanel();
@@ -146,6 +152,7 @@ class App {
   std::vector<std::string> recent_;
   bool showCycles_ = true;
   bool resetLayout_ = false;
+  bool nativeMenu_ = false;  // menus in the system menu bar (macOS)
 
   std::mutex dialogMutex_;
   std::deque<std::pair<std::string, std::string>> dialogResults_;

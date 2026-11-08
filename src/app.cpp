@@ -46,12 +46,16 @@ static std::string lower(std::string s) {
 // ---------------------------------------------------------------------------
 // Setup
 
-bool App::init(SDL_Window* window, ImFont* mono) {
+bool App::init(SDL_Window* window, ImFont* mono, bool imguiMenu) {
   window_ = window;
   mono_ = mono;
   if (!kb_.load(dataDir() + "/kb", &kbError_)) SDL_Log("Knowledge base: %s", kbError_.c_str());
   loadSettings();
   tools_.detect();
+  if (nativeMenuAvailable() && !imguiMenu) {
+    nativeMenu_ = true;
+    nativeMenuInstall({[this] { return buildMenuBar(true); }, [this] { requestQuit(); }, [this] { showAbout_ = true; }});
+  }
   return true;
 }
 
@@ -639,119 +643,162 @@ void App::frame() {
   closeDialogs();
 }
 
-void App::menuBar() {
-  if (!ImGui::BeginMainMenuBar()) return;
-  if (ImGui::BeginMenu(T("File"))) {
-    if (ImGui::MenuItem(T("New project..."))) showNewProject_ = true;
-    if (ImGui::MenuItem(T("Open project..."))) {
-      static const SDL_DialogFileFilter filters[] = {{"VCSIDE project", "vcsproj"}, {"All files", "*"}};
-      SDL_ShowOpenFileDialog(dialogCallback, new DialogCtx{this, "project"}, window_, filters, 2, nullptr, false);
-    }
-    if (ImGui::MenuItem(T("Open folder..."))) SDL_ShowOpenFolderDialog(dialogCallback, new DialogCtx{this, "folder"}, window_, nullptr, false);
-    if (ImGui::BeginMenu(T("Recent projects"), !recent_.empty())) {
-      for (auto r : recent_)
-        if (ImGui::MenuItem(r.c_str())) openPath(r);
-      ImGui::EndMenu();
-    }
-    ImGui::Separator();
-    if (ImGui::MenuItem(T("Save"), "Ctrl+S", false, activeFile_ >= 0)) saveFile(*files_[activeFile_]);
-    if (ImGui::MenuItem(T("Save all"), "Ctrl+Shift+S")) saveAll();
-    if (ImGui::MenuItem(T("Close file"), nullptr, false, activeFile_ >= 0)) closeRequest_ = activeFile_;
-    ImGui::Separator();
-    if (ImGui::MenuItem(T("Quit"))) requestQuit();
-    ImGui::EndMenu();
+// The menu bar as data: ImGui draws it on Windows and Linux, macOS puts it in the
+// system menu bar. Actions look up the active file when they run.
+MenuBar App::buildMenuBar(bool native) {
+  auto item = [](const std::string& label, const std::string& shortcut, std::function<void()> action,
+                 bool enabled = true, bool checked = false) {
+    MenuItem m;
+    m.label = label, m.shortcut = shortcut, m.action = std::move(action), m.enabled = enabled, m.checked = checked;
+    return m;
+  };
+  auto sub = [](const std::string& label, std::vector<MenuItem> children, bool enabled = true) {
+    MenuItem m;
+    m.label = label, m.children = std::move(children), m.enabled = enabled;
+    return m;
+  };
+  auto editor = [this]() -> TextEditor* { return activeFile_ >= 0 ? &files_[activeFile_]->editor : nullptr; };
+  auto onEditor = [editor](void (*f)(TextEditor&)) { return [editor, f] { if (TextEditor* e = editor()) f(*e); }; };
+  bool hasFile = activeFile_ >= 0;
+  MenuBar bar;
+
+  // Settings: in the application menu on macOS, a menu of its own elsewhere.
+  std::vector<MenuItem> langs;
+  for (auto& l : languages()) {
+    MenuItem m = item(l.name, "", [this, code = l.code] {
+      setLanguage(code);
+      saveSettings();
+      if (nativeMenu_) nativeMenuRefresh();
+    }, true, currentLanguage() == l.code);
+    if (l.total > 0 && l.translated < l.total) m.hint = std::to_string(100 * l.translated / l.total) + " %";
+    langs.push_back(m);
   }
-  if (ImGui::BeginMenu(T("Edit"), activeFile_ >= 0)) {
-    auto& ed = files_[activeFile_]->editor;
-    if (ImGui::MenuItem(T("Undo"), "Ctrl+Z")) ed.undo();
-    if (ImGui::MenuItem(T("Redo"), "Ctrl+Shift+Z")) ed.redo();
-    ImGui::Separator();
-    if (ImGui::MenuItem(T("Cut"), "Ctrl+X")) ed.cut();
-    if (ImGui::MenuItem(T("Copy"), "Ctrl+C")) ed.copy();
-    if (ImGui::MenuItem(T("Paste"), "Ctrl+V")) ed.paste();
-    if (ImGui::MenuItem(T("Select all"), "Ctrl+A")) ed.selectAll();
-    ImGui::Separator();
-    if (ImGui::MenuItem(T("Find..."), "Ctrl+F")) ed.openFind(false);
-    if (ImGui::MenuItem(T("Replace..."), "Ctrl+H")) ed.openFind(true);
-    if (ImGui::MenuItem(T("Find next"), "F3")) ed.findNext(false);
-    if (ImGui::MenuItem(T("Find previous"), "Shift+F3")) ed.findNext(true);
-    if (ImGui::MenuItem(T("Go to line..."), "Ctrl+G")) ed.openGoto();
-    if (ImGui::MenuItem(T("Go to definition"), "F12", false, files_[activeFile_]->asmSyntax))
-      gotoDefinition(ed.wordAtCursor(), files_[activeFile_]->path, ed.cursor().line);
-    ImGui::Separator();
-    if (ImGui::MenuItem(T("Toggle comment"), "Ctrl+/")) ed.toggleComment();
-    if (ImGui::MenuItem(T("Duplicate lines"), "Ctrl+D")) ed.duplicateLines();
-    if (ImGui::MenuItem(T("Move lines up"), "Alt+Up")) ed.moveLines(-1);
-    if (ImGui::MenuItem(T("Move lines down"), "Alt+Down")) ed.moveLines(1);
-    if (ImGui::MenuItem(T("Delete lines"), "Ctrl+Shift+K")) ed.deleteLines();
-    ImGui::EndMenu();
+  std::vector<MenuItem> settings = {item(native ? T("Tools...") : T("Tools"), native ? "Ctrl+," : "", [this] { showTools_ = true; }),
+                                    sub(T("Language"), langs)};
+  if (native) bar.push_back(sub("VCSIDE", settings));
+
+  // File
+  std::vector<MenuItem> recent;
+  for (auto& r : recent_) recent.push_back(item(r, "", [this, r] { openPath(r); }));
+  std::vector<MenuItem> file = {
+      item(T("New project..."), "", [this] { showNewProject_ = true; }),
+      item(T("Open project..."), "", [this] {
+        static const SDL_DialogFileFilter filters[] = {{"VCSIDE project", "vcsproj"}, {"All files", "*"}};
+        SDL_ShowOpenFileDialog(dialogCallback, new DialogCtx{this, "project"}, window_, filters, 2, nullptr, false);
+      }),
+      item(T("Open folder..."), "", [this] { SDL_ShowOpenFolderDialog(dialogCallback, new DialogCtx{this, "folder"}, window_, nullptr, false); }),
+      sub(T("Recent projects"), recent, !recent.empty()),
+      MenuItem::sep(),
+      item(T("Save"), "Ctrl+S", [this] { if (activeFile_ >= 0) saveFile(*files_[activeFile_]); }, hasFile),
+      item(T("Save all"), "Ctrl+Shift+S", [this] { saveAll(); }),
+      item(T("Close file"), "", [this] { if (activeFile_ >= 0) closeRequest_ = activeFile_; }, hasFile)};
+  if (!native) {
+    file.push_back(MenuItem::sep());
+    file.push_back(item(T("Quit"), "", [this] { requestQuit(); }));
   }
-  if (ImGui::BeginMenu(T("Build"))) {
-    bool p = project_.has_value() && !building_;
-    if (ImGui::MenuItem(T("Build"), "F7", false, p)) build(0);
-    if (ImGui::MenuItem(T("Build and run"), "F5", false, p)) build(1);
-    if (ImGui::MenuItem(T("Build and debug"), "F6", false, p)) build(2);
-    if (ImGui::MenuItem(T("Run"), nullptr, false, p)) run(false);
-    if (project_) {
-      ImGui::Separator();
-      bool changed = false;
-      if (ImGui::BeginMenu(T("Format"))) {
-        for (auto& f : kb_.formats())
-          if (ImGui::MenuItem(f.id.c_str(), f.name.c_str(), project_->format == f.id)) project_->format = f.id, changed = true;
-        ImGui::EndMenu();
-      }
-      if (ImGui::BeginMenu(T("TV standard"))) {
-        for (auto tv : kTvIds)
-          if (ImGui::MenuItem(tv, nullptr, project_->tv == tv)) project_->tv = tv, changed = true;
-        ImGui::EndMenu();
-      }
-      if (ImGui::BeginMenu(T("Emulator"))) {
-        for (auto e : {"stella", "gopher2600"}) {
-          Tool* t = tools_.get(e);
-          if (ImGui::MenuItem(t->name.c_str(), t->found() ? T("found") : T("not found"), project_->emulator == e))
-            project_->emulator = e, changed = true;
-        }
-        ImGui::EndMenu();
-      }
-      if (ImGui::BeginMenu(T("Illegal opcodes"))) {
-        const IllegalOpcodes vals[] = {IllegalOpcodes::Allow, IllegalOpcodes::StableOnly, IllegalOpcodes::Warn, IllegalOpcodes::Forbid};
-        const char* names[] = {N_("allow"), N_("stable only"), N_("warn"), N_("forbid")};
-        for (int i = 0; i < 4; i++)
-          if (ImGui::MenuItem(T(names[i]), nullptr, project_->illegal == vals[i])) project_->illegal = vals[i], changed = true;
-        ImGui::EndMenu();
-      }
-      if (changed) {
+  bar.push_back(sub(T("File"), file));
+
+  // Edit
+  bool asmFile = hasFile && files_[activeFile_]->asmSyntax;
+#ifdef __APPLE__
+  const char* replaceKey = "Ctrl+Shift+F";  // Cmd+H hides the app on macOS
+#else
+  const char* replaceKey = "Ctrl+H";
+#endif
+  bar.push_back(sub(T("Edit"), {
+      item(T("Undo"), "Ctrl+Z", onEditor([](TextEditor& e) { e.undo(); })),
+      item(T("Redo"), "Ctrl+Shift+Z", onEditor([](TextEditor& e) { e.redo(); })),
+      MenuItem::sep(),
+      item(T("Cut"), "Ctrl+X", onEditor([](TextEditor& e) { e.cut(); })),
+      item(T("Copy"), "Ctrl+C", onEditor([](TextEditor& e) { e.copy(); })),
+      item(T("Paste"), "Ctrl+V", onEditor([](TextEditor& e) { e.paste(); })),
+      item(T("Select all"), "Ctrl+A", onEditor([](TextEditor& e) { e.selectAll(); })),
+      MenuItem::sep(),
+      item(T("Find..."), "Ctrl+F", onEditor([](TextEditor& e) { e.openFind(false); })),
+      item(T("Replace..."), replaceKey, onEditor([](TextEditor& e) { e.openFind(true); })),
+      item(T("Find next"), "F3", onEditor([](TextEditor& e) { e.findNext(false); })),
+      item(T("Find previous"), "Shift+F3", onEditor([](TextEditor& e) { e.findNext(true); })),
+      item(T("Go to line..."), "Ctrl+G", onEditor([](TextEditor& e) { e.openGoto(); })),
+      item(T("Go to definition"), "F12", [this] {
+        if (activeFile_ < 0) return;
+        auto& f = *files_[activeFile_];
+        gotoDefinition(f.editor.wordAtCursor(), f.path, f.editor.cursor().line);
+      }, asmFile),
+      MenuItem::sep(),
+      item(T("Toggle comment"), "Ctrl+/", onEditor([](TextEditor& e) { e.toggleComment(); })),
+      item(T("Duplicate lines"), "Ctrl+D", onEditor([](TextEditor& e) { e.duplicateLines(); })),
+      item(T("Move lines up"), "Alt+Up", onEditor([](TextEditor& e) { e.moveLines(-1); })),
+      item(T("Move lines down"), "Alt+Down", onEditor([](TextEditor& e) { e.moveLines(1); })),
+      item(T("Delete lines"), "Ctrl+Shift+K", onEditor([](TextEditor& e) { e.deleteLines(); })),
+  }, hasFile));
+
+  // Build
+  bool p = project_.has_value() && !building_;
+  std::vector<MenuItem> b = {item(T("Build"), "F7", [this] { build(0); }, p),
+                             item(T("Build and run"), "F5", [this] { build(1); }, p),
+                             item(T("Build and debug"), "F6", [this] { build(2); }, p),
+                             item(T("Run"), "", [this] { run(false); }, p)};
+  if (project_) {
+    auto set = [this](std::function<void(Project&)> f) {
+      return [this, f] {
+        if (!project_) return;
+        f(*project_);
         std::string err;
         project_->save(&err);
-        for (auto& f : files_) lint(*f);
-      }
+        for (auto& file : files_) lint(*file);
+      };
+    };
+    std::vector<MenuItem> formats, tvs, emus, illegal;
+    for (auto& f : kb_.formats()) {
+      MenuItem m = item(f.id, "", set([id = f.id](Project& pr) { pr.format = id; }), true, project_->format == f.id);
+      if (!native) m.hint = f.name;  // on the right
+      else m.label = f.name.find(f.id) != std::string::npos ? f.name : f.id + " — " + f.name;
+      formats.push_back(m);
     }
-    ImGui::EndMenu();
-  }
-  if (ImGui::BeginMenu(T("View"))) {
-    if (ImGui::MenuItem(T("Show cycle column"), nullptr, &showCycles_)) {
-      for (auto& f : files_) f->editor.setGutterWidthChars(showCycles_ && f->asmSyntax ? 5 : 0);
-      saveSettings();
+    for (auto tv : kTvIds) tvs.push_back(item(tv, "", set([tv](Project& pr) { pr.tv = tv; }), true, project_->tv == tv));
+    for (auto e : {"stella", "gopher2600"}) {
+      Tool* t = tools_.get(e);
+      MenuItem m = item(t->name, "", set([e](Project& pr) { pr.emulator = e; }), true, project_->emulator == e);
+      m.hint = t->found() ? T("found") : T("not found");
+      emus.push_back(m);
     }
-    if (ImGui::MenuItem(T("Reset layout"))) resetLayout_ = true;
-    ImGui::EndMenu();
+    const IllegalOpcodes vals[] = {IllegalOpcodes::Allow, IllegalOpcodes::StableOnly, IllegalOpcodes::Warn, IllegalOpcodes::Forbid};
+    const char* names[] = {N_("allow"), N_("stable only"), N_("warn"), N_("forbid")};
+    for (int i = 0; i < 4; i++)
+      illegal.push_back(item(T(names[i]), "", set([v = vals[i]](Project& pr) { pr.illegal = v; }), true, project_->illegal == vals[i]));
+    b.push_back(MenuItem::sep());
+    b.push_back(sub(T("Format"), formats));
+    b.push_back(sub(T("TV standard"), tvs));
+    b.push_back(sub(T("Emulator"), emus));
+    b.push_back(sub(T("Illegal opcodes"), illegal));
   }
-  if (ImGui::BeginMenu(T("Settings"))) {
-    if (ImGui::MenuItem(T("Tools"))) showTools_ = true;
-    if (ImGui::BeginMenu(T("Language"))) {
-      for (auto& l : languages()) {
-        std::string hint = l.total > 0 && l.translated < l.total ? std::to_string(100 * l.translated / l.total) + " %" : "";
-        if (ImGui::MenuItem(l.name.c_str(), hint.c_str(), currentLanguage() == l.code)) setLanguage(l.code), saveSettings();
-      }
-      ImGui::EndMenu();
-    }
-    ImGui::EndMenu();
+  bar.push_back(sub(T("Build"), b));
+
+  // View
+  bar.push_back(sub(T("View"), {
+      item(T("Show cycle column"), "", [this] {
+        showCycles_ = !showCycles_;
+        for (auto& f : files_) f->editor.setGutterWidthChars(showCycles_ && f->asmSyntax ? 5 : 0);
+        saveSettings();
+      }, true, showCycles_),
+      item(T("Reset layout"), "", [this] { resetLayout_ = true; }),
+  }));
+  if (!native) bar.push_back(sub(T("Settings"), settings));
+
+  // Help
+  std::vector<MenuItem> help = {item(T("Open documentation"), "F1", [this] { focusDocs_ = true; })};
+  if (!native) help.push_back(item(T("About VCSIDE"), "", [this] { showAbout_ = true; }));
+  bar.push_back(sub(T("Help"), help));
+  return bar;
+}
+
+void App::menuBar() {
+  if (nativeMenu_) {
+    for (auto& a : nativeMenuTakeActions()) a();
+    return;
   }
-  if (ImGui::BeginMenu(T("Help"))) {
-    if (ImGui::MenuItem(T("Open documentation"), "F1")) focusDocs_ = true;
-    if (ImGui::MenuItem(T("About VCSIDE"))) showAbout_ = true;
-    ImGui::EndMenu();
-  }
+  if (!ImGui::BeginMainMenuBar()) return;
+  drawImGuiMenus(buildMenuBar(false));
   // status on the right of the menu bar
   if (!lastStatus_.empty()) {
     float w = ImGui::CalcTextSize(lastStatus_.c_str()).x;
@@ -808,6 +855,10 @@ void App::statusBar() {
                ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoSavedSettings |
                    ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoMove);
   ImGui::PopStyleVar();
+  if (nativeMenu_ && !lastStatus_.empty()) {
+    ImGui::TextDisabled("%s  |", lastStatus_.c_str());
+    ImGui::SameLine();
+  }
   if (project_) {
     ImGui::Text("%s  |  %s  %s  %s", project_->name.c_str(), project_->format.c_str(), project_->tv.c_str(),
                 project_->emulator.c_str());
