@@ -41,7 +41,7 @@ Cada herramienta se busca en este orden: ruta fijada en ajustes → `PATH` → r
 | Herramienta | Uso | Notas |
 |---|---|---|
 | DASM | ensamblador 6502 | `dasm main.asm -f3 -omain.bin -lmain.lst -smain.sym`; errores `file (line): error:` |
-| batariBasic | BASIC → DASM | trae su propio DASM y `2600basic.sh/.bat` |
+| batari Basic 1.9 | BASIC → DASM | versión oficial en WebAssembly: `2600basic.sh/.bat` y wasmtime; trae su propio DASM |
 | ELF-VCS (arm-none-eabi-gcc + vcsLib) | C para cartuchos ELF | plantilla con el Makefile de las reglas ELF del Chameleon/PlusCart |
 | Tiny-ELF PXE Basic | BASIC para ELF | — |
 | cc65/ca65 | alternativa a DASM | opcional |
@@ -79,7 +79,8 @@ Comprobado con Stella 7.0 y Gopher2600 v0.56.1, en su código fuente y probándo
 - **Gopher2600 y preferencias:** sonido, comprobación de VSYNC, estado al azar, rarezas del TIA… solo se leen del archivo `preferences` (las preferencias por línea de órdenes son solo para la emulación de comparación). Si se cambia alguna, se arranca en modo portátil: carpeta de trabajo con `portable.txt` y `Gopher2600_UserData/` con una copia de los archivos del usuario y esas claves cambiadas.
 - **Normas de TV:** NTSC, PAL, PAL60 y SECAM en los dos; NTSC50 y SECAM60 solo en Stella; PAL-M solo en Gopher2600. Si el emulador no tiene la elegida, no se pasa y lo elige él (con un aviso).
 - **Ir a dirección** (Ctrl+Shift+G): de una dirección (o etiqueta) y, si se quiere, un banco, a su línea. Tiene en cuenta los espejos de la 6507 ($F000 = $1000).
-- **Pendiente:** recibir del emulador la dirección donde se ha parado (no tienen un canal para avisar a otra aplicación); batari Basic.
+- **Pendiente:** recibir del emulador la dirección donde se ha parado (no tienen un canal para avisar a otra aplicación).
+- **batari Basic:** el listado es del `.asm` generado; cada línea se lleva a la del `.bas` por la última marca `;;line N;;` que la precede (lo que va antes de la primera y después del programa no es de ninguna línea).
 - **ELF:** los puntos de ruptura no se pasan (ni Stella ni Gopher2600 pueden parar en una línea de C); `-bs ELF` y `-mapping ELF`.
 
 ## Proyectos ELF
@@ -89,6 +90,17 @@ Comprobado con Stella 7.0 y Gopher2600 v0.56.1, en su código fuente y probándo
 - **Chameleon Cart:** `make chameleon CHAMELEON_FW=<carpeta chameleon_cart de su plantilla>`. La plantilla de Zack no se incluye porque no tiene licencia.
 - **Errores:** además de `archivo:línea:`, los mensajes sin línea (las comprobaciones, `arm-none-eabi-gcc: error:`), los de ld (`main.c:(.text+0x1c): undefined reference`, con la función; región desbordada) y los de make que no repiten otro error. Los archivos que ld da sin carpeta se buscan en el proyecto.
 - **Espacio:** VCSIDE lee el ELF directamente. De la ROM (reubicable): código, `.RamFunc`, constantes, variables con valor y a cero. Si hay `build/<rom>-chameleon.elf` más nuevo que la ROM, sus cabeceras de programa dan la flash (lo guardado desde `0x0800_0000`) y la RAM (lo que vive en `0x2000_0000`) exactas; si no, se estima con lo que ocupa el firmware de la plantilla del 2025-10-23, medido: unos 10 100 bytes de flash y 6 000 de RAM (la estimación de la Abadía queda a 41 bytes de la real). Límites del STM32G070RB: 128 KB y 36 KB.
+
+## Proyectos batari Basic
+
+- **Compilador:** batari Basic 1.9 en WebAssembly (GPL-2), que se ejecuta con wasmtime. Se busca en *Ajustes → Herramientas* o en `<config de VCSIDE>/tools/bb/2600basic.sh`. El guion se ejecuta en la carpeta del `.bas` (wasmtime solo le deja ver `.`), con la variable `bB` apuntando a su carpeta y la de wasmtime delante del `PATH`, porque una aplicación abierta desde el Finder no tiene el `PATH` de la terminal.
+- **Éxito:** el guion acaba siempre con 0, aunque falle. Antes de compilar se borran las salidas anteriores; la compilación es buena si no hay errores y aparece `main.bas.bin`.
+- **Salidas:** junto al `.bas` quedan `main.bas.bin`, `.asm`, `.list.txt` y `.symbol.txt`. VCSIDE copia la ROM a la salida del proyecto y el listado y los símbolos a `<rom>.lst` y `.sym`, los nombres que buscan Stella y VCSIDE.
+- **Errores:** los suyos (`line 4: Error: ...`) ya traen la línea del `.bas`; los de DASM en `main.bas.asm (L)` se llevan a ella con las marcas `;;line N;;`. Un salto a una etiqueta que no existe (`Unknown Mnemonic 'jmp .x'`) se explica como tal.
+- **Espacio:** de su salida, `N bytes of ROM space left [in bank K]`, con bancos de 4 KB (numerados desde 0, como en los emuladores). La RAM no se mide: sus variables son fijas.
+- **Formato:** `AUTO`, porque el tamaño y el kernel los fija el programa (`set romsize`, `set kernel`).
+- **Editor:** `data/kb/batari-basic.json` (CC BY-SA) con las palabras del compilador (nombres sacados de `keywords.c` y `statements.c`) y resúmenes propios en inglés y español. Las palabras con `N` y un `range` se expanden (`joyNup` → `joy0up` ... `joy3up`). Las etiquetas son lo que empieza en la columna 0.
+- **Plantilla** (`data/templates/bb/main.bas`, CC0): un cuadrado que se mueve con el joystick dentro de un playfield con paredes.
 
 ## Avisos de espacio
 
@@ -109,7 +121,6 @@ Tras cada compilación con DASM, el IDE mide cuánto espacio queda (`src/space.*
 - **Dónde se ve:** el panel *Espacio* (una barra por banco y por RAM), el resumen en la barra de estado y los avisos en *Problemas*, con su línea cuando se puede.
 - **Pendiente:**
   - formatos sin datos de espacio (3E, DPC, DPC+, CDFJ…), que se miden como bancos de 4 KB;
-  - batari Basic;
   - avisar de las lecturas del puerto de escritura del Superchip.
 
 ## Fases

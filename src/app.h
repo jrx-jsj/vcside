@@ -14,6 +14,7 @@
 #include <string>
 #include <vector>
 
+#include "basic_syntax.h"
 #include "builder_parse.h"
 #include "debugmap.h"
 #include "editor/text_editor.h"
@@ -110,6 +111,8 @@ class App {
 
   // editor hooks
   EditorHooks asmHooks();
+  EditorHooks basicHooks();
+  std::string registerHelp(const Register& r) const;
   std::vector<Token> tokenizeAsm(const std::string& line) const;
   std::optional<int> lookupSymbol(const std::string& name) const;
 
@@ -156,6 +159,8 @@ class App {
   std::optional<SpaceReport> space_;
   std::optional<ElfSpace> elfSpace_;  // ELF projects
   void measureElf();
+  bool finishBasicBuild();
+  void measureBasic(long romSize);
   std::string spaceNote_;      // why there is no report (ELF, custom build...)
 
   // docs

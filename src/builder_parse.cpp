@@ -2,6 +2,9 @@
 // Copyright (C) 2026 VCSIDE contributors
 #include "builder_parse.h"
 
+#include "i18n.h"
+
+#include <algorithm>
 #include <regex>
 #include <sstream>
 
@@ -76,6 +79,56 @@ std::vector<Diagnostic> parseGccOutput(const std::string& output) {
     }
     function.clear();
   }
+  return out;
+}
+
+std::vector<int> basicLineMap(const std::string& asmText) {
+  static const std::regex mark(R"(;;line (\d+);;)");
+  std::vector<int> map;
+  std::istringstream in(asmText);
+  std::string line;
+  int current = 0;
+  while (std::getline(in, line)) {
+    std::smatch m;
+    if (line.find(";;line ") != std::string::npos && std::regex_search(line, m, mark)) current = std::stoi(m[1]);
+    // the includes and the footer after the program are not lines of the .bas
+    else if (line.rfind(" if ECHOFIRST", 0) == 0 || line.rfind("; feel free to modify", 0) == 0) current = 0;
+    map.push_back(current);
+  }
+  return map;
+}
+
+std::vector<Diagnostic> parseBasicOutput(const std::string& output, const std::string& basFile, const std::string& asmText) {
+  std::vector<Diagnostic> out;
+  static const std::regex own(R"(^line (\d+): ?(Error|Warning|error|warning):? *(.*)$)");
+  static const std::regex jumpTo(R"(^Unknown Mnemonic '(?:jmp|jsr) \.(\w+)'\.?$)");
+  std::string asmName = basFile.substr(basFile.find_last_of("/\\") + 1) + ".asm";
+  std::vector<int> map;
+  bool mapped = false;
+  std::istringstream in(output);
+  std::string line;
+  while (std::getline(in, line)) {
+    if (!line.empty() && line.back() == '\r') line.pop_back();
+    std::smatch m;
+    if (std::regex_match(line, m, own)) out.push_back({severityOf(m[2]), basFile, std::stoi(m[1]), m[3]});
+  }
+  for (auto d : parseDasmOutput(output)) {
+    std::string name = d.file.substr(d.file.find_last_of("/\\") + 1);
+    if (name == asmName && d.line > 0) {
+      if (!mapped) map = basicLineMap(asmText), mapped = true;
+      int bas = d.line <= (int)map.size() ? map[d.line - 1] : 0;
+      if (bas > 0) d.file = basFile, d.line = bas;
+      std::smatch m;
+      if (std::regex_match(d.message, m, jumpTo)) d.message = F("No label called {0} (goto, gosub or then).", {m[1].str()});
+    }
+    out.push_back(d);
+  }
+  // "Fatal assembly error: Source is not resolvable." only repeats the errors above it
+  if (out.size() > 1)
+    out.erase(std::remove_if(out.begin(), out.end(), [](auto& d) { return d.file.empty() && d.message.rfind("Fatal assembly error", 0) == 0; }),
+              out.end());
+  if (out.empty() && output.find("Compilation failed.") != std::string::npos)
+    out.push_back({Diagnostic::Error, basFile, 0, T("batari Basic could not compile the program (see Output).")});
   return out;
 }
 

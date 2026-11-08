@@ -229,6 +229,45 @@ bool KnowledgeBase::load(const std::string& dir, std::string* error) {
         emulators_.push_back(info);
       }
   }
+  json b;
+  if (readJson(dir + "/batari-basic.json", b, error)) {
+    readSources(b, sources_);
+    if (b.contains("keywords") && b["keywords"].is_array())
+      for (auto& k : b["keywords"]) {
+        BasicKeyword w;
+        w.word = str(k, "word");
+        w.kind = str(k, "kind");
+        w.syntax = str(k, "syntax");
+        w.summary = str(k, "summary");
+        w.sources = strs(k, "sources");
+        if (k.contains("i18n") && k["i18n"].is_object())
+          for (auto& [lang, t] : k["i18n"].items())
+            if (t.is_string()) w.i18n[lang] = t.get<std::string>();
+        // "joyNup" with "range": [0, 3] is joy0up ... joy3up
+        auto n = w.word.find('N');
+        if (n != std::string::npos && k.contains("range") && k["range"].is_array() && k["range"].size() == 2) {
+          for (int i = k["range"][0].get<int>(); i <= k["range"][1].get<int>(); i++) {
+            BasicKeyword one = w;
+            // N after a lowercase letter (joyNup) or standing alone ("joystick N")
+            auto put = [&](std::string& t) {
+              auto alnum = [&](size_t at) { return at < t.size() && std::isalnum((unsigned char)t[at]); };
+              for (size_t at = 0; (at = t.find('N', at)) != std::string::npos; at++) {
+                bool after = at > 0 && std::islower((unsigned char)t[at - 1]);
+                bool alone = (at == 0 || !alnum(at - 1)) && !alnum(at + 1);
+                if (after || alone) t.replace(at, 1, std::to_string(i));
+              }
+            };
+            put(one.word);
+            put(one.syntax);
+            put(one.summary);
+            for (auto& [lang, t] : one.i18n) put(t);
+            basic_[one.word] = one;
+          }
+        } else {
+          basic_[w.word] = w;
+        }
+      }
+  }
   return ok && (!error || error->empty());
 }
 
@@ -264,6 +303,22 @@ const std::string& EmuOption::labelText() const {
 const std::string& EmuOption::descriptionText() const {
   auto* t = translation(*this);
   return t && !t->second.empty() ? t->second : description;
+}
+
+const std::string& BasicKeyword::summaryText() const {
+  std::string lang = currentLanguage();
+  for (;;) {
+    auto it = i18n.find(lang);
+    if (it != i18n.end() && !it->second.empty()) return it->second;
+    size_t dash = lang.find_last_of("-_");
+    if (dash == std::string::npos) return summary;
+    lang.resize(dash);
+  }
+}
+
+const BasicKeyword* KnowledgeBase::basic(const std::string& word) const {
+  auto it = basic_.find(word);
+  return it == basic_.end() ? nullptr : &it->second;
 }
 
 const Source* KnowledgeBase::source(const std::string& id) const {

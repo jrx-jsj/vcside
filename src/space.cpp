@@ -284,4 +284,42 @@ SpaceReport analyzeSpace(const std::vector<Range>& rom, long romFileSize, const 
   return r;
 }
 
+SpaceReport parseBasicSpace(const std::string& output, long romFileSize, const SpaceOptions& opt) {
+  SpaceReport r;
+  r.romFileSize = romFileSize;
+  static const std::regex re(R"(^\s*(-?\d+) bytes of ROM space left(?: in bank (\d+))?\s*$)");
+  std::map<int, long> left;  // bank (from 0) -> bytes left
+  long single = 0;
+  bool hasSingle = false;
+  std::istringstream in(output);
+  for (std::string line; std::getline(in, line);) {
+    if (!line.empty() && line.back() == '\r') line.pop_back();
+    std::smatch m;
+    if (!std::regex_match(line, m, re)) continue;
+    if (m[2].matched) left[std::stoi(m[2]) - 1] = std::stol(m[1]);
+    else single = std::stol(m[1]), hasSingle = true;  // also printed after the banks: the last one again
+  }
+  if (left.empty() && hasSingle) left[0] = single;
+  long bankSize = left.size() > 1 ? 4096 : (romFileSize > 0 && romFileSize < 4096 ? romFileSize : 4096);
+  for (auto& [bank, free] : left) {
+    SpaceReport::Area a;
+    a.name = left.size() > 1 ? F("Bank {0}", {std::to_string(bank)}) : T("ROM");
+    a.size = bankSize;
+    a.used = bankSize - free;
+    int pct = percent(a.used, a.size);
+    if (free < 0)
+      r.diagnostics.push_back({Diagnostic::Error, "", 0, F("{0} does not fit: {1} bytes too many.", {a.name, std::to_string(-free)})});
+    else if (free == 0)
+      r.diagnostics.push_back({Diagnostic::Warning, "", 0, F("{0} is full ({1} bytes).", {a.name, std::to_string(a.size)})});
+    else if (pct >= opt.warnPercent)
+      r.diagnostics.push_back({Diagnostic::Warning, "", 0, F("{0} is {1} % full: {2} bytes free.", {a.name, std::to_string(pct), std::to_string(free)})});
+    r.banks.push_back(a);
+  }
+  r.ram.name = T("2600 RAM");
+  r.ram.size = 128;
+  r.ram.measured = false;
+  r.ram.note = T("Not measured: batari Basic's variables are fixed (a-z and those its kernel reserves).");
+  return r;
+}
+
 }  // namespace vcs

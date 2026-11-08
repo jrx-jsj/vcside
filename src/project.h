@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include "process.h"
 #include "toolchain.h"
 
 namespace vcs {
@@ -41,8 +42,13 @@ struct Project {
 
   // DASM run that writes the emitted blocks (-f2) to <stem>.ras, for the space report.
   std::vector<std::string> rasArgs(Toolchain& tc) const;
-  // Command lines; empty vector + error when a tool is missing.
-  std::vector<std::string> buildArgs(Toolchain& tc, std::string* error) const;
+  // Command lines; empty vector + error when a tool is missing. workDir and env, when
+  // given, receive where to run it and the variables it needs (project folder, none).
+  std::vector<std::string> buildArgs(Toolchain& tc, std::string* error, std::string* workDir = nullptr,
+                                     EnvVars* env = nullptr) const;
+  // batari Basic writes <main>.bin, .asm, .list.txt (.lst before 1.9) and .symbol.txt (.sym)
+  // next to the source; these are the paths.
+  std::string basicOutput(const std::string& suffix) const { return abs(main) + suffix; }
   std::vector<std::string> runArgs(Toolchain& tc, bool debug, std::string* error) const;
 
   // Creates a new project folder with a template for the language.

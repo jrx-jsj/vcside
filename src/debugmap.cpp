@@ -95,6 +95,22 @@ void AddressMap::load(const std::string& listing, const SymbolLookup& lookup, lo
   banks_ = std::max(1, (int)((hi - base_ + bankSize_ - 1) / bankSize_));
 }
 
+void AddressMap::remap(const std::string& file, const std::vector<int>& lineMap, const std::string& toFile) {
+  std::vector<ListedLine> kept;
+  for (auto& l : lines_) {
+    if (l.file != file) {
+      kept.push_back(l);
+      continue;
+    }
+    int to = l.line > 0 && l.line <= (int)lineMap.size() ? lineMap[l.line - 1] : 0;
+    if (to <= 0) continue;
+    l.file = toFile;
+    l.line = to;
+    kept.push_back(l);
+  }
+  lines_ = std::move(kept);
+}
+
 void AddressMap::resolveFiles(const std::function<std::string(const std::string&)>& resolve) {
   std::map<std::string, std::string> cache;
   for (auto& l : lines_) {

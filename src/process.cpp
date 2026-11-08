@@ -49,14 +49,14 @@ Job::~Job() {
   if (thread_.joinable()) thread_.join();
 }
 
-bool Job::start(const std::vector<std::string>& args, const std::string& workDir) {
+bool Job::start(const std::vector<std::string>& args, const std::string& workDir, const EnvVars& env) {
   if (running_) return false;
   if (thread_.joinable()) thread_.join();
   {
     std::lock_guard<std::mutex> lock(mutex_);
     output_ = "> " + quoteArgs(args) + "\n";
   }
-  SDL_Process* p = create(args, workDir, true);
+  SDL_Process* p = create(args, workDir, true, env);
   started_ = true;
   if (!p) {
     std::lock_guard<std::mutex> lock(mutex_);

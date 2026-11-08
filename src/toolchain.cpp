@@ -24,6 +24,8 @@ Toolchain::Toolchain() {
        N_("ELF cartridges need a recent build (nightly from 2026-11 or later).")},
       {"bb", "batari Basic", N_("compiler"), "", "", "https://github.com/batari-Basic/batari-Basic/releases",
        N_("Unpack it and point VCSIDE at 2600basic.sh (2600bas.bat on Windows); it brings its own DASM.")},
+      {"wasmtime", "wasmtime", N_("runtime"), "", "", "https://wasmtime.dev/",
+       N_("batari Basic 1.9 runs its compiler on it (WebAssembly). macOS: brew install wasmtime; Windows: winget install BytecodeAlliance.Wasmtime.Portable.")},
       {"arm-gcc", "Arm GNU toolchain (ELF-VCS)", N_("compiler"), "", "",
        "https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads",
        N_("arm-none-eabi-gcc, for C games on ELF cartridges with vcsLib.")},
@@ -86,6 +88,17 @@ std::vector<std::string> Toolchain::candidates(const Tool& t) const {
     add(own + "/gopher2600/gopher2600_linux_amd64");
 #endif
     add(own + "/gopher2600/gopher2600");
+  } else if (t.id == "wasmtime") {
+    add(findInPath("wasmtime"));
+#ifdef _WIN32
+    std::string up = std::getenv("USERPROFILE") ? std::getenv("USERPROFILE") : "";
+    add(up + "\\.wasmtime\\bin\\wasmtime.exe");
+    add(lad + "\\Microsoft\\WinGet\\Links\\wasmtime.exe");
+#else
+    add(h + "/.wasmtime/bin/wasmtime");  // its install script
+    add("/opt/homebrew/bin/wasmtime");
+    add("/usr/local/bin/wasmtime");
+#endif
   } else if (t.id == "bb") {
 #ifdef _WIN32
     add(findInPath("2600bas.bat"));

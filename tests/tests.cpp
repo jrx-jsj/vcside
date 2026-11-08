@@ -10,6 +10,7 @@
 #include "kb.h"
 #include "space.h"
 #include "debugmap.h"
+#include "basic_syntax.h"
 #include "elf_space.h"
 #include "emulator_launch.h"
 #include "i18n.h"
@@ -577,7 +578,110 @@ static void testElfSpace() {
   std::string mtext((std::istreambuf_iterator<char>(mk)), {});
   CHECK(mtext.find("NAME  = rainbow") != std::string::npos && mtext.find("{{") == std::string::npos);
   CHECK(!Project::create((dir / "b").string(), "two words", Language::ElfC, "NTSC", nullptr, &err));
+  CHECK(Project::create((dir / "bb").string(), "Square Run", Language::BatariBasic, "NTSC", &p, &err));
+  CHECK(p.main == "main.bas" && p.output == "main.bas.bin" && p.format == "AUTO" && p.buildCommand.empty());
+  std::ifstream bas(dir / "bb" / "main.bas");
+  std::string btext((std::istreambuf_iterator<char>(bas)), {});
+  CHECK(btext.find("rem Square Run - batari Basic") != std::string::npos && btext.find("drawscreen") != std::string::npos);
   fs::remove_all(dir, ec);
+}
+
+static void testBasicSyntax(const KnowledgeBase& kb) {
+  // keywords from data/kb/batari-basic.json, ranges expanded
+  CHECK(kb.basic("drawscreen") && kb.basic("drawscreen")->kind == "statement");
+  CHECK(kb.basic("joy0up") && kb.basic("joy3fire") && !kb.basic("joy4up"));
+  CHECK(kb.basic("joy1left") && kb.basic("joy1left")->summary.find("joystick 1") != std::string::npos);
+  CHECK(kb.basic("player2:") && kb.basic("player0color:") && kb.basic("temp7") && !kb.basic("temp8"));
+  CHECK(kb.basic("player1x")->syntax == "player1x = 50");
+  CHECK(!kb.basic("Drawscreen"));  // the compiler wants lowercase
+  for (auto& [w, b] : kb.basicKeywords()) {
+    CHECK(!b.summary.empty() && !b.syntax.empty() && w.find('N') == std::string::npos);
+    if (b.summary.empty()) std::fprintf(stderr, "  %s\n", w.c_str());
+  }
+  CHECK(basicLabelOf("main") == "main" && basicLabelOf("10 goto 10") == "10" && basicLabelOf(" drawscreen").empty());
+  CHECK(basicLabelOf("player0:").empty() && basicLabelOf("").empty());
+
+  auto kinds = [&](const std::string& l) {
+    std::vector<std::pair<std::string, TokenKind>> out;
+    for (auto& t : tokenizeBasic(kb, l)) out.push_back({l.substr(t.start, t.end - t.start), t.kind});
+    return out;
+  };
+  using K = TokenKind;
+  auto v = kinds("loop if joy0fire then goto shoot");
+  CHECK(v.size() == 6 && v[0].second == K::Label && v[1].second == K::Mnemonic && v[2].second == K::Mnemonic &&
+        v[5].first == "shoot" && v[5].second == K::Label);
+  v = kinds(" if a > 3 then a = 0 : COLUBK = $84 rem blue");
+  CHECK(v.size() == 9 && v[1].second == K::Symbol && v[2].second == K::Number && v[4].first == "a" && v[4].second == K::Symbol &&
+        v[6].second == K::Register && v[7].second == K::Number && v[8].first == "rem blue" && v[8].second == K::Comment);
+  v = kinds(" if switchreset then reset_game");
+  CHECK(v.back().first == "reset_game" && v.back().second == K::Label);
+  v = kinds(" on level goto l0 l1 l2");
+  CHECK(v.size() == 6 && v[3].second == K::Label && v[5].second == K::Label);
+  v = kinds(" player0:");
+  CHECK(v.size() == 1 && v[0].first == "player0:" && v[0].second == K::Directive);
+  v = kinds(" player0x = player0x + 1");
+  CHECK(v.size() == 3 && v[0].second == K::Register && v[1].second == K::Register);
+  v = kinds(" set romsize 8kSC");
+  CHECK(v.size() == 3 && v[0].second == K::Directive && v[1].second == K::Directive);
+}
+
+static void testBasic() {
+  // batari Basic 1.9: its own error, then DASM's in the generated .asm
+  auto d = parseBasicOutput("Starting build of main.bas\nbatari Basic v1.9 (c)2025\nline 4: Error: Unknown keyword: frobnicate\n\nCompilation failed.\n",
+                            "main.bas", "");
+  CHECK(d.size() == 1 && d[0].severity == Diagnostic::Error && d[0].file == "main.bas" && d[0].line == 4 &&
+        d[0].message == "Unknown keyword: frobnicate");
+  const std::string asmText =
+      "; header\n"                       // 1
+      " jsr drawscreen\n"                // 2
+      ".L03 ;;line 5;;  a = a + 1\n"     // 3
+      "\tLDA a\n"                        // 4
+      ".L04 ;;line 6;;  goto nowhere\n"  // 5
+      "\n"                                // 6
+      " jmp .nowhere\n"                   // 7
+      " if ECHOFIRST\n"                   // 8
+      " echo \"x\"\n";                    // 9
+  auto map = basicLineMap(asmText);
+  CHECK(map.size() == 9 && map[0] == 0 && map[2] == 5 && map[3] == 5 && map[6] == 6 && map[7] == 0 && map[8] == 0);
+  d = parseBasicOutput("2600 Basic compilation complete.\n\n      2859 bytes of ROM space left\n\n"
+                       "main.bas.asm (7): error: Unknown Mnemonic 'jmp .nowhere'.\n\nFatal assembly error: Source is not resolvable.\n",
+                       "main.bas", asmText);
+  CHECK(d.size() == 1 && d[0].file == "main.bas" && d[0].line == 6 && d[0].message.find("nowhere") != std::string::npos &&
+        d[0].message.find("Mnemonic") == std::string::npos);
+  d = parseBasicOutput("main.bas.asm (9): error: something\n", "main.bas", asmText);  // in the includes: stays in the .asm
+  CHECK(d.size() == 1 && d[0].file == "main.bas.asm" && d[0].line == 9);
+  CHECK(parseBasicOutput("2600 Basic compilation complete.\n      148 bytes of ROM space left\n", "main.bas", "").empty());
+
+  // space: one bank, or 4 KB banks counted from 1
+  SpaceOptions opt;
+  auto s = parseBasicSpace("      148 bytes of ROM space left\n", 4096, opt);
+  CHECK(s.banks.size() == 1 && s.banks[0].used == 4096 - 148 && s.banks[0].size == 4096 && !s.ram.measured);
+  CHECK(s.diagnostics.size() == 1 && s.diagnostics[0].severity == Diagnostic::Warning);
+  s = parseBasicSpace("   1000 bytes of ROM space left\n", 2048, opt);
+  CHECK(s.banks.size() == 1 && s.banks[0].size == 2048 && s.banks[0].used == 1048 && s.diagnostics.empty());
+  s = parseBasicSpace("      3251 bytes of ROM space left in bank 1\r\n      -20 bytes of ROM space left in bank 2\n"
+                      "      2276 bytes of ROM space left\n", 8192, opt);
+  CHECK(s.banks.size() == 2 && s.banks[0].name == "Bank 0" && s.banks[0].used == 4096 - 3251 && s.banks[1].used == 4116);
+  CHECK(s.diagnostics.size() == 1 && s.diagnostics[0].severity == Diagnostic::Error);
+  CHECK(parseBasicSpace("nothing\n", 4096, opt).banks.empty());
+
+  // breakpoints: the listing of the .asm taken to the lines of the .bas
+  const std::string lst =
+      "------- FILE main.bas.asm LEVEL 1 PASS 3\n"
+      "      2  f000\t\t       20 00 f8\t      jsr\tdrawscreen\n"
+      "      3  f003\t\t\t\t   .L03\t\t;;line 5;;  a = a + 1\n"
+      "      4  f003\t\t       a5 d6\t      LDA\ta\n"
+      "      7  f005\t\t       4c 00 f0\t      jmp\t.L03\n";
+  AddressMap am;
+  am.load(lst, [](const std::string&) { return std::optional<int>(); }, 4096);
+  am.remap("main.bas.asm", map, "/p/main.bas");
+  auto any = [](const ListedLine&) { return true; };
+  auto bp = am.breakpointAt("/p/main.bas", 5, any);
+  CHECK(bp && bp->cpu == 0xF003 && bp->at->line == 5);
+  bp = am.breakpointAt("/p/main.bas", 6, any);
+  CHECK(bp && bp->cpu == 0xF005);
+  CHECK(!am.breakpointAt("/p/main.bas", 7, any));
+  CHECK(am.linesAt(0xF000).empty());  // the header has no line of the .bas
 }
 
 int main() {
@@ -595,6 +699,8 @@ int main() {
   loadLanguages(VCSIDE_SOURCE_DATA "/i18n");
   testEmulatorOptions(kb);
   testElfSpace();
+  testBasic();
+  testBasicSyntax(kb);
   std::printf("%d checks, %d failures\n", checks, failures);
   return failures ? 1 : 0;
 }

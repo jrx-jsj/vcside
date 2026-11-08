@@ -16,7 +16,8 @@ namespace vcs {
 class Job {
  public:
   ~Job();
-  bool start(const std::vector<std::string>& args, const std::string& workDir);
+  bool start(const std::vector<std::string>& args, const std::string& workDir,
+             const std::vector<std::pair<std::string, std::string>>& env = {});
   bool running() const { return running_; }
   bool finished() const { return started_ && !running_; }
   int exitCode() const { return exitCode_; }

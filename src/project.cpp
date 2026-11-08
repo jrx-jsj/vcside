@@ -3,6 +3,7 @@
 #include "project.h"
 
 #include <filesystem>
+#include <cstdlib>
 #include <fstream>
 #include <nlohmann/json.hpp>
 #include <sstream>
@@ -141,8 +142,10 @@ std::vector<std::string> Project::rasArgs(Toolchain& tc) const {
   return a;
 }
 
-std::vector<std::string> Project::buildArgs(Toolchain& tc, std::string* error) const {
+std::vector<std::string> Project::buildArgs(Toolchain& tc, std::string* error, std::string* workDir,
+                                            EnvVars* env) const {
   std::error_code ec;
+  if (workDir) *workDir = dir;
   fs::create_directories(fs::path(outputPath()).parent_path(), ec);
   if (!buildCommand.empty()) return splitCommand(buildCommand);
   switch (language) {
@@ -163,7 +166,27 @@ std::vector<std::string> Project::buildArgs(Toolchain& tc, std::string* error) c
         if (error) *error = T("batari Basic not found. Set the path to 2600basic.sh / 2600bas.bat in Settings > Tools.");
         return {};
       }
-      return {t->path, abs(main)};
+      // Its script runs in the source's folder (1.9 only lets wasmtime see "."), takes the
+      // file name, and finds its own files through the bB variable. wasmtime has to be in
+      // PATH: an app started from the desktop may not have the shell's PATH.
+      fs::path src = abs(main);
+      if (workDir) *workDir = src.parent_path().string();
+      if (env) {
+        env->push_back({"bB", fs::path(t->path).parent_path().string()});
+#ifdef _WIN32
+        const char sep = ';';
+#else
+        const char sep = ':';
+#endif
+        std::string path = std::getenv("PATH") ? std::getenv("PATH") : "";
+        if (Tool* w = tc.get("wasmtime"); w && w->found()) path = fs::path(w->path).parent_path().string() + sep + path;
+        env->push_back({"PATH", path});
+      }
+#ifdef _WIN32
+      return {"cmd.exe", "/c", t->path, src.filename().string()};
+#else
+      return {"/bin/sh", t->path, src.filename().string()};
+#endif
     }
     case Language::ElfC:
       if (error) *error = T("ELF-VCS projects build with their Makefile: set \"build_command\" (e.g. \"make\") in the project.");
@@ -267,10 +290,16 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
   } else if (lang == Language::BatariBasic) {
     p.main = "main.bas";
     p.output = "main.bas.bin";
+    p.format = "AUTO";  // the game says it (set romsize, set kernel); Stella and Gopher2600 detect it
+    fs::path tpl = fs::path(dataDir()) / "templates" / "bb" / "main.bas";
+    std::string text = readFile(tpl.string());
+    if (text.empty()) {
+      if (error) *error = F("Template not found in {0}", {tpl.string()});
+      return false;
+    }
+    replaceAll(text, "{{NAME}}", projName);
     fs::path mainFile = fs::path(p.dir) / "main.bas";
-    if (!fs::exists(mainFile))
-      std::ofstream(mainFile) << "  rem " << projName << " - made with VCSIDE\n"
-                              << "  COLUBK = $84\nmain\n  drawscreen\n  goto main\n";
+    if (!fs::exists(mainFile)) std::ofstream(mainFile, std::ios::binary) << text;
   } else if (lang == Language::ElfC) {
     if (projName.find_first_of(" \t") != std::string::npos) {
       if (error) *error = T("ELF projects build with make, which does not take spaces in file names: choose a name without spaces.");

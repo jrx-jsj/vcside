@@ -80,6 +80,15 @@ struct Source {
 };
 
 // A word the editor can complete or explain.
+// A word of batari Basic (data/kb/batari-basic.json): statement, control, directive,
+// block, function, variable or comment.
+struct BasicKeyword {
+  std::string word, kind, syntax, summary;
+  std::map<std::string, std::string> i18n;  // language -> summary
+  std::vector<std::string> sources;
+  const std::string& summaryText() const;
+};
+
 struct KbEntry {
   enum Kind { Mnemonic, Register, Directive, Symbol } kind;
   std::string word, summary;
@@ -98,6 +107,9 @@ class KnowledgeBase {
   const TvStandard* tv(const std::string& id) const;
   const Source* source(const std::string& id) const;
   const EmulatorInfo* emulator(const std::string& id) const;
+  // batari Basic word (case-sensitive, as the compiler); "player0:" with its colon.
+  const BasicKeyword* basic(const std::string& word) const;
+  const std::map<std::string, BasicKeyword>& basicKeywords() const { return basic_; }
 
   const std::map<std::string, Instruction>& instructions() const { return instructions_; }
   const std::vector<Register>& registers() const { return registers_; }
@@ -119,6 +131,7 @@ class KnowledgeBase {
   std::vector<EmulatorInfo> emulators_;
   std::vector<std::string> cpuNotes_, tiaNotes_;
   std::map<std::string, Source> sources_;
+  std::map<std::string, BasicKeyword> basic_;
 };
 
 std::string upper(std::string s);

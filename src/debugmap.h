@@ -35,6 +35,9 @@ class AddressMap {
  public:
   // bankSize: from the cartridge format (4096 by default)
   void load(const std::string& listing, const SymbolLookup& lookup, long bankSize);
+  // Lines listed in file are given to toFile at lineMap[line - 1] (0: they belong to no
+  // line of it and are dropped). For generated sources such as batari Basic's .asm.
+  void remap(const std::string& file, const std::vector<int>& lineMap, const std::string& toFile);
   void resolveFiles(const std::function<std::string(const std::string&)>& resolve);
   bool empty() const { return lines_.empty(); }
   int banks() const { return banks_; }

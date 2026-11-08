@@ -178,8 +178,8 @@ OpenFile* App::openFile(const std::string& pathIn, int line) {
   bool cLike = ext == ".c" || ext == ".cpp" || ext == ".hpp" || (ext == ".h" && project_ && project_->language == Language::ElfC);
   if (cLike) f->asmSyntax = false;
   f->editor.setCommentPrefix(cLike ? "//" : ext == ".bas" ? "rem" : ";");
-  if (f->asmSyntax) {
-    EditorHooks h = asmHooks();
+  if (f->asmSyntax || ext == ".bas") {
+    EditorHooks h = ext == ".bas" ? basicHooks() : asmHooks();
     OpenFile* self = f.get();
     h.gotoDefinition = [this, self](const std::string& w) { return gotoDefinition(w, self->path, self->editor.cursor().line); };
     f->editor.setHooks(h);
@@ -219,8 +219,9 @@ void App::build(int thenRun) {
     return;
   }
   saveAll();
-  std::string err;
-  auto args = project_->buildArgs(tools_, &err);
+  std::string err, workDir;
+  EnvVars env;
+  auto args = project_->buildArgs(tools_, &err, &workDir, &env);
   if (args.empty()) {
     output_ += err + "\n";
     lastStatus_ = err;
@@ -235,7 +236,13 @@ void App::build(int thenRun) {
   building_ = true;
   runAfterBuild_ = thenRun;
   lastStatus_ = T("Building...");
-  job_.start(args, project_->dir);
+  if (project_->language == Language::BatariBasic && project_->buildCommand.empty()) {
+    // its script ends with 0 even when it fails: whatever is left from the last build must go
+    std::error_code ec;
+    for (auto suffix : {".bin", ".asm", ".list.txt", ".symbol.txt", ".lst", ".sym"})
+      fs::remove(project_->basicOutput(suffix), ec);
+  }
+  job_.start(args, workDir, env);
 }
 
 void App::pollBuild() {
@@ -245,12 +252,16 @@ void App::pollBuild() {
   building_ = false;
   output_ = job_.output();
   bool gcc = project_ && (project_->language == Language::ElfC || !project_->buildCommand.empty());
-  diagnostics_ = gcc ? parseGccOutput(output_) : parseDasmOutput(output_);
+  bool basic = project_ && project_->language == Language::BatariBasic && project_->buildCommand.empty();
+  if (basic) diagnostics_ = parseBasicOutput(output_, project_->main, readFile(project_->basicOutput(".asm")));
+  else diagnostics_ = gcc ? parseGccOutput(output_) : parseDasmOutput(output_);
   if (gcc) {
     auto d = parseDasmOutput(output_);
     diagnostics_.insert(diagnostics_.end(), d.begin(), d.end());
   }
   bool ok = job_.exitCode() == 0;
+  // batari Basic's script ends with 0 even when it fails: the ROM and no errors tell
+  if (basic) ok = ok && finishBasicBuild();
   std::string buf = F(ok ? "Build succeeded (exit {0})" : "Build failed (exit {0})", {std::to_string(job_.exitCode())});
   output_ += "\n" + buf + "\n";
   lastStatus_ = buf;
@@ -261,11 +272,53 @@ void App::pollBuild() {
     if (!ec) output_ += F("{0}: {1} bytes", {project_->outputPath(), std::to_string(size)}) + "\n";
     loadSymbols();
     if (project_->language == Language::ElfC) measureElf();
+    else if (basic) measureBasic(ec ? 0 : (long)size);
     else startSpace();
   }
   for (auto& f : files_) lint(*f);
   if (ok && runAfterBuild_) run(runAfterBuild_ == 2);
   runAfterBuild_ = 0;
+}
+
+// batari Basic leaves <main>.bas.bin, .list.txt and .symbol.txt next to the source: the
+// ROM goes where the project says and the listing and symbols get the names Stella and
+// VCSIDE look for (<rom stem>.lst and .sym).
+bool App::finishBasicBuild() {
+  std::error_code ec;
+  std::string bin = project_->basicOutput(".bin");
+  bool errors = std::any_of(diagnostics_.begin(), diagnostics_.end(), [](auto& d) { return d.severity == Diagnostic::Error; });
+  if (errors || !fs::exists(bin, ec)) {
+    if (!errors) diagnostics_.push_back({Diagnostic::Error, project_->main, 0, T("batari Basic did not write the ROM (see Output).")});
+    return false;
+  }
+  auto copy = [&](const std::string& from, const std::string& to) {
+    if (fs::equivalent(from, to, ec)) return true;
+    fs::create_directories(fs::path(to).parent_path(), ec);
+    return fs::copy_file(from, to, fs::copy_options::overwrite_existing, ec);
+  };
+  if (!copy(bin, project_->outputPath())) {
+    output_ += F("Cannot copy {0} to {1}: {2}", {bin, project_->outputPath(), ec.message()}) + "\n";
+    return false;
+  }
+  copy(project_->basicOutput(".list.txt"), project_->stem() + ".lst");
+  copy(project_->basicOutput(".symbol.txt"), project_->stem() + ".sym");
+  return true;
+}
+
+void App::measureBasic(long romSize) {
+  SpaceOptions opt;
+  opt.warnPercent = project_->spaceWarnPercent;
+  space_ = parseBasicSpace(output_, romSize, opt);
+  if (space_->banks.empty()) {
+    space_.reset();
+    spaceNote_ = T("batari Basic did not say how much ROM is left.");
+    return;
+  }
+  for (auto d : space_->diagnostics) {
+    d.message = T("Space") + std::string(": ") + d.message;
+    diagnostics_.push_back(d);
+  }
+  output_ += space_->summary() + "\n";
 }
 
 // Space report: DASM again with -f2 (exact blocks of emitted bytes), then the listing for RAM.
@@ -378,10 +431,15 @@ void App::loadSymbols() {
   if (fs::exists(sym, ec)) symbols_ = parseDasmSymbols(readFile(sym));
   addresses_ = AddressMap();
   std::string lst = project_->stem() + ".lst";
-  if (project_->language == Language::Dasm && fs::exists(lst, ec)) {
+  bool basic = project_->language == Language::BatariBasic;
+  if ((project_->language == Language::Dasm || basic) && fs::exists(lst, ec)) {
     long bank = 4096;
     if (const CartFormat* f = kb_.format(project_->format); f && f->space.known) bank = f->space.bankSize;
     addresses_.load(readFile(lst), [this](const std::string& s) { return lookupSymbol(s); }, bank);
+    // the listing is of the generated .asm: its ";;line N;;" marks give the lines of the .bas
+    if (basic)
+      addresses_.remap(fs::path(project_->main).filename().string() + ".asm",
+                       basicLineMap(readFile(project_->basicOutput(".asm"))), project_->abs(project_->main));
     addresses_.resolveFiles([this](const std::string& n) { return resolveSource(n); });
   }
 }
@@ -442,10 +500,10 @@ void App::saveUserState() {
 std::vector<std::string> App::debugArgs(const std::string& emulator) {
   for (auto& f : files_)
     if (!f->editor.breakpoints().empty() || breakpoints_.count(f->path)) breakpoints_[f->path] = f->editor.breakpoints();
-  if (project_->language != Language::Dasm) {
+  if (project_->language == Language::ElfC) {
     // C on the ARM: the emulators have no breakpoints by source line for it
     bool any = std::any_of(breakpoints_.begin(), breakpoints_.end(), [](auto& b) { return !b.second.empty(); });
-    if (any) output_ += std::string(T("Breakpoints are only passed for DASM projects: the emulators cannot stop on a line of C.")) + "\n";
+    if (any) output_ += std::string(T("Breakpoints are not passed for ELF projects: the emulators cannot stop on a line of C.")) + "\n";
     return {};
   }
   std::vector<Breakpoint> bps;
@@ -672,12 +730,7 @@ EditorHooks App::asmHooks() {
       }
       return s;
     }
-    if (const Register* r = kb_.reg(word)) {
-      std::string s = r->name + " (" + r->chip + " " + r->address + ", " + (r->access == "R" ? T("read") : T("write")) + ")  " + r->bits + "\n" + r->summary;
-      if (!r->timing.empty()) s += "\n" + F("Timing: {0}", {r->timing});
-      for (auto& i : r->issues) s += "\n! " + i;
-      return s;
-    }
+    if (const Register* r = kb_.reg(word)) return registerHelp(*r);
     auto it = symbols_.find(word);
     if (it != symbols_.end()) {
       char b[48];
@@ -711,6 +764,50 @@ EditorHooks App::asmHooks() {
   return h;
 }
 
+std::string App::registerHelp(const Register& r) const {
+  std::string s = r.name + " (" + r.chip + " " + r.address + ", " + (r.access == "R" ? T("read") : T("write")) + ")  " + r.bits + "\n" + r.summary;
+  if (!r.timing.empty()) s += "\n" + F("Timing: {0}", {r.timing});
+  for (auto& i : r.issues) s += "\n! " + i;
+  return s;
+}
+
+// batari Basic: its keywords and variables, the registers, and the labels of the file.
+EditorHooks App::basicHooks() {
+  EditorHooks h;
+  h.tokenize = [this](const std::string& l) { return tokenizeBasic(kb_, l); };
+  h.hover = [this](const std::string& word, const std::string& line) -> std::string {
+    std::string w = word;
+    size_t at = line.find(word);
+    if (at != std::string::npos && line.compare(at + word.size(), 1, ":") == 0 && kb_.basic(word + ":")) w += ":";
+    if (const BasicKeyword* b = kb_.basic(w)) return b->syntax + "\n" + b->summaryText();
+    if (const Register* r = kb_.reg(word)) return registerHelp(*r);
+    return {};
+  };
+  h.complete = [this](const std::string& prefix, const std::string&) {
+    std::vector<Completion> out;
+    if (prefix.empty()) return out;
+    std::string p = lower(prefix);
+    for (auto& [w, b] : kb_.basicKeywords())
+      if (w.compare(0, p.size(), p) == 0 && out.size() < 40)
+        out.push_back({w, b.summaryText(), b.kind == "variable" ? TokenKind::Register
+                                           : b.kind == "directive" || b.kind == "block" ? TokenKind::Directive
+                                                                                         : TokenKind::Mnemonic});
+    std::string u = upper(prefix);
+    for (auto& r : kb_.registers())
+      if (r.name.compare(0, u.size(), u) == 0 && out.size() < 50) out.push_back({r.name, r.summary, TokenKind::Register});
+    if (activeFile_ >= 0) {
+      std::set<std::string> seen;
+      for (auto& l : files_[activeFile_]->editor.lines()) {
+        std::string lab = basicLabelOf(l);
+        if (!lab.empty() && lab != prefix && lab.compare(0, prefix.size(), prefix) == 0 && seen.insert(lab).second && out.size() < 60)
+          out.push_back({lab, T("label"), TokenKind::Label});
+      }
+    }
+    return out;
+  };
+  return h;
+}
+
 void App::testSelect(int a, int b) {
   if (activeFile_ < 0) return;
   auto& ed = files_[activeFile_]->editor;
@@ -731,6 +828,9 @@ static bool definesWord(const std::string& line, const std::string& word) {
 
 bool App::gotoDefinition(const std::string& word, const std::string& fromFile, int fromLine) {
   if (word.empty()) return false;
+  bool bas = lower(fs::path(fromFile).extension().string()) == ".bas";
+  auto defines = [&](const std::string& line) { return bas ? basicLabelOf(line) == word : definesWord(line, word); };
+  auto searched = [&](const std::string& path) { return bas ? lower(fs::path(path).extension().string()) == ".bas" : isAsmFile(path); };
   // 1. The open file: the closest definition above the cursor (local .labels repeat
   //    per SUBROUTINE), otherwise the first one below.
   for (auto& f : files_) {
@@ -738,7 +838,7 @@ bool App::gotoDefinition(const std::string& word, const std::string& fromFile, i
     const auto& lines = f->editor.lines();
     int best = -1;
     for (int i = 0; i < (int)lines.size(); i++)
-      if (definesWord(lines[i], word) && (best < 0 || i <= fromLine)) best = i;
+      if (defines(lines[i]) && (best < 0 || i <= fromLine)) best = i;
     if (best >= 0) {
       openFile(f->path, best + 1);
       return true;
@@ -755,12 +855,12 @@ bool App::gotoDefinition(const std::string& word, const std::string& fromFile, i
       it.disable_recursion_pending();
       continue;
     }
-    if (!it->is_regular_file() || !isAsmFile(it->path().string()) || it->path().string() == fromFile) continue;
+    if (!it->is_regular_file() || !searched(it->path().string()) || it->path().string() == fromFile) continue;
     std::ifstream in(it->path());
     std::string line;
     for (int n = 1; std::getline(in, line); n++) {
       if (!line.empty() && line.back() == '\r') line.pop_back();
-      if (definesWord(line, word)) {
+      if (defines(line)) {
         openFile(it->path().string(), n);
         return true;
       }

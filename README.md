@@ -9,6 +9,7 @@ A small native IDE for making Atari 2600 games, on macOS, Windows and Linux. It 
 - **Projects**: `.vcsproj` files (JSON) with language, main file, ROM, cartridge format, TV standard, emulator and illegal-opcode policy. New projects come from a template for DASM, batari Basic or C for ELF.
 - **Build** with DASM (F7). Errors and unresolved symbols go to *Problems*, and clicking one opens the line. ELF projects use their own `build_command` (e.g. `make`).
 - **ELF cartridges** (C on the cartridge's ARM, with arm-none-eabi-gcc): the new-project template has a Makefile, its own `vcs.h`, the long calls to the loader and the checks of the ELF rules. `make` gives the ROM (`build/<name>.bin`, a relocatable object for Stella, Gopher2600, PlusCart and UnoCart); `make chameleon CHAMELEON_FW=<folder>` links it with the Chameleon Cart firmware (its template is not included). gcc and ld errors, undefined symbols with the file that uses them and make's own errors go to *Problems*.
+- **batari Basic** (1.9, the official WebAssembly build, with [wasmtime](https://wasmtime.dev/)): F7 runs its `2600basic.sh`/`2600bas.bat` next to the `.bas`. Its own errors and DASM's errors in the generated assembly go to *Problems* on the line of the `.bas` (through the `;;line N;;` marks of the `.asm`). The ROM, listing and symbols are left as `main.bas.bin`, `.lst` and `.sym`, so breakpoints, *Go to address* and the emulators' symbols work as in DASM. The space report takes the bytes left per bank from its output. The editor colours its keywords, the registers and the labels, with hover help and completion; F12 goes to a label.
 - **Run** in Stella or Gopher2600 (F5 build and run, F6 debug). The cartridge format and TV standard are passed on the command line, and both emulators load the `.sym` symbols of the build.
 - **Breakpoints**: click in the left margin or press F9. F6 places each one on its instruction's address and bank (from the listing, following `RORG`) and passes them to the emulator:
   - Gopher2600 gets them all in a script (`-script`);
@@ -27,7 +28,7 @@ A small native IDE for making Atari 2600 games, on macOS, Windows and Linux. It 
   - all 256 6502 opcodes, grouped as legal, stable illegal and unstable illegal;
   - TIA and RIOT registers with their known issues;
   - cartridge formats and TV standards.
-- **Space report** after each DASM build:
+- **Space report** after each DASM or batari Basic build:
   - bytes used and free per ROM bank, in the 2600's RAM (with room left for the stack) and in the cartridge's RAM (Superchip, FA, CV);
   - warnings for full banks, wrong ROM sizes and code on bank-switch hotspots, with the source line when possible;
   - thresholds per project: `space_warn_percent` and `stack_reserve` in the `.vcsproj`;
