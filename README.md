@@ -50,6 +50,17 @@ ctest --test-dir build
 - macOS: `build/vcside.app`
 - Windows / Linux: `build/vcside[.exe]`, with `data/` next to it.
 
+Linux and Windows builds can also be made from any machine with Docker (`tools/docker/`):
+
+```sh
+docker build -t vcside-linux -f tools/docker/linux.Dockerfile tools/docker
+docker run --rm -v "$PWD":/src -w /src vcside-linux sh tools/docker/build-linux.sh      # build-linux/, runs the tests
+docker build -t vcside-windows -f tools/docker/windows.Dockerfile tools/docker
+docker run --rm -v "$PWD":/src -w /src vcside-windows sh tools/docker/build-windows.sh  # build-windows/vcside.exe
+```
+
+The Windows one is cross-compiled with MinGW-w64 and linked statically (SDL3 included): `vcside.exe` and `data/` are the whole program. Its tests run in Wine with `VCSIDE_TEST_DATA=Z:<repository>/data wine64 build-windows/vcside_tests.exe`. VCSIDE needs OpenGL 2.1 or later; it tries 3.0, 3.2 core and 2.1, and says so in a message box if none works.
+
 ## Translations
 
 ```sh

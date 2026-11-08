@@ -20,7 +20,7 @@
 #include "editor/text_editor.h"
 #include "kb.h"
 #include "menu.h"
-#include "process.h"
+#include "child_process.h"
 #include "project.h"
 #include "elf_space.h"
 #include "space.h"

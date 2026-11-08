@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-#include "process.h"
+#include "child_process.h"
 #include "toolchain.h"
 
 namespace vcs {

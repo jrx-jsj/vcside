@@ -23,7 +23,7 @@ if(NOT SDL3_FOUND)
   set(SDL_STATIC ON CACHE BOOL "" FORCE)
   set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
   FetchContent_Declare(SDL3
-    URL https://github.com/libsdl-org/SDL/releases/download/release-3.2.26/SDL3-3.2.26.tar.gz)
+    URL https://github.com/libsdl-org/SDL/releases/download/release-3.4.18/SDL3-3.4.18.tar.gz)
   FetchContent_MakeAvailable(SDL3)
 endif()
 
@@ -107,7 +107,7 @@ add_custom_command(TARGET vcside POST_BUILD
 
 # --- Tests (no GUI) ---------------------------------------------------------
 enable_testing()
-add_executable(vcside_tests tests/tests.cpp src/kb.cpp src/cycles.cpp src/builder_parse.cpp src/editor/text_editor.cpp src/i18n.cpp src/space.cpp src/debugmap.cpp src/emulator_launch.cpp src/elf_space.cpp src/basic_syntax.cpp src/project.cpp src/toolchain.cpp src/paths.cpp src/process.cpp)
+add_executable(vcside_tests tests/tests.cpp src/kb.cpp src/cycles.cpp src/builder_parse.cpp src/editor/text_editor.cpp src/i18n.cpp src/space.cpp src/debugmap.cpp src/emulator_launch.cpp src/elf_space.cpp src/basic_syntax.cpp src/project.cpp src/toolchain.cpp src/paths.cpp src/child_process.cpp)
 target_include_directories(vcside_tests PRIVATE src)
 target_link_libraries(vcside_tests PRIVATE imgui nlohmann_json::nlohmann_json)
 target_compile_definitions(vcside_tests PRIVATE VCSIDE_SOURCE_DATA="${CMAKE_SOURCE_DIR}/data")

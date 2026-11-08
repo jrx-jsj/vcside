@@ -110,7 +110,7 @@ std::vector<CodeLine> parseDasmListingCode(const std::string& listing) {
 static long overlap(const Range& a, const Range& b) { return std::max(0L, std::min(a.hi, b.hi) - std::max(a.lo, b.lo)); }
 
 static std::string hex(long v, int digits = 4) {
-  char b[16];
+  char b[24];
   snprintf(b, sizeof b, "$%0*lX", digits, v);
   return b;
 }

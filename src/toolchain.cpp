@@ -8,7 +8,7 @@
 #include <filesystem>
 
 #include "i18n.h"
-#include "process.h"
+#include "child_process.h"
 
 namespace fs = std::filesystem;
 

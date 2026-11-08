@@ -898,8 +898,8 @@ bool TextEditor::render(const char* id, ImFont* font) {
   dl->AddRectFilled(ImVec2(gx, winPos.y), ImVec2(gx + gutterW - charW_ * 0.5f, winPos.y + viewH), IM_COL32(30, 30, 30, 255));
   for (int i = first; i <= last; i++) {
     float y = origin.y + i * lineH_;
-    char num[16];
-    snprintf(num, sizeof num, "%*d", numChars - 1, i + 1);
+    char num[32];
+    snprintf(num, sizeof num, "%*d", std::min(numChars - 1, 12), i + 1);
     auto mk = markers_.find(i + 1);
     ImU32 numCol = mk != markers_.end() ? (mk->second.first ? IM_COL32(240, 90, 90, 255) : IM_COL32(230, 190, 80, 255))
                    : i == cursor_.line ? IM_COL32(200, 200, 200, 255) : IM_COL32(110, 110, 110, 255);

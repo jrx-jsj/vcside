@@ -77,27 +77,54 @@ int main(int argc, char** argv) {
     SDL_Log("SDL_Init: %s", SDL_GetError());
     return 1;
   }
-#if defined(__APPLE__)
-  SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG);
-  SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
-  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 2);
-  const char* glsl = "#version 150";
-#else
-  SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
-  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
-  const char* glsl = "#version 130";
-#endif
   SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
   SDL_Window* window = SDL_CreateWindow("VCSIDE", 1400, 860,
                                         SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY | SDL_WINDOW_HIDDEN);
   if (!window) {
     SDL_Log("SDL_CreateWindow: %s", SDL_GetError());
+    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "VCSIDE", (std::string("Cannot open the window: ") + SDL_GetError()).c_str(), nullptr);
     return 1;
   }
   vcs::setWindowIcon(window);
-  SDL_GLContext gl = SDL_GL_CreateContext(window);
+  // OpenGL: 3.0 (3.2 core on macOS, the only modern one it has), then the others for
+  // drivers and layers that only give one of them (Wine on macOS: 3.2 core or 2.1).
+  struct GlTry {
+    int profile, major, minor, flags;
+    const char* glsl;
+  };
+  const GlTry tries[] = {
+#if defined(__APPLE__)
+      {SDL_GL_CONTEXT_PROFILE_CORE, 3, 2, SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG, "#version 150"},
+#else
+      {SDL_GL_CONTEXT_PROFILE_CORE, 3, 0, 0, "#version 130"},
+      {SDL_GL_CONTEXT_PROFILE_CORE, 3, 2, SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG, "#version 150"},
+#endif
+      {SDL_GL_CONTEXT_PROFILE_COMPATIBILITY, 2, 1, 0, "#version 120"},
+  };
+  SDL_GLContext gl = nullptr;
+  const char* glsl = nullptr;
+  std::string glErrors;
+  for (auto& t : tries) {
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, t.profile);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, t.major);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, t.minor);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, t.flags);
+    gl = SDL_GL_CreateContext(window);
+    if (gl) {
+      glsl = t.glsl;
+      break;
+    }
+    glErrors += "\nOpenGL " + std::to_string(t.major) + "." + std::to_string(t.minor) + ": " + SDL_GetError();
+  }
+  if (!gl) {
+    SDL_Log("No OpenGL context:%s", glErrors.c_str());
+    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "VCSIDE",
+                             ("VCSIDE needs OpenGL 2.1 or later, and this system did not give it any:" + glErrors +
+                              "\n\nUpdate the graphics driver (on Windows, the one from the card's maker).")
+                                 .c_str(),
+                             window);
+    return 1;
+  }
   SDL_GL_MakeCurrent(window, gl);
   // No vsync: on macOS a swap with vsync blocks while the window is not visible
   // (another Space, behind other windows, launched in the background), which froze
@@ -132,7 +159,11 @@ int main(int argc, char** argv) {
   io.FontGlobalScale = 1.0f / density;
 
   ImGui_ImplSDL3_InitForOpenGL(window, gl);
-  ImGui_ImplOpenGL3_Init(glsl);
+  if (!ImGui_ImplOpenGL3_Init(glsl)) {
+    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "VCSIDE",
+                             "The OpenGL driver does not give the functions VCSIDE needs. Update the graphics driver.", window);
+    return 1;
+  }
   ImGui::GetPlatformIO().Platform_SetImeDataFn = keepTextInput;
   ImGui::GetPlatformIO().Platform_OpenInShellFn = [](ImGuiContext*, const char* url) { return SDL_OpenURL(url); };
   SDL_StartTextInput(window);

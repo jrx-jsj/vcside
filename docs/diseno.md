@@ -34,6 +34,14 @@ src/
 data/kb/            6502.json, tia.json, riot.json, formats.json, tv.json
 ```
 
+## Windows y Linux
+
+- **Compilación:** en Docker (`tools/docker/`), desde cualquier sistema. Linux: Debian trixie con su SDL3. Windows: MinGW-w64 desde Debian, enlazado estático con SDL3 3.4.18 compilado aparte; el `.exe` no necesita DLL.
+- **Pruebas:** las de `vcside_tests` pasan en los tres. La de Linux se ve con Xvfb y Mesa (`xvfb-run`); la de Windows, en Wine 6 sobre macOS, que solo da OpenGL 3.2 core o 2.1 (de ahí los intentos 3.0 → 3.2 core → 2.1).
+- **`process.h`:** el nombre choca con la cabecera de Windows que incluyen los hilos de MinGW; por eso es `child_process.h`.
+- **Procesos en Windows:** SDL entrecomilla cada argumento al llamar a `CreateProcess`, y `cmd /c` no entiende eso. Para `cmd /c ...` (las órdenes de compilación propias y el `2600bas.bat` de batari Basic) VCSIDE escribe la línea completa, `cmd.exe /c ""C:\a b\x.bat" "main.bas""`, con `SDL_PROP_PROCESS_CREATE_CMDLINE_STRING` (SDL 3.4).
+- **Sin probar en un Windows de verdad** ni con un emulador allí: solo en Wine.
+
 ## Herramientas
 
 Cada herramienta se busca en este orden: ruta fijada en ajustes → `PATH` → rutas típicas del sistema (p. ej. `/Applications/Stella.app`, `C:\Program Files\Stella`, `/usr/games`). Si no está, el IDE ofrece la página oficial de descarga y la carpeta donde dejarla (`~/.vcside/tools/<herramienta>`); más adelante, descarga directa de las versiones publicadas con su suma de comprobación.

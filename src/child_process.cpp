@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 VCSIDE contributors
-#include "process.h"
+#include "child_process.h"
 
 #include <SDL3/SDL.h>
 
+#include <cctype>
 #include <cstdlib>
 #include <filesystem>
 
@@ -18,6 +19,28 @@ static SDL_Process* create(const std::vector<std::string>& args, const std::stri
   argv.push_back(nullptr);
   SDL_PropertiesID props = SDL_CreateProperties();
   SDL_SetPointerProperty(props, SDL_PROP_PROCESS_CREATE_ARGS_POINTER, argv.data());
+#if defined(_WIN32) && defined(SDL_PROP_PROCESS_CREATE_CMDLINE_STRING)
+  // SDL quotes every argument, which cmd /c does not read ("echo" is not a command). cmd
+  // gets its own line instead: cmd.exe /c ""C:\a b\x.bat" "main.bas"" (cmd drops the
+  // outer quotes and keeps the rest as it is).
+  std::string cmdline;
+  if (args.size() >= 3) {
+    auto lower = [](std::string s) {
+      for (auto& c : s) c = (char)std::tolower((unsigned char)c);
+      return s;
+    };
+    std::string prog = lower(fs::path(args[0]).filename().string());
+    if ((prog == "cmd" || prog == "cmd.exe") && lower(args[1]) == "/c") {
+      cmdline = "cmd.exe /c \"";
+      for (size_t i = 2; i < args.size(); i++) {
+        bool q = args[i].empty() || args[i].find_first_of(" \t&()^|<>,;=") != std::string::npos;
+        cmdline += (i > 2 ? " " : "") + (q ? "\"" + args[i] + "\"" : args[i]);
+      }
+      cmdline += "\"";
+      SDL_SetStringProperty(props, SDL_PROP_PROCESS_CREATE_CMDLINE_STRING, cmdline.c_str());
+    }
+  }
+#endif
 #ifdef SDL_PROP_PROCESS_CREATE_WORKING_DIRECTORY_STRING
   if (!workDir.empty()) SDL_SetStringProperty(props, SDL_PROP_PROCESS_CREATE_WORKING_DIRECTORY_STRING, workDir.c_str());
 #else

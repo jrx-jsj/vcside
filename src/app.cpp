@@ -253,10 +253,12 @@ void App::pollBuild() {
   output_ = job_.output();
   bool gcc = project_ && (project_->language == Language::ElfC || !project_->buildCommand.empty());
   bool basic = project_ && project_->language == Language::BatariBasic && project_->buildCommand.empty();
-  if (basic) diagnostics_ = parseBasicOutput(output_, project_->main, readFile(project_->basicOutput(".asm")));
-  else diagnostics_ = gcc ? parseGccOutput(output_) : parseDasmOutput(output_);
+  // the first line repeats the command ("> make ..."): only what it printed is parsed
+  std::string printed = output_.rfind("> ", 0) == 0 && output_.find('\n') != std::string::npos ? output_.substr(output_.find('\n') + 1) : output_;
+  if (basic) diagnostics_ = parseBasicOutput(printed, project_->main, readFile(project_->basicOutput(".asm")));
+  else diagnostics_ = gcc ? parseGccOutput(printed) : parseDasmOutput(printed);
   if (gcc) {
-    auto d = parseDasmOutput(output_);
+    auto d = parseDasmOutput(printed);
     diagnostics_.insert(diagnostics_.end(), d.begin(), d.end());
   }
   bool ok = job_.exitCode() == 0;

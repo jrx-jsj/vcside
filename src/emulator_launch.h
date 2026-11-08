@@ -20,7 +20,7 @@
 #include <vector>
 
 #include "kb.h"
-#include "process.h"
+#include "child_process.h"
 #include "project.h"
 
 namespace vcs {

@@ -2,6 +2,7 @@
 // Copyright (C) 2026 VCSIDE contributors
 // Tests without GUI: knowledge base, cycle counter, output parsers.
 #include <cstdio>
+#include <cstdlib>
 #include <string>
 
 #include "builder_parse.h"
@@ -15,6 +16,7 @@
 #include "emulator_launch.h"
 #include "i18n.h"
 
+#include <algorithm>
 #include <array>
 #include <filesystem>
 #include <tuple>
@@ -422,7 +424,7 @@ static void testEmulatorOptions(const KnowledgeBase& kb) {
   CHECK(has(a, {"-holdreset"}) && !has(a, {"-holdreset", "1"}));
   CHECK(has(a, {"-audio.enabled", "0"}) && has(a, {"-tv.filter", "2"}) && has(a, {"-dev.debugcolors", "1"}));
   CHECK(has(a, {"-dev.settings", "1"}));  // a developer option turns the developer settings on
-  CHECK(has(a, {"-snapsavedir", (fs::path("/tmp/proj/build") / "").string()}));
+  CHECK(has(a, {"-snapsavedir", (fs::path("/tmp/proj/build").lexically_normal() / "").string()}));
   p.emulatorOptions["stella"]["dev.settings"] = "0";
   CHECK(!has(emulatorOptionArgs(p, *st), {"-dev.settings", "1"}));
 
@@ -687,7 +689,10 @@ static void testBasic() {
 int main() {
   KnowledgeBase kb;
   std::string err;
-  kb.load(VCSIDE_SOURCE_DATA "/kb", &err);
+  // VCSIDE_TEST_DATA: the data folder when the tests run elsewhere (e.g. a Windows build in Wine)
+  const char* env = std::getenv("VCSIDE_TEST_DATA");
+  const std::string data = env && *env ? env : VCSIDE_SOURCE_DATA;
+  kb.load(data + "/kb", &err);
   if (!err.empty()) std::fprintf(stderr, "knowledge base: %s", err.c_str());
   CHECK(err.empty());
   testKb(kb);
@@ -696,7 +701,7 @@ int main() {
   testEditor();
   testSpace(kb);
   testDebugMap();
-  loadLanguages(VCSIDE_SOURCE_DATA "/i18n");
+  loadLanguages(data + "/i18n");
   testEmulatorOptions(kb);
   testElfSpace();
   testBasic();
