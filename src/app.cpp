@@ -175,6 +175,25 @@ void App::openPath(const std::string& path) {
   }
 }
 
+std::string App::linkedFile(const std::string& name, const std::string& fromFile) const {
+  if (name.empty()) return {};
+  std::vector<fs::path> where;
+  fs::path n(name);
+  if (n.is_absolute()) where.push_back(n);
+  else {
+    where.push_back(fs::path(fromFile).parent_path() / n);
+    if (!folder_.empty()) where.push_back(fs::path(folder_) / n);
+    if (project_)
+      for (auto& d : project_->includeDirs) where.push_back(fs::path(project_->abs(d)) / n);
+    if (!folder_.empty()) where.push_back(fs::path(folder_) / "include" / n);
+  }
+  std::error_code ec;
+  for (auto& p : where)
+    if (fs::is_regular_file(p, ec) && files::kindOf(p.filename().string(), false) != files::Kind::Rom)
+      return fs::weakly_canonical(p, ec).string();
+  return {};
+}
+
 void App::projectSettings() {
   if (!project_) return;
   if (OpenFile* f = openFile(project_->file); f && f->form && !f->dirty()) f->form->showText(f->editor, false);
@@ -282,15 +301,23 @@ OpenFile* App::openFile(const std::string& pathIn, int line) {
   if (cLike) f->asmSyntax = false;
   f->editor.setCommentPrefix(cLike ? "//" : ext == ".bas" ? "rem" : ";");
   f->editor.setFoldSyntax(cLike ? FoldSyntax::C : ext == ".bas" ? FoldSyntax::Basic : f->asmSyntax ? FoldSyntax::Asm : FoldSyntax::None);
-  if (f->asmSyntax || ext == ".bas") {
-    EditorHooks h = ext == ".bas" ? basicHooks() : asmHooks();
+  {
+    EditorHooks h = f->asmSyntax ? asmHooks() : ext == ".bas" ? basicHooks() : EditorHooks{};
     OpenFile* self = f.get();
+    // the files a line names (include, incbin, #include...)
+    h.hasFile = [this, self](const std::string& name) { return !linkedFile(name, self->path).empty(); };
+    h.openFile = [this, self](const std::string& name) {
+      std::string p = linkedFile(name, self->path);
+      if (!p.empty()) openFile(p);
+    };
+    if (f->asmSyntax || ext == ".bas") {
     h.gotoDefinition = [this, self](const std::string& w) { return gotoDefinition(w, self->path, self->editor.cursor().line); };
     h.hasDefinition = [this, self](const std::string& w, int line) {
       std::string path;
       int at = 0;
       return findDefinition(w, self->path, line, path, at);
     };
+    }
     f->editor.setHooks(h);
   }
   f->requestFocus = true;

@@ -5,6 +5,7 @@
 #include "imgui_stdlib.h"
 #include "i18n.h"
 #include "theme_ui.h"
+#include "../source_links.h"
 
 #include <algorithm>
 #include <cctype>
@@ -965,11 +966,18 @@ bool TextEditor::render(const char* id, ImFont* font) {
       if (!unfoldAt(line)) foldAt(line);
       updateRows();
     }
-  } else if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && io.KeyCtrl && hooks_.gotoDefinition) {
+  } else if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && io.KeyCtrl && (hooks_.gotoDefinition || hooks_.openFile)) {
     Coord c = mouseCoord();
     moveCursor(c, false);
-    std::string w = wordAt(c);
-    if (!w.empty()) hooks_.gotoDefinition(w);
+    std::string file;
+    int fs = 0, fe = 0;
+    if (hooks_.openFile && fileNameInLine(lines_[c.line], &file, &fs, &fe) && c.col >= fs && c.col <= fe &&
+        (!hooks_.hasFile || hooks_.hasFile(file))) {
+      hooks_.openFile(file);
+    } else if (hooks_.gotoDefinition) {
+      std::string w = wordAt(c);
+      if (!w.empty()) hooks_.gotoDefinition(w);
+    }
   } else if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
     Coord c = mouseCoord();
     if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
@@ -1081,15 +1089,24 @@ bool TextEditor::render(const char* id, ImFont* font) {
   }
 
   // Ctrl/Cmd over a symbol with a definition: underlined like a link, hand cursor.
-  if (hovered && io.KeyCtrl && !io.KeyAlt && !inMargin && hooks_.gotoDefinition && io.MousePos.x > textX) {
+  if (hovered && io.KeyCtrl && !io.KeyAlt && !inMargin && (hooks_.gotoDefinition || hooks_.openFile) && io.MousePos.x > textX) {
     int line = lineAtY(io.MousePos.y);
     if (line >= 0 && line < (int)lines_.size()) {
-      int s, e;
-      std::string w = wordAt(clamp({line, byteCol(line, (int)((io.MousePos.x - textX) / charW_))}), &s, &e);
-      if (!w.empty() && std::isdigit((unsigned char)w[0])) w.clear();
+      int s = 0, e = 0;
+      Coord at = clamp({line, byteCol(line, (int)((io.MousePos.x - textX) / charW_))});
+      std::string w, file;
+      int fs = 0, fe = 0;
+      bool onFile = hooks_.openFile && fileNameInLine(lines_[line], &file, &fs, &fe) && at.col >= fs && at.col <= fe;
+      if (onFile) {
+        w = "\x01" + file, s = fs, e = fe;  // a file name: its own cache key
+      } else if (hooks_.gotoDefinition) {
+        w = wordAt(at, &s, &e);
+        if (!w.empty() && std::isdigit((unsigned char)w[0])) w.clear();
+      }
       if (w != linkWord_ || line != linkLine_) {
         linkWord_ = w, linkLine_ = line;
-        linkOk_ = !w.empty() && (!hooks_.hasDefinition || hooks_.hasDefinition(w, line));
+        if (onFile) linkOk_ = !hooks_.hasFile || hooks_.hasFile(file);
+        else linkOk_ = !w.empty() && (!hooks_.hasDefinition || hooks_.hasDefinition(w, line));
       }
       if (linkOk_) {
         float x0 = textX + visualCol(line, s) * charW_, x1 = textX + visualCol(line, e) * charW_;

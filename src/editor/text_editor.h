@@ -41,6 +41,10 @@ struct EditorHooks {
   std::function<bool(const std::string& word)> gotoDefinition;
   // Whether gotoDefinition would find it (Ctrl/Cmd over a word underlines it as a link).
   std::function<bool(const std::string& word, int line)> hasDefinition;
+  // A file a line names (include, incbin, #include...): whether it can be opened, and
+  // opening it (Ctrl/Cmd+click on its name).
+  std::function<bool(const std::string& name)> hasFile;
+  std::function<void(const std::string& name)> openFile;
 };
 
 struct Match {

@@ -132,6 +132,9 @@ class App {
 
   // actions
   void openProject(const std::string& vcsproj);
+  // A file a source names (include "x"), looked for next to it, in the project and its
+  // include folders; "" if not there or not something to open (a ROM).
+  std::string linkedFile(const std::string& name, const std::string& fromFile) const;
   void projectSettings();     // the project's .vcsproj in a tab, as a form
   void projectFileSaved();    // the .vcsproj changed: the project takes it again
   void openFolder(const std::string& dir);

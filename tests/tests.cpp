@@ -8,6 +8,7 @@
 #include "builder_parse.h"
 #include "editor/text_editor.h"
 #include "editor/folding.h"
+#include "source_links.h"
 #include "cycles.h"
 #include "kb.h"
 #include "space.h"
@@ -941,6 +942,27 @@ static void testFolding() {
   CHECK(!ed.folded(1) && !ed.folded(4));
 }
 
+static void testSourceLinks() {
+  std::string n;
+  int b = 0, e = 0;
+  auto is = [&](const std::string& line, const std::string& want, int start) {
+    return fileNameInLine(line, &n, &b, &e) && n == want && b == start && e == start + (int)want.size();
+  };
+  CHECK(is("        include \"2600.h\"", "2600.h", 17));
+  CHECK(is("        INCLUDE 2600.h  ; registers", "2600.h", 16));
+  CHECK(is("Data    incbin \"gfx/title.bin\"", "gfx/title.bin", 16));
+  CHECK(is("#include \"vcs.h\"", "vcs.h", 10));
+  CHECK(is("# include <stdint.h>", "stdint.h", 11));
+  CHECK(is("  include div_mul.asm", "div_mul.asm", 10));
+  CHECK(is("  inline kernel.asm", "kernel.asm", 9));
+  CHECK(is("  rem vcsgfx hero.vcsgfx hero frame 2", "hero.vcsgfx", 13));
+  CHECK(!fileNameInLine("  rem vcsgfx end", &n, &b, &e));
+  CHECK(!fileNameInLine("        lda #include", &n, &b, &e));
+  CHECK(!fileNameInLine("        lda include \"x.h\"", &n, &b, &e));
+  CHECK(!fileNameInLine("; include \"x.h\"", &n, &b, &e));
+  CHECK(!fileNameInLine("        include", &n, &b, &e));
+}
+
 static void testGfx() {
   using namespace gfx;
   // palette: grey hue 0, SECAM by luminance only
@@ -1521,6 +1543,7 @@ int main() {
   testFormatOrder(kb);
   testGfx();
   testFolding();
+  testSourceLinks();
   testThemes(data);
   testHeader(kb, data);
   std::printf("%d checks, %d failures\n", checks, failures);
