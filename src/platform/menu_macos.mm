@@ -299,7 +299,18 @@ bool nativeMenuPerform(const std::string& path) {
 
 }  // namespace vcs
 
-// The system's About panel: application icon, name, version and copyright, and the
+@interface VCSAboutTarget : NSObject {
+ @public
+  NSPanel* __weak panel;
+}
+@end
+@implementation VCSAboutTarget
+- (void)close:(id)sender {
+  [panel close];
+}
+@end
+
+// The About panel: application icon, name, version and copyright, and the
 // credits (scrollable) built from the same sections as the ImGui window.
 bool vcs::nativeShowAbout(const vcs::AboutInfo& info) {
   @autoreleasepool {
@@ -334,14 +345,76 @@ bool vcs::nativeShowAbout(const vcs::AboutInfo& info) {
       }
     }
     add("\n" + vcs::F("Data: {0}", {info.dataDir}) + "\n", dim);
-    NSDictionary* opts = @{
-      NSAboutPanelOptionApplicationName : @"VCSIDE",
-      NSAboutPanelOptionApplicationVersion : ns(info.version),
-      NSAboutPanelOptionVersion : @"",
-      NSAboutPanelOptionCredits : credits,
-      @"Copyright" : ns(info.copyright),
+    // A panel of our own rather than the standard one, which has no button to close it.
+    static NSPanel* panel = nil;
+    static VCSAboutTarget* target = nil;
+    if (!target) target = [[VCSAboutTarget alloc] init];
+    if (panel) [panel close];
+    const CGFloat W = 440, M = 24, inner = W - 2 * M;
+    panel = [[NSPanel alloc] initWithContentRect:NSMakeRect(0, 0, W, 600)
+                                       styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable
+                                         backing:NSBackingStoreBuffered
+                                           defer:NO];
+    panel.title = ns(vcs::T("About VCSIDE"));
+    panel.releasedWhenClosed = NO;
+    target->panel = panel;
+
+    auto label = [&](NSString* text, NSFont* font, NSColor* color) {
+      NSTextField* f = [NSTextField wrappingLabelWithString:text];
+      f.font = font;
+      f.textColor = color;
+      f.alignment = NSTextAlignmentCenter;
+      f.preferredMaxLayoutWidth = inner;
+      return f;
     };
-    [NSApp orderFrontStandardAboutPanelWithOptions:opts];
+    NSImageView* icon = [NSImageView imageViewWithImage:NSApp.applicationIconImage];
+    [icon.widthAnchor constraintEqualToConstant:112].active = YES;
+    [icon.heightAnchor constraintEqualToConstant:112].active = YES;
+    NSTextField* name = label(@"VCSIDE", [NSFont boldSystemFontOfSize:22], NSColor.labelColor);
+    NSTextField* version = label(ns(vcs::F("Version {0}", {info.version})), [NSFont systemFontOfSize:12], NSColor.secondaryLabelColor);
+
+    NSScrollView* scroll = [[NSScrollView alloc] initWithFrame:NSMakeRect(0, 0, inner, 280)];
+    scroll.hasVerticalScroller = YES;
+    scroll.borderType = NSLineBorder;
+    scroll.drawsBackground = NO;
+    NSTextView* text = [[NSTextView alloc] initWithFrame:NSMakeRect(0, 0, inner, 280)];
+    text.editable = NO;
+    text.selectable = YES;
+    text.drawsBackground = NO;
+    text.textContainerInset = NSMakeSize(6, 8);
+    text.verticallyResizable = YES;
+    text.autoresizingMask = NSViewWidthSizable;
+    text.textContainer.widthTracksTextView = YES;
+    [text.textStorage setAttributedString:credits];
+    scroll.documentView = text;
+    [scroll.widthAnchor constraintEqualToConstant:inner].active = YES;
+    [scroll.heightAnchor constraintEqualToConstant:280].active = YES;
+
+    NSTextField* copyright = label(ns(info.copyright), [NSFont systemFontOfSize:11], NSColor.secondaryLabelColor);
+    NSButton* close = [NSButton buttonWithTitle:ns(vcs::T("Close")) target:target action:@selector(close:)];
+    close.keyEquivalent = @"\r";  // Return; Esc closes the panel too (cancelOperation)
+    close.bezelStyle = NSBezelStyleRounded;
+
+    NSStackView* stack = [NSStackView stackViewWithViews:@[ icon, name, version, scroll, copyright, close ]];
+    stack.orientation = NSUserInterfaceLayoutOrientationVertical;
+    stack.alignment = NSLayoutAttributeCenterX;
+    stack.spacing = 8;
+    [stack setCustomSpacing:14 afterView:version];
+    [stack setCustomSpacing:14 afterView:scroll];
+    stack.edgeInsets = NSEdgeInsetsMake(M, M, M, M);
+    stack.translatesAutoresizingMaskIntoConstraints = NO;
+    NSView* content = panel.contentView;
+    [content addSubview:stack];
+    [NSLayoutConstraint activateConstraints:@[
+      [stack.leadingAnchor constraintEqualToAnchor:content.leadingAnchor],
+      [stack.trailingAnchor constraintEqualToAnchor:content.trailingAnchor],
+      [stack.topAnchor constraintEqualToAnchor:content.topAnchor],
+      [stack.bottomAnchor constraintEqualToAnchor:content.bottomAnchor],
+    ]];
+    [panel layoutIfNeeded];
+    [panel center];
+    [panel makeKeyAndOrderFront:nil];
+    [panel makeFirstResponder:close];
     [NSApp activateIgnoringOtherApps:YES];
   }
   return true;
