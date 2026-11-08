@@ -1434,6 +1434,15 @@ void App::frame() {
   }
 
   menuBar();
+  {
+    // the three stripes along the top of the window, as on the web and in the dialogs;
+    // everything else goes under them
+    ImGuiViewport* vp = ImGui::GetMainViewport();
+    float h = theme::stripesHeight();
+    theme::drawStripes(ImGui::GetBackgroundDrawList(vp), vp->WorkPos, ImVec2(vp->WorkPos.x + vp->WorkSize.x, vp->WorkPos.y + h));
+    vp->WorkPos.y += h;
+    vp->WorkSize.y -= h;
+  }
   if (folder_.empty() && files_.empty()) {
     welcomeScreen();  // nothing open: only the welcome page, no panels
   } else {

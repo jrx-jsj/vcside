@@ -3,6 +3,7 @@
 #include "theme_ui.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 
 #include "i18n.h"
@@ -35,13 +36,20 @@ bool beginModal(const char* name, bool* open, ImGuiWindowFlags flags) {
   float b = w->WindowBorderSize * 0.5f, h = std::max(3.0f, em(4.5f));
   ImDrawList* dl = w->DrawList;
   dl->PushClipRect(w->Rect().Min, w->Rect().Max, false);
-  Role stripes[3] = {Role::DlgStripe1, Role::DlgStripe2, Role::DlgStripe3};
-  for (int i = 0; i < 3; i++)
-    dl->AddRectFilled(ImVec2(bar.Min.x + b, bar.Max.y + h * i), ImVec2(bar.Max.x - b, bar.Max.y + h * (i + 1)), col(stripes[i]));
+  drawStripes(dl, ImVec2(bar.Min.x + b, bar.Max.y), ImVec2(bar.Max.x - b, bar.Max.y + h * 3));
   dl->PopClipRect();
   ImGui::Dummy(ImVec2(0, h * 3 - em(6)));  // the content starts under them
   return true;
 }
+
+void drawStripes(ImDrawList* dl, const ImVec2& min, const ImVec2& max) {
+  Role stripes[3] = {Role::DlgStripe1, Role::DlgStripe2, Role::DlgStripe3};
+  float h = (max.y - min.y) / 3;
+  for (int i = 0; i < 3; i++)
+    dl->AddRectFilled(ImVec2(min.x, min.y + h * i), ImVec2(max.x, i == 2 ? max.y : min.y + h * (i + 1)), col(stripes[i]));
+}
+
+float stripesHeight() { return std::max(3.0f, std::round(em(3) * 3)); }
 
 bool primaryButton(const char* label, const ImVec2& size) {
   ImGui::PushStyleColor(ImGuiCol_Button, col(Role::DlgPrimary));

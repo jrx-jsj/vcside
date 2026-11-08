@@ -28,6 +28,10 @@ void applyImGui(const Resolved& r);
 // A dialog: BeginPopupModal with the dialog look (a dark title band over three stripes,
 // a thick border, room around the content). Ends with ImGui::EndPopup, like it.
 bool beginModal(const char* name, bool* open = nullptr, ImGuiWindowFlags flags = 0);
+// The three stripes (dialog.stripe1-3) filling a rectangle, top to bottom, and the height
+// they take at the top of the window.
+void drawStripes(ImDrawList* dl, const ImVec2& min, const ImVec2& max);
+float stripesHeight();
 // The dialog's main button (Create, Save, OK...).
 bool primaryButton(const char* label, const ImVec2& size = ImVec2(0, 0));
 
