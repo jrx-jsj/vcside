@@ -1339,7 +1339,11 @@ bool importText(const std::string& text, Asset* out, std::string* what, const Pr
   Profile kernel = hint;
   if (std::regex_search(text, std::regex(R"(\bset\s+kernel\s)", std::regex::icase))) kernel = profileFromBasic(text);
   static const std::regex bbStart(R"(^\s*(?:if\b.*\bthen\s+)?(player(?:1[0-6]|[0-9])(?:-\d+)?(?:color)?|playfield|pfcolors|bkcolors)\s*:\s*$)", std::regex::icase);
-  static const std::regex asmData(R"(^\s+(?:\.byte|dc\.b|\.db|byte|\.BYTE|DC\.B)\s+(.*)$)", std::regex::icase);
+  // data lines; .byte and .db also in the first column, where other tools write them
+  static const std::regex asmData(R"(^(?:\s+(?:\.byte|dc\.b|\.db|byte)|\s*(?:\.byte|\.db))\s+(.*)$)", std::regex::icase);
+  // the header of another playfield editor's export: "; mode: asymmetric mirrored line-height 8"
+  static const std::regex modeHeader(R"(^\s*;\s*mode:(.*)$)", std::regex::icase);
+  struct { bool seen = false, asym = false, repeat = false; int lineHeight = 0; } mode;
   static const std::regex label(R"(^([A-Za-z_.][\w.]*):?\s*(?:;.*)?$)");
   static const std::regex colourComment(R"(;\s*\$([0-9A-Fa-f]{2}))");
   std::vector<Block> blocks;
@@ -1351,6 +1355,20 @@ bool importText(const std::string& text, Asset* out, std::string* what, const Pr
     if (!line.empty() && line.back() == '\r') line.pop_back();
     std::smatch m;
     if (line.find("Rows: top first") != std::string::npos) topFirst = true, sawRowsNote = true;
+    if (!bb && std::regex_match(line, m, modeHeader)) {
+      std::string o = m[1].str();
+      for (auto& c : o) c = (char)std::tolower((unsigned char)c);
+      static const std::regex word(R"([a-z]+(?:-?height)?:?\s*\d*)");
+      for (auto it = std::sregex_iterator(o.begin(), o.end(), word); it != std::sregex_iterator(); ++it) {
+        std::string w = it->str();
+        if (w.rfind("asym", 0) == 0) mode.asym = true;
+        else if (w.rfind("repeat", 0) == 0) mode.repeat = true;
+        else if (w.rfind("line", 0) == 0 && w.find_first_of("0123456789") != std::string::npos)
+          mode.lineHeight = std::stoi(w.substr(w.find_first_of("0123456789")));
+      }
+      mode.seen = true;
+      continue;
+    }
     if (line.find("Rows: bottom first") != std::string::npos) topFirst = false, sawRowsNote = true;
     if (bb) {
       std::string t = line;
@@ -1481,21 +1499,52 @@ bool importText(const std::string& text, Asset* out, std::string* what, const Pr
       for (const char* k : {"pf0r", "pf1r", "pf2r", "pf0", "pf1", "pf2", "colupf_rows", "colubk_rows", "ctrlpf_rows"})
         if (endsWith(l, k) && !pf.count(k)) { pf[k] = &b; break; }
     }
+    // the registers of each row: PF0-PF2 and, for asymmetric rows, PF0R-PF2R
+    std::vector<int> reg6[6];
+    bool hasRight = false;
+    std::string name;
     if (pf.count("pf0") && pf.count("pf1") && pf.count("pf2")) {
+      const char* keys[6] = {"pf0", "pf1", "pf2", "pf0r", "pf1r", "pf2r"};
+      hasRight = pf.count("pf0r") && pf.count("pf1r") && pf.count("pf2r");
+      for (int k = 0; k < (hasRight ? 6 : 3); k++) reg6[k] = pf[keys[k]]->values;
+      if (mode.asym && !hasRight)  // one table per register, left and right halves of each row in turn
+        for (int k = 0; k < 3; k++) {
+          std::vector<int> both = reg6[k];
+          reg6[k].clear();
+          for (size_t i = 0; i + 1 < both.size(); i += 2) reg6[k].push_back(both[i]), reg6[k + 3].push_back(both[i + 1]);
+          hasRight = true;
+        }
+      name = pf["pf0"]->label;
+      name = name.substr(0, name.size() - 3);
+    } else if (mode.seen) {
+      // one line per row: PF0, PF1, PF2 (and the right half's three)
+      for (auto& b : blocks) {
+        if (!b.kind.empty() || !b.rows.empty()) continue;
+        size_t n = mode.asym ? 6 : 3;
+        if (b.values.size() < n || b.values.size() % n) continue;
+        for (size_t i = 0; i < b.values.size(); i++) reg6[i % n].push_back(b.values[i]);
+        hasRight = mode.asym;
+        name = b.label;
+        break;
+      }
+    }
+    if (!reg6[0].empty()) {
       Playfield p;
-      int rows = (int)std::min({pf["pf0"]->values.size(), pf["pf1"]->values.size(), pf["pf2"]->values.size()});
+      int rows = (int)std::min({reg6[0].size(), reg6[1].size(), reg6[2].size()});
       p.rows.assign(rows, PfRow{});
+      if (mode.lineHeight > 0) p.lineHeight = std::clamp(mode.lineHeight, 1, 64);
       bool flip = sawRowsNote && !topFirst;
       for (int i = 0; i < rows; i++) {
         int r = flip ? rows - 1 - i : i;
         PfRow& row = p.rows[r];
+        if (mode.seen) row.mode = mode.repeat ? PfMode::Repeat : PfMode::Mirror;
         if (pf.count("ctrlpf_rows") && i < (int)pf["ctrlpf_rows"]->values.size())
           row.mode = pf["ctrlpf_rows"]->values[i] & 1 ? PfMode::Mirror : PfMode::Repeat;
-        int L[3] = {pf["pf0"]->values[i], pf["pf1"]->values[i], pf["pf2"]->values[i]}, reg, bit;
+        int L[3] = {reg6[0][i], reg6[1][i], reg6[2][i]}, reg, bit;
         for (int j = 0; j < 20; j++)
           if (pfBit(j, &reg, &bit), (L[reg] >> bit) & 1) row.bits |= 1ull << j;
-        if (pf.count("pf0r") && pf.count("pf1r") && pf.count("pf2r") && i < (int)pf["pf0r"]->values.size()) {
-          int R[3] = {pf["pf0r"]->values[i], pf["pf1r"]->values[i], pf["pf2r"]->values[i]};
+        if (hasRight && i < (int)std::min({reg6[3].size(), reg6[4].size(), reg6[5].size()})) {
+          int R[3] = {reg6[3][i], reg6[4][i], reg6[5][i]};
           if (R[0] != L[0] || R[1] != L[1] || R[2] != L[2]) {
             row.asymmetric = true;
             for (int c = 20; c < 40; c++) {
@@ -1507,8 +1556,6 @@ bool importText(const std::string& text, Asset* out, std::string* what, const Pr
         if (pf.count("colupf_rows") && i < (int)pf["colupf_rows"]->values.size()) row.pf = pf["colupf_rows"]->values[i];
         if (pf.count("colubk_rows") && i < (int)pf["colubk_rows"]->values.size()) row.bk = pf["colubk_rows"]->values[i];
       }
-      std::string name = pf["pf0"]->label;
-      name = name.substr(0, name.size() - 3);
       while (!name.empty() && (name.back() == '_' || name.back() == '.')) name.pop_back();
       p.name = name.empty() ? "playfield" : name;
       out->playfields.push_back(p);
@@ -1526,7 +1573,7 @@ bool importText(const std::string& text, Asset* out, std::string* what, const Pr
     static const std::regex ours(R"(^(.*)_(?:Frame|Colour)\d+$)");
     static const std::regex colourLabel("colou?r", std::regex::icase);
     for (auto& b : blocks) {
-      if (!b.kind.empty()) continue;
+      if (!b.kind.empty() || mode.seen) continue;  // a "; mode:" export holds a playfield only
       std::string l = lower(b.label);
       bool isPf = false;
       for (const char* k : {"pf0r", "pf1r", "pf2r", "pf0", "pf1", "pf2", "colupf_rows", "colubk_rows", "ctrlpf_rows"}) isPf |= endsWith(l, k);

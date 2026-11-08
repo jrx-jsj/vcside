@@ -1024,6 +1024,39 @@ static void testGfx() {
     CHECK(updateBasicRegions(bad, "art.vcsgfx", art, std, &n, &probs) == bad && n == 0 && probs.size() == 3);
   }
   CHECK(!importText("lda #1\n", &imp, &what) && what.empty());
+  // another playfield editor's export: a "; mode:" header, then one .byte line per row
+  // (in the first column) or one table per register with left and right halves in turn
+  {
+    const char* rowsText =
+        "; mode: asymmetric mirrored line-height 8\n"
+        ".byte $10,$80,$81,$00,$00,$00 ;|X   X       X      X||                    | ( 0)\n"
+        ".byte $00,$00,$00,$20,$00,$00 ;|                    ||                  X | ( 1)\n"
+        ".byte $00,$40,$00,$00,$02,$00 ;|     X              ||         X          | ( 2)\n";
+    const char* regsText =
+        "; mode: asymmetric mirrored line-height 8\n\nDataPF0:\n\t.byte $10,$00,$00,$20,$00,$00\n"
+        "DataPF1:\n\t.byte $80,$00,$00,$00,$40,$02\nDataPF2:\n\t.byte $81,$00,$00,$00,$00,$00\n";
+    for (const char* t : {rowsText, regsText}) {
+      Asset mw;
+      CHECK(importText(t, &mw, &what) && mw.playfields.size() == 1 && mw.sprites.empty());
+      if (mw.playfields.size() != 1) continue;
+      const Playfield& q = mw.playfields[0];
+      CHECK(q.rows.size() == 3 && q.lineHeight == 8 && q.rows[0].mode == PfMode::Mirror);
+      std::string got;
+      for (int r = 0; r < 3; r++) {
+        for (int c = 0; c < 40; c++) got += q.pixel(r, c) ? 'X' : ' ';
+        got += '|';
+      }
+      CHECK(got == "X   X       X      X                    |"
+                   "                                      X |"
+                   "     X                       X          |");
+      CHECK(q.rows[1].asymmetric && q.rows[2].asymmetric);
+    }
+    Asset mw;
+    CHECK(importText("; mode: symmetric repeat line-height 4\n.byte %00010000,%00000000,%00000001\n.byte $00,$00,$00\n", &mw, &what));
+    CHECK(mw.playfields.size() == 1 && mw.playfields[0].rows.size() == 2 && mw.playfields[0].lineHeight == 4 &&
+          mw.playfields[0].rows[0].mode == PfMode::Repeat && mw.playfields[0].pixel(0, 0) && mw.playfields[0].pixel(0, 20) &&
+          mw.playfields[0].pixel(0, 12) && mw.playfields[0].pixel(0, 32) && !mw.playfields[0].rows[0].asymmetric);
+  }
 
   // animations: steps of frames with their durations
   Sprite walker = sp;
