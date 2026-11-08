@@ -12,6 +12,7 @@
     "(no name)": "(sin nombre)",
     "(none)": "(ninguno)",
     "(not found)": "(no está)",
+    "(not in {0})": "(no está en {0})",
     "(nothing)": "(nada)",
     "(zero page/absolute guessed: unknown symbol, build to resolve)": "(página cero o absoluto supuesto: símbolo desconocido, compila para resolverlo)",
     "({0} scanlines)": "({0} líneas de barrido)",
@@ -695,6 +696,7 @@
     "{0} is {1} % full ({2} of {3} bytes).": "{0} está al {1} % ({2} de {3} bytes).",
     "{0} is {1} % full: {2} bytes free.": "{0}: uso del {1} %, quedan {2} bytes libres.",
     "{0} layer(s), {1} frame(s)": "{0} capa(s), {1} fotograma(s)",
+    "{0} lines, {1} Hz": "{0} líneas, {1} Hz",
     "{0} lines: VSYNC {1}, VBLANK {2}, visible {3}, overscan {4}": "{0} líneas: VSYNC {1}, VBLANK {2}, visibles {3}, overscan {4}",
     "{0} lines: {1} cycles, {2} bytes": "{0} líneas: {1} ciclos, {2} bytes",
     "{0} not found": "{0} no encontrado",
@@ -723,5 +725,5 @@
     "{0}:{1}: no code at or after this line; breakpoint ignored.": "{0}:{1}: no hay código en esta línea ni después; se ignora el punto de ruptura.",
     "{0}:{1}: no listing to place the breakpoint: build first.": "{0}:{1}: no hay listado para situar el punto de ruptura: compila antes."
   },
-  "total": 720
+  "total": 722
 }

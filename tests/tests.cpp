@@ -625,6 +625,13 @@ static void testElfSpace() {
   std::ifstream bas(dir / "bb" / "main.bas");
   std::string btext((std::istreambuf_iterator<char>(bas)), {});
   CHECK(btext.find("rem Square Run - batari Basic") != std::string::npos && btext.find("drawscreen") != std::string::npos);
+  CHECK(btext.find("set tv") == std::string::npos);  // NTSC: batari Basic's own timing
+  CHECK(Project::create((dir / "bbpal").string(), "Pal Run", Language::BatariBasic, "PAL", &p, &err));
+  std::ifstream palBas(dir / "bbpal" / "main.bas");
+  std::string ptext((std::istreambuf_iterator<char>(palBas)), {});
+  CHECK(ptext.find("  set romsize 4k\n  set tv pal\n") != std::string::npos);
+  CHECK(tvStandardsFor(Language::BatariBasic) == std::vector<std::string>({"NTSC", "PAL", "PAL60"}));
+  CHECK(tvStandardsFor(Language::Dasm).size() == 7);
   // a folder that builds with its own Makefile becomes a project; tools and flags of its own
   {
     fs::path md = dir / "made";

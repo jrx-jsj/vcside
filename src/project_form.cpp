@@ -186,7 +186,10 @@ void ProjectForm::render(TextEditor& text, ImFont* mono, const KnowledgeBase& kb
     row(T("TV standard"), nullptr);
     {
       std::vector<std::pair<std::string, std::string>> items;
-      for (auto& t : tvStandardIds()) items.push_back({t, t == "AUTO" ? T("Chosen by the emulator") : t});
+      auto ids = tvStandardsFor(p_.language);
+      ids.push_back("AUTO");
+      if (std::find(ids.begin(), ids.end(), p_.tv) == ids.end()) ids.push_back(p_.tv);
+      for (auto& t : ids) items.push_back({t, t == "AUTO" ? T("Chosen by the emulator") : t});
       combo("##tv", p_.tv, items, p_.tv);
     }
     row(T("Emulator"), T("Its launch options: Build > Emulator options..."));

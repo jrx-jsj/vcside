@@ -371,6 +371,14 @@ const std::vector<std::string>& tvStandardIds() {
   return ids;
 }
 
+std::vector<std::string> tvStandardsFor(Language lang) {
+  if (lang == Language::BatariBasic || lang == Language::ElfC) return {"NTSC", "PAL", "PAL60"};
+  std::vector<std::string> v;
+  for (auto& t : tvStandardIds())
+    if (t != "AUTO") v.push_back(t);
+  return v;
+}
+
 // Stella's -format and Gopher2600's -tv (checked in their -help and sources).
 bool tvSupported(const std::string& emulator, const std::string& tv) {
   if (tv == "NTSC" || tv == "PAL" || tv == "PAL60" || tv == "SECAM" || tv == "AUTO") return true;
@@ -493,6 +501,8 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
       return false;
     }
     replaceAll(text, "{{NAME}}", projName);
+    // batari Basic times the frame for NTSC unless told otherwise (PAL60 keeps NTSC timing)
+    if (tvIs50Hz(tvStd)) replaceAll(text, "  set romsize 4k\n", "  set romsize 4k\n  set tv pal\n");
     fs::path mainFile = fs::path(p.dir) / "main.bas";
     if (!fs::exists(mainFile)) std::ofstream(mainFile, std::ios::binary) << text;
   } else if (lang == Language::ElfC) {

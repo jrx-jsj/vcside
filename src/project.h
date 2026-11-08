@@ -82,6 +82,10 @@ struct Project {
 
 // TV standards a project can choose, and whether an emulator has each one.
 const std::vector<std::string>& tvStandardIds();
+// The ones a language can build for (AUTO not included): batari Basic has `set tv ntsc|pal`
+// (PAL60 is its NTSC timing with PAL colours) and vcsLib detects NTSC, PAL and PAL60;
+// a DASM kernel is the programmer's, so any.
+std::vector<std::string> tvStandardsFor(Language lang);
 bool tvSupported(const std::string& emulator, const std::string& tv);
 bool tvIs50Hz(const std::string& tv);
 std::vector<std::string> splitCommand(const std::string& s);  // "a \"b c\"" -> a, b c

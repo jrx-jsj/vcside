@@ -271,7 +271,8 @@ class App {
   bool showMissingTool_ = false;
   char npName_[64] = "mygame";
   std::string npDir_;
-  int npLang_ = 0, npTv_ = 0, npExample_ = 0;  // 0 = empty, then Project::examples()
+  int npLang_ = 0, npExample_ = 0;
+  std::string npTvId_ = "NTSC";  // 0 = empty, then Project::examples()
 
   // settings
   std::vector<std::string> recent_;

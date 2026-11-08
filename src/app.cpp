@@ -1632,7 +1632,10 @@ MenuBar App::buildMenuBar(bool native) {
       s.checked = current;  // marks the category of the project's format
       formats.push_back(s);
     }
-    for (auto& tv : tvStandardIds()) {
+    auto tvIds = tvStandardsFor(project_->language);
+    tvIds.push_back("AUTO");
+    if (std::find(tvIds.begin(), tvIds.end(), project_->tv) == tvIds.end()) tvIds.push_back(project_->tv);  // set by hand
+    for (auto& tv : tvIds) {
       MenuItem m = item(tv == "AUTO" ? T("Chosen by the emulator") : tv, "", set([tv](Project& pr) { pr.tv = tv; }), true, project_->tv == tv);
       if (!tvSupported(project_->emulator, tv)) {
         Tool* t = tools_.get(project_->emulator);
@@ -2739,10 +2742,20 @@ void App::newProjectDialog() {
   const char* langNames[3] = {T(kLangNames[0]), T(kLangNames[1]), T(kLangNames[2])};
   ImGui::Combo(T("Language of the project"), &npLang_, langNames, 3);
   {
-    std::vector<const char*> tvs;
-    for (auto& tv : tvStandardIds())
-      if (tv != "AUTO") tvs.push_back(tv.c_str());
-    ImGui::Combo(T("TV standard"), &npTv_, tvs.data(), (int)tvs.size());
+    // only the standards this language can build for; the choice stays if the new list has it
+    auto ids = tvStandardsFor(languageFromId(kLangIds[npLang_]));
+    if (std::find(ids.begin(), ids.end(), npTvId_) == ids.end()) npTvId_ = ids[0];
+    if (ImGui::BeginCombo(T("TV standard"), npTvId_.c_str())) {
+      for (auto& tv : ids) {
+        bool sel = tv == npTvId_;
+        std::string label = tv;
+        if (!tvSupported("stella", tv)) label += "  " + F("(not in {0})", {"Stella"});
+        if (ImGui::Selectable(label.c_str(), sel)) npTvId_ = tv;
+        if (ImGui::IsItemHovered())
+          if (const TvStandard* t = kb_.tv(tv)) ImGui::SetTooltip("%s", F("{0} lines, {1} Hz", {std::to_string(t->linesTotal), t->fps}).c_str());
+      }
+      ImGui::EndCombo();
+    }
   }
   auto examples = Project::examples(languageFromId(kLangIds[npLang_]));
   npExample_ = std::clamp(npExample_, 0, (int)examples.size());
@@ -2759,7 +2772,7 @@ void App::newProjectDialog() {
     Project p;
     error.clear();
     std::string example = npExample_ > 0 && npExample_ <= (int)examples.size() ? examples[npExample_ - 1].first : "";
-    if (Project::create(target.string(), npName_, languageFromId(kLangIds[npLang_]), tvStandardIds()[npTv_], &p, &error, example)) {
+    if (Project::create(target.string(), npName_, languageFromId(kLangIds[npLang_]), npTvId_, &p, &error, example)) {
       openProject(p.file);
       ImGui::CloseCurrentPopup();
     }
