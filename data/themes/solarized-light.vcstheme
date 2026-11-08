@@ -108,7 +108,21 @@
     "graphics.p1": "$blue",
     "graphics.m0": "$orange",
     "graphics.m1": "$violet",
-    "graphics.bl": "$green"
+    "graphics.bl": "$green",
+    "files.rowHover": "$base01/14",
+    "files.rowSelected": "$base01/30",
+    "files.guide": "$dim/50",
+    "files.folder": "$yellow",
+    "files.project": "$base01",
+    "files.asm": "$orange",
+    "files.c": "$blue",
+    "files.header": "$violet",
+    "files.basic": "$green",
+    "files.graphics": "$red",
+    "files.rom": "$magenta",
+    "files.image": "$cyan",
+    "files.listing": "$base1",
+    "files.text": "$base00"
   },
   "indent": [
     "$yellow/1C",

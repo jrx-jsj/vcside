@@ -3,6 +3,7 @@
 #include "app.h"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cmath>
 #include <filesystem>
@@ -13,6 +14,7 @@
 #include <SDL3/SDL_opengl.h>
 
 #include "about.h"
+#include "file_icons.h"
 #include "cycles.h"
 #include "window_icon.h"
 #include "emulator_launch.h"
@@ -1675,7 +1677,49 @@ void App::projectPanel() {
     ImGui::End();
     return;
   }
-  std::function<void(const fs::path&)> tree = [&](const fs::path& dir) {
+  // The tree, drawn row by row: chevron, icon, name; guides for each level.
+  ImDrawList* dl = ImGui::GetWindowDrawList();
+  float fontH = ImGui::GetTextLineHeight(), rowH = std::round(fontH * 1.45f), indentW = std::round(fontH * 0.9f);
+  float iconS = std::round(fontH * 0.95f);
+  float left = ImGui::GetWindowPos().x, right = left + ImGui::GetWindowWidth();
+  ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
+  ImGui::SetCursorPosY(ImGui::GetCursorPosY() - ImGui::GetStyle().WindowPadding.y * 0.5f);
+  auto isOpen = [&](const std::string& p, bool byDefault) { return treeToggled_.count(p) ? !byDefault : byDefault; };
+  auto toggle = [&](const std::string& p) {
+    if (!treeToggled_.erase(p)) treeToggled_.insert(p);
+  };
+  // One row; true if clicked. `depth` 0 is the project's own row.
+  auto row = [&](const std::string& id, int depth, const std::string& name, files::Kind kind, bool dir, bool open,
+                 bool active, bool dim) {
+    ImVec2 at = ImGui::GetCursorScreenPos();
+    ImGui::PushID(id.c_str());
+    bool clicked = ImGui::InvisibleButton("row", ImVec2(std::max(1.0f, right - at.x), rowH));
+    bool hover = ImGui::IsItemHovered();
+    ImGui::PopID();
+    if (active) dl->AddRectFilled(ImVec2(left, at.y), ImVec2(right, at.y + rowH), theme::col(theme::Role::FilesRowSelected));
+    else if (hover) dl->AddRectFilled(ImVec2(left, at.y), ImVec2(right, at.y + rowH), theme::col(theme::Role::FilesRowHover));
+    float x = at.x + depth * indentW, cy = at.y + rowH * 0.5f;
+    for (int d = 1; d <= depth; d++) {  // a guide under each open folder above
+      float gx = std::round(at.x + (d - 1) * indentW + indentW * 0.5f) + 0.5f;
+      dl->AddLine(ImVec2(gx, at.y), ImVec2(gx, at.y + rowH), theme::col(theme::Role::FilesGuide));
+    }
+    ImU32 text = theme::col(dim ? theme::Role::UiTextDim : theme::Role::UiText);
+    if (dir) {  // chevron: > closed, v open
+      float c = fontH * 0.22f, cx = x + indentW * 0.5f, t = std::max(1.0f, fontH * 0.09f);
+      ImU32 cc = theme::col(theme::Role::UiTextDim);
+      if (open) dl->AddPolyline(std::array<ImVec2, 3>{ImVec2(cx - c, cy - c * 0.5f), ImVec2(cx, cy + c * 0.5f), ImVec2(cx + c, cy - c * 0.5f)}.data(), 3, cc, 0, t);
+      else dl->AddPolyline(std::array<ImVec2, 3>{ImVec2(cx - c * 0.5f, cy - c), ImVec2(cx + c * 0.5f, cy), ImVec2(cx - c * 0.5f, cy + c)}.data(), 3, cc, 0, t);
+    }
+    x += indentW;
+    if (depth > 0 || !dir) {
+      files::drawIcon(dl, ImVec2(x, std::round(cy - iconS * 0.5f)), iconS, kind, open);
+      x += iconS + fontH * 0.4f;
+    }
+    dl->AddText(ImVec2(x, std::round(cy - fontH * 0.5f)), text, name.c_str());
+    if (hover && ImGui::CalcTextSize(name.c_str()).x > right - x) ImGui::SetTooltip("%s", name.c_str());
+    return clicked;
+  };
+  std::function<void(const fs::path&, int, bool)> tree = [&](const fs::path& dir, int depth, bool dim) {
     std::vector<fs::directory_entry> entries;
     std::error_code ec;
     for (auto& e : fs::directory_iterator(dir, ec)) {
@@ -1688,25 +1732,29 @@ void App::projectPanel() {
       return lower(a.path().filename().string()) < lower(b.path().filename().string());
     });
     for (auto& e : entries) {
-      std::string n = e.path().filename().string();
-      if (e.is_directory()) {
-        if (ImGui::TreeNode(n.c_str())) {
-          tree(e.path());
-          ImGui::TreePop();
-        }
+      std::string n = e.path().filename().string(), p = e.path().string();
+      bool d = e.is_directory();
+      if (d) {
+        bool sub = dim || n == "build";  // build output: shown dimmed
+        bool open = isOpen(p, false);
+        if (row(p, depth, n, files::Kind::Folder, true, open, false, sub)) toggle(p), open = !open;
+        if (open) tree(e.path(), depth + 1, sub);
       } else {
-        bool active = activeFile_ >= 0 && files_[activeFile_]->path == e.path().string();
-        if (ImGui::Selectable(n.c_str(), active, ImGuiSelectableFlags_AllowDoubleClick)) {
-          if (e.path().extension() == ".vcsproj") openProject(e.path().string());
-          else if (e.path().extension() != ".bin") openFile(e.path().string());
+        bool active = activeFile_ >= 0 && files_[activeFile_]->path == p;
+        if (row(p, depth, n, files::kindOf(n, false), false, false, active, dim)) {
+          if (e.path().extension() == ".vcsproj") openProject(p);
+          else if (files::kindOf(n, false) != files::Kind::Rom) openFile(p);
         }
       }
     }
   };
-  if (ImGui::TreeNodeEx(fs::path(folder_).filename().string().c_str(), ImGuiTreeNodeFlags_DefaultOpen)) {
-    tree(folder_);
-    ImGui::TreePop();
-  }
+  // the project's row: its name in capitals, like a section title
+  std::string rootName = fs::path(folder_).filename().string();
+  for (auto& c : rootName) c = (char)std::toupper((unsigned char)c);
+  bool rootOpen = isOpen(folder_, true);
+  if (row(folder_, 0, rootName, files::Kind::Folder, true, rootOpen, false, false)) toggle(folder_), rootOpen = !rootOpen;
+  if (rootOpen) tree(folder_, 1, false);
+  ImGui::PopStyleVar();
   ImGui::End();
 }
 

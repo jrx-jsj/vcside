@@ -1265,6 +1265,13 @@ static void testThemes(const std::string& data) {
   CHECK(lib.save(mine, &err) && mine.id == "mine" && fs::exists(user / "mine.vcstheme"));
   Resolved m = lib.resolve("mine");
   CHECK(m.problems.empty() && m.colour[(int)Role::EdBackground] == 0xFFFFFFFF && m.colour[(int)Role::UiAccent] == 0xFFFFFF80);
+  // A full copy with no base, missing colours added later: they come from Dark or Light.
+  Theme old;
+  CHECK(fromJson(R"({"vcstheme":1,"name":"Old","colours":{"ui.background":"#FAFAFA"}})", &old, &err) && lib.save(old, &err));
+  Resolved o = lib.resolve(old.id), light = lib.resolve("light");
+  CHECK(o.problems.empty() && o.notes.size() == 1 && o.colour[(int)Role::FilesAsm] == light.colour[(int)Role::FilesAsm]);
+  CHECK(lib.remove(old.id, &err));
+  for (const char* b : {"dark", "light", "solarized-light", "solarized-dark"}) CHECK(lib.resolve(b).notes.empty() && lib.resolve(b).problems.empty());
   CHECK(m.colour[(int)Role::SynMnemonic] == 0xFF0000FF);  // the base's "$blue" is now this palette's
   CHECK(m.indent.empty());                                // an empty list: no shading
   CHECK(lib.resolveSpec("mine", "$blue/20", &c) && c == 0xFF000020 && !lib.resolveSpec("mine", "$nope", &c));

@@ -222,16 +222,31 @@ Resolved Library::resolve(const std::string& id) const {
     if ((*it)->hasIndent) indent = (*it)->indent;
   }
   auto value = [&](const std::string& v, Rgba* out, int) { return evalSpec(v, palette, colours, out, 0); };
+  std::vector<int> missing;
   for (int i = 0; i < kRoles; i++) {
     auto c = colours.find(kInfo[i].id);
     if (c == colours.end()) {
-      r.problems.push_back(F("{0} has no colour.", {kInfo[i].id}));
+      missing.push_back(i);
       r.colour[i] = 0xFF00FFFF;  // magenta: easy to spot
     } else if (!value(c->second, &r.colour[i], 0)) {
       r.problems.push_back(F("{0}: cannot read \"{1}\".", {kInfo[i].id, c->second}));
       r.colour[i] = 0xFF00FFFF;
     }
   }
+  // A theme of its own with no base (a full copy, say) made before a colour existed:
+  // that colour comes from the built-in theme of its kind, dark or light.
+  if (!missing.empty() && !chain.back()->builtIn) {
+    Rgba bg = r.colour[(int)Role::UiBackground];
+    float lum = (0.299f * (bg >> 24) + 0.587f * ((bg >> 16) & 255) + 0.114f * ((bg >> 8) & 255)) / 255;
+    const char* from = lum > 0.5f ? "light" : "dark";
+    if (find(from) && find(from)->builtIn) {
+      Resolved fb = resolve(from);
+      for (int i : missing) r.colour[i] = fb.colour[i];
+      r.notes.push_back(F("{0} colours not in this theme come from \"{1}\".", {std::to_string(missing.size()), T(find(from)->name.c_str())}));
+      missing.clear();
+    }
+  }
+  for (int i : missing) r.problems.push_back(F("{0} has no colour.", {kInfo[i].id}));
   for (auto& [k, v] : colours)
     if (!roleFromId(k, nullptr)) r.problems.push_back(F("{0} is not a colour of VCSIDE.", {k}));
   for (auto& v : indent) {

@@ -407,6 +407,10 @@ void Editor::draw(Library& lib, const std::string& current, const Hooks& h) {
     ImGui::Separator();
     for (auto& p : res.problems) ImGui::TextColored(colv(Role::MsgWarning), "%s", p.c_str());
   }
+  if (!res.notes.empty()) {
+    ImGui::Separator();
+    for (auto& n : res.notes) ImGui::TextDisabled("%s", n.c_str());
+  }
   ImGui::EndChild();
   ImGui::End();
 

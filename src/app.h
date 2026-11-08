@@ -201,6 +201,7 @@ class App {
   std::string liveSymbolText(const LiveSymbol& s, bool full) const;
   AddressMap addresses_;
   std::map<std::string, std::set<int>> breakpoints_;
+  std::set<std::string> treeToggled_;  // project tree folders opened or closed against their default
   bool showGoToAddress_ = false;
   bool showEmuOptions_ = false;
   std::string emuOptionsTab_;  // emulator whose tab to select when the dialog opens

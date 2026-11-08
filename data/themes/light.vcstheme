@@ -91,7 +91,21 @@
     "graphics.p1": "#1E7FD0",
     "graphics.m0": "#C25E00",
     "graphics.m1": "#2A5CC0",
-    "graphics.bl": "#3C8A2A"
+    "graphics.bl": "#3C8A2A",
+    "files.rowHover": "#0000000C",
+    "files.rowSelected": "$accent/30",
+    "files.guide": "#00000020",
+    "files.folder": "#B07A2A",
+    "files.project": "#404040",
+    "files.asm": "#B8860B",
+    "files.c": "#2B6CB0",
+    "files.header": "#8E44AD",
+    "files.basic": "#2E8B3E",
+    "files.graphics": "#C0392B",
+    "files.rom": "#A0522D",
+    "files.image": "#138A8A",
+    "files.listing": "#7A7F88",
+    "files.text": "#6A6A6A"
   },
   "indent": [
     "#FFD70030",

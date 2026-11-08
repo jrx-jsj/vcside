@@ -160,6 +160,7 @@ static void applyStyle() {
   s.WindowBorderSize = 1;
   s.FramePadding = ImVec2(6, 4);
   s.ItemSpacing = ImVec2(8, 5);
+  s.WindowMenuButtonPosition = ImGuiDir_None;  // no tab-bar menu: its "hide" had no way back
   // the colours come from the theme (App::useTheme)
 }
 

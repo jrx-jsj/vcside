@@ -10,7 +10,12 @@
     "dim": "$base01"
   },
   "colours": {
-    "ui.modalDim": "#00000060"
+    "ui.modalDim": "#00000060",
+    "files.rowHover": "$base1/14",
+    "files.rowSelected": "$base1/26",
+    "files.project": "$base1",
+    "files.text": "$base0",
+    "files.listing": "$base01"
   },
   "indent": [
     "$yellow/12",

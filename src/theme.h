@@ -115,7 +115,21 @@ namespace vcs::theme {
   X(GfxP1, "graphics.p1", N_("Graphics editor"), N_("Layer names: P1 and the extra players"))   \
   X(GfxM0, "graphics.m0", N_("Graphics editor"), N_("Layer names: M0"))                         \
   X(GfxM1, "graphics.m1", N_("Graphics editor"), N_("Layer names: M1"))                         \
-  X(GfxBL, "graphics.bl", N_("Graphics editor"), N_("Layer names: BL"))
+  X(GfxBL, "graphics.bl", N_("Graphics editor"), N_("Layer names: BL"))                         \
+  X(FilesRowHover, "files.rowHover", N_("Project files"), N_("Row under the mouse")) \
+  X(FilesRowSelected, "files.rowSelected", N_("Project files"), N_("File being edited")) \
+  X(FilesGuide, "files.guide", N_("Project files"), N_("Tree guides")) \
+  X(FilesFolder, "files.folder", N_("Project files"), N_("Folders")) \
+  X(FilesProject, "files.project", N_("Project files"), N_("Projects (.vcsproj)")) \
+  X(FilesAsm, "files.asm", N_("Project files"), N_("Assembly (.asm, .s)")) \
+  X(FilesC, "files.c", N_("Project files"), N_("C (.c)")) \
+  X(FilesHeader, "files.header", N_("Project files"), N_("Headers and includes (.h, .inc)")) \
+  X(FilesBasic, "files.basic", N_("Project files"), N_("batari Basic (.bas)")) \
+  X(FilesGraphics, "files.graphics", N_("Project files"), N_("Graphics (.vcsgfx)")) \
+  X(FilesRom, "files.rom", N_("Project files"), N_("ROMs (.bin, .a26, .elf)")) \
+  X(FilesImage, "files.image", N_("Project files"), N_("Images (.png, .bmp)")) \
+  X(FilesListing, "files.listing", N_("Project files"), N_("Listings and symbols (.lst, .sym)")) \
+  X(FilesText, "files.text", N_("Project files"), N_("Text and other files"))
 
 enum class Role {
 #define X(e, id, group, label) e,
@@ -162,6 +176,7 @@ struct Resolved {
   std::map<std::string, Rgba> imgui;
   // lines that could not be resolved (unknown role, palette entry, theme or a loop)
   std::vector<std::string> problems;
+  std::vector<std::string> notes;  // not wrong, but worth knowing
 };
 
 // The themes VCSIDE knows: the built-in ones (data/themes) and the user's (configDir()/themes).
