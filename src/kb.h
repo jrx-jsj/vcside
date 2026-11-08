@@ -14,30 +14,40 @@ struct Opcode {
   std::string mnemonic, mode;
   int bytes = 0, cycles = 0;
   bool pagePenalty = false, branch = false, illegal = false, stable = true;
+  bool dasm = true;  // false: DASM has no mnemonic for it, write it with .byte
 };
 
 struct Instruction {
   std::string mnemonic, summary, flags, description;
-  bool illegal = false;
+  bool illegal = false, verified = true;
+  std::vector<std::string> sources, aliases;
   std::vector<const Opcode*> opcodes;
 };
 
 struct Register {
   std::string chip, name, address, access, bits, summary, description, timing, example;
-  std::vector<std::string> issues;
+  std::vector<std::string> issues, sources;
+  bool verified = true;
   int addr() const;
 };
 
 struct CartFormat {
   std::string id, name, size, description, stella, gopher2600, detection, ram;
-  std::vector<std::string> hotspots, issues;
+  std::vector<std::string> hotspots, issues, sources;
+  bool verified = true;
 };
 
 struct TvStandard {
   std::string id, stellaTv, palette;
   int linesTotal = 0, vsync = 0, vblank = 0, visible = 0, overscan = 0;
   std::string fps;
-  std::vector<std::string> notes;
+  std::vector<std::string> notes, sources;
+  bool verified = true;
+};
+
+// Where a fact comes from (data/kb/*.json "sources" arrays; docs/fuentes.md).
+struct Source {
+  std::string id, title, author, url;
 };
 
 // A word the editor can complete or explain.
@@ -57,6 +67,7 @@ class KnowledgeBase {
   const Register* reg(const std::string& name) const;
   const CartFormat* format(const std::string& id) const;
   const TvStandard* tv(const std::string& id) const;
+  const Source* source(const std::string& id) const;
 
   const std::map<std::string, Instruction>& instructions() const { return instructions_; }
   const std::vector<Register>& registers() const { return registers_; }
@@ -76,6 +87,7 @@ class KnowledgeBase {
   std::vector<CartFormat> formats_;
   std::vector<TvStandard> tv_;
   std::vector<std::string> cpuNotes_, tiaNotes_;
+  std::map<std::string, Source> sources_;
 };
 
 std::string upper(std::string s);

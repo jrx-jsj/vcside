@@ -879,6 +879,30 @@ void App::problemsPanel() {
   ImGui::End();
 }
 
+// Shows whether an entry is fully verified and where its facts come from.
+static void unverifiedNotice(bool verified) {
+  if (verified) return;
+  ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 0.75f, 0.3f, 1));
+  ImGui::TextWrapped("%s", T("Contains statements not confirmed by the sources (marked \"Unverified\")."));
+  ImGui::PopStyleColor();
+}
+
+static void provenance(const KnowledgeBase& kb, const std::vector<std::string>& sources) {
+  if (sources.empty()) return;
+  ImGui::SeparatorText(T("Sources"));
+  for (auto& id : sources) {
+    const Source* src = kb.source(id);
+    ImGui::Bullet();
+    if (!src) {
+      ImGui::TextDisabled("%s", id.c_str());
+      continue;
+    }
+    std::string label = src->title + (src->author.empty() ? "" : " (" + src->author + ")");
+    if (src->url.rfind("http", 0) == 0) ImGui::TextLinkOpenURL(label.c_str(), src->url.c_str());
+    else ImGui::TextWrapped("%s", label.c_str());
+  }
+}
+
 static void bullet(const std::string& s) {
   ImGui::Bullet();
   ImGui::TextWrapped("%s", s.c_str());
@@ -957,6 +981,12 @@ void App::docsPanel() {
       ImGui::TextUnformatted(in->summary.c_str());
       if (in->illegal) ImGui::TextColored(stable ? illegal : unstable, "%s", stable ? T("Illegal (stable)") : T("Illegal (unstable)"));
       if (!in->flags.empty()) ImGui::Text("%s: %s", T("Flags"), in->flags.c_str());
+      unverifiedNotice(in->verified);
+      if (!in->aliases.empty()) {
+        std::string a;
+        for (auto& x : in->aliases) a += (a.empty() ? "" : ", ") + x;
+        ImGui::TextDisabled("%s", F("Also known as: {0}", {a}).c_str());
+      }
       ImGui::TextWrapped("%s", in->description.c_str());
       if (ImGui::BeginTable("ops", 5, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_SizingFixedFit)) {
         ImGui::TableSetupColumn(T("Mode"));
@@ -988,10 +1018,16 @@ void App::docsPanel() {
           ImGui::PopFont();
           ImGui::TableNextColumn();
           if (op->illegal) ImGui::TextColored(op->stable ? illegal : unstable, "%s", op->stable ? T("illegal") : T("unstable"));
+          if (!op->dasm) {
+            ImGui::SameLine();
+            ImGui::TextDisabled("%s", T(".byte only"));
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", T("DASM has no mnemonic for this opcode: write it with .byte"));
+          }
         }
         ImGui::EndTable();
       }
       ImGui::TextDisabled("%s", T("(+1) page crossing; branches: +1 taken, +2 taken to another page"));
+      provenance(kb_, in->sources);
     }
   } else if (topic.rfind("R:", 0) == 0) {
     if (const Register* r = kb_.reg(topic.substr(2))) {
@@ -1001,6 +1037,7 @@ void App::docsPanel() {
       ImGui::SameLine();
       ImGui::Text("%s %s  %s  bits %s", r->chip.c_str(), r->address.c_str(), r->access == "R" ? T("read") : T("write"), r->bits.c_str());
       ImGui::TextWrapped("%s", r->summary.c_str());
+      unverifiedNotice(r->verified);
       ImGui::Separator();
       ImGui::TextWrapped("%s", r->description.c_str());
       if (!r->timing.empty()) {
@@ -1011,6 +1048,7 @@ void App::docsPanel() {
         ImGui::SeparatorText(T("Known issues"));
         for (auto& i : r->issues) bullet(i);
       }
+      provenance(kb_, r->sources);
       if (!r->example.empty()) {
         ImGui::SeparatorText(T("Example"));
         ImGui::PushFont(mono_);
@@ -1021,6 +1059,7 @@ void App::docsPanel() {
   } else if (topic.rfind("F:", 0) == 0) {
     if (const CartFormat* f = kb_.format(topic.substr(2))) {
       ImGui::Text("%s - %s", f->id.c_str(), f->name.c_str());
+      unverifiedNotice(f->verified);
       ImGui::Text("%s: %s", T("Size"), f->size.c_str());
       if (!f->ram.empty()) ImGui::TextWrapped("RAM: %s", f->ram.c_str());
       ImGui::TextWrapped("%s", f->description.c_str());
@@ -1039,6 +1078,7 @@ void App::docsPanel() {
         ImGui::SeparatorText(T("Known issues"));
         for (auto& i : f->issues) bullet(i);
       }
+      provenance(kb_, f->sources);
     }
   } else if (topic.rfind("T:", 0) == 0) {
     if (const TvStandard* t = kb_.tv(topic.substr(2))) {
@@ -1047,8 +1087,10 @@ void App::docsPanel() {
                                {std::to_string(t->linesTotal), std::to_string(t->vsync), std::to_string(t->vblank),
                                 std::to_string(t->visible), std::to_string(t->overscan)}).c_str());
       ImGui::Text("%s Hz", t->fps.c_str());
+      unverifiedNotice(t->verified);
       ImGui::TextWrapped("%s", t->palette.c_str());
       for (auto& n : t->notes) bullet(n);
+      provenance(kb_, t->sources);
     }
   } else {
     for (auto& n : kb_.cpuNotes()) bullet(n);

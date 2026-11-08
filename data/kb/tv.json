@@ -9,13 +9,18 @@
    "overscan": 30,
    "fps": "59.92 (nominal 60)",
    "cpu_hz": 1193182,
-   "palette": "128 colours, 16 hues x 8 lumas (hue 0 = greyscale)",
+   "palette": "128 colours (16 hues x 8 luminances)",
    "stella_tv": "NTSC",
    "notes": [
-    "Colour clock 3.579545 MHz; 228 clocks x 262 lines = 59736 clocks per frame; 19912 CPU cycles per frame; 76 cycles per line. Frame rate = 3579545/59736 = about 59.92 Hz (broadcast NTSC is 59.94; the console is not locked to it).",
-    "Typical layout: 3 lines VSYNC + 37 lines VBLANK + 192 visible + 30 overscan = 262. Many games use 191-200 visible lines and total 262 regardless; the total must stay at 262 (some TVs tolerate 260-264).",
-    "Timer idioms: TIM64T 43 for VBLANK (37 lines = 2812 cycles) and about 35-36 for overscan (30 lines = 2280 cycles), then WSYNC; adjust for your loop overhead.",
-    "NTSC hue numbers are the reference for most documentation: $1x yellow-gold, $2x orange, $3x red-orange, $4x red-pink, $5x purple, $6x purple-blue, $7x blue, $8x blue, $9x light-blue, $Ax cyan, $Bx green-cyan, $Cx green, $Dx yellow-green, $Ex olive/orange-green, $Fx tan. Approximate names; display varies by TV and emulator palette."
+    "Colour clock 3.579545 MHz; 228 clocks x 262 lines = 59736 clocks per frame = 19912 CPU cycles (76 per line). Frame rate = 3579545 / 59736 = about 59.92 Hz (derived; broadcast NTSC is 59.94 and Gopher2600 uses a 15734.26 Hz line rate, giving about 60.05).",
+    "Layout from the Stella guide: 3 lines VSYNC + 37 VBLANK + 192 picture + 30 overscan = 262. Gopher2600 uses the same split in its NTSC specification.",
+    "The guide adds the programming convention for timers: a 37-line vertical blank is 2812 CPU cycles and a 30-line overscan 2280 cycles; the matching TIM64T values depend on the cycles the surrounding code spends, so derive them from your own code.",
+    "The Stella guide groups the 16 hues in pairs with rough names: 0-1 grey to gold, 2-3 orange, 4-5 pink to purple, 6-7 purple-blue to blue, 8-9 blue to light blue, A-B turquoise to green-blue, C-D green to yellow-green, E-F orange-green to light orange. The colour actually shown varies between TVs and emulator palettes."
+   ],
+   "verified": true,
+   "sources": [
+    "stella-guide",
+    "gopher-src"
    ]
   },
   {
@@ -27,14 +32,19 @@
    "overscan": 36,
    "fps": "49.86 (nominal 50)",
    "cpu_hz": 1182298,
-   "palette": "128 entries, 16 hues x 8 lumas, but hues 0, 1, 14 and 15 are greyscale so only 12 true hues",
+   "palette": "128 entries (16 hues x 8 luminances); unverified: common PAL palettes show hues 0, 1, 14 and 15 as grey",
    "stella_tv": "PAL",
    "notes": [
-    "Colour clock 3.546894 MHz; 228 clocks x 312 lines = 71136 clocks per frame; 23712 CPU cycles per frame; 76 cycles per line; frame rate about 49.86 Hz.",
-    "Typical layout: 3 VSYNC + 45 VBLANK + 228 visible + 36 overscan = 312, though many PAL games use only 192-200 visible lines and larger blank areas (the visible height varies per TV; 228 is the maximum conventionally drawn).",
-    "Timer idioms: VBLANK 45 lines = 3420 cycles (about TIM64T 53), overscan 36 lines = 2736 cycles (about TIM64T 42); derive the exact value from your own code.",
-    "PAL hue numbering differs from NTSC (hues 2-13 carry colour). A NTSC colour table must be remapped; the same byte gives a different colour.",
-    "A PAL console can still be fed a 262-line signal (PAL60, below) but many PAL TVs reject it."
+    "Colour clock about 3.546894 MHz; 228 clocks x 312 lines = 71136 clocks per frame = 23712 CPU cycles; frame rate about 49.86 Hz (derived; Gopher2600 uses a 15625 Hz line rate, giving 50.08).",
+    "Layout: 3 VSYNC + 45 VBLANK + 228 picture + 36 overscan = 312 (the Stella guide lists the vertical blank as 48 lines including VSYNC). Gopher2600 uses the same split.",
+    "Vertical blank of 45 lines = 3420 cycles and overscan of 36 lines = 2736 cycles; pick the TIM64T value from your own cycle count.",
+    "PAL hue numbers do not mean the same as NTSC ones, so an NTSC colour table must be remapped. The Stella guide only says NTSC and PAL share the black-and-white description.",
+    "Slower clock lowers the pitch of audio and 50 Hz slows frame-based game speed by about 17% (Stella guide)."
+   ],
+   "verified": false,
+   "sources": [
+    "stella-guide",
+    "gopher-src"
    ]
   },
   {
@@ -46,12 +56,16 @@
    "overscan": 30,
    "fps": "59.38 (about 60)",
    "cpu_hz": 1182298,
-   "palette": "PAL palette (as PAL)",
+   "palette": "PAL palette",
    "stella_tv": "PAL60",
    "notes": [
-    "PAL console running the NTSC line count (262 lines): same timing code as NTSC, but PAL colour clock (3.546894 MHz) so frame rate is about 59.38 Hz and the PAL colour table applies.",
-    "Not all PAL TVs accept 60 Hz PAL; it is common on 1990s-era PAL TVs and modern ones with composite input. Some PAL games ship a '60 Hz' selection for this purpose.",
-    "On an NTSC console the NTSC palette applies; the combination 'NTSC 312 lines at 50 Hz' is called NTSC50 in Stella."
+    "PAL colour clock with the NTSC line count (262 lines): NTSC timing code works unchanged, the PAL palette applies and the frame rate is 3546894 / 59736 = about 59.38 Hz (derived).",
+    "Stella names the format PAL60; its NTSC counterpart for a 312-line signal is NTSC50. Not every PAL TV accepts a 60 Hz signal."
+   ],
+   "verified": true,
+   "sources": [
+    "stella-guide",
+    "gopher-src"
    ]
   },
   {
@@ -63,22 +77,50 @@
    "overscan": 36,
    "fps": "49.86 (nominal 50)",
    "cpu_hz": 1182298,
-   "palette": "8 colours only; selected by COLUxx bits 3-1, hue bits 7-4 and bit 0 ignored",
+   "palette": "8 colours selected by COLUxx bits 3-1 (hue bits 7-4 and bit 0 are ignored)",
    "stella_tv": "SECAM",
    "notes": [
-    "SECAM consoles use the same timing as PAL (312 lines, 50 Hz). The TIA outputs one of 8 colours chosen by luminance bits 3-1: 0 black, 1 blue, 2 red, 3 magenta, 4 green, 5 cyan, 6 yellow, 7 white (as commonly documented; verify with a SECAM palette test ROM).",
-    "Many SECAM-era games reuse the PAL ROM; the colours then collapse onto this 8-colour set, and sprites with the same luma become the same colour, so play-ability may need a dedicated SECAM table.",
-    "Stella also has SECAM60 for a SECAM console on a 262-line signal."
+    "SECAM consoles use PAL timing (312 lines, 50 Hz). The Stella guide says SECAM takes the PAL software but the console's colour/B&W switch is hardwired to B&W, so the software's B&W (luminance) table selects one of 8 fixed colours: luminance bits 3-1 = 0 black, 1 blue, 2 red, 3 magenta, 4 green, 5 cyan, 6 yellow, 7 white (the guide lists them by luminance value 0, 2, 4 ... E).",
+    "Silence on SECAM must be made with AUDVx = 0 rather than AUDCx = 0 (Stella guide).",
+    "Stella also has the SECAM60 format for a 262-line signal."
+   ],
+   "verified": true,
+   "sources": [
+    "stella-guide",
+    "gopher-src"
    ]
   }
  ],
  "notes": [
-  "There is NO hardware register that reports the TV standard, so software cannot ask whether the console is NTSC or PAL. Common solutions: ship region-specific ROMs; offer a start-up menu choice (for example SELECT toggles 50/60 Hz and the palette); or use a software heuristic. Colour/BW (SWCHB bit 3) is only the console switch, not the TV standard.",
-  "Frame structure: sync the frame with timers rather than counting WSYNCs in the vertical blank: write TIM64T at the start of the VBLANK/overscan and run game logic, then wait for INTIM = 0 and WSYNC. Keep the line count per frame constant; derive loop counts from constants such as VBLANK_LINES, KERNEL_LINES, OVERSCAN_LINES defined per standard with DASM IFCONST/IF blocks (e.g. `IF PAL ... ELSE ... ENDIF`).",
-  "Use one colour table per standard (NTSC, PAL, optionally SECAM). Define colours by symbolic names (e.g. COL_RED = NTSC $34 / PAL $64) in an include file switched by an assemble-time flag; do not hard-code hue values.",
-  "Timing-dependent code (positioning loops, sprite kernels) is in CPU cycles per line (76) and so is identical in NTSC and PAL; what changes is the number of lines and the frame time. Game speed that depends on frame rate (50 vs 60 Hz) should be compensated with a scale factor on speeds/timers.",
-  "A PAL cart usually shows more lines; kernels written for 192 lines leave black borders on PAL unless extended to 228. Stella shows the detected scanline count.",
-  "Stella command line: -format <NTSC|PAL|SECAM|NTSC50|PAL60|SECAM60|AUTO> sets the display format (the -bs option is the cartridge type). Stella autodetects by line count and by looking at which colours the game uses; wrong detection can be overridden.",
-  "SWCHB colour switch detection (bit 3: 1 = colour, 0 = black and white) can be used to select a monochrome-friendly palette (luma only) when the user flips the TV TYPE switch; this is the intended use of that switch."
+  "The TIA has no register that reports the TV standard, so software cannot ask whether it runs on NTSC or PAL. Common solutions: separate ROMs per region, a start-up menu choice, or a software heuristic. The colour/B&W switch (SWCHB bit 3) is only a console switch.",
+  "Frame structure: count the lines of VSYNC, VBLANK, picture and overscan from constants defined per standard (for example with DASM IFCONST/IF blocks). Timers are a convenient way to run the vertical blank and overscan: write TIM64T, do the work, wait for INTIM = 0 and finish with WSYNC.",
+  "Use one colour table per standard; do not hard-code hue numbers.",
+  "Timing in CPU cycles per line (76) is identical in NTSC and PAL; only the number of lines and the frame time change. Game speed tied to frame rate needs a scale factor (Stella guide: PAL is about 17% slower per frame).",
+  "A PAL cart usually shows more lines (228 against 192); a kernel written for 192 lines leaves black borders on PAL unless extended.",
+  "Stella's '-format' option accepts NTSC, PAL, SECAM, NTSC50, PAL60, SECAM60 and AUTO (the cartridge type is '-bs'). Gopher2600 uses '-tv' with AUTO, NTSC, PAL, PAL60, PAL-M and SECAM.",
+  "The colour/B&W switch can be used to choose a luminance-only palette when it reads 0."
+ ],
+ "sources": [
+  {
+   "id": "stella-guide",
+   "title": "Stella Programmer's Guide (12/03/79)",
+   "author": "Steve Wright (Atari); text reconstructed by Charles Sinnett, 1993",
+   "url": "https://atarihq.com/danb/files/stella.pdf",
+   "used_for": "TIA/RIOT register map, bit meanings, HM encoding, AUDC table, input ports, NTSC/PAL line counts, SWCHA/SWCHB layout, timer behaviour"
+  },
+  {
+   "id": "stella-src",
+   "title": "Stella source code (Bankswitch.hxx, Cart*.hxx/cxx, CartDetector.cxx, M6532.cxx, TIA.cxx)",
+   "author": "Stella Team",
+   "url": "https://github.com/stella-emu/stella",
+   "used_for": "Display format names (-format NTSC, PAL, SECAM, NTSC50, PAL60, SECAM60); GPL-2, consulted only"
+  },
+  {
+   "id": "gopher-src",
+   "title": "Gopher2600 source (commit 07d8de5, 2026-11-05)",
+   "author": "JetSetIlly",
+   "url": "https://github.com/JetSetIlly/Gopher2600",
+   "used_for": "Line counts and line rates per television specification (specifications.go: NTSC, PAL, PAL60, PAL-M, SECAM); GPL-3, consulted only"
+  }
  ]
 }

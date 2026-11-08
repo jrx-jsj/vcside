@@ -29,6 +29,16 @@ static void testKb(const KnowledgeBase& kb) {
   o = kb.opcode("DCP", "zp");
   CHECK(o && o->illegal && o->cycles == 5);
   CHECK(kb.opcode("NOP", "imp") && !kb.opcode("NOP", "imp")->illegal);
+  // DASM cannot assemble JAM; LAS is a stable illegal opcode; every entry cites known sources.
+  CHECK(kb.instruction("JAM") && !kb.instruction("JAM")->opcodes.empty() && !kb.instruction("JAM")->opcodes[0]->dasm);
+  CHECK(kb.opcode("LAS", "absy") && kb.opcode("LAS", "absy")->stable);
+  CHECK(kb.reg("WSYNC") && !kb.reg("WSYNC")->sources.empty());
+  for (auto& r : kb.registers())
+    for (auto& id : r.sources) CHECK(kb.source(id) != nullptr);
+  for (auto& f : kb.formats())
+    for (auto& id : f.sources) CHECK(kb.source(id) != nullptr);
+  for (auto& [mn, in] : kb.instructions())
+    for (auto& id : in.sources) CHECK(kb.source(id) != nullptr);
   auto c = kb.complete("ST");
   bool sta = false;
   for (auto& e : c) sta |= e.word == "STA";

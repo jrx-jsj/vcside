@@ -60,6 +60,13 @@ static int num(const json& j, const char* key) {
   return 0;
 }
 
+static void readSources(const json& j, std::map<std::string, Source>& out) {
+  auto it = j.find("sources");
+  if (it == j.end() || !it->is_array()) return;
+  for (auto& s : *it)
+    if (s.is_object()) out[str(s, "id")] = {str(s, "id"), str(s, "title"), str(s, "author"), str(s, "url")};
+}
+
 static bool readJson(const std::string& path, json& out, std::string* error) {
   std::ifstream f(path);
   if (!f) return false;  // missing file: not an error
@@ -78,6 +85,7 @@ bool KnowledgeBase::load(const std::string& dir, std::string* error) {
   json j;
   if (readJson(dir + "/6502.json", j, error)) {
     cpuNotes_ = strs(j, "notes");
+    readSources(j, sources_);
     for (auto& o : j["opcodes"]) {
       Opcode op;
       op.code = parseNumber(str(o, "op"));
@@ -89,6 +97,7 @@ bool KnowledgeBase::load(const std::string& dir, std::string* error) {
       op.branch = o.value("branch", false);
       op.illegal = o.value("illegal", false);
       op.stable = o.value("stable", true);
+      op.dasm = o.value("dasm", true);
       opcodes_.push_back(op);
     }
     for (auto& [mn, d] : j["instructions"].items()) {
@@ -98,6 +107,9 @@ bool KnowledgeBase::load(const std::string& dir, std::string* error) {
       in.flags = str(d, "flags");
       in.description = str(d, "description");
       in.illegal = d.value("illegal", false);
+      in.verified = d.value("verified", true);
+      in.sources = strs(d, "sources");
+      in.aliases = strs(d, "aliases");
     }
     // Official opcodes first so that opcode(mn, mode) prefers them.
     std::stable_sort(opcodes_.begin(), opcodes_.end(),
@@ -112,6 +124,7 @@ bool KnowledgeBase::load(const std::string& dir, std::string* error) {
       continue;
     }
     if (std::string(file) == "tia.json") tiaNotes_ = strs(r, "notes");
+    readSources(r, sources_);
     std::string chip = str(r, "chip");
     for (auto& d : r["registers"]) {
       Register reg;
@@ -125,6 +138,8 @@ bool KnowledgeBase::load(const std::string& dir, std::string* error) {
       reg.timing = str(d, "timing");
       reg.example = str(d, "example");
       reg.issues = strs(d, "issues");
+      reg.sources = strs(d, "sources");
+      reg.verified = d.value("verified", true);
       registers_.push_back(reg);
     }
   }
@@ -132,6 +147,7 @@ bool KnowledgeBase::load(const std::string& dir, std::string* error) {
 
   json f;
   if (readJson(dir + "/formats.json", f, error)) {
+    readSources(f, sources_);
     for (auto& d : f["formats"]) {
       CartFormat c;
       c.id = str(d, "id");
@@ -144,11 +160,14 @@ bool KnowledgeBase::load(const std::string& dir, std::string* error) {
       c.ram = str(d, "ram");
       c.hotspots = strs(d, "hotspots");
       c.issues = strs(d, "issues");
+      c.sources = strs(d, "sources");
+      c.verified = d.value("verified", true);
       formats_.push_back(c);
     }
   }
   json t;
   if (readJson(dir + "/tv.json", t, error)) {
+    readSources(t, sources_);
     for (auto& d : t["standards"]) {
       TvStandard s;
       s.id = str(d, "id");
@@ -161,10 +180,17 @@ bool KnowledgeBase::load(const std::string& dir, std::string* error) {
       s.palette = str(d, "palette");
       s.stellaTv = str(d, "stella_tv");
       s.notes = strs(d, "notes");
+      s.sources = strs(d, "sources");
+      s.verified = d.value("verified", true);
       tv_.push_back(s);
     }
   }
   return ok && (!error || error->empty());
+}
+
+const Source* KnowledgeBase::source(const std::string& id) const {
+  auto it = sources_.find(id);
+  return it == sources_.end() ? nullptr : &it->second;
 }
 
 const Instruction* KnowledgeBase::instruction(const std::string& mn) const {

@@ -5,11 +5,13 @@
     "(+1) page crossing; branches: +1 taken, +2 taken to another page": "(+1) al cruzar de página; saltos: +1 si se toman, +2 si van a otra página",
     "(zero page/absolute guessed: unknown symbol, build to resolve)": "(página cero o absoluto supuesto: símbolo desconocido, compila para resolverlo)",
     "({0} scanlines)": "({0} líneas de barrido)",
+    ".byte only": "solo .byte",
     "[ILLEGAL, UNSTABLE]": "[ILEGAL, INESTABLE]",
     "[ILLEGAL]": "[ILEGAL]",
     "A small native IDE for Atari 2600 games.": "Un IDE nativo y pequeño para juegos de Atari 2600.",
     "About VCSIDE": "Acerca de VCSIDE",
     "allow": "permitir",
+    "Also known as: {0}": "También llamado: {0}",
     "arm-none-eabi-gcc, for C games on ELF cartridges with vcsLib.": "arm-none-eabi-gcc, para juegos en C en cartuchos ELF con vcsLib.",
     "assembler": "ensamblador",
     "Assembler (DASM)": "Ensamblador (DASM)",
@@ -33,10 +35,12 @@
     "Close file": "Cerrar archivo",
     "Col": "Col",
     "compiler": "compilador",
+    "Contains statements not confirmed by the sources (marked \"Unverified\").": "Contiene afirmaciones que las fuentes no confirman (marcadas «Unverified»).",
     "Copy": "Copiar",
     "Create": "Crear",
     "Cut": "Cortar",
     "Cycles": "Ciclos",
+    "DASM has no mnemonic for this opcode: write it with .byte": "DASM no tiene mnemónico para este opcode: escríbelo con .byte",
     "DASM not found. Install it or set its path in Settings > Tools.": "No se encuentra DASM. Instálalo o indica su ruta en Ajustes > Herramientas.",
     "Data: {0}": "Datos: {0}",
     "Detect again": "Volver a detectar",
@@ -104,6 +108,7 @@
     "Settings": "Ajustes",
     "Show cycle column": "Mostrar columna de ciclos",
     "Size": "Tamaño",
+    "Sources": "Fuentes",
     "stable only": "solo estables",
     "symbol": "símbolo",
     "Template not found in {0}": "No se encuentra la plantilla en {0}",
@@ -132,5 +137,5 @@
     "{0} unknown": "{0} desconocidos",
     "{0}: {1} bytes": "{0}: {1} bytes"
   },
-  "total": 129
+  "total": 134
 }

@@ -1,45 +1,56 @@
 {
  "notes": [
-  "Stella's command-line option for the bankswitch type is '-bs <type>' (the '-format' option in current Stella versions selects the TV display format, not the cartridge). The 'stella' field in each entry is the value for -bs.",
-  "All cartridge formats address the cart through the 6507's 13-bit address bus, so the cart ROM appears at $1000-$1FFF (and $3000, $5000, ... mirrors, conventionally $F000-$FFFF in assembler). The hotspots are triggered by any access (read or write) unless stated otherwise, and a hotspot access still happens on the bus (for example a read hotspot returns ROM data).",
-  "Always put the reset/interrupt vectors in every bank (or in the fixed bank for 3F/E0/E7 style formats), because the power-up bank is not specified for real carts.",
-  "Entries marked 'uncertain' or 'believed' reflect facts that I could not fully verify; verify against Stella's source / documentation before relying on them."
+  "Stella's option for the cartridge type is '-bs <type>' (also '-type'); '-format' selects the TV display format, not the cartridge. The 'stella' field is the name Stella lists for that type (names are case-insensitive; AUTO detects).",
+  "Gopher2600 takes '-mapping <id>' (default AUTO). The 'gopher2600' field lists the ids its cartridge loader accepts, or 'none' when it has no mapper for the format.",
+  "The 6507 sees 13 address bits, so the cartridge window is $1000-$1FFF and the same bytes appear at $3000, $5000, ... ($F000-$FFFF in the usual assembler notation). Hotspots fire on any read or write unless stated otherwise, and the access still happens on the bus.",
+  "Power-up bank is not specified by the schemes: keep the reset and interrupt vectors in every bank (or in the fixed bank for 3F, E0 and E7).",
+  "Entries with 'verified': false hold statements that two independent sources did not confirm; they are marked in 'issues' with 'Unverified'."
  ],
  "formats": [
   {
    "id": "2K",
    "name": "Atari 2K",
-   "size": "2K",
+   "size": "2K (2048 bytes)",
    "banks": 1,
    "bank_size": "2K",
    "hotspots": [],
    "ram": "none",
-   "detection": "ROM file size is exactly 2048 bytes (the 2K is mirrored through $F000-$FFFF, because the cart only decodes A0-A10).",
+   "detection": "Image size 2048 bytes (Stella accepts up to 4K for its 2K type); Stella and Gopher2600 pick CV instead if the Commavid signature is present.",
    "stella": "2K",
-   "gopher2600": "2k",
-   "description": "The smallest standard cartridge: 2048 bytes at $F800-$FFFF and mirrored at $F000-$F7FF. No bankswitching. The vectors are at $FFFA-$FFFF, i.e. the last 6 bytes of the ROM image. Most early games (Combat, Air-Sea Battle) are 2K.",
+   "gopher2600": "2K (also 2KSC / 2K+ for a Superchip variant)",
+   "description": "2048 bytes with no bankswitching. The cartridge only decodes A0-A10, so the image shows up twice in the 4 KB window ($F000-$F7FF and $F800-$FFFF). The CPU fetches its vectors from $FFFA-$FFFF, which are the last 6 bytes of the image.",
    "issues": [
-    "Code that runs at $F000-$F7FF is the same as at $F800-$FFFF; labels in either half work.",
-    "2K ROMs padded to 4K need the same data in both halves if they are to behave like a real 2K cart."
+    "Code assembled for $F000-$F7FF and for $F800-$FFFF is the same code, so either half works for labels.",
+    "A 2K image padded to 4K should repeat the data in both halves to behave like a real 2K cart."
    ],
-   "dasm_template": "    processor 6502\n    include \"vcs.h\"\n    ORG $F800\nReset\n    ; ... code ...\n    ORG $FFFA\n    .word Reset, Reset, Reset"
+   "dasm_template": "    processor 6502\n    include \"vcs.h\"\n    ORG $F800\nReset\n    ; ... code ...\n    ORG $FFFA\n    .word Reset, Reset, Reset",
+   "verified": true,
+   "sources": [
+    "stella-src",
+    "gopher-src"
+   ]
   },
   {
    "id": "4K",
    "name": "Atari 4K",
-   "size": "4K",
+   "size": "4K (4096 bytes)",
    "banks": 1,
    "bank_size": "4K",
    "hotspots": [],
    "ram": "none",
-   "detection": "ROM file size is 4096 bytes; there are no hotspots.",
+   "detection": "Image size 4096 bytes (and not CV, SC, FC or GL).",
    "stella": "4K",
-   "gopher2600": "4k",
-   "description": "4096 bytes at $F000-$FFFF; no bankswitching; the standard format for most single-bank games (Adventure, Space Invaders). Vectors at $FFFA-$FFFF.",
+   "gopher2600": "4K (also 4KSC / 4K+)",
+   "description": "4096 bytes at $1000-$1FFF ($F000-$FFFF in assembler notation); no bankswitching; vectors at $FFFA-$FFFF.",
    "issues": [
-    "The code uses only the 13-bit address bus, so $1000-$1FFF is the same as $F000-$FFFF."
+    "Only 13 address bits reach the cart, so $1000-$1FFF and $F000-$FFFF are the same bytes."
    ],
-   "dasm_template": "    processor 6502\n    include \"vcs.h\"\n    ORG $F000\nReset\n    ; ... code ...\n    ORG $FFFA\n    .word Reset, Reset, Reset"
+   "dasm_template": "    processor 6502\n    include \"vcs.h\"\n    ORG $F000\nReset\n    ; ... code ...\n    ORG $FFFA\n    .word Reset, Reset, Reset",
+   "verified": true,
+   "sources": [
+    "stella-src",
+    "gopher-src"
+   ]
   },
   {
    "id": "F8",
@@ -52,17 +63,22 @@
     "$1FF9 selects bank 1"
    ],
    "ram": "none",
-   "detection": "ROM size 8192 bytes; emulators distinguish F8 from other 8K schemes (E0, FE, UA, 3F, 0840...) by looking for hotspot accesses at $1FF8/$1FF9 or by signature byte sequences. Stella's detection: the ROM contains a reference to $1FF8/$1FF9 (e.g. LDA $FFF8).",
+   "detection": "8192-byte image. Stella tests several 8K schemes in turn (SC, E0, 3E/3F, UA, FE, 0840, E7 ...) and falls back to F8; Gopher2600 does the same through its fingerprint8k.",
    "stella": "F8",
-   "gopher2600": "F8",
-   "description": "Two 4K banks mapped at $1000-$1FFF. Reading or writing $1FF8 selects bank 0, $1FF9 selects bank 1 (the hotspot takes effect on any access, read or write). The reset vector at $1FFC must be valid in both banks, since the power-up bank is unspecified in real hardware (it is usually the last one). Hotspots live in the cartridge ROM space, so the switch happens while code is running from the bank being replaced: the code executing the access continues in the new bank on the next fetch.",
+   "gopher2600": "F8 (also WF8 for the Coleco white-cart variant)",
+   "description": "Two 4 KB banks in the window $1000-$1FFF. Accessing $1FF8 selects bank 0 and $1FF9 selects bank 1, whether read or write (Horton). The vectors must be valid in both banks because the power-up bank is not guaranteed.",
    "issues": [
-    "The switch is immediate: the instruction after the hotspot access comes from the new bank at the same address, so the trampoline must exist at the same address in both banks.",
-    "Accidental accesses to $1FF8/$1FF9 (for example LDA $FFF8,X with a varying X, or indexed accesses that cross) trigger a switch.",
-    "Vectors must be duplicated in both banks.",
-    "The power-up bank on real hardware depends on the cart; emulators commonly start in the last bank (bank 1) or bank 0 depending; always make both banks safe."
+    "The switch is immediate: the next instruction comes from the new bank at the same address, so the code that does the switch must exist at the same address in both banks.",
+    "Accidental accesses to $1FF8/$1FF9, for example an indexed load whose effective address lands on them, switch the bank.",
+    "Unverified: which bank is active at power-up depends on the cartridge; do not rely on it."
    ],
-   "dasm_template": "    processor 6502\n    include \"vcs.h\"\n    include \"macro.h\"\n\n; ---- bank 0 ----\n    SEG bank0\n    ORG $0000\n    RORG $F000\n\nReset\n    CLEAN_START\n    ; ... code ...\n\n    ORG $0FF0\n    RORG $FFF0\n    ; bankswitch trampoline: must live at the same address in every bank\n    ; to switch to bank k: lda $FFF8+k (read) or sta (write), then continue from the same address\n    ORG $0FFA\n    RORG $FFFA\n    .word Reset   ; NMI\n    .word Reset   ; RESET\n    .word Reset   ; IRQ/BRK\n\n; ---- bank 1 ----\n    SEG bank1\n    ORG $1000\n    RORG $F000\n\n    ; bank 1 code (each bank needs its own copy of the code that runs while switching)\n\n    ORG $1FF0\n    RORG $FFF0\n    ; bankswitch trampoline: must live at the same address in every bank\n    ; to switch to bank k: lda $FFF8+k (read) or sta (write), then continue from the same address\n    ORG $1FFA\n    RORG $FFFA\n    .word Reset   ; NMI\n    .word Reset   ; RESET\n    .word Reset   ; IRQ/BRK\n"
+   "dasm_template": "    processor 6502\n    include \"vcs.h\"\n    include \"macro.h\"\n\n; ---- bank 0 ----\n    SEG bank0\n    ORG $0000\n    RORG $F000\n\nReset\n    CLEAN_START\n    ; ... code ...\n\n    ORG $0FF0\n    RORG $FFF0\n    ; bankswitch trampoline: must live at the same address in every bank\n    ; to switch to bank k: lda $FFF8+k (read) or sta (write), then continue from the same address\n    ORG $0FFA\n    RORG $FFFA\n    .word Reset   ; NMI\n    .word Reset   ; RESET\n    .word Reset   ; IRQ/BRK\n\n; ---- bank 1 ----\n    SEG bank1\n    ORG $1000\n    RORG $F000\n\n    ; bank 1 code (each bank needs its own copy of the code that runs while switching)\n\n    ORG $1FF0\n    RORG $FFF0\n    ; bankswitch trampoline: must live at the same address in every bank\n    ; to switch to bank k: lda $FFF8+k (read) or sta (write), then continue from the same address\n    ORG $1FFA\n    RORG $FFFA\n    .word Reset   ; NMI\n    .word Reset   ; RESET\n    .word Reset   ; IRQ/BRK\n",
+   "verified": false,
+   "sources": [
+    "stella-src",
+    "gopher-src",
+    "horton"
+   ]
   },
   {
    "id": "F8SC",
@@ -72,21 +88,27 @@
    "bank_size": "4K (3.75K usable)",
    "hotspots": [
     "$1FF8 bank 0",
-    "$1FF9 bank 1"
+    "$1FF9 bank 1",
+    "$1000-$107F RAM write port",
+    "$1080-$10FF RAM read port"
    ],
    "ram": "128 bytes (Superchip): write port $1000-$107F, read port $1080-$10FF",
-   "detection": "Same as F8, plus Superchip detection: the first 256 bytes of ROM (the bytes hidden under the RAM ports) are all the same value (often 0), so Stella treats the cart as SC.",
+   "detection": "Both Stella and Gopher2600 flag a Superchip when, in every 4K bank, the first 128 bytes of the image equal the next 128 bytes (the RAM area is padded with a repeated pattern).",
    "stella": "F8SC",
-   "gopher2600": "F8S (believed; unverified)",
-   "description": "F8 with 128 bytes of extra RAM provided by the cartridge (the SARA / Superchip). The first 256 bytes of each bank ($1000-$10FF) are replaced by the RAM: writes to $1000-$107F store, reads from $1080-$10FF read back the same bytes. The ROM image still occupies 4K per bank but its first 256 bytes are not visible.",
+   "gopher2600": "F8SC (alias F8+)",
+   "description": "F8 with 128 bytes of RAM in the cartridge. The first 256 bytes of the window ($1000-$10FF) are the RAM: the first 128 bytes of the window are the write port and the next 128 bytes the read port of the same RAM. The ROM image still occupies 4K per bank but its first 256 bytes are not visible.",
    "issues": [
-    "The read port ($1080-$10FF) and write port ($1000-$107F) are different addresses for the same byte: writing to $1000+n and reading from $1080+n.",
-    "Reading from the write port ($1000-$107F) can corrupt the RAM on real hardware because the read puts undefined bus data into the cell; always use write addresses only for STA.",
-    "A STA to the read port does not write RAM.",
-    "RAM contents are random at power-on.",
-    "With indexed addressing (STA $1000,X) macros from superchip.h are available (SC_WRITE / SC_READ naming varies)."
+    "Write to $1000+n and read from $1080+n for the same byte.",
+    "Reading the write port ($1000-$107F) triggers an unwanted write of whatever is on the data bus (Stella models this), so only store to the write port.",
+    "A store to the read port does not write the RAM.",
+    "RAM contents are undefined at power-on."
    ],
-   "dasm_template": "; Superchip RAM\nSC_RAM_WRITE = $1000\nSC_RAM_READ  = $1080\n    processor 6502\n    include \"vcs.h\"\n    include \"macro.h\"\n\n; ---- bank 0 ----\n    SEG bank0\n    ORG $0000\n    RORG $F000\n\nReset\n    CLEAN_START\n    ; ... code ...\n\n    ORG $0FF0\n    RORG $FFF0\n    ; bankswitch trampoline: must live at the same address in every bank\n    ; to switch to bank k: lda $FFF8+k (read) or sta (write), then continue from the same address\n    ORG $0FFA\n    RORG $FFFA\n    .word Reset   ; NMI\n    .word Reset   ; RESET\n    .word Reset   ; IRQ/BRK\n\n; ---- bank 1 ----\n    SEG bank1\n    ORG $1000\n    RORG $F000\n\n    ; bank 1 code (each bank needs its own copy of the code that runs while switching)\n\n    ORG $1FF0\n    RORG $FFF0\n    ; bankswitch trampoline: must live at the same address in every bank\n    ; to switch to bank k: lda $FFF8+k (read) or sta (write), then continue from the same address\n    ORG $1FFA\n    RORG $FFFA\n    .word Reset   ; NMI\n    .word Reset   ; RESET\n    .word Reset   ; IRQ/BRK\n"
+   "dasm_template": "; Superchip RAM\nSC_RAM_WRITE = $1000\nSC_RAM_READ  = $1080\n    processor 6502\n    include \"vcs.h\"\n    include \"macro.h\"\n\n; ---- bank 0 ----\n    SEG bank0\n    ORG $0000\n    RORG $F000\n    ds 256,0   ; first 256 bytes of the bank are hidden behind the Superchip RAM\n\nReset\n    CLEAN_START\n    ; ... code ...\n\n    ORG $0FF0\n    RORG $FFF0\n    ; bankswitch trampoline: must live at the same address in every bank\n    ; to switch to bank k: lda $FFF8+k (read) or sta (write), then continue from the same address\n    ORG $0FFA\n    RORG $FFFA\n    .word Reset   ; NMI\n    .word Reset   ; RESET\n    .word Reset   ; IRQ/BRK\n\n; ---- bank 1 ----\n    SEG bank1\n    ORG $1000\n    RORG $F000\n    ds 256,0   ; hidden behind the Superchip RAM\n\n    ; bank 1 code (each bank needs its own copy of the code that runs while switching)\n\n    ORG $1FF0\n    RORG $FFF0\n    ; bankswitch trampoline: must live at the same address in every bank\n    ; to switch to bank k: lda $FFF8+k (read) or sta (write), then continue from the same address\n    ORG $1FFA\n    RORG $FFFA\n    .word Reset   ; NMI\n    .word Reset   ; RESET\n    .word Reset   ; IRQ/BRK\n",
+   "verified": true,
+   "sources": [
+    "stella-src",
+    "gopher-src"
+   ]
   },
   {
    "id": "F6",
@@ -101,15 +123,20 @@
     "$1FF9 bank 3"
    ],
    "ram": "none",
-   "detection": "ROM size 16384; the code contains references to $1FF6-$1FF9.",
+   "detection": "16384-byte image; Stella and Gopher2600 test several 16K schemes first (SC, E7, FC, 3E/3F, JANE) and use F6 as the default.",
    "stella": "F6",
    "gopher2600": "F6",
-   "description": "Four 4K banks at $1000-$1FFF, selected by accessing $1FF6-$1FF9 (read or write). Same principles as F8. Vectors are needed in every bank.",
+   "description": "Four 4 KB banks selected by accessing $1FF6 (bank 0) to $1FF9 (bank 3), as F8 but with four banks.",
    "issues": [
-    "The hotspots sit at the top of the bank; $1FFA-$1FFF are the vectors, so the vector table and the F6 hotspot range are adjacent.",
-    "Same trampoline constraints as F8."
+    "Vectors are needed in every bank."
    ],
-   "dasm_template": "    processor 6502\n    include \"vcs.h\"\n    include \"macro.h\"\n\n; ---- bank 0 ----\n    SEG bank0\n    ORG $0000\n    RORG $F000\n\nReset\n    CLEAN_START\n    ; ... code ...\n\n    ORG $0FF0\n    RORG $FFF0\n    ; bankswitch trampoline: must live at the same address in every bank\n    ; to switch to bank k: lda $FFF6+k (read) or sta (write), then continue from the same address\n    ORG $0FFA\n    RORG $FFFA\n    .word Reset   ; NMI\n    .word Reset   ; RESET\n    .word Reset   ; IRQ/BRK\n\n; ---- bank 1 ----\n    SEG bank1\n    ORG $1000\n    RORG $F000\n\n    ; bank 1 code (each bank needs its own copy of the code that runs while switching)\n\n    ORG $1FF0\n    RORG $FFF0\n    ; bankswitch trampoline: must live at the same address in every bank\n    ; to switch to bank k: lda $FFF6+k (read) or sta (write), then continue from the same address\n    ORG $1FFA\n    RORG $FFFA\n    .word Reset   ; NMI\n    .word Reset   ; RESET\n    .word Reset   ; IRQ/BRK\n\n; ---- bank 2 ----\n    SEG bank2\n    ORG $2000\n    RORG $F000\n\n    ; bank 2 code (each bank needs its own copy of the code that runs while switching)\n\n    ORG $2FF0\n    RORG $FFF0\n    ; bankswitch trampoline: must live at the same address in every bank\n    ; to switch to bank k: lda $FFF6+k (read) or sta (write), then continue from the same address\n    ORG $2FFA\n    RORG $FFFA\n    .word Reset   ; NMI\n    .word Reset   ; RESET\n    .word Reset   ; IRQ/BRK\n\n; ---- bank 3 ----\n    SEG bank3\n    ORG $3000\n    RORG $F000\n\n    ; bank 3 code (each bank needs its own copy of the code that runs while switching)\n\n    ORG $3FF0\n    RORG $FFF0\n    ; bankswitch trampoline: must live at the same address in every bank\n    ; to switch to bank k: lda $FFF6+k (read) or sta (write), then continue from the same address\n    ORG $3FFA\n    RORG $FFFA\n    .word Reset   ; NMI\n    .word Reset   ; RESET\n    .word Reset   ; IRQ/BRK\n"
+   "dasm_template": "    processor 6502\n    include \"vcs.h\"\n    include \"macro.h\"\n\n; ---- bank 0 ----\n    SEG bank0\n    ORG $0000\n    RORG $F000\n\nReset\n    CLEAN_START\n    ; ... code ...\n\n    ORG $0FF0\n    RORG $FFF0\n    ; bankswitch trampoline: must live at the same address in every bank\n    ; to switch to bank k: lda $FFF6+k (read) or sta (write), then continue from the same address\n    ORG $0FFA\n    RORG $FFFA\n    .word Reset   ; NMI\n    .word Reset   ; RESET\n    .word Reset   ; IRQ/BRK\n\n; ---- bank 1 ----\n    SEG bank1\n    ORG $1000\n    RORG $F000\n\n    ; bank 1 code (each bank needs its own copy of the code that runs while switching)\n\n    ORG $1FF0\n    RORG $FFF0\n    ; bankswitch trampoline: must live at the same address in every bank\n    ; to switch to bank k: lda $FFF6+k (read) or sta (write), then continue from the same address\n    ORG $1FFA\n    RORG $FFFA\n    .word Reset   ; NMI\n    .word Reset   ; RESET\n    .word Reset   ; IRQ/BRK\n\n; ---- bank 2 ----\n    SEG bank2\n    ORG $2000\n    RORG $F000\n\n    ; bank 2 code (each bank needs its own copy of the code that runs while switching)\n\n    ORG $2FF0\n    RORG $FFF0\n    ; bankswitch trampoline: must live at the same address in every bank\n    ; to switch to bank k: lda $FFF6+k (read) or sta (write), then continue from the same address\n    ORG $2FFA\n    RORG $FFFA\n    .word Reset   ; NMI\n    .word Reset   ; RESET\n    .word Reset   ; IRQ/BRK\n\n; ---- bank 3 ----\n    SEG bank3\n    ORG $3000\n    RORG $F000\n\n    ; bank 3 code (each bank needs its own copy of the code that runs while switching)\n\n    ORG $3FF0\n    RORG $FFF0\n    ; bankswitch trampoline: must live at the same address in every bank\n    ; to switch to bank k: lda $FFF6+k (read) or sta (write), then continue from the same address\n    ORG $3FFA\n    RORG $FFFA\n    .word Reset   ; NMI\n    .word Reset   ; RESET\n    .word Reset   ; IRQ/BRK\n",
+   "verified": true,
+   "sources": [
+    "stella-src",
+    "gopher-src",
+    "horton"
+   ]
   },
   {
    "id": "F6SC",
@@ -118,17 +145,25 @@
    "banks": 4,
    "bank_size": "4K (3.75K usable)",
    "hotspots": [
-    "$1FF6-$1FF9 banks 0-3"
+    "$1FF6-$1FF9 banks 0-3",
+    "$1000-$107F RAM write port",
+    "$1080-$10FF RAM read port"
    ],
    "ram": "128 bytes (Superchip): write port $1000-$107F, read port $1080-$10FF",
-   "detection": "As F6, with the Superchip signature (first 256 bytes the same value).",
+   "detection": "Same Superchip test as F8SC applied to a 16K image.",
    "stella": "F6SC",
-   "gopher2600": "F6S (believed; unverified)",
-   "description": "F6 plus 128 bytes of RAM at $1000-$10FF (write $1000-$107F, read $1080-$10FF). Used by e.g. Dig Dug (F6SC), Crystal Castles.",
+   "gopher2600": "F6SC (alias F6+)",
+   "description": "F6 with the same 128-byte Superchip RAM as F8SC.",
    "issues": [
-    "See F8SC for the RAM port notes."
+    "See F8SC for the RAM ports and the read-from-write-port hazard."
    ],
-   "dasm_template": "    processor 6502\n    include \"vcs.h\"\n    include \"macro.h\"\n\n; ---- bank 0 ----\n    SEG bank0\n    ORG $0000\n    RORG $F000\n\nReset\n    CLEAN_START\n    ; ... code ...\n\n    ORG $0FF0\n    RORG $FFF0\n    ; bankswitch trampoline: must live at the same address in every bank\n    ; to switch to bank k: lda $FFF6+k (read) or sta (write), then continue from the same address\n    ORG $0FFA\n    RORG $FFFA\n    .word Reset   ; NMI\n    .word Reset   ; RESET\n    .word Reset   ; IRQ/BRK\n\n; ---- bank 1 ----\n    SEG bank1\n    ORG $1000\n    RORG $F000\n\n    ; bank 1 code (each bank needs its own copy of the code that runs while switching)\n\n    ORG $1FF0\n    RORG $FFF0\n    ; bankswitch trampoline: must live at the same address in every bank\n    ; to switch to bank k: lda $FFF6+k (read) or sta (write), then continue from the same address\n    ORG $1FFA\n    RORG $FFFA\n    .word Reset   ; NMI\n    .word Reset   ; RESET\n    .word Reset   ; IRQ/BRK\n\n; ---- bank 2 ----\n    SEG bank2\n    ORG $2000\n    RORG $F000\n\n    ; bank 2 code (each bank needs its own copy of the code that runs while switching)\n\n    ORG $2FF0\n    RORG $FFF0\n    ; bankswitch trampoline: must live at the same address in every bank\n    ; to switch to bank k: lda $FFF6+k (read) or sta (write), then continue from the same address\n    ORG $2FFA\n    RORG $FFFA\n    .word Reset   ; NMI\n    .word Reset   ; RESET\n    .word Reset   ; IRQ/BRK\n\n; ---- bank 3 ----\n    SEG bank3\n    ORG $3000\n    RORG $F000\n\n    ; bank 3 code (each bank needs its own copy of the code that runs while switching)\n\n    ORG $3FF0\n    RORG $FFF0\n    ; bankswitch trampoline: must live at the same address in every bank\n    ; to switch to bank k: lda $FFF6+k (read) or sta (write), then continue from the same address\n    ORG $3FFA\n    RORG $FFFA\n    .word Reset   ; NMI\n    .word Reset   ; RESET\n    .word Reset   ; IRQ/BRK\n"
+   "dasm_template": "; Superchip RAM\nSC_RAM_WRITE = $1000\nSC_RAM_READ  = $1080\n    processor 6502\n    include \"vcs.h\"\n    include \"macro.h\"\n\n; ---- bank 0 ----\n    SEG bank0\n    ORG $0000\n    RORG $F000\n    ds 256,0   ; first 256 bytes of the bank are hidden behind the Superchip RAM\n\nReset\n    CLEAN_START\n    ; ... code ...\n\n    ORG $0FF0\n    RORG $FFF0\n    ; bankswitch trampoline: must live at the same address in every bank\n    ; to switch to bank k: lda $FFF6+k (read) or sta (write), then continue from the same address\n    ORG $0FFA\n    RORG $FFFA\n    .word Reset   ; NMI\n    .word Reset   ; RESET\n    .word Reset   ; IRQ/BRK\n\n; ---- bank 1 ----\n    SEG bank1\n    ORG $1000\n    RORG $F000\n    ds 256,0   ; hidden behind the Superchip RAM\n\n    ; bank 1 code (each bank needs its own copy of the code that runs while switching)\n\n    ORG $1FF0\n    RORG $FFF0\n    ; bankswitch trampoline: must live at the same address in every bank\n    ; to switch to bank k: lda $FFF6+k (read) or sta (write), then continue from the same address\n    ORG $1FFA\n    RORG $FFFA\n    .word Reset   ; NMI\n    .word Reset   ; RESET\n    .word Reset   ; IRQ/BRK\n\n; ---- bank 2 ----\n    SEG bank2\n    ORG $2000\n    RORG $F000\n    ds 256,0   ; hidden behind the Superchip RAM\n\n    ; bank 2 code (each bank needs its own copy of the code that runs while switching)\n\n    ORG $2FF0\n    RORG $FFF0\n    ; bankswitch trampoline: must live at the same address in every bank\n    ; to switch to bank k: lda $FFF6+k (read) or sta (write), then continue from the same address\n    ORG $2FFA\n    RORG $FFFA\n    .word Reset   ; NMI\n    .word Reset   ; RESET\n    .word Reset   ; IRQ/BRK\n\n; ---- bank 3 ----\n    SEG bank3\n    ORG $3000\n    RORG $F000\n    ds 256,0   ; hidden behind the Superchip RAM\n\n    ; bank 3 code (each bank needs its own copy of the code that runs while switching)\n\n    ORG $3FF0\n    RORG $FFF0\n    ; bankswitch trampoline: must live at the same address in every bank\n    ; to switch to bank k: lda $FFF6+k (read) or sta (write), then continue from the same address\n    ORG $3FFA\n    RORG $FFFA\n    .word Reset   ; NMI\n    .word Reset   ; RESET\n    .word Reset   ; IRQ/BRK\n",
+   "verified": true,
+   "sources": [
+    "stella-src",
+    "gopher-src",
+    "horton"
+   ]
   },
   {
    "id": "F4",
@@ -140,14 +175,20 @@
     "$1FF4-$1FFB banks 0-7"
    ],
    "ram": "none",
-   "detection": "ROM size 32768; references to $1FF4-$1FFB.",
+   "detection": "32768-byte image after the DPC+, CDF, BUS, SC, 3E/3F and FA2 checks have failed.",
    "stella": "F4",
    "gopher2600": "F4",
-   "description": "Eight 4K banks selected by $1FF4-$1FFB. Used by large Atari games (Fatal Run, Pitfall II in DPC form excluded).",
+   "description": "Eight 4 KB banks selected by accessing $1FF4 (bank 0) to $1FFB (bank 7).",
    "issues": [
-    "Same constraints as F8/F6; hotspot range ends at $1FFB, just before the vectors at $1FFC-$1FFD."
+    "Vectors are needed in every bank."
    ],
-   "dasm_template": "    processor 6502\n    include \"vcs.h\"\n    include \"macro.h\"\n\n; ---- bank 0 ----\n    SEG bank0\n    ORG $0000\n    RORG $F000\n\nReset\n    CLEAN_START\n    ; ... code ...\n\n    ORG $0FF0\n    RORG $FFF0\n    ; bankswitch trampoline: must live at the same address in every bank\n    ; to switch to bank k: lda $FFF4+k (read) or sta (write), then continue from the same address\n    ORG $0FFA\n    RORG $FFFA\n    .word Reset   ; NMI\n    .word Reset   ; RESET\n    .word Reset   ; IRQ/BRK\n\n; ---- bank 1 ----\n    SEG bank1\n    ORG $1000\n    RORG $F000\n\n    ; bank 1 code (each bank needs its own copy of the code that runs while switching)\n\n    ORG $1FF0\n    RORG $FFF0\n    ; bankswitch trampoline: must live at the same address in every bank\n    ; to switch to bank k: lda $FFF4+k (read) or sta (write), then continue from the same address\n    ORG $1FFA\n    RORG $FFFA\n    .word Reset   ; NMI\n    .word Reset   ; RESET\n    .word Reset   ; IRQ/BRK\n\n; ---- bank 2 ----\n    SEG bank2\n    ORG $2000\n    RORG $F000\n\n    ; bank 2 code (each bank needs its own copy of the code that runs while switching)\n\n    ORG $2FF0\n    RORG $FFF0\n    ; bankswitch trampoline: must live at the same address in every bank\n    ; to switch to bank k: lda $FFF4+k (read) or sta (write), then continue from the same address\n    ORG $2FFA\n    RORG $FFFA\n    .word Reset   ; NMI\n    .word Reset   ; RESET\n    .word Reset   ; IRQ/BRK\n\n; ---- bank 3 ----\n    SEG bank3\n    ORG $3000\n    RORG $F000\n\n    ; bank 3 code (each bank needs its own copy of the code that runs while switching)\n\n    ORG $3FF0\n    RORG $FFF0\n    ; bankswitch trampoline: must live at the same address in every bank\n    ; to switch to bank k: lda $FFF4+k (read) or sta (write), then continue from the same address\n    ORG $3FFA\n    RORG $FFFA\n    .word Reset   ; NMI\n    .word Reset   ; RESET\n    .word Reset   ; IRQ/BRK\n\n; ---- bank 4 ----\n    SEG bank4\n    ORG $4000\n    RORG $F000\n\n    ; bank 4 code (each bank needs its own copy of the code that runs while switching)\n\n    ORG $4FF0\n    RORG $FFF0\n    ; bankswitch trampoline: must live at the same address in every bank\n    ; to switch to bank k: lda $FFF4+k (read) or sta (write), then continue from the same address\n    ORG $4FFA\n    RORG $FFFA\n    .word Reset   ; NMI\n    .word Reset   ; RESET\n    .word Reset   ; IRQ/BRK\n\n; ---- bank 5 ----\n    SEG bank5\n    ORG $5000\n    RORG $F000\n\n    ; bank 5 code (each bank needs its own copy of the code that runs while switching)\n\n    ORG $5FF0\n    RORG $FFF0\n    ; bankswitch trampoline: must live at the same address in every bank\n    ; to switch to bank k: lda $FFF4+k (read) or sta (write), then continue from the same address\n    ORG $5FFA\n    RORG $FFFA\n    .word Reset   ; NMI\n    .word Reset   ; RESET\n    .word Reset   ; IRQ/BRK\n\n; ---- bank 6 ----\n    SEG bank6\n    ORG $6000\n    RORG $F000\n\n    ; bank 6 code (each bank needs its own copy of the code that runs while switching)\n\n    ORG $6FF0\n    RORG $FFF0\n    ; bankswitch trampoline: must live at the same address in every bank\n    ; to switch to bank k: lda $FFF4+k (read) or sta (write), then continue from the same address\n    ORG $6FFA\n    RORG $FFFA\n    .word Reset   ; NMI\n    .word Reset   ; RESET\n    .word Reset   ; IRQ/BRK\n\n; ---- bank 7 ----\n    SEG bank7\n    ORG $7000\n    RORG $F000\n\n    ; bank 7 code (each bank needs its own copy of the code that runs while switching)\n\n    ORG $7FF0\n    RORG $FFF0\n    ; bankswitch trampoline: must live at the same address in every bank\n    ; to switch to bank k: lda $FFF4+k (read) or sta (write), then continue from the same address\n    ORG $7FFA\n    RORG $FFFA\n    .word Reset   ; NMI\n    .word Reset   ; RESET\n    .word Reset   ; IRQ/BRK\n"
+   "dasm_template": "    processor 6502\n    include \"vcs.h\"\n    include \"macro.h\"\n\n; ---- bank 0 ----\n    SEG bank0\n    ORG $0000\n    RORG $F000\n\nReset\n    CLEAN_START\n    ; ... code ...\n\n    ORG $0FF0\n    RORG $FFF0\n    ; bankswitch trampoline: must live at the same address in every bank\n    ; to switch to bank k: lda $FFF4+k (read) or sta (write), then continue from the same address\n    ORG $0FFA\n    RORG $FFFA\n    .word Reset   ; NMI\n    .word Reset   ; RESET\n    .word Reset   ; IRQ/BRK\n\n; ---- bank 1 ----\n    SEG bank1\n    ORG $1000\n    RORG $F000\n\n    ; bank 1 code (each bank needs its own copy of the code that runs while switching)\n\n    ORG $1FF0\n    RORG $FFF0\n    ; bankswitch trampoline: must live at the same address in every bank\n    ; to switch to bank k: lda $FFF4+k (read) or sta (write), then continue from the same address\n    ORG $1FFA\n    RORG $FFFA\n    .word Reset   ; NMI\n    .word Reset   ; RESET\n    .word Reset   ; IRQ/BRK\n\n; ---- bank 2 ----\n    SEG bank2\n    ORG $2000\n    RORG $F000\n\n    ; bank 2 code (each bank needs its own copy of the code that runs while switching)\n\n    ORG $2FF0\n    RORG $FFF0\n    ; bankswitch trampoline: must live at the same address in every bank\n    ; to switch to bank k: lda $FFF4+k (read) or sta (write), then continue from the same address\n    ORG $2FFA\n    RORG $FFFA\n    .word Reset   ; NMI\n    .word Reset   ; RESET\n    .word Reset   ; IRQ/BRK\n\n; ---- bank 3 ----\n    SEG bank3\n    ORG $3000\n    RORG $F000\n\n    ; bank 3 code (each bank needs its own copy of the code that runs while switching)\n\n    ORG $3FF0\n    RORG $FFF0\n    ; bankswitch trampoline: must live at the same address in every bank\n    ; to switch to bank k: lda $FFF4+k (read) or sta (write), then continue from the same address\n    ORG $3FFA\n    RORG $FFFA\n    .word Reset   ; NMI\n    .word Reset   ; RESET\n    .word Reset   ; IRQ/BRK\n\n; ---- bank 4 ----\n    SEG bank4\n    ORG $4000\n    RORG $F000\n\n    ; bank 4 code (each bank needs its own copy of the code that runs while switching)\n\n    ORG $4FF0\n    RORG $FFF0\n    ; bankswitch trampoline: must live at the same address in every bank\n    ; to switch to bank k: lda $FFF4+k (read) or sta (write), then continue from the same address\n    ORG $4FFA\n    RORG $FFFA\n    .word Reset   ; NMI\n    .word Reset   ; RESET\n    .word Reset   ; IRQ/BRK\n\n; ---- bank 5 ----\n    SEG bank5\n    ORG $5000\n    RORG $F000\n\n    ; bank 5 code (each bank needs its own copy of the code that runs while switching)\n\n    ORG $5FF0\n    RORG $FFF0\n    ; bankswitch trampoline: must live at the same address in every bank\n    ; to switch to bank k: lda $FFF4+k (read) or sta (write), then continue from the same address\n    ORG $5FFA\n    RORG $FFFA\n    .word Reset   ; NMI\n    .word Reset   ; RESET\n    .word Reset   ; IRQ/BRK\n\n; ---- bank 6 ----\n    SEG bank6\n    ORG $6000\n    RORG $F000\n\n    ; bank 6 code (each bank needs its own copy of the code that runs while switching)\n\n    ORG $6FF0\n    RORG $FFF0\n    ; bankswitch trampoline: must live at the same address in every bank\n    ; to switch to bank k: lda $FFF4+k (read) or sta (write), then continue from the same address\n    ORG $6FFA\n    RORG $FFFA\n    .word Reset   ; NMI\n    .word Reset   ; RESET\n    .word Reset   ; IRQ/BRK\n\n; ---- bank 7 ----\n    SEG bank7\n    ORG $7000\n    RORG $F000\n\n    ; bank 7 code (each bank needs its own copy of the code that runs while switching)\n\n    ORG $7FF0\n    RORG $FFF0\n    ; bankswitch trampoline: must live at the same address in every bank\n    ; to switch to bank k: lda $FFF4+k (read) or sta (write), then continue from the same address\n    ORG $7FFA\n    RORG $FFFA\n    .word Reset   ; NMI\n    .word Reset   ; RESET\n    .word Reset   ; IRQ/BRK\n",
+   "verified": true,
+   "sources": [
+    "stella-src",
+    "gopher-src",
+    "horton"
+   ]
   },
   {
    "id": "F4SC",
@@ -156,39 +197,50 @@
    "banks": 8,
    "bank_size": "4K (3.75K usable)",
    "hotspots": [
-    "$1FF4-$1FFB banks 0-7"
+    "$1FF4-$1FFB banks 0-7",
+    "$1000-$107F RAM write port",
+    "$1080-$10FF RAM read port"
    ],
    "ram": "128 bytes (Superchip): write port $1000-$107F, read port $1080-$10FF",
-   "detection": "As F4 with the SC signature.",
+   "detection": "Superchip test on a 32K image.",
    "stella": "F4SC",
-   "gopher2600": "F4S (believed; unverified)",
-   "description": "F4 plus 128 bytes of Superchip RAM at $1000-$10FF.",
+   "gopher2600": "F4SC (alias F4+)",
+   "description": "F4 with the 128-byte Superchip RAM.",
    "issues": [
-    "See F8SC for the RAM port notes."
+    "See F8SC."
    ],
-   "dasm_template": "    processor 6502\n    include \"vcs.h\"\n    include \"macro.h\"\n\n; ---- bank 0 ----\n    SEG bank0\n    ORG $0000\n    RORG $F000\n\nReset\n    CLEAN_START\n    ; ... code ...\n\n    ORG $0FF0\n    RORG $FFF0\n    ; bankswitch trampoline: must live at the same address in every bank\n    ; to switch to bank k: lda $FFF4+k (read) or sta (write), then continue from the same address\n    ORG $0FFA\n    RORG $FFFA\n    .word Reset   ; NMI\n    .word Reset   ; RESET\n    .word Reset   ; IRQ/BRK\n\n; ---- bank 1 ----\n    SEG bank1\n    ORG $1000\n    RORG $F000\n\n    ; bank 1 code (each bank needs its own copy of the code that runs while switching)\n\n    ORG $1FF0\n    RORG $FFF0\n    ; bankswitch trampoline: must live at the same address in every bank\n    ; to switch to bank k: lda $FFF4+k (read) or sta (write), then continue from the same address\n    ORG $1FFA\n    RORG $FFFA\n    .word Reset   ; NMI\n    .word Reset   ; RESET\n    .word Reset   ; IRQ/BRK\n\n; ---- bank 2 ----\n    SEG bank2\n    ORG $2000\n    RORG $F000\n\n    ; bank 2 code (each bank needs its own copy of the code that runs while switching)\n\n    ORG $2FF0\n    RORG $FFF0\n    ; bankswitch trampoline: must live at the same address in every bank\n    ; to switch to bank k: lda $FFF4+k (read) or sta (write), then continue from the same address\n    ORG $2FFA\n    RORG $FFFA\n    .word Reset   ; NMI\n    .word Reset   ; RESET\n    .word Reset   ; IRQ/BRK\n\n; ---- bank 3 ----\n    SEG bank3\n    ORG $3000\n    RORG $F000\n\n    ; bank 3 code (each bank needs its own copy of the code that runs while switching)\n\n    ORG $3FF0\n    RORG $FFF0\n    ; bankswitch trampoline: must live at the same address in every bank\n    ; to switch to bank k: lda $FFF4+k (read) or sta (write), then continue from the same address\n    ORG $3FFA\n    RORG $FFFA\n    .word Reset   ; NMI\n    .word Reset   ; RESET\n    .word Reset   ; IRQ/BRK\n\n; ---- bank 4 ----\n    SEG bank4\n    ORG $4000\n    RORG $F000\n\n    ; bank 4 code (each bank needs its own copy of the code that runs while switching)\n\n    ORG $4FF0\n    RORG $FFF0\n    ; bankswitch trampoline: must live at the same address in every bank\n    ; to switch to bank k: lda $FFF4+k (read) or sta (write), then continue from the same address\n    ORG $4FFA\n    RORG $FFFA\n    .word Reset   ; NMI\n    .word Reset   ; RESET\n    .word Reset   ; IRQ/BRK\n\n; ---- bank 5 ----\n    SEG bank5\n    ORG $5000\n    RORG $F000\n\n    ; bank 5 code (each bank needs its own copy of the code that runs while switching)\n\n    ORG $5FF0\n    RORG $FFF0\n    ; bankswitch trampoline: must live at the same address in every bank\n    ; to switch to bank k: lda $FFF4+k (read) or sta (write), then continue from the same address\n    ORG $5FFA\n    RORG $FFFA\n    .word Reset   ; NMI\n    .word Reset   ; RESET\n    .word Reset   ; IRQ/BRK\n\n; ---- bank 6 ----\n    SEG bank6\n    ORG $6000\n    RORG $F000\n\n    ; bank 6 code (each bank needs its own copy of the code that runs while switching)\n\n    ORG $6FF0\n    RORG $FFF0\n    ; bankswitch trampoline: must live at the same address in every bank\n    ; to switch to bank k: lda $FFF4+k (read) or sta (write), then continue from the same address\n    ORG $6FFA\n    RORG $FFFA\n    .word Reset   ; NMI\n    .word Reset   ; RESET\n    .word Reset   ; IRQ/BRK\n\n; ---- bank 7 ----\n    SEG bank7\n    ORG $7000\n    RORG $F000\n\n    ; bank 7 code (each bank needs its own copy of the code that runs while switching)\n\n    ORG $7FF0\n    RORG $FFF0\n    ; bankswitch trampoline: must live at the same address in every bank\n    ; to switch to bank k: lda $FFF4+k (read) or sta (write), then continue from the same address\n    ORG $7FFA\n    RORG $FFFA\n    .word Reset   ; NMI\n    .word Reset   ; RESET\n    .word Reset   ; IRQ/BRK\n"
+   "dasm_template": "; Superchip RAM\nSC_RAM_WRITE = $1000\nSC_RAM_READ  = $1080\n    processor 6502\n    include \"vcs.h\"\n    include \"macro.h\"\n\n; ---- bank 0 ----\n    SEG bank0\n    ORG $0000\n    RORG $F000\n    ds 256,0   ; first 256 bytes of the bank are hidden behind the Superchip RAM\n\nReset\n    CLEAN_START\n    ; ... code ...\n\n    ORG $0FF0\n    RORG $FFF0\n    ; bankswitch trampoline: must live at the same address in every bank\n    ; to switch to bank k: lda $FFF4+k (read) or sta (write), then continue from the same address\n    ORG $0FFA\n    RORG $FFFA\n    .word Reset   ; NMI\n    .word Reset   ; RESET\n    .word Reset   ; IRQ/BRK\n\n; ---- bank 1 ----\n    SEG bank1\n    ORG $1000\n    RORG $F000\n    ds 256,0   ; hidden behind the Superchip RAM\n\n    ; bank 1 code (each bank needs its own copy of the code that runs while switching)\n\n    ORG $1FF0\n    RORG $FFF0\n    ; bankswitch trampoline: must live at the same address in every bank\n    ; to switch to bank k: lda $FFF4+k (read) or sta (write), then continue from the same address\n    ORG $1FFA\n    RORG $FFFA\n    .word Reset   ; NMI\n    .word Reset   ; RESET\n    .word Reset   ; IRQ/BRK\n\n; ---- bank 2 ----\n    SEG bank2\n    ORG $2000\n    RORG $F000\n    ds 256,0   ; hidden behind the Superchip RAM\n\n    ; bank 2 code (each bank needs its own copy of the code that runs while switching)\n\n    ORG $2FF0\n    RORG $FFF0\n    ; bankswitch trampoline: must live at the same address in every bank\n    ; to switch to bank k: lda $FFF4+k (read) or sta (write), then continue from the same address\n    ORG $2FFA\n    RORG $FFFA\n    .word Reset   ; NMI\n    .word Reset   ; RESET\n    .word Reset   ; IRQ/BRK\n\n; ---- bank 3 ----\n    SEG bank3\n    ORG $3000\n    RORG $F000\n    ds 256,0   ; hidden behind the Superchip RAM\n\n    ; bank 3 code (each bank needs its own copy of the code that runs while switching)\n\n    ORG $3FF0\n    RORG $FFF0\n    ; bankswitch trampoline: must live at the same address in every bank\n    ; to switch to bank k: lda $FFF4+k (read) or sta (write), then continue from the same address\n    ORG $3FFA\n    RORG $FFFA\n    .word Reset   ; NMI\n    .word Reset   ; RESET\n    .word Reset   ; IRQ/BRK\n\n; ---- bank 4 ----\n    SEG bank4\n    ORG $4000\n    RORG $F000\n    ds 256,0   ; hidden behind the Superchip RAM\n\n    ; bank 4 code (each bank needs its own copy of the code that runs while switching)\n\n    ORG $4FF0\n    RORG $FFF0\n    ; bankswitch trampoline: must live at the same address in every bank\n    ; to switch to bank k: lda $FFF4+k (read) or sta (write), then continue from the same address\n    ORG $4FFA\n    RORG $FFFA\n    .word Reset   ; NMI\n    .word Reset   ; RESET\n    .word Reset   ; IRQ/BRK\n\n; ---- bank 5 ----\n    SEG bank5\n    ORG $5000\n    RORG $F000\n    ds 256,0   ; hidden behind the Superchip RAM\n\n    ; bank 5 code (each bank needs its own copy of the code that runs while switching)\n\n    ORG $5FF0\n    RORG $FFF0\n    ; bankswitch trampoline: must live at the same address in every bank\n    ; to switch to bank k: lda $FFF4+k (read) or sta (write), then continue from the same address\n    ORG $5FFA\n    RORG $FFFA\n    .word Reset   ; NMI\n    .word Reset   ; RESET\n    .word Reset   ; IRQ/BRK\n\n; ---- bank 6 ----\n    SEG bank6\n    ORG $6000\n    RORG $F000\n    ds 256,0   ; hidden behind the Superchip RAM\n\n    ; bank 6 code (each bank needs its own copy of the code that runs while switching)\n\n    ORG $6FF0\n    RORG $FFF0\n    ; bankswitch trampoline: must live at the same address in every bank\n    ; to switch to bank k: lda $FFF4+k (read) or sta (write), then continue from the same address\n    ORG $6FFA\n    RORG $FFFA\n    .word Reset   ; NMI\n    .word Reset   ; RESET\n    .word Reset   ; IRQ/BRK\n\n; ---- bank 7 ----\n    SEG bank7\n    ORG $7000\n    RORG $F000\n    ds 256,0   ; hidden behind the Superchip RAM\n\n    ; bank 7 code (each bank needs its own copy of the code that runs while switching)\n\n    ORG $7FF0\n    RORG $FFF0\n    ; bankswitch trampoline: must live at the same address in every bank\n    ; to switch to bank k: lda $FFF4+k (read) or sta (write), then continue from the same address\n    ORG $7FFA\n    RORG $FFFA\n    .word Reset   ; NMI\n    .word Reset   ; RESET\n    .word Reset   ; IRQ/BRK\n",
+   "verified": true,
+   "sources": [
+    "stella-src",
+    "gopher-src",
+    "horton"
+   ]
   },
   {
    "id": "SC",
-   "name": "Superchip (generic: 128 bytes RAM option)",
+   "name": "Superchip (128 bytes of RAM added to 2K/4K/F8/F6/F4/EF/DF/BF)",
    "size": "n/a",
    "banks": 0,
    "bank_size": "n/a",
    "hotspots": [
-    "RAM write $1000-$107F",
-    "RAM read $1080-$10FF"
+    "$1000-$107F RAM write port",
+    "$1080-$10FF RAM read port"
    ],
-   "ram": "128 bytes (Superchip): write port $1000-$107F, read port $1080-$10FF",
-   "detection": "The Superchip is not a bankswitch scheme: it can be added to 4K (4KSC), F8, F6 and F4 formats. Detection: the first 256 bytes of every bank are identical (usually all $00 or all $FF) in the ROM image, meaning the area is unused because RAM overlays it.",
-   "stella": "4KSC, F8SC, F6SC, F4SC",
-   "gopher2600": "mapped via the S variants (F8S, F6S, F4S; believed)",
-   "description": "The Superchip (SC) adds 128 bytes of RAM at the start of the cartridge area: $1000-$107F is the write port and $1080-$10FF is the read port. The ROM image keeps the same layout but the first 256 bytes of each bank are not accessible. It is typically used as extra work space for kernel state beyond the console's 128 bytes.",
+   "ram": "128 bytes: write port $1000-$107F, read port $1080-$10FF",
+   "detection": "Image where, in each 4K bank, the first 128 bytes equal the next 128 bytes.",
+   "stella": "4KSC, F8SC, F6SC, F4SC, EFSC, DFSC, BFSC",
+   "gopher2600": "2KSC, 4KSC, F8SC, F6SC, F4SC, EFSC, BFSC",
+   "description": "The Superchip adds 128 bytes of RAM at the start of the cartridge window to any of the Atari schemes. The RAM is split into a write port ($1000-$107F) and a read port ($1080-$10FF).",
    "issues": [
-    "Reading the write port or writing the read port is a bug; tools like superchip.h macros help.",
-    "The 4KSC variant with a single 4K bank has no hotspots and is rare.",
-    "The RAM is volatile and uninitialised at power-up."
+    "Reading the write port writes junk into the RAM (Stella models this)."
    ],
-   "dasm_template": ""
+   "dasm_template": "",
+   "verified": true,
+   "sources": [
+    "stella-src",
+    "gopher-src"
+   ]
   },
   {
    "id": "FE",
@@ -197,19 +249,24 @@
    "banks": 2,
    "bank_size": "4K",
    "hotspots": [
-    "bank is selected by the stack: JSR/RTS/other accesses to $01FE/$01FF depending on bit 5 of the data bus"
+    "Accesses to address $01FE (stack page) control the switch: JSR and RTS change banks"
    ],
    "ram": "none",
-   "detection": "ROM size 8192 with a characteristic pattern of JSR/RTS and accesses to the stack page $01FE/$01FF; Stella searches for typical instruction signatures (e.g. STA $01FE style sequences) because no hotspot address is read.",
+   "detection": "8192-byte image with the access pattern of FE; Stella only chooses FE when the image is not F8.",
    "stella": "FE",
    "gopher2600": "FE",
-   "description": "Used by Robot Tank, Decathlon (Activision). There are no explicit hotspots; the cart watches the address bus and data bus: when the 6507 accesses the stack page ($01FE / $01FF) during JSR / RTS, bit 5 of the data bus (the high byte of the return address) selects which 4K bank is visible: code located at $D000-$DFFF versus $F000-$FFFF (the high byte differs in bit 5). The cart is mapped as banks at $D000 and $F000 respectively. This makes the bankswitch happen automatically as JSR and RTS push and pull return addresses.",
+   "description": "Activision scheme (Robot Tank, Decathlon) originally called SCABS, designed for up to eight 4K banks but only used with two. The cartridge watches the address bus for an access to $01FE, which happens on the stack during JSR and RTS; the bank is chosen from the top bits of the data-bus byte seen after that access, so subroutine calls and returns switch banks automatically (patent summary quoted in the Stella header).",
    "issues": [
-    "Details of bit 5 and which bank maps where are as understood from emulator source and I cannot guarantee every detail; consult Stella's CartridgeFE documentation.",
-    "Because the switch is driven by the stack, interrupts are irrelevant (no IRQ on 2600) but anything that manipulates S directly (TXS) can switch banks unexpectedly.",
-    "DASM sources for FE games need ORG $D000 / ORG $F000 pairs; the vectors use $FFFA in the high bank."
+    "Requires the stack pointer to start at $FF so the JSR/RTS bytes land on $01FE/$01FF.",
+    "All released cartridges had only two banks."
    ],
-   "dasm_template": ""
+   "dasm_template": "",
+   "verified": true,
+   "sources": [
+    "stella-src",
+    "gopher-src",
+    "horton"
+   ]
   },
   {
    "id": "E0",
@@ -218,44 +275,55 @@
    "banks": 8,
    "bank_size": "1K slices (4 segments)",
    "hotspots": [
-    "$1FE0-$1FE7 slice into segment 0 ($1000-$13FF)",
-    "$1FE8-$1FEF slice into segment 1 ($1400-$17FF)",
-    "$1FF0-$1FF7 slice into segment 2 ($1800-$1BFF)",
-    "segment 3 ($1C00-$1FFF) fixed to slice 7"
+    "$1FE0-$1FE7 slice 0-7 into slot 0",
+    "$1FE8-$1FEF slice 0-7 into slot 1",
+    "$1FF0-$1FF7 slice 0-7 into slot 2"
    ],
    "ram": "none",
-   "detection": "ROM size 8192; code references to hotspots in $1FE0-$1FF7 (Stella looks for such accesses).",
+   "detection": "8192-byte image with accesses to $1FE0-$1FF7 (Stella's isProbablyE0).",
    "stella": "E0",
    "gopher2600": "E0",
-   "description": "The 4K address window is split into four 1K segments. The last segment ($1C00-$1FFF) always shows slice 7; the three others show any of the 8 slices selected by touching a hotspot: $1FE0+n selects slice n in segment 0, $1FE8+n in segment 1, $1FF0+n in segment 2. Used by Parker Brothers titles (Q*bert, Star Wars Empire Strikes Back, Gyruss).",
+   "description": "Parker Brothers scheme. The 4 KB window is four 1 KB slots. Slot 0 ($1000-$13FF) takes any 1 KB slice of the 8K ROM by accessing $1FE0-$1FE7, slot 1 by accessing $1FE8-$1FEF and slot 2 by accessing $1FF0-$1FF7; slot 3 ($1C00-$1FFF) always shows the last 1 KB.",
    "issues": [
-    "The segment 3 slice holds the reset vectors and the fixed code; it must contain the bankswitch routine.",
-    "Hotspots in $1FE0-$1FF7 are inside the fixed segment's address range, so accessing them from a segment that is being swapped is safe only from segment 3.",
-    "Code that runs from a swapped segment must not switch that segment."
+    "The vectors and start-up code must be in the fixed last 1 KB.",
+    "Horton's text gives the third range as $1FF0-$1FF8; Stella's header and Gopher2600 use $1FF0-$1FF7 (eight slices)."
    ],
-   "dasm_template": ""
+   "dasm_template": "",
+   "verified": true,
+   "sources": [
+    "stella-src",
+    "gopher-src",
+    "horton"
+   ]
   },
   {
    "id": "E7",
    "name": "M-Network E7 (16K + 2K RAM)",
-   "size": "16K",
+   "size": "8K-16K (8K, 12K or 16K images)",
    "banks": 8,
    "bank_size": "2K",
    "hotspots": [
     "$1FE0-$1FE6 select ROM bank 0-6 for $1000-$17FF",
-    "$1FE7 selects 1K RAM for $1000-$17FF",
-    "$1FE8-$1FEB select 256-byte RAM bank 0-3 for $1800-$19FF"
+    "$1FE7 maps the 1 KB RAM at $1000-$17FF",
+    "$1FE8-$1FEB select the 256-byte RAM block shown at $1800-$19FF"
    ],
-   "ram": "1K in two parts: 256 bytes at $1000-$10FF (write) / $1100-$11FF (read) when selected via $1FE7, and 256-byte banks (of a 1K RAM) at $1800-$18FF write / $1900-$19FF read",
-   "detection": "ROM size 16384 plus signature checks for hotspots $1FE0-$1FEB.",
+   "ram": "2 KB in two parts: 1 KB at $1000-$17FF when $1FE7 was accessed (write port $1000-$13FF, read port $1400-$17FF), plus four 256-byte blocks shown at $1800-$19FF (write port $1800-$18FF, read port $1900-$19FF)",
+   "detection": "Image of 8K to 16K whose code accesses the $1FE0-$1FEB hotspots (Stella isProbablyE7/E78K, Gopher2600 fingerprintMnetwork).",
    "stella": "E7",
    "gopher2600": "E7",
-   "description": "The 4K window is split into a 2K switchable half ($1000-$17FF) and a fixed half ($1800-$1FFF = last 2K bank, bank 7) which also holds 256 bytes of banked RAM at $1800-$19FF. $1FE0-$1FE6 select ROM banks 0-6 into the lower half; $1FE7 selects RAM into the lower half. $1FE8-$1FEB select one of four 256-byte RAM pages visible in the upper half's first 512 bytes (write port $1800-$18FF, read $1900-$19FF). Used by BurgerTime, Bump 'n' Jump, Masters of the Universe (M-Network).",
+   "description": "M-Network scheme. The 4 KB window is two 2 KB halves. The upper half ($1800-$1FFF) always shows the last 2 KB of the ROM. The lower half shows one of seven 2 KB banks, selected by accessing $1FE0-$1FE6; accessing $1FE7 puts 1 KB of RAM there instead. The first 512 bytes of the upper half become one of four 256-byte RAM blocks (selected with $1FE8-$1FEB) with separate write and read ports.",
    "issues": [
-    "The layout of the RAM windows in this entry is from memory of Stella's CartridgeE7; check with its source for exact boundaries before depending on it.",
-    "The fixed bank hosts the bankswitch hotspots and vectors."
+    "Horton's text lists $1FF8-$1FFB for the 256-byte block select; Stella and Gopher2600 both use $1FE8-$1FEB, which is what is recorded here.",
+    "Only one commercial cartridge used the RAM.",
+    "Stella handles 8K images with hotspots $1FE4-$1FE7 and 12K images with $1FE0-$1FE7 (smaller bank counts)."
    ],
-   "dasm_template": ""
+   "dasm_template": "",
+   "verified": true,
+   "sources": [
+    "stella-src",
+    "gopher-src",
+    "horton"
+   ]
   },
   {
    "id": "3F",
@@ -264,20 +332,24 @@
    "banks": 4,
    "bank_size": "2K (variable)",
    "hotspots": [
-    "write to $003F selects the 2K bank for $1000-$17FF (bank number = value written)"
+    "Write of the bank number to $3F (any write to $00-$3F)"
    ],
    "ram": "none",
-   "detection": "Stella detects 3F by scanning for STA $3F instructions (opcode 85 3F / 8D 3F 00), the standard bankswitch write.",
+   "detection": "Images containing STA $3F style writes (Stella isProbably3F, Gopher2600 fingerprint3f); for 8K images Stella checks for it after SC/E0/3E.",
    "stella": "3F",
    "gopher2600": "3F",
-   "description": "A write to address $3F (the unused TIA mirror) selects which 2K bank of ROM appears at $1000-$17FF; the other 2K ($1800-$1FFF) is fixed to the LAST bank. The bank number is the value written (low bits). Used by Tigervision games (Miner 2049er, Polaris, River Patrol) and many homebrews because it supports up to 512K without hardware limitations other than the bank count.",
+   "description": "Tigervision scheme. The window is two 2 KB halves: the upper half ($1800-$1FFF) always shows the last 2 KB of the ROM and the lower half shows the 2 KB bank whose number is written to $3F. In fact any write to $00-$3F changes the bank, so use $40-$7F for TIA writes that must not switch banks. The scheme supports up to 512 KB.",
    "issues": [
-    "Writes to $3F are also writes to the TIA's unused register space; there is no side effect on TIA.",
-    "The hotspot needs a write: reading $3F does nothing for the cart.",
-    "Because the fixed bank is the last one, the reset vectors must be in the last bank.",
-    "Only 2K are switchable; the code in the switchable half must switch from the fixed half."
+    "Writes to TIA registers at $00-$3F also switch the bank; use the mirror at $40-$7F.",
+    "The last 2 KB bank must hold the vectors."
    ],
-   "dasm_template": "    processor 6502\n    include \"vcs.h\"\n    ; bank k selected with: lda #k : sta $3F   (writes to $3F)\n    ORG $0000 : RORG $F000   ; bank 0 (2K)\n    ; ... switchable 2K\n    ; last bank placed at $F800\n    ORG $07FA : RORG $FFFA\n    .word Reset, Reset, Reset"
+   "dasm_template": "    processor 6502\n    include \"vcs.h\"\n    ; bank k selected with: lda #k : sta $3F   (writes to $3F)\n    ORG $0000 : RORG $F000   ; bank 0 (2K)\n    ; ... switchable 2K\n    ; last bank placed at $F800\n    ORG $07FA : RORG $FFFA\n    .word Reset, Reset, Reset",
+   "verified": true,
+   "sources": [
+    "stella-src",
+    "gopher-src",
+    "horton"
+   ]
   },
   {
    "id": "3E",
@@ -286,41 +358,51 @@
    "banks": 0,
    "bank_size": "2K ROM / 1K RAM",
    "hotspots": [
-    "write to $003F selects ROM bank at $1000-$17FF",
-    "write to $003E selects RAM bank (1K) at $1000-$17FF"
+    "Write bank number to $3F: map ROM bank",
+    "Write bank number to $3E: map RAM bank"
    ],
-   "ram": "RAM in 1K banks: read port $1000-$13FF, write port $1400-$17FF of the selected segment",
-   "detection": "Stella detects the STA $3E sequence besides $3F.",
-   "stella": "3E",
+   "ram": "up to 32 RAM banks of 1 KB; when a RAM bank is selected the lower 2K half shows it twice: read port $1000-$13FF and write port $1400-$17FF",
+   "detection": "Image containing STA $3E, LDA #imm (Stella and Gopher2600 search for that pattern).",
+   "stella": "3E (3EX for 256 KB of RAM)",
    "gopher2600": "3E",
-   "description": "Extension of 3F by Thomas Jentzsch: a write to $3E maps a 1K RAM bank into $1000-$17FF; the RAM is accessed with the read port at $1000-$13FF and the write port at $1400-$17FF. $3F still selects ROM banks. The upper 2K is fixed to the last ROM bank.",
+   "description": "Tigervision 3F plus RAM. The lower 2 KB half shows either a 2 KB ROM bank (number written to $3F) or a 1 KB RAM bank (number written to $3E); the upper 2 KB half is fixed to the last ROM bank. Stella numbers RAM banks after the ROM banks.",
    "issues": [
-    "Reading the RAM through the write port or vice versa has the same hazards as the Superchip.",
-    "RAM banks and ROM banks are selected by the same segment: selecting a RAM bank removes ROM from $1000-$17FF.",
-    "Exact RAM bank count (up to 32) is from Stella notes; may vary by homebrew."
+    "Only 240 ROM banks are supposed to be used for compatibility with some flash carts (Stella header).",
+    "Stella gives every game all 32 KB of RAM because the real RAM size is not known."
    ],
-   "dasm_template": ""
+   "dasm_template": "",
+   "verified": true,
+   "sources": [
+    "stella-src",
+    "gopher-src",
+    "horton"
+   ]
   },
   {
    "id": "3E+",
    "name": "Tigervision 3E+ (segmented ROM/RAM)",
-   "size": "up to 512K",
+   "size": "up to 64K ROM + 32K RAM",
    "banks": 0,
    "bank_size": "1K segments (4 per 4K window)",
    "hotspots": [
-    "write to $003E selects RAM bank for a segment",
-    "write to $003F selects ROM bank for a segment"
+    "Write to $3F: bits 7-6 = slot, bits 5-0 = 1 KB ROM bank",
+    "Write to $3E: bits 7-6 = slot, bits 5-0 = 512-byte RAM bank"
    ],
-   "ram": "up to 512K RAM; four 1K segments of the 4K window can each map ROM or RAM",
-   "detection": "Stella detects by the ROM content (STA $3E/$3F plus extra pattern) as 3E+; it can need an explicit -bs 3E+.",
+   "ram": "up to 64 banks of 512 bytes; a RAM bank is read at the start of its 1K slot and written 512 bytes higher (for example read $1000-$11FF, write $1200-$13FF)",
+   "detection": "Image containing the ASCII text 'TJ3E' (both emulators).",
    "stella": "3E+",
-   "gopher2600": "3E+",
-   "description": "Extension by Thomas Jentzsch: the 4K window is divided into four 1K segments, and each can be mapped to any 1K ROM bank or RAM bank. The value written to $3F / $3E carries both the segment (upper bits) and the bank number (lower bits), so that each of the four 1K segments is independently chosen; RAM is read at the segment address and written at +$200. The last segment is not fixed in this format so the reset vector must be handled with care (startup bank is segment 3 = last 1K of ROM).",
+   "gopher2600": "3E+ (aliases E3+, E3P)",
+   "description": "Modified 3E ('TJ' version in Stella's list) made for a 'Boulder Dash' style tiling engine: the window is four 1 KB slots ($1000, $1400, $1800, $1C00). A write to $3F maps a 1 KB ROM bank into a slot; a write to $3E maps a 512-byte RAM bank. The top two bits of the value select the slot (0-3), the low six bits the bank (0-63).",
    "issues": [
-    "I am not certain about the exact bit split of the value (segment in bits 7-6, bank in bits 5-0 is my recollection) and about the maximum number of banks; consult the 3E+ specification before relying on this.",
-    "Used mostly by modern homebrews (e.g. games by Thomas Jentzsch and Stephen Anthony's tools)."
+    "Unlike 3E, the last slot is not fixed: it starts on the FIRST 1 KB of the ROM, so the vectors must be at the end of the first 1 KB of the image.",
+    "The 3E+ limits (64K ROM, 32K RAM) are much lower than 3E's."
    ],
-   "dasm_template": ""
+   "dasm_template": "",
+   "verified": true,
+   "sources": [
+    "stella-src",
+    "gopher-src"
+   ]
   },
   {
    "id": "FA",
@@ -333,35 +415,48 @@
     "$1FF9 bank 1",
     "$1FFA bank 2"
    ],
-   "ram": "256 bytes: write $1000-$10FF, read $1100-$11FF",
-   "detection": "ROM size 12288 (padded to 16K by some tools) with hotspot references $1FF8-$1FFA.",
+   "ram": "256 bytes: write port $1000-$10FF, read port $1100-$11FF",
+   "detection": "12288-byte image (both emulators choose FA from the size alone).",
    "stella": "FA",
-   "gopher2600": "CBS",
-   "description": "Three 4K banks at $1000-$1FFF selected by $1FF8-$1FFA, with 256 bytes of RAM in the first 512 bytes of the window ($1000-$10FF write, $1100-$11FF read). Used by CBS games such as Omega Race, Mountain King, Tooth Protectors.",
+   "gopher2600": "FA",
+   "description": "CBS RAM Plus. Three 4 KB banks selected by accessing $1FF8-$1FFA, plus 256 bytes of RAM with separate write and read ports.",
    "issues": [
-    "FA2 is a 29K-to-32K variant (with an extra bank and a Harmony-specific loader); it is a different format.",
-    "RAM overlay hides the first 512 bytes of each bank."
+    "Stella's source comment says bit D0 of the written value must be 1, but the code that acts on the hotspots has that test commented out, so any access switches the bank.",
+    "Used by CBS games such as Tunnel Runner and Omega Race."
    ],
-   "dasm_template": "    processor 6502\n    include \"vcs.h\"\n    include \"macro.h\"\n\n; ---- bank 0 ----\n    SEG bank0\n    ORG $0000\n    RORG $F000\n\nReset\n    CLEAN_START\n    ; ... code ...\n\n    ORG $0FF0\n    RORG $FFF0\n    ; bankswitch trampoline: must live at the same address in every bank\n    ; to switch to bank k: lda $FFF8+k (read) or sta (write), then continue from the same address\n    ORG $0FFA\n    RORG $FFFA\n    .word Reset   ; NMI\n    .word Reset   ; RESET\n    .word Reset   ; IRQ/BRK\n\n; ---- bank 1 ----\n    SEG bank1\n    ORG $1000\n    RORG $F000\n\n    ; bank 1 code (each bank needs its own copy of the code that runs while switching)\n\n    ORG $1FF0\n    RORG $FFF0\n    ; bankswitch trampoline: must live at the same address in every bank\n    ; to switch to bank k: lda $FFF8+k (read) or sta (write), then continue from the same address\n    ORG $1FFA\n    RORG $FFFA\n    .word Reset   ; NMI\n    .word Reset   ; RESET\n    .word Reset   ; IRQ/BRK\n\n; ---- bank 2 ----\n    SEG bank2\n    ORG $2000\n    RORG $F000\n\n    ; bank 2 code (each bank needs its own copy of the code that runs while switching)\n\n    ORG $2FF0\n    RORG $FFF0\n    ; bankswitch trampoline: must live at the same address in every bank\n    ; to switch to bank k: lda $FFF8+k (read) or sta (write), then continue from the same address\n    ORG $2FFA\n    RORG $FFFA\n    .word Reset   ; NMI\n    .word Reset   ; RESET\n    .word Reset   ; IRQ/BRK\n"
+   "dasm_template": "    processor 6502\n    include \"vcs.h\"\n    include \"macro.h\"\n\n; ---- bank 0 ----\n    SEG bank0\n    ORG $0000\n    RORG $F000\n\nReset\n    CLEAN_START\n    ; ... code ...\n\n    ORG $0FF0\n    RORG $FFF0\n    ; bankswitch trampoline: must live at the same address in every bank\n    ; to switch to bank k: lda $FFF8+k (read) or sta (write), then continue from the same address\n    ORG $0FFA\n    RORG $FFFA\n    .word Reset   ; NMI\n    .word Reset   ; RESET\n    .word Reset   ; IRQ/BRK\n\n; ---- bank 1 ----\n    SEG bank1\n    ORG $1000\n    RORG $F000\n\n    ; bank 1 code (each bank needs its own copy of the code that runs while switching)\n\n    ORG $1FF0\n    RORG $FFF0\n    ; bankswitch trampoline: must live at the same address in every bank\n    ; to switch to bank k: lda $FFF8+k (read) or sta (write), then continue from the same address\n    ORG $1FFA\n    RORG $FFFA\n    .word Reset   ; NMI\n    .word Reset   ; RESET\n    .word Reset   ; IRQ/BRK\n\n; ---- bank 2 ----\n    SEG bank2\n    ORG $2000\n    RORG $F000\n\n    ; bank 2 code (each bank needs its own copy of the code that runs while switching)\n\n    ORG $2FF0\n    RORG $FFF0\n    ; bankswitch trampoline: must live at the same address in every bank\n    ; to switch to bank k: lda $FFF8+k (read) or sta (write), then continue from the same address\n    ORG $2FFA\n    RORG $FFFA\n    .word Reset   ; NMI\n    .word Reset   ; RESET\n    .word Reset   ; IRQ/BRK\n",
+   "verified": false,
+   "sources": [
+    "stella-src",
+    "gopher-src",
+    "horton"
+   ]
   },
   {
    "id": "FA2",
    "name": "FA2 (CBS RAM Plus 28K/32K)",
-   "size": "28K or 29K",
+   "size": "24K-32K (29K typical)",
    "banks": 7,
    "bank_size": "4K",
    "hotspots": [
-    "$1FF5-$1FFB"
+    "$1FF5-$1FFA (or $1FFB) banks 0-5 (or 6)",
+    "$1FF4 save/load RAM to flash"
    ],
-   "ram": "256 bytes",
-   "detection": "Stella detects by size 28672 or 29696.",
+   "ram": "256 bytes: write port $1000-$10FF, read port $1100-$11FF",
+   "detection": "Stella: 24K or 28K-32K images through isProbablyFA2/ARM; Gopher2600 fingerprintFA2.",
    "stella": "FA2",
-   "gopher2600": "",
-   "description": "An extended FA with up to 7 banks used by a few homebrew carts and by Harmony/Melody based builds; RAM and banks load from the cart. Details are not documented here with confidence.",
+   "gopher2600": "FA2",
+   "description": "Extension of FA for the Harmony cartridge: six or seven 4 KB banks selected by accessing $1FF5-$1FFA (or $1FFB), and the 256-byte RAM can be saved to or loaded from the Harmony's flash by accessing $1FF4. In 29K images the first 1K is ARM driver code, which an emulator ignores.",
    "issues": [
-    "Not enough confirmed detail to recommend authoring for FA2 unless compatibility with Stella is required."
+    "Unverified: exact bank count per image variant."
    ],
-   "dasm_template": ""
+   "dasm_template": "",
+   "verified": false,
+   "sources": [
+    "stella-src",
+    "gopher-src",
+    "horton"
+   ]
   },
   {
    "id": "F0",
@@ -370,18 +465,22 @@
    "banks": 16,
    "bank_size": "4K",
    "hotspots": [
-    "access to $1FF0 selects the next bank (cycles 0..15)"
+    "$1FF0 next bank"
    ],
    "ram": "none",
-   "detection": "ROM size 65536; references to $1FF0.",
+   "detection": "64K image after the 3E/3F/4A50/EF/X07 tests fail.",
    "stella": "F0",
-   "gopher2600": "MB (believed)",
-   "description": "Used only by Megaboy. One hotspot at $1FF0: every access advances to the next 4K bank (a wrap-around counter), instead of selecting an explicit bank. The program must know which bank it is in and issue the right number of accesses.",
+   "gopher2600": "none (no F0 mapper)",
+   "description": "Dynacom Megaboy. 16 banks of 4 KB. Accessing $1FF0 advances to the next bank, wrapping from 15 to 0, so banks can only be reached in sequence; the game stores the current bank number at $1FEC (Horton) and loops until it matches.",
    "issues": [
-    "Bank order is sequential so entering the right bank requires a count; most libraries wrap this in a function.",
-    "Power-up bank is bank 15 per Stella's implementation."
+    "Only the Megaboy cart is known to use it."
    ],
-   "dasm_template": ""
+   "dasm_template": "",
+   "verified": true,
+   "sources": [
+    "stella-src",
+    "horton"
+   ]
   },
   {
    "id": "UA",
@@ -390,20 +489,24 @@
    "banks": 2,
    "bank_size": "4K",
    "hotspots": [
-    "$0220 bank 0 (read or write)",
+    "$0220 bank 0",
     "$0240 bank 1"
    ],
    "ram": "none",
-   "detection": "ROM size 8192 and references to $0220/$0240 (or the swapped addresses).",
-   "stella": "UA",
-   "gopher2600": "UA",
-   "description": "The hotspots are in the RIOT/TIA address range (A12 = 0) rather than in cart space: accessing $0220 selects bank 0 and $0240 bank 1. Used by UA Limited carts and a few other releases (Pleiades and Funky Fish are commonly cited, which are the ones needing the UASW variant, not verified). UASW is a variant with the two hotspots swapped.",
+   "detection": "8192-byte image with accesses to the $0220/$0240 hotspots (Stella isProbablyUA).",
+   "stella": "UA (UASW for swapped banks)",
+   "gopher2600": "UA (UASW)",
+   "description": "UA Limited scheme. Two 4 KB banks switched by accessing addresses below $1000, outside the cartridge window: $0220 selects bank 0 and $0240 selects bank 1. Brazilian licensed hardware used shifted addresses ($02A0 and $02C0), which Stella also accepts. Known titles: Funky Fish, Pleiades.",
    "issues": [
-    "Accessing the hotspot also accesses the RIOT RAM mirror at that address, so side effects must be harmless.",
-    "Which hotspot selects which bank (UA vs UASW) differs between releases; confirm per game.",
-    "The hotspots are at $0220/$0240; some references show $0200 plus offset."
+    "The hotspots fall in TIA/RIOT mirror space, so the access also happens on the TIA bus.",
+    "Some dumps have the banks in reverse order; use UASW for those."
    ],
-   "dasm_template": ""
+   "dasm_template": "",
+   "verified": true,
+   "sources": [
+    "stella-src",
+    "gopher-src"
+   ]
   },
   {
    "id": "0840",
@@ -416,14 +519,18 @@
     "$0840 bank 1"
    ],
    "ram": "none",
-   "detection": "Stella detects 8K ROM with accesses to the $0800/$0840 hotspots.",
+   "detection": "8192-byte image with accesses to $0800/$0840 (Stella isProbably0840).",
    "stella": "0840",
-   "gopher2600": "",
-   "description": "Hotspots are in the range $0800-$0FFF accessed through the mirror of the RIOT region and decoded with a few address bits; accessing $0800 selects bank 0, $0840 selects bank 1. Rare; little documentation.",
+   "gopher2600": "none (no 0840 mapper)",
+   "description": "EconoBanking. Two 4 KB banks selected by accessing $0800 (bank 0) or $0840 (bank 1), outside the cartridge window; any read or write fires.",
    "issues": [
-    "I am not certain of the exact address mask used by the hardware; Stella treats several addresses within the range as hotspots."
+    "The hotspot addresses are in the TIA mirror area, so the access also reaches the TIA."
    ],
-   "dasm_template": ""
+   "dasm_template": "",
+   "verified": true,
+   "sources": [
+    "stella-src"
+   ]
   },
   {
    "id": "X07",
@@ -432,17 +539,22 @@
    "banks": 16,
    "bank_size": "4K",
    "hotspots": [
-    "hotspots in the TIA-mirror space: address pattern xxxx xxxx 0xxx xxx0 (bit-decoded)"
+    "Address pattern 0 1xxx nnnn 1101: select bank nnnn",
+    "Address pattern 0 0xxx 0nxx xxxx: banks 14/15 select bit n"
    ],
    "ram": "none",
-   "detection": "ROM size 65536 with accesses to the X07 hotspots.",
+   "detection": "64K image with X07 hotspot accesses (Stella isProbablyX07).",
    "stella": "X07",
-   "gopher2600": "",
-   "description": "A homebrew bankswitching scheme (author not verified here): 16 banks of 4K, selected by accesses to specific addresses in the non-cart area. The exact address pattern is not reproduced here because I am not certain of it.",
+   "gopher2600": "none (no X07 mapper)",
+   "description": "Scheme by John Payson and Fred Quimby: 16 banks of 4 KB with hotspots below $1000. Two patterns are used: an address of the form 0 1xxx nnnn 1101 selects bank nnnn; an address of the form 0 0xxx 0nxx xxxx switches between banks 14 and 15 (bank 111n) only when the current bank is already 14 or 15.",
    "issues": [
-    "Marked uncertain: consult Stella CartridgeX07 source."
+    "Stella notes the second pattern hits on almost any TIA access."
    ],
-   "dasm_template": ""
+   "dasm_template": "",
+   "verified": true,
+   "sources": [
+    "stella-src"
+   ]
   },
   {
    "id": "DPC",
@@ -452,139 +564,178 @@
    "bank_size": "4K",
    "hotspots": [
     "$1FF8 bank 0",
-    "$1FF9 bank 1"
+    "$1FF9 bank 1",
+    "$1000-$103F DPC read registers",
+    "$1040-$107F DPC write registers"
    ],
-   "ram": "2K display data / registers via the DPC chip",
-   "detection": "ROM size 10240 (8192 + 2048 ROM data) and DPC header; Stella detects DPC by size.",
+   "ram": "2 KB display data inside the DPC chip, read through the data fetchers",
+   "detection": "Image of 10240 bytes (also 10495/10496 in Gopher2600; Stella accepts 10-11K).",
    "stella": "DPC",
    "gopher2600": "DPC",
-   "description": "David Crane's custom DPC chip in Pitfall II adds eight 'data fetchers' (pointer-based sequential readers for display data), a random number generator and a 3-channel music generator. Reading $1000-$103F returns data fetched/calculated by the chip (e.g. $1000-$1007 fetch and increment the data fetcher, $1008-$100F fetch with the flag mask, $1010-$1017 shows the display with a mask, $1038-$103F show flags); writes to $1040-$107F set fetcher bounds, low/high pointers and the random generator; the 8K of program is F8-style bankswitched with $1FF8/$1FF9.",
+   "description": "Pitfall II. Two 4K program banks switched like F8 (hotspots $1FF8 and $1FF9), a 2 KB display ROM and the DPC chip (patent US 4,644,495). The chip registers are at $1000-$107F: $1000-$103F is the read port and $1040-$107F the write port.",
    "issues": [
-    "Register map described from general memory; use the Stella DPC source / Pitfall II hardware documents before relying on details.",
-    "The music generator uses the audio clock derived from the CPU; Stella emulates it at a particular rate."
+    "The chip also supplies the music generator and random numbers; emulators implement it in the mapper."
    ],
-   "dasm_template": ""
+   "dasm_template": "",
+   "verified": true,
+   "sources": [
+    "stella-src",
+    "gopher-src"
+   ]
   },
   {
    "id": "DPC+",
    "name": "DPC+ (Harmony/Melody)",
-   "size": "up to 32K",
+   "size": "32K image (Stella accepts 16K-64K)",
    "banks": 6,
    "bank_size": "4K",
    "hotspots": [
-    "$1FF6-$1FFB banks 0-5"
+    "$1FF6-$1FFB banks 0-5",
+    "$1000-$103F read registers",
+    "$1040-$107F write registers"
    ],
-   "ram": "display RAM, 8 data fetchers, ARM code on cart",
-   "detection": "Stella checks for the 'DPC+' signature in the ROM image.",
+   "ram": "Harmony 8K RAM: 3K ARM driver, 4K display data, 1K frequency tables",
+   "detection": "The string 'DPC+' occurs at least twice in the image (both emulators).",
    "stella": "DPC+",
-   "gopher2600": "DPC+",
-   "description": "Chris Walton's modern expansion of DPC for the Harmony/Melody cart and UnoCart: the ARM CPU on the cart emulates and extends the DPC functions. The 29K+ image comprises a 3K ARM driver, 6 banks of 4K program, 4K display data and 1K frequency table. The 6502 reads/writes registers at $1000-$107F in the cart area and the ARM does the heavy lifting (data fetchers, fast fetchers, a 'ccall' system to run ARM routines, sample playback).",
+   "gopher2600": "DPC+ (DPCP for the ACE-wrapped variant)",
+   "description": "Enhanced DPC for Harmony/Melody. The first 3K of the 32K image is the ARM driver, six 4K banks hold the 6502 code, bankswitching uses $1FF6-$1FFB, and the DPC registers are at $1000-$107F (read $1000-$103F, write $1040-$107F). Eight data fetchers, three music channels and a 32-bit random generator; an optional fast-fetch mode.",
    "issues": [
-    "Detailed layout (3K driver + 24K + 4K + 1K) is from my recollection; check Stella's CartridgeDPCPlus.",
-    "The ARM and 6502 run asynchronously; ARM calls take real time."
+    "Needs the matching ARM driver in the image; plain 6502 emulation is not enough."
    ],
-   "dasm_template": ""
+   "dasm_template": "",
+   "verified": true,
+   "sources": [
+    "stella-src",
+    "gopher-src",
+    "cdf-authors"
+   ]
   },
   {
    "id": "CDFJ",
-   "name": "CDFJ (Harmony/Melody, ARM)",
-   "size": "up to 32K+ (varies)",
+   "name": "CDF / CDFJ (Harmony/Melody, ARM)",
+   "size": "32K image",
    "banks": 7,
    "bank_size": "4K",
    "hotspots": [
-    "$1FF5-$1FFB banks 0-6"
+    "$1FF5-$1FFB banks 0-6 (start bank 6)",
+    "$1FF0-$1FF3: data-stream and mode registers (Gopher2600 names DSWRITE, DSPTR, SETMODE, CALLFN)"
    ],
-   "ram": "ARM-managed RAM, streams, 'jump' streams",
-   "detection": "Stella detects by the 'CDFJ' signature at a known offset; also supports the generic CDF family.",
-   "stella": "CDFJ",
-   "gopher2600": "CDFJ",
-   "description": "Cartridge descriptor format derived from DPC+: ARM-driven data streams, 'jump' streams (the 'J' variant), fast fetchers, ARM code called via ROM routines. The ROM includes a header that describes the layout. The bank count and hotspots listed are from memory and may be off by one.",
+   "ram": "8K: 4K display data plus 4K for ARM variables and stack",
+   "detection": "Stella: 'CDF' appears 3 times in the image, or the string 'PLUSCDFJ'. Gopher2600: 'CDFJ' within the first 2048 bytes (CDFJ), 'PLUSCDFJ' (CDFJ+), or the old 'CDFx' version bytes repeated twice.",
+   "stella": "CDF",
+   "gopher2600": "CDF, CDF0, CDF1, CDFJ (aliases: CDF selects the CDFJ layout)",
+   "description": "Chris, Darrell, Fred (and John) scheme: seven 4K banks, 32 fast fetchers, two jump queues, a parameter queue and sampled audio. Bankswitching uses $1FF5-$1FFB; the start bank is bank 6.",
    "issues": [
-    "The exact hotspot range for CDFJ is something I could not confirm; tooling (batari Basic, CDFJ templates) insulates the programmer.",
-    "Different CDF versions (CDF, CDFJ, CDFJ+) have different register layouts."
+    "The ARM driver differs between CDF0, CDF1 and CDFJ; Gopher2600 has one mapping id per version, Stella has a single 'CDF' type."
    ],
-   "dasm_template": ""
+   "dasm_template": "",
+   "verified": true,
+   "sources": [
+    "stella-src",
+    "gopher-src",
+    "cdf-authors"
+   ]
   },
   {
    "id": "CDFJ+",
-   "name": "CDFJ+ (extended CDFJ)",
-   "size": "up to several 100 KB (varies)",
+   "name": "CDFJ+ (larger ROM and RAM)",
+   "size": "64K, 128K, 256K or 512K",
    "banks": 0,
    "bank_size": "4K",
    "hotspots": [
-    "bank hotspots (varies)"
+    "$1FF4-$1FFA banks 0-6 (start bank 0)"
    ],
-   "ram": "ARM-managed RAM, larger than CDFJ",
-   "detection": "Signature 'CDFJ' plus version field.",
-   "stella": "CDFJ+",
-   "gopher2600": "CDFJ+ (uncertain)",
-   "description": "An extension of CDFJ with more memory and ARM capabilities. I could not verify details; treat as 'CDFJ with larger images and more ARM RAM'.",
+   "ram": "16K or 32K (display data and ARM variables)",
+   "detection": "String 'PLUSCDFJ' in the image (both emulators).",
+   "stella": "CDF (same type as CDFJ)",
+   "gopher2600": "CDFJ+",
+   "description": "CDFJ extended for the LPC213x family: ROM sizes 64/128/256/512K and RAM 16/32K. Bankswitching uses $1FF4-$1FFA and the start bank is 0.",
    "issues": [
-    "Marked uncertain; consult the CDFJ+ specification published on AtariAge."
+    "The programmer must stay within the RAM and ROM of the target device (Stella header)."
    ],
-   "dasm_template": ""
+   "dasm_template": "",
+   "verified": true,
+   "sources": [
+    "stella-src",
+    "gopher-src",
+    "cdf-authors"
+   ]
   },
   {
    "id": "BUS",
    "name": "BUS (BusStuffing / Harmony cart)",
-   "size": "up to 32K+",
+   "size": "32K",
    "banks": 0,
    "bank_size": "4K",
    "hotspots": [
-    "$1FF5-$1FFA?"
+    "$1FF6-$1FFB bank switches (Stella source)"
    ],
-   "ram": "ARM-managed",
-   "detection": "Stella detects with a 'BUS' signature.",
-   "stella": "BUS",
-   "gopher2600": "",
-   "description": "Format for Harmony/Melody-class carts (author attribution not verified) that adds 'bus stuffing': the ARM CPU drives the data bus directly, writing the bytes the 6502 is about to read on the same cycles, so the 6502 executes code that the ARM generates on the fly (e.g. LDA #imm then STA TIA registers). This lets the ARM race the beam with unlimited graphics.",
+   "ram": "ARM-managed RAM: 4K display data, 1K ARM variables and stack",
+   "detection": "The string 'BUS' occurs at least twice in a 32K image (Stella).",
+   "stella": "BUS (marked experimental)",
+   "gopher2600": "none (no BUS mapper)",
+   "description": "'Bus stuffing' for Harmony-class carts by Darrell Spice Jr, Chris Walton, Fred Quimby and others. The ARM binary is the first 4K of the 32K image; the 6502 talks to it through registers at $1000-$103F (communication stream at $1010, jump stream at $1011), and the ARM can drive the data bus on precisely timed cycles so the 6502 executes instructions the ARM synthesises.",
    "issues": [
-    "Bus stuffing works only if the ARM answers within the 6502 cycle; timing is very tight and cart-specific.",
-    "Hotspot details uncertain."
+    "Unverified: Stella's header speaks of seven 4K program banks while its code handles six hotspots ($1FF6-$1FFB); treat the bank layout as uncertain.",
+    "Stella marks the scheme experimental and may remove it."
    ],
-   "dasm_template": ""
+   "dasm_template": "",
+   "verified": false,
+   "sources": [
+    "stella-src",
+    "cdf-authors"
+   ]
   },
   {
    "id": "ELF",
-   "name": "ELF-VCS (relocatable ELF, PlusCart / Chameleon / UnoCart)",
+   "name": "ELF (relocatable ARM ELF: PlusCart, Chameleon, UnoCart)",
    "size": "variable",
    "banks": 0,
    "bank_size": "n/a",
-   "hotspots": [
-    "none: the ARM loader maps the ELF sections and handles the 6502 bus"
-   ],
-   "ram": "ARM RAM sections, loader-provided",
-   "detection": "ROM file is a 32-bit ARM ELF object (starts with 0x7F 'E' 'L' 'F'); the loader parses sections and relocations. The .pro metadata file describes the product.",
-   "stella": "ELF (recent Stella builds; check your version)",
-   "gopher2600": "ELF (nightly builds)",
-   "description": "A newer cartridge format where the game is a relocatable ELF compiled for the ARM Cortex-M of the PlusCart, Chameleon Cart or UnoCart. The ARM code (using the vcsLib API such as vcsWrite3, vcsWrite5, vcsLda2, vcsSta3, vcsJmp3, vcsNop2, vcsEndOverblank, vcsStartOverblank, vcsCopyOverblankToRiotRam, vcsLdaForBusStuff2, vcsLdxForBusStuff2, vcsLdyForBusStuff2, vcsWaitForAddress and others) drives the bus: it supplies the bytes the 6507 reads, so the 6507 executes code the ARM synthesises. The loader copies the sections into the right memory and resolves relocations; calls into vcsLib from game code live in flash can need 'long calls' (veneers). The kernel code can be placed in a RAM section (.RamFunc) for speed, and small helper programs are placed in RIOT RAM during the overblank.",
+   "hotspots": [],
+   "ram": "ARM RAM sections, supplied by the loader",
+   "detection": "Stella: ELF magic 7F 'E' 'L' 'F', little-endian, type ET_REL and ARM machine. Gopher2600: ELF magic at the start of the file.",
+   "stella": "ELF (ARM bus stuffing)",
+   "gopher2600": "ELF (ELF_in_ACE for an ELF wrapped in ACE)",
+   "description": "The game is a relocatable 32-bit little-endian ARM ELF object that the cartridge firmware (or the emulator) links and loads. The ARM code uses vcsLib stubs (vcsWrite3, vcsSta3, vcsJmp3, vcsNop2, vcsLda2, vcsLdaForBusStuff2, vcsLdxForBusStuff2, vcsLdyForBusStuff2, vcsWaitForAddress, vcsStartOverblank, vcsEndOverblank, vcsCopyOverblankToRiotRam and others) that queue bus transactions replayed on exact 6507 cycles; the 6507 therefore runs code that the ARM generates. There is no fixed bank layout or hotspot.",
    "issues": [
-    "Loader-version specific: PlusCart firmware 2.3.32 loads full games; see its release notes for the vcsLib symbols the loader supplies (vcsSnoopRead and vcsInjectDmaData may not exist in older loaders).",
-    "The format is new and loader implementations differ in RAM available (Chameleon: about 36 KB RAM and 128 KB flash on the G070 version).",
-    "Code in RAM (.RamFunc) requires emulator support (older Gopher2600 builds abort on code in RAM).",
-    "Details of the section layout, the .pro file and the loader ABI are outside what I can state precisely here; read the ELF-VCS and PlusCart documentation."
+    "Stella's ELF core is by Christian Speckner; Gopher2600's mapper lists the vcsLib names above.",
+    "Unverified (project experience, not in the sources used): PlusCart firmware 2.3.32 loads full games but may lack some vcsLib symbols, and older Gopher2600 builds abort on code in RAM (.RamFunc).",
+    "Unverified: Chameleon Cart sizes (about 36 KB RAM, 128 KB flash on the G070 version) come from the project's own notes, not from vendor documentation."
    ],
-   "dasm_template": ""
+   "dasm_template": "",
+   "verified": false,
+   "sources": [
+    "stella-src",
+    "gopher-src",
+    "horton"
+   ]
   },
   {
    "id": "AR",
    "name": "Supercharger (AR)",
-   "size": "6K per load (multi-load tapes)",
+   "size": "8448 bytes per load (multi-load images are multiples)",
    "banks": 3,
    "bank_size": "2K ROM + 6K RAM",
    "hotspots": [
-    "bank config via writes to $F000 area (control byte)"
+    "$1FF8 configuration byte (bank pair, write enable, ROM power)",
+    "$1850 load trigger when the BIOS ROM is mapped in the upper window (Stella)"
    ],
-   "ram": "6K of RAM",
-   "detection": "Stella detects by size multiples of 8448 bytes (tape images).",
+   "ram": "6K of RAM in three 2K banks, plus 2K BIOS ROM",
+   "detection": "Stella: image size 6K-33K; Gopher2600: size is a multiple of 8448 bytes (or a sound/tape image).",
    "stella": "AR",
    "gopher2600": "AR",
-   "description": "Starpath Supercharger: 6K of RAM loaded from audio tape; the 'BIOS' ROM is 2K. Included for completeness; the emulation requires the BIOS and the tape loader.",
+   "description": "Starpath Supercharger: 6K RAM loaded from tape (audio) in 8448-byte loads, each 8192 bytes of data plus a 256-byte header, and a 2K BIOS ROM. The upper and lower 2K windows of the cartridge area are mapped independently by a configuration byte written to $1FF8 (bits 4-2 select the bank pair, bit 1 enables RAM writes, bit 0 powers the ROM). RAM writes use an unusual address-bus protocol: a held byte is committed on an access exactly five bus cycles after the arming access.",
    "issues": [
-    "Not recommended for new development; included for tool completeness.",
-    "Uncertain details."
+    "Needs a BIOS (emulators stub it); not a format for new development."
    ],
-   "dasm_template": ""
+   "dasm_template": "",
+   "verified": true,
+   "sources": [
+    "stella-src",
+    "gopher-src",
+    "horton"
+   ]
   },
   {
    "id": "EF",
@@ -595,15 +746,21 @@
    "hotspots": [
     "$1FE0-$1FEF banks 0-15"
    ],
-   "ram": "none",
-   "detection": "ROM size 65536 with hotspot references $1FE0-$1FEF.",
-   "stella": "EF",
-   "gopher2600": "EF",
-   "description": "64K scheme: 16 4K banks selected by accesses to $1FE0-$1FEF. Variant EFSC adds the 128-byte Superchip RAM. Uncommon.",
+   "ram": "none (EFSC: 128 bytes Superchip RAM)",
+   "detection": "64K image with accesses to $1FE0-$1FEF (Stella isProbablyEF).",
+   "stella": "EF (EFSC with 128 bytes of RAM, EFF variant)",
+   "gopher2600": "EF, EFSC",
+   "description": "Scheme from the Homestar Runner cartridge by Paul Slocum: sixteen 4 KB banks, selected by accessing any address in $1FE0-$1FEF; the low 4 bits of the address are the bank number. DF and BF extend it.",
    "issues": [
-    "EFSC has the SC RAM window at the start of the window."
+    "In EFSC the 128-byte Superchip RAM sits at $1000-$10FF as in other SC types."
    ],
-   "dasm_template": ""
+   "dasm_template": "",
+   "verified": true,
+   "sources": [
+    "stella-src",
+    "gopher-src",
+    "horton"
+   ]
   },
   {
    "id": "DF",
@@ -614,15 +771,21 @@
    "hotspots": [
     "$1FC0-$1FDF banks 0-31"
    ],
-   "ram": "none",
-   "detection": "ROM size 131072 with hotspot references.",
-   "stella": "DF",
+   "ram": "none (DFSC: 128 bytes Superchip RAM)",
+   "detection": "128K image with accesses to $1FC0-$1FDF (Stella isProbablyDF).",
+   "stella": "DF (DFSC with 128 bytes of RAM)",
    "gopher2600": "DF",
-   "description": "128K scheme; 32 banks selected by $1FC0-$1FDF. DFSC adds Superchip RAM.",
+   "description": "CPUWIZ extension of EF to 32 banks: accessing $1FC0-$1FDF selects the bank whose number is the low 5 bits of the address.",
    "issues": [
-    "Rare."
+    "Gopher2600 has no separate DFSC id (its DF mapper handles it)."
    ],
-   "dasm_template": ""
+   "dasm_template": "",
+   "verified": false,
+   "sources": [
+    "stella-src",
+    "gopher-src",
+    "horton"
+   ]
   },
   {
    "id": "SB",
@@ -631,36 +794,128 @@
    "banks": 0,
    "bank_size": "4K",
    "hotspots": [
-    "address bits A11..A0 select bank (hotspots in $0800-$0FFF area)"
+    "$0800-$081F (128K) or $0800-$083F (256K): address bits give the bank"
    ],
    "ram": "none",
-   "detection": "ROM size 131072 or 262144 with hotspot references.",
+   "detection": "128K or 256K image (the fallback after CDF/3E/3F/4A50 checks in Stella; Gopher2600 fingerprintSB).",
    "stella": "SB",
    "gopher2600": "SB",
-   "description": "Superbanking; bank selected by the address of an access in the range $0800-$0FFF. Included for completeness; specifics uncertain.",
+   "description": "SUPERbanking. The bank is chosen by the address of an access in the lower address space: $0800-$081F selects one of 32 banks (128K) and $0800-$083F one of 64 banks (256K); the low bits of the address are the bank number. The hotspot block mirrors at $0900, $0A00 ... up to $0FFF.",
    "issues": [
-    "Uncertain address decode; consult Stella."
+    "The hotspots fall in TIA/RIOT mirror space, so the access reaches the TIA bus too."
    ],
-   "dasm_template": ""
+   "dasm_template": "",
+   "verified": true,
+   "sources": [
+    "stella-src",
+    "gopher-src"
+   ]
   },
   {
    "id": "4A50",
    "name": "4A50 (64K)",
-   "size": "up to 128K",
+   "size": "64K (Stella accepts exactly 64K)",
    "banks": 0,
    "bank_size": "2K/1K/256 slices",
    "hotspots": [
-    "accesses within $1Fxx and $1Exx regions"
+    "Many address-bus patterns in $1Exx/$1Fxx (see the Stella page)"
    ],
-   "ram": "has RAM",
-   "detection": "Stella detects by reset vector layout.",
+   "ram": "RAM and ROM slices mixed (see description)",
+   "detection": "64K image (Stella isProbably4A50 looks at the reset vector layout).",
    "stella": "4A50",
-   "gopher2600": "",
-   "description": "A flexible scheme (author not verified) with 2K and 1K slices and extra RAM, used in homebrews. Details uncertain.",
+   "gopher2600": "none (no 4A50 mapper)",
+   "description": "Scheme by John Payson (documented at stella-emu.github.io/4A50.html). The window has four parts: a 2K slice that can show any 2K of RAM or of the first 32K of ROM, a 1.5K slice for any 1.5K of RAM or of the last 32K of ROM, a 256-byte slice for any 256-byte page of RAM or ROM, and a last 256 bytes fixed to the end of the ROM.",
    "issues": [
-    "Uncertain."
+    "Stella states the scheme is not fully implemented (hires helpers and a page-wrap case are missing).",
+    "Unverified: exact hotspot addresses; the 4A50 page was not opened in this pass."
    ],
-   "dasm_template": ""
+   "dasm_template": "",
+   "verified": false,
+   "sources": [
+    "stella-src",
+    "stella-4a50"
+   ]
+  },
+  {
+   "id": "BF",
+   "name": "BF (CPUWIZ 256K)",
+   "size": "256K",
+   "description": "Extension of EF/DF to 64 banks of 4 KB: accessing $1F80-$1FBF selects the bank whose number is the low 6 bits of the address. The BFSC variant adds the 128-byte Superchip RAM.",
+   "stella": "BF (BFSC)",
+   "gopher2600": "BF, BFSC",
+   "detection": "256K image with accesses to $1F80-$1FBF (Stella isProbablyBF).",
+   "ram": "none (BFSC: 128 bytes Superchip RAM)",
+   "hotspots": [
+    "$1F80-$1FBF banks 0-63"
+   ],
+   "issues": [],
+   "banks": 64,
+   "bank_size": "4K",
+   "dasm_template": "",
+   "verified": true,
+   "sources": [
+    "stella-src",
+    "gopher-src"
+   ]
+  },
+  {
+   "id": "CV",
+   "name": "CV (Commavid extra RAM)",
+   "size": "2K ROM + 1K RAM (2K or 4K image)",
+   "description": "Commavid scheme: 2 KB of ROM at $1800-$1FFF and 1 KB of RAM in the lower half of the window, with a read port at $1000-$13FF and a write port at $1400-$17FF. There is no bankswitching.",
+   "stella": "CV",
+   "gopher2600": "CV",
+   "detection": "2K or 4K image that Stella/Gopher2600 recognise by the Commavid signature (isProbablyCV / fingerprintCV).",
+   "ram": "1 KB: read port $1000-$13FF, write port $1400-$17FF",
+   "hotspots": [],
+   "issues": [
+    "Titles using it include Jawbreaker and Rescue Terra I (Stella header)."
+   ],
+   "banks": 1,
+   "bank_size": "2K",
+   "dasm_template": "",
+   "verified": false,
+   "sources": [
+    "stella-src",
+    "gopher-src"
+   ]
+  }
+ ],
+ "sources": [
+  {
+   "id": "stella-src",
+   "title": "Stella source code (Bankswitch.hxx, Cart*.hxx/cxx, CartDetector.cxx, M6532.cxx, TIA.cxx)",
+   "author": "Stella Team",
+   "url": "https://github.com/stella-emu/stella",
+   "used_for": "Bankswitch type names (-bs), sizes, hotspots, SC detection, RIOT/TIA decoding as modelled; GPL-2, consulted only, nothing copied"
+  },
+  {
+   "id": "gopher-src",
+   "title": "Gopher2600 source (commit 07d8de5, 2026-11-05)",
+   "author": "JetSetIlly",
+   "url": "https://github.com/JetSetIlly/Gopher2600",
+   "used_for": "-mapping names accepted (cartridge.go), format detection (fingerprint.go), hotspot tables, vcsLib names in the ELF loader; GPL-3, consulted only, nothing copied"
+  },
+  {
+   "id": "horton",
+   "title": "Cart Information: cart sizes and bankswitching methods v6.00",
+   "author": "Kevin Horton",
+   "url": "https://atariage.com/2600/programming/bankswitch_sizes.txt",
+   "used_for": "F8/F6/F4/FA/FE/E0/3F/E7/F0/AR/SC basics; its E7 RAM-select address ($1FF8-$1FFB) is a typo, Stella and Gopher use $1FE8-$1FEB"
+  },
+  {
+   "id": "stella-4a50",
+   "title": "4A50 bankswitching",
+   "author": "John Payson (supercat), hosted by the Stella project",
+   "url": "https://stella-emu.github.io/4A50.html",
+   "used_for": "4A50 pointer only (referenced by Stella source; page itself not opened)"
+  },
+  {
+   "id": "cdf-authors",
+   "title": "CDF/CDFJ/CDFJ+ and DPC+ and BUS driver documentation as quoted in the Stella cart headers",
+   "author": "Darrell Spice Jr, Chris Walton, Fred Quimby, John Champeau, Stephen Anthony and others",
+   "url": "https://github.com/stella-emu/stella/tree/master/src/emucore",
+   "used_for": "Description, bank layout and hotspots of the ARM-assisted formats; the original authors' own pages on AtariAge were not reachable in this pass"
   }
  ]
 }

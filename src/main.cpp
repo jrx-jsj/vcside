@@ -127,6 +127,7 @@ int main(int argc, char** argv) {
   ImGui_ImplSDL3_InitForOpenGL(window, gl);
   ImGui_ImplOpenGL3_Init(glsl);
   ImGui::GetPlatformIO().Platform_SetImeDataFn = keepTextInput;
+  ImGui::GetPlatformIO().Platform_OpenInShellFn = [](ImGuiContext*, const char* url) { return SDL_OpenURL(url); };
   SDL_StartTextInput(window);
 
   vcs::App app;
