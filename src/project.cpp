@@ -142,12 +142,56 @@ std::vector<std::string> Project::rasArgs(Toolchain& tc) const {
   return a;
 }
 
+std::vector<std::string> Project::buildTools(Toolchain& tc) const {
+  if (!buildCommand.empty()) {
+    if (language != Language::ElfC) return {};
+    std::vector<std::string> out = {"arm-gcc"};
+    auto words = splitCommand(buildCommand);
+    if (!words.empty() && fs::path(words[0]).stem().string().find("make") != std::string::npos) out.push_back("make");
+    return out;
+  }
+  switch (language) {
+    case Language::Dasm: return {"dasm"};
+    case Language::BatariBasic: {
+      // 1.9 is WebAssembly (2600basic.wasm next to its script) and runs on wasmtime
+      Tool* bb = tc.get("bb");
+      std::error_code ec;
+      if (bb && bb->found() && fs::exists(fs::path(bb->path).parent_path() / "2600basic.wasm", ec)) return {"bb", "wasmtime"};
+      return {"bb"};
+    }
+    default: return {};
+  }
+}
+
 std::vector<std::string> Project::buildArgs(Toolchain& tc, std::string* error, std::string* workDir,
                                             EnvVars* env) const {
   std::error_code ec;
   if (workDir) *workDir = dir;
   fs::create_directories(fs::path(outputPath()).parent_path(), ec);
-  if (!buildCommand.empty()) return splitCommand(buildCommand);
+#ifdef _WIN32
+  const char sep = ';';
+#else
+  const char sep = ':';
+#endif
+  if (!buildCommand.empty()) {
+    // make and what it calls (arm-none-eabi-gcc, dasm) are found through PATH, and an app
+    // opened from the desktop may not have the shell's: the folders where VCSIDE found
+    // them go first.
+    if (env) {
+      std::string path = std::getenv("PATH") ? std::getenv("PATH") : "", extra;
+      for (auto id : {"make", "arm-gcc", "dasm"}) {
+        Tool* t = tc.get(id);
+        if (!t || !t->found()) continue;
+        std::string d = fs::path(t->path).parent_path().string();
+        if ((sep + extra + sep).find(sep + d + sep) == std::string::npos) extra += (extra.empty() ? "" : std::string(1, sep)) + d;
+      }
+      if (!extra.empty()) env->push_back({"PATH", extra + sep + path});
+    }
+    auto args = splitCommand(buildCommand);
+    // a bare "make" is started from where VCSIDE found it (the PATH above is only the child's)
+    if (Tool* m = tc.get("make"); !args.empty() && args[0] == "make" && m && m->found()) args[0] = m->path;
+    return args;
+  }
   switch (language) {
     case Language::Dasm: {
       Tool* t = tc.get("dasm");
@@ -173,11 +217,6 @@ std::vector<std::string> Project::buildArgs(Toolchain& tc, std::string* error, s
       if (workDir) *workDir = src.parent_path().string();
       if (env) {
         env->push_back({"bB", fs::path(t->path).parent_path().string()});
-#ifdef _WIN32
-        const char sep = ';';
-#else
-        const char sep = ':';
-#endif
         std::string path = std::getenv("PATH") ? std::getenv("PATH") : "";
         if (Tool* w = tc.get("wasmtime"); w && w->found()) path = fs::path(w->path).parent_path().string() + sep + path;
         env->push_back({"PATH", path});

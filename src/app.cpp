@@ -226,6 +226,11 @@ void App::build(int thenRun) {
     return;
   }
   saveAll();
+  for (auto& id : project_->buildTools(tools_))
+    if (Tool* t = tools_.get(id); t && !t->found()) {
+      askForTool(id, T("build this project"), [this, thenRun] { build(thenRun); });
+      return;
+    }
   std::string err, workDir;
   EnvVars env;
   auto args = project_->buildArgs(tools_, &err, &workDir, &env);
@@ -411,6 +416,10 @@ void App::pollSpace() {
 
 void App::run(bool debug) {
   if (!project_) return;
+  if (Tool* t = tools_.get(project_->emulator); t && !t->found()) {
+    askForTool(t->id, T("run the game"), [this, debug] { run(debug); });
+    return;
+  }
   std::string err;
   auto args = project_->runArgs(tools_, debug, &err);
   if (debug && !args.empty()) {
@@ -1001,6 +1010,7 @@ void App::frame() {
   newProjectDialog();
   toolsDialog();
   aboutDialog();
+  missingToolDialog();
   closeDialogs();
   goToAddressDialog();
   emulatorOptionsDialog();
@@ -2089,6 +2099,69 @@ void App::toolsDialog() {
   if (ImGui::Button(T("Detect again"))) tools_.detect();
   ImGui::SameLine();
   if (ImGui::Button(T("Close"))) ImGui::CloseCurrentPopup();
+  ImGui::EndPopup();
+}
+
+// A tool the project needs is missing: say what it is, how to get it, and let the user
+// point at it; then carry on with what was asked (build or run).
+void App::askForTool(const std::string& id, const std::string& why, std::function<void()> then) {
+  Tool* t = tools_.get(id);
+  if (!t) return;
+  missingTool_ = id;
+  missingWhy_ = why;
+  missingThen_ = std::move(then);
+  showMissingTool_ = true;
+  std::string msg = F("{0} not found: it is needed to {1}.", {t->name, why});
+  output_ += msg + "\n";
+  lastStatus_ = msg;
+  outputScroll_ = true;
+}
+
+void App::missingToolDialog() {
+  if (showMissingTool_) {
+    ImGui::OpenPopup("###missingtool");
+    showMissingTool_ = false;
+  }
+  Tool* t = tools_.get(missingTool_);
+  if (!t) return;
+  char title[128];
+  snprintf(title, sizeof title, "%s###missingtool", (t->found() ? F("{0} found", {t->name}) : F("{0} not found", {t->name})).c_str());
+  float em = ImGui::GetFontSize();
+  ImGui::SetNextWindowSize(ImVec2(em * 36, 0), ImGuiCond_Appearing);
+  if (!ImGui::BeginPopupModal(title, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) return;
+  ImGui::PushTextWrapPos(em * 34);
+  if (!t->found()) {
+    ImGui::TextUnformatted(F("VCSIDE needs {0} ({1}) to {2}, and did not find it on this computer.", {t->name, T(t->role.c_str()), missingWhy_}).c_str());
+    ImGui::Spacing();
+    ImGui::TextUnformatted(T(t->note.c_str()));
+    ImGui::Spacing();
+    ImGui::TextDisabled("%s", F("Once installed, VCSIDE finds it in PATH, in the usual folders, or in {0}. You can also choose the file yourself.",
+                                {Toolchain::toolsDir()}).c_str());
+  } else {
+    ImGui::TextColored(ImVec4(0.5f, 0.9f, 0.5f, 1), "%s", F("Found: {0}", {t->path}).c_str());
+  }
+  ImGui::PopTextWrapPos();
+  ImGui::Spacing();
+  bool close = false;
+  if (t->found()) {
+    if (ImGui::Button(T("Continue"))) {
+      close = true;
+      if (missingThen_) missingThen_();
+    }
+  } else {
+    if (ImGui::Button(T("Open download page"))) SDL_OpenURL(t->homepage.c_str());
+    ImGui::SameLine();
+    if (ImGui::Button(T("Choose the file...")))
+      SDL_ShowOpenFileDialog(dialogCallback, new DialogCtx{this, "tool:" + t->id}, window_, nullptr, 0, nullptr, false);
+    ImGui::SameLine();
+    if (ImGui::Button(T("Search again"))) tools_.detect();
+  }
+  ImGui::SameLine();
+  if (ImGui::Button(T("Close")) || ImGui::IsKeyPressed(ImGuiKey_Escape)) close = true;
+  if (close) {
+    ImGui::CloseCurrentPopup();
+    missingThen_ = nullptr;
+  }
   ImGui::EndPopup();
 }
 

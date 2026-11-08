@@ -2,6 +2,8 @@
 // Copyright (C) 2026 VCSIDE contributors
 #include "toolchain.h"
 
+#include <algorithm>
+
 #include <SDL3/SDL.h>
 
 #include <cstdlib>
@@ -23,12 +25,14 @@ Toolchain::Toolchain() {
       {"gopher2600", "Gopher2600", N_("emulator"), "", "", "https://github.com/JetSetIlly/Gopher2600/releases",
        N_("ELF cartridges need a recent build (nightly from 2026-11 or later).")},
       {"bb", "batari Basic", N_("compiler"), "", "", "https://github.com/batari-Basic/batari-Basic/releases",
-       N_("Unpack it and point VCSIDE at 2600basic.sh (2600bas.bat on Windows); it brings its own DASM.")},
+       N_("Unpack the release zip into the bb folder of VCSIDE's tools folder, or choose its 2600basic.sh (2600bas.bat on Windows). It brings its own DASM; version 1.9 also needs wasmtime.")},
       {"wasmtime", "wasmtime", N_("runtime"), "", "", "https://wasmtime.dev/",
        N_("batari Basic 1.9 runs its compiler on it (WebAssembly). macOS: brew install wasmtime; Windows: winget install BytecodeAlliance.Wasmtime.Portable.")},
       {"arm-gcc", "Arm GNU toolchain (ELF-VCS)", N_("compiler"), "", "",
        "https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads",
        N_("arm-none-eabi-gcc, for C games on ELF cartridges with vcsLib.")},
+      {"make", "GNU Make", N_("build tool"), "", "", "https://www.gnu.org/software/make/",
+       N_("ELF projects build with their Makefile. macOS: xcode-select --install. Linux: your package manager (build-essential). Windows: MSYS2 (pacman -S make) or another GNU Make build.")},
       {"cc65", "cc65 / ca65", N_("assembler"), "", "", "https://cc65.github.io/", N_("Optional alternative to DASM.")},
   };
 }
@@ -111,7 +115,32 @@ std::vector<std::string> Toolchain::candidates(const Tool& t) const {
   } else if (t.id == "arm-gcc") {
     add(findInPath("arm-none-eabi-gcc"));
     add("/opt/homebrew/bin/arm-none-eabi-gcc");
+    add("/usr/local/bin/arm-none-eabi-gcc");
     add("/usr/bin/arm-none-eabi-gcc");
+    // Arm's own installers: <folder>/<version>/... (the newest version first)
+    auto versions = [&](const std::string& root, const std::string& rest) {
+      std::error_code ec;
+      std::vector<std::string> found;
+      for (auto& e : fs::directory_iterator(root, ec))
+        if (e.is_directory()) found.push_back((e.path() / rest).string());
+      std::sort(found.rbegin(), found.rend());
+      for (auto& f : found) add(f);
+    };
+#if defined(__APPLE__)
+    versions("/Applications/ArmGNUToolchain", "arm-none-eabi/bin/arm-none-eabi-gcc");
+#elif defined(_WIN32)
+    std::string pf86 = std::getenv("ProgramFiles(x86)") ? std::getenv("ProgramFiles(x86)") : "C:\\Program Files (x86)";
+    versions(pf86 + "\\Arm GNU Toolchain arm-none-eabi", "bin\\arm-none-eabi-gcc.exe");
+    versions(pf + "\\Arm GNU Toolchain arm-none-eabi", "bin\\arm-none-eabi-gcc.exe");
+#endif
+  } else if (t.id == "make") {
+    add(findInPath("make"));
+    add("/usr/bin/make");
+    add("/opt/homebrew/bin/gmake");
+#ifdef _WIN32
+    add(findInPath("mingw32-make"));
+    add("C:\\msys64\\usr\\bin\\make.exe");
+#endif
   } else if (t.id == "cc65") {
     add(findInPath("cl65"));
     add("/opt/homebrew/bin/cl65");

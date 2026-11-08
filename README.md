@@ -18,7 +18,11 @@ A small native IDE for making Atari 2600 games, on macOS, Windows and Linux. It 
 - **Emulator options** (*Build → Emulator options...*): how each emulator starts, per project. Sound, debug colours, the TV switches and difficulty switches, controllers, palette and TV effects, random RAM/CPU/TIA on reset, breaks on bad port accesses, TIA revisions, ARM checks for DPC+/CDFJ/ELF... (54 Stella options, 21 Gopher2600 ones, with their help on hover), plus free extra arguments. TV standards: NTSC, PAL, PAL60, SECAM, NTSC50 and SECAM60 (Stella), PAL-M (Gopher2600) or the emulator's choice.
   - The emulators start with a private copy of your own settings (Stella: `-basedir`, or `HOME` for the macOS app; Gopher2600: portable mode), because Stella saves every command-line option when it quits. So these options never end up in your settings, and changes made inside an emulator started from VCSIDE are not kept.
 - **Go to address** (Ctrl+Shift+G): from an address the emulator shows (PC, a break) to its source line, in every bank where it exists.
-- **Tools** are found in `PATH` and the usual install folders, or set by hand in *Settings → Tools*. Missing ones link to their official download page.
+- **Tools** are found in `PATH` and the usual install folders, or set by hand in *Settings → Tools*. Before building or running, VCSIDE checks what the project needs; if something is missing, a window says what it is and how to install it, with its official download page, *Choose the file...* and *Search again*, and then carries on:
+  - DASM projects: DASM;
+  - batari Basic: its `2600basic.sh` / `2600bas.bat` (which brings its own DASM) and, for 1.9, wasmtime;
+  - ELF: the Arm GNU toolchain and GNU Make (their folders are put first in `make`'s `PATH`, since an app opened from the desktop does not have the shell's);
+  - running: the project's emulator.
 - **Editor**:
   - DASM syntax colouring, with illegal opcodes in their own colours (purple for stable ones, red for unstable ones).
   - A cycle column for every instruction (e.g. `4/5` when crossing a page, `2/4` for a branch). Symbols from the last build are used to tell zero page from absolute.

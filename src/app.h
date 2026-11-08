@@ -6,6 +6,7 @@
 #include <imgui.h>
 
 #include <deque>
+#include <functional>
 #include <map>
 #include <set>
 #include <memory>
@@ -88,6 +89,8 @@ class App {
   void newProjectDialog();
   void toolsDialog();
   void aboutDialog();
+  void missingToolDialog();
+  void askForTool(const std::string& id, const std::string& why, std::function<void()> then);
   void closeDialogs();
 
   // actions
@@ -181,6 +184,10 @@ class App {
   bool showNewProject_ = false, showTools_ = false, showAbout_ = false;
   std::optional<AboutInfo> about_;  // while the About window is open (not on macOS)
   unsigned aboutTexture_ = 0;       // the icon, as an OpenGL texture
+  // a tool the build or the run needs and is missing; missingThen_ retries
+  std::string missingTool_, missingWhy_;
+  std::function<void()> missingThen_;
+  bool showMissingTool_ = false;
   char npName_[64] = "mygame";
   std::string npDir_;
   int npLang_ = 0, npTv_ = 0;

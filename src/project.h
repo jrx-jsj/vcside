@@ -44,6 +44,8 @@ struct Project {
   std::vector<std::string> rasArgs(Toolchain& tc) const;
   // Command lines; empty vector + error when a tool is missing. workDir and env, when
   // given, receive where to run it and the variables it needs (project folder, none).
+  // Toolchain ids the build needs (dasm; bb and, for 1.9, wasmtime; arm-gcc and make).
+  std::vector<std::string> buildTools(Toolchain& tc) const;
   std::vector<std::string> buildArgs(Toolchain& tc, std::string* error, std::string* workDir = nullptr,
                                      EnvVars* env = nullptr) const;
   // batari Basic writes <main>.bin, .asm, .list.txt (.lst before 1.9) and .symbol.txt (.sym)
