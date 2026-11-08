@@ -35,6 +35,6 @@ Los temas Solarized Light y Solarized Dark toman los 16 valores de la paleta [So
 
 Las tipografías son las del sistema (Menlo, SF, Segoe UI, Consolas, DejaVu): se cargan en tiempo de ejecución y no se redistribuyen.
 
-`vcs.h` y `macro.h` de DASM no se incluyen (el primero pide expresamente no redistribuirlo); la plantilla trae `hardware.h`, escrito para VCSIDE.
+`vcs.h` y `macro.h` de DASM no se incluyen (el primero pide expresamente no redistribuirlo); la plantilla trae `2600.h`, escrito para VCSIDE con los nombres de registro de la *Stella Programmer's Guide* de Atari (1979), que son los mismos que usan los programas escritos con `vcs.h`.
 
 Las fuentes de la base de conocimiento están en [`docs/fuentes.md`](../docs/fuentes.md).

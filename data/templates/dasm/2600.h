@@ -1,16 +1,11 @@
-; hardware.h - Atari 2600 TIA and RIOT registers for DASM (VCSIDE template).
+; 2600.h - Atari 2600 TIA and RIOT (6532) registers for DASM (VCSIDE template).
 ; SPDX-License-Identifier: CC0-1.0  (public domain: use it in any game)
-; Same names as the classic vcs.h. Reads use the $30-$3D mirror of the TIA.
+; The names are the ones Atari's Stella Programmer's Guide (1979) gives the registers,
+; so programs written for other headers that use them assemble unchanged.
+; Writes and reads both start at $00 (the TIA decodes reads from $00-$0D too).
 
-        IFNCONST TIA_BASE_ADDRESS
-TIA_BASE_ADDRESS = 0
-        ENDIF
-        IFNCONST TIA_BASE_READ_ADDRESS
-TIA_BASE_READ_ADDRESS = TIA_BASE_ADDRESS
-        ENDIF
-
-        SEG.U TIA_WRITE
-        ORG TIA_BASE_ADDRESS
+        SEG.U TIA_WRITES
+        ORG $00
 VSYNC   ds 1    ; $00 vertical sync (D1)
 VBLANK  ds 1    ; $01 vertical blank (D1), input latch (D6), dump paddles (D7)
 WSYNC   ds 1    ; $02 wait for the end of the scanline (strobe)
@@ -57,8 +52,8 @@ HMOVE   ds 1    ; $2A apply horizontal motion (strobe, right after WSYNC)
 HMCLR   ds 1    ; $2B clear horizontal motion registers (strobe)
 CXCLR   ds 1    ; $2C clear collision latches (strobe)
 
-        SEG.U TIA_READ
-        ORG TIA_BASE_READ_ADDRESS
+        SEG.U TIA_READS
+        ORG $00
 CXM0P   ds 1    ; $00 collisions M0-P1 (D7), M0-P0 (D6)
 CXM1P   ds 1    ; $01 M1-P0, M1-P1
 CXP0FB  ds 1    ; $02 P0-PF, P0-BL
@@ -74,14 +69,15 @@ INPT3   ds 1    ; $0B
 INPT4   ds 1    ; $0C left fire button (D7, 0 = pressed)
 INPT5   ds 1    ; $0D right fire button
 
-        SEG.U RIOT
+        SEG.U RIOT_PORTS
         ORG $280
 SWCHA   ds 1    ; $280 joysticks: P0 right/left/down/up in D7-D4, P1 in D3-D0 (0 = pressed)
 SWACNT  ds 1    ; $281 port A direction
 SWCHB   ds 1    ; $282 console switches: D0 reset, D1 select, D3 colour/BW, D6/D7 difficulty
 SWBCNT  ds 1    ; $283 port B direction
 INTIM   ds 1    ; $284 timer value
-TIMINT  ds 1    ; $285 timer interrupt flag (D7)
+        ; $285 reads the 6532's interrupt flags (D7 timer, D6 PA7 edge). The Stella guide does
+        ; not name it; give it a name here if you use it.
 
         ORG $294
 TIM1T   ds 1    ; $294 set timer, 1 cycle per tick

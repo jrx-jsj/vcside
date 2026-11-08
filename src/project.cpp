@@ -345,8 +345,8 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
     replaceAll(asmText, "{{TVDEFS}}", defs);
     fs::path mainFile = fs::path(p.dir) / "main.asm";
     if (!fs::exists(mainFile)) std::ofstream(mainFile) << asmText;
-    fs::path hw = fs::path(p.dir) / "hardware.h";
-    if (!fs::exists(hw)) fs::copy_file(tpl / "hardware.h", hw, ec);
+    fs::path hw = fs::path(p.dir) / "2600.h";
+    if (!fs::exists(hw)) fs::copy_file(tpl / "2600.h", hw, ec);
     // the example's graphics, and the tables they give
     for (auto& e : fs::directory_iterator(ex, ec))
       if (e.path().extension() == ".vcsgfx" && !fs::exists(fs::path(p.dir) / e.path().filename()))

@@ -122,21 +122,22 @@
    "address": "$0285",
    "access": "R",
    "bits": "76------",
-   "summary": "Timer / PA7 edge interrupt flags (INSTAT).",
+   "summary": "Timer / PA7 edge interrupt flags.",
    "description": "Interrupt flag register. Bit 7 = timer flag: set when the timer has counted through 0; cleared by reading INTIM or writing a timer register. Bit 6 = PA7 edge flag: set by the PA7 transition selected with the edge-detect control; cleared by reading this register. The IRQ output is not connected on the 2600, so the flags are only for polling. The other bits read 0.",
    "timing": "",
    "issues": [
     "BIT TIMINT / BMI tests the timer flag without touching the timer value.",
     "The timer flag is cleared by reading INTIM or writing a timer register; the PA7 flag is cleared by reading TIMINT.",
     "The register is also visible at $0287 (A2:A0 = 111); INTIM is also visible at $0286.",
-    "PA7 edge detection is rarely used in 2600 software."
+    "PA7 edge detection is rarely used in 2600 software.",
+    "The Stella guide does not name this register; TIMINT is the name DASM's vcs.h gave it in version 1.02 (2003), and other tools took it from there. VCSIDE's 2600.h leaves it unnamed."
    ],
    "example": "  bit TIMINT\n  bmi .timerExpired",
    "verified": true,
    "sources": [
-    "stella-guide",
     "mos6532",
-    "stella-src"
+    "stella-src",
+    "dasm-vcs-h"
    ]
   },
   {
@@ -252,12 +253,12 @@
    "timing": "",
    "issues": [
     "Rarely used in 2600 software.",
-    "The control is carried by the address bits, so STA $0284..$0287 select the mode and the stored value does not matter."
+    "The control is carried by the address bits, so STA $0284..$0287 select the mode and the stored value does not matter.",
+    "No standard name: neither the Stella guide nor DASM's vcs.h names these addresses; EDGCTL is only the label this documentation uses for them."
    ],
    "example": "",
    "verified": true,
    "sources": [
-    "stella-guide",
     "mos6532",
     "stella-src"
    ]
@@ -284,6 +285,13 @@
    "author": "Stella Team",
    "url": "https://github.com/stella-emu/stella",
    "used_for": "Bankswitch type names (-bs), sizes, hotspots, SC detection, RIOT/TIA decoding as modelled; GPL-2, consulted only, nothing copied"
+  },
+  {
+   "id": "dasm-vcs-h",
+   "title": "vcs.h, the 2600 definitions distributed with DASM",
+   "author": "Atari 2600 programming community (maintained with DASM)",
+   "url": "https://github.com/dasm-assembler/dasm/tree/master/machines/atari2600",
+   "used_for": "Only the name TIMINT for $285, which programs use; nothing is copied, and the file is not included in VCSIDE"
   }
  ]
 }

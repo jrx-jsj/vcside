@@ -25,6 +25,8 @@
 #include <tuple>
 #include <fstream>
 #include <set>
+#include <sstream>
+#include <regex>
 
 static int failures = 0, checks = 0;
 #define CHECK(cond)                                                     \
@@ -626,7 +628,7 @@ static void testElfSpace() {
   for (const char* tv : {"NTSC", "PAL"}) {
     fs::path ad = dir / (std::string("anim-") + tv);
     CHECK(Project::create(ad.string(), "walker", Language::Dasm, tv, &p, &err, "animation"));
-    for (auto f : {"main.asm", "hardware.h", "hero.vcsgfx", "hero.gfx.asm"}) CHECK(fs::exists(ad / f));
+    for (auto f : {"main.asm", "2600.h", "hero.vcsgfx", "hero.gfx.asm"}) CHECK(fs::exists(ad / f));
     std::ifstream inc(ad / "hero.gfx.asm");
     std::string itext((std::istreambuf_iterator<char>(inc)), {});
     CHECK(itext.find("hero_walk_FRAME") != std::string::npos && itext.find("hero_P0_FramePtrLo") != std::string::npos);
@@ -1186,6 +1188,45 @@ static void testGfx() {
   }
 }
 
+// The template's 2600.h: the register names of the Stella Programmer's Guide and no others,
+// and an empty DASM project assembles with it.
+static void testHeader(const KnowledgeBase& kb, const std::string& data) {
+  namespace fs = std::filesystem;
+  std::ifstream h(data + "/templates/dasm/2600.h");
+  std::string text((std::istreambuf_iterator<char>(h)), {});
+  CHECK(!text.empty());
+  std::set<std::string> header, guide;
+  std::istringstream in(text);
+  for (std::string line; std::getline(in, line);) {
+    std::smatch m;
+    static const std::regex label(R"(^([A-Z][A-Z0-9_]*)\s+ds\s+1\b)");
+    if (std::regex_search(line, m, label)) header.insert(m[1].str());
+  }
+  for (auto& r : kb.registers())  // registers, not areas such as RAM ($80-$FF)
+    if (std::find(r.sources.begin(), r.sources.end(), "stella-guide") != r.sources.end() && r.address.find('-') == std::string::npos)
+      guide.insert(r.name);
+  CHECK(header.size() == 68 && header == guide);
+  for (auto& n : header)
+    if (!guide.count(n)) std::fprintf(stderr, "2600.h: %s is not a Stella guide name\n", n.c_str());
+  for (auto& n : guide)
+    if (!header.count(n)) std::fprintf(stderr, "2600.h: %s is missing\n", n.c_str());
+  CHECK(text.find("TIMINT") == std::string::npos && text.find("TIA_BASE") == std::string::npos);
+  // a new DASM project
+  fs::path dir = fs::temp_directory_path() / "vcside-test-2600h";
+  std::error_code ec;
+  fs::remove_all(dir, ec);
+  Project p;
+  std::string err;
+  CHECK(Project::create(dir.string(), "plain", Language::Dasm, "NTSC", &p, &err));
+  CHECK(fs::exists(dir / "2600.h") && !fs::exists(dir / "hardware.h"));
+  std::string dasm = findInPath("dasm");
+  if (!dasm.empty()) {
+    std::string cmd = "cd \"" + dir.string() + "\" && \"" + dasm + "\" main.asm -f3 -oplain.bin > dasm.log 2>&1";
+    CHECK(std::system(cmd.c_str()) == 0 && fs::file_size(dir / "plain.bin", ec) == 4096);
+  }
+  fs::remove_all(dir, ec);
+}
+
 static void testThemes(const std::string& data) {
   using namespace vcs::theme;
   namespace fs = std::filesystem;
@@ -1285,6 +1326,7 @@ int main() {
   testFormatOrder(kb);
   testGfx();
   testThemes(data);
+  testHeader(kb, data);
   std::printf("%d checks, %d failures\n", checks, failures);
   return failures ? 1 : 0;
 }

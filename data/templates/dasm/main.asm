@@ -3,7 +3,7 @@
 ; 4K cartridge, {{TV}} timing. Build: F7 (or Build > Build). Run: F5.
 
         processor 6502
-        include "hardware.h"
+        include "2600.h"
 
 ; ---- TV timing (scanlines) -------------------------------------------------
 {{TVDEFS}}
