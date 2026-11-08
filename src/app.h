@@ -28,6 +28,7 @@
 #include "cycles.h"
 #include "project.h"
 #include "elf_space.h"
+#include "image_viewer.h"
 #include "space.h"
 #include "theme_ui.h"
 #include "toolchain.h"
@@ -40,6 +41,7 @@ struct OpenFile {
   std::string path;
   TextEditor editor;
   std::unique_ptr<GfxEditor> gfx;  // a .vcsgfx: the graphics editor instead of the text
+  std::unique_ptr<ImageViewer> image;  // a PNG or BMP: shown, not edited
   bool asmSyntax = true;
   bool requestFocus = false;
   bool dirty() const { return gfx ? gfx->dirty() : editor.dirty(); }

@@ -195,6 +195,19 @@ OpenFile* App::openFile(const std::string& pathIn, int line) {
   if (!fs::exists(path, ec)) return nullptr;
   auto f = std::make_unique<OpenFile>();
   f->path = path;
+  if (ImageViewer::handles(path)) {
+    f->asmSyntax = false;
+    f->image = std::make_unique<ImageViewer>();
+    std::string err;
+    if (!f->image->load(path, &err)) {
+      output_ += F("Cannot read {0}: {1}", {path, err}) + "\n";
+      return nullptr;
+    }
+    f->requestFocus = true;
+    files_.push_back(std::move(f));
+    activeFile_ = (int)files_.size() - 1;
+    return files_.back().get();
+  }
   if (lower(fs::path(path).extension().string()) == ".vcsgfx") {
     f->asmSyntax = false;
     f->gfx = std::make_unique<GfxEditor>();
@@ -254,6 +267,7 @@ gfx::Profile App::gfxProfile() {
 gfx::Tv App::gfxTv() const { return gfx::tvFromProject(project_ ? project_->tv : "NTSC"); }
 
 bool App::saveFile(OpenFile& f) {
+  if (f.image) return true;  // nothing to save: the viewer never changes it
   if (f.gfx) {
     std::string err, generated;
     if (!f.gfx->save(f.path, gfxProfile(), &err, &generated)) {
@@ -1772,7 +1786,11 @@ void App::editorsPanel() {
           ImGui::SetKeyboardFocusHere();
           f.requestFocus = false;
         }
-        if (f.gfx) {
+        if (f.image) {
+          ImGui::BeginChild("##image", ImVec2(0, 0), 0, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+          f.image->render();
+          ImGui::EndChild();
+        } else if (f.gfx) {
           ImGui::BeginChild("##gfx", ImVec2(0, 0), 0, ImGuiWindowFlags_NoScrollbar);
           f.gfx->render(gfxTv(), gfxProfile());
           ImGui::EndChild();
