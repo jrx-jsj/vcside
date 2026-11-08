@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 VCSIDE contributors
+// Copyright (C) 2026 Juan Sánchez Jurado
 // Parsing of tool output: compiler diagnostics and symbol files.
 #pragma once
 #include <map>

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 VCSIDE contributors
+// Copyright (C) 2026 Juan Sánchez Jurado
 // External tools: where they are, and where to get them when they are missing.
 #pragma once
 #include <map>

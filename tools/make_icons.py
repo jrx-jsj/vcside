@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2026 VCSIDE contributors
+# Copyright (C) 2026 Juan Sánchez Jurado
 """Builds the VCSIDE icons from the SVG sources in assets/icon/.
 
   vcside.svg      main drawing (1024x1024), used from 48 px up

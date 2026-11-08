@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 VCSIDE contributors
+// Copyright (C) 2026 Juan Sánchez Jurado
 // Knowledge base: 6502 opcodes, TIA/RIOT registers, cartridge formats, TV standards.
 #pragma once
 #include <map>

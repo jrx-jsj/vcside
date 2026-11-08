@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 VCSIDE contributors
+// Copyright (C) 2026 Juan Sánchez Jurado
 // Window / taskbar icon, loaded from data/vcside.png.
 #pragma once
 #include <SDL3/SDL.h>

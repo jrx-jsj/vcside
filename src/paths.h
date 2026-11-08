@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 VCSIDE contributors
+// Copyright (C) 2026 Juan Sánchez Jurado
 // Where VCSIDE finds its data (knowledge base, templates) and keeps its settings.
 #pragma once
 #include <string>

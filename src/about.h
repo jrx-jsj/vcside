@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 VCSIDE contributors
+// Copyright (C) 2026 Juan Sánchez Jurado
 // What the About window shows: VCSIDE's version and licences, the libraries built into
 // it, the tools it works with and the sources of its knowledge base. The same text is
 // drawn by the system's About panel (macOS) or by ImGui (Windows, Linux).

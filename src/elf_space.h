@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 VCSIDE contributors
+// Copyright (C) 2026 Juan Sánchez Jurado
 // Space used by an ELF cartridge game, read straight from the ELF files.
 //
 // The ROM is a relocatable object (sections, no addresses): its sections give the

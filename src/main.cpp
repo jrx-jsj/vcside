@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 VCSIDE contributors
+// Copyright (C) 2026 Juan Sánchez Jurado
 // VCSIDE entry point: SDL3 window + OpenGL + Dear ImGui.
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_opengl.h>

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 VCSIDE contributors
+// Copyright (C) 2026 Juan Sánchez Jurado
 // Running external tools (assemblers, compilers, emulators) on every platform via SDL3.
 #pragma once
 #include <atomic>

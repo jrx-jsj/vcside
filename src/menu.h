@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 VCSIDE contributors
+// Copyright (C) 2026 Juan Sánchez Jurado
 // The menu bar as data, drawn by ImGui (Windows, Linux) or by the system (macOS),
 // where it goes in the screen's menu bar like in every other app.
 #pragma once

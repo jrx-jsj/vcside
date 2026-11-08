@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2026 VCSIDE contributors
+# Copyright (C) 2026 Juan Sánchez Jurado
 """Generates data/kb/6502.json: every 6502 opcode with mode, bytes, cycles and docs.
 
 Cycle counts: "cycles" is the base count; "page" = +1 when an indexed access

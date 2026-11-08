@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 VCSIDE contributors
+// Copyright (C) 2026 Juan Sánchez Jurado
 // Launching the emulators with the project's options (data/kb/emulators.json).
 //
 // Neither emulator can take these options without keeping them: Stella saves

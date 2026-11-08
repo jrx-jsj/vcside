@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 VCSIDE contributors
+// Copyright (C) 2026 Juan Sánchez Jurado
 // macOS: the menus go in the system menu bar. Each menu is rebuilt from the
 // MenuBar description when it opens (menuNeedsUpdate:), so labels, ticks and
 // enabled states are always current. Shortcuts are only displayed: the main

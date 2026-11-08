@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 VCSIDE contributors
+// Copyright (C) 2026 Juan Sánchez Jurado
 // Space used in ROM (per bank), in the 2600's 128 bytes of RAM and in the
 // cartridge's extra RAM, from DASM's output.
 //

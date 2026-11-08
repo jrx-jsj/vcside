@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 VCSIDE contributors
+// Copyright (C) 2026 Juan Sánchez Jurado
 // Source lines <-> CPU addresses and banks, from DASM's listing. Used to send the
 // editor's breakpoints to the emulators and to go from an address back to its line.
 //

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 VCSIDE contributors
+// Copyright (C) 2026 Juan Sánchez Jurado
 // batari Basic in the editor: colouring, the label a line defines.
 //
 // A line that starts at column 0 begins with a label (or a line number); statements

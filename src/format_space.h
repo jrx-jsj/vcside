@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 VCSIDE contributors
+// Copyright (C) 2026 Juan Sánchez Jurado
 // Sizes of a cartridge format used by the space warnings (formats.json "space").
 #pragma once
 #include <optional>
