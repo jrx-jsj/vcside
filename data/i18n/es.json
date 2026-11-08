@@ -84,6 +84,8 @@
     "Built with": "Hecho con",
     "by ROM": "según la ROM",
     "Bytes": "Bytes",
+    "C (a kernel of one's own)": "C (un kernel propio)",
+    "C arrays": "Arrays de C",
     "C for ELF (vcsLib)": "C para ELF (vcsLib)",
     "Cancel": "Cancelar",
     "Cannot copy {0} to {1}: {2}": "No se puede copiar {0} en {1}: {2}",
@@ -178,6 +180,7 @@
     "flicker": "parpadeo",
     "Folder": "Carpeta",
     "Fonts": "Tipografías",
+    "For a C program (ELF cartridge). Animations use the types and functions of <file>.gfx.h.": "Para un programa en C (cartucho ELF). Las animaciones usan los tipos y funciones de <archivo>.gfx.h.",
     "Forbid": "Prohibir",
     "Format": "Formato",
     "found": "encontrado",
@@ -284,6 +287,7 @@
     "Off: every phase at once, as if there were no flicker.": "Desactivado: todas las fases a la vez, como si no hubiera parpadeo.",
     "on": "encendido",
     "On save, every item also goes to <file>.gfx.asm for the program to include.": "Al guardar, todo va también a <archivo>.gfx.asm para que el programa lo incluya.",
+    "On save, every item also goes to <file>.gfx.h for the program to include.": "Al guardar, todo va también a <archivo>.gfx.h para que el programa lo incluya.",
     "Once installed, VCSIDE finds it in PATH, in the usual folders, or in {0}. You can also choose the file yourself.": "Una vez instalado, VCSIDE lo encuentra en el PATH, en las carpetas habituales o en {0}. También puedes elegir tú el archivo.",
     "Only {0} bytes left for the stack above {1} (reserve: {2}).": "Solo quedan {0} bytes para la pila por encima de {1} (reserva: {2}).",
     "Opcode": "Opcode",
@@ -501,5 +505,5 @@
     "{0}:{1}: no code at or after this line; breakpoint ignored.": "{0}:{1}: no hay código en esta línea ni después; se ignora el punto de ruptura.",
     "{0}:{1}: no listing to place the breakpoint: build first.": "{0}:{1}: no hay listado para situar el punto de ruptura: compila antes."
   },
-  "total": 498
+  "total": 502
 }

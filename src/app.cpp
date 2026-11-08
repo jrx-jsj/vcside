@@ -217,7 +217,11 @@ OpenFile* App::openFile(const std::string& pathIn, int line) {
 }
 
 gfx::Profile App::gfxProfile() {
-  if (!project_ || project_->language != Language::BatariBasic) return {};
+  if (!project_ || project_->language != Language::BatariBasic) {
+    gfx::Profile k;
+    k.c = project_ && project_->language == Language::ElfC;
+    return k;
+  }
   std::string main = project_->abs(project_->main);
   std::error_code ec;
   auto t = fs::last_write_time(main, ec);

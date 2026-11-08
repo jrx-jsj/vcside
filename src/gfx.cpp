@@ -466,6 +466,7 @@ int Profile::pfRowsMax() const {
   }
 }
 std::string Profile::describe() const {
+  if (kernel == Kernel::Dasm && c) return T("C (a kernel of one's own)");
   std::string o = kernel == Kernel::Standard ? options.text() : "";
   return o.empty() ? kernelName(kernel) : std::string(kernelName(kernel)) + " (" + o + ")";
 }
@@ -870,6 +871,153 @@ std::string exportDasm(const Playfield& p, const ExportOptions& o) {
   if (bkVary) table("COLUBK_ROWS", [&](int r) { return hexColour(p.bkAt(r)); }, false);
   return out.str();
 }
+
+// ---------------------------------------------------------------------------
+// C
+
+static std::string upper(std::string s) {
+  for (auto& c : s) c = (char)std::toupper((unsigned char)c);
+  return s;
+}
+static std::string hex2(int v) {
+  static const char* d = "0123456789ABCDEF";
+  return std::string("0x") + d[(v >> 4) & 15] + d[v & 15];
+}
+static std::string picture8(int v) {
+  std::string s;
+  for (int b = 7; b >= 0; b--) s += (v >> b) & 1 ? 'X' : '.';
+  return s;
+}
+
+std::string exportC(const Sprite& s) {
+  std::ostringstream out;
+  std::string n = identifier(s.name), N = upper(n);
+  out << "/* " << s.name << ": " << s.layers.size() << " layer(s), " << s.frames << " frame(s), " << s.phases()
+      << " phase(s). Rows: top first. */\n";
+  out << "#define " << N << "_FRAMES " << s.frames << "\n";
+  for (auto& l : s.layers) {
+    std::string id = n + "_" + layerId(l, s.layers), ID = upper(id);
+    out << "\n/* " << objName(l.obj) << (l.name.empty() ? "" : " (" + l.name + ")") << ", phase " << l.phase + 1 << ", "
+        << colourRegister(l.obj) << " */\n";
+    out << "#define " << ID << "_DX " << l.dx << "\n#define " << ID << "_DY " << l.dy << "\n#define " << ID << "_HEIGHT "
+        << l.height << "\n#define " << ID << "_PHASE " << l.phase << "\n";
+    if (isPlayer(l.obj)) {
+      out << "#define " << ID << "_NUSIZ " << (l.size == 4 ? "0x07" : l.size == 2 ? "0x05" : "0x00") << "\n";
+      out << "#define " << ID << "_REFP " << (l.reflect ? "0x08" : "0x00") << "\n";
+    } else {
+      int bits = l.size >= 8 ? 3 : l.size >= 4 ? 2 : l.size >= 2 ? 1 : 0;
+      out << "#define " << ID << "_SIZE 0x" << bits << "0" << (l.obj == Obj::BL ? "  /* CTRLPF bits 4-5 */\n" : "  /* NUSIZ bits 4-5 */\n");
+    }
+    // [frame][row]: GRPx for players, ENAMx/ENABL (bit 1) for missiles and ball
+    out << "static const uint8_t " << id << "_gfx[" << N << "_FRAMES][" << l.height << "] = {\n";
+    for (int f = 0; f < s.frames; f++) {
+      out << "    { /* frame " << f << " */\n";
+      for (int r = 0; r < l.height; r++) {
+        int v = f < (int)l.bits.size() ? l.bits[f][r] : 0;
+        if (isPlayer(l.obj)) out << "        " << hex2(v) << ",  /* " << picture8(v) << " " << hexColour(l.colour(f, r)) << " */\n";
+        else out << "        " << (v ? "0x02" : "0x00") << ",\n";
+      }
+      out << "    },\n";
+    }
+    out << "};\n";
+    if (l.obj != Obj::M0 && l.obj != Obj::M1) {
+      out << "static const uint8_t " << id << "_colour[" << N << "_FRAMES][" << l.height << "] = {\n";
+      for (int f = 0; f < s.frames; f++) {
+        out << "    {";
+        for (int r = 0; r < l.height; r++) out << (r ? ", " : "") << hex2(l.colour(f, r));
+        out << "},\n";
+      }
+      out << "};\n";
+    }
+  }
+  for (auto& an : s.animations) {
+    std::string a = n + "_" + identifier(an.name);
+    out << "\n/* animation " << an.name << ": " << an.steps.size() << " steps, " << an.length() << " video frames"
+        << (an.loop ? ", loops" : ", stops on the last step") << " */\n";
+    out << "static const vcsgfx_step " << a << "_steps[] = {";
+    for (size_t i = 0; i < an.steps.size(); i++) out << (i ? ", " : "") << "{" << an.steps[i].frame << ", " << std::clamp(an.steps[i].ticks, 1, 255) << "}";
+    if (an.steps.empty()) out << "{0, 0}";
+    out << "};\n";
+    out << "static const vcsgfx_animation " << a << " = {" << a << "_steps, " << an.steps.size() << ", " << (an.loop ? 1 : 0)
+        << "};\n";
+  }
+  return out.str();
+}
+
+std::string exportC(const Playfield& p) {
+  std::ostringstream out;
+  std::string n = identifier(p.name), N = upper(n);
+  int rows = (int)p.rows.size();
+  bool anyAsym = std::any_of(p.rows.begin(), p.rows.end(), [](const PfRow& r) { return r.asymmetric; });
+  bool modes = std::any_of(p.rows.begin(), p.rows.end(), [&](const PfRow& r) { return r.mode != p.rows[0].mode; });
+  bool pfVary = false, bkVary = false;
+  for (int r = 1; r < rows; r++) pfVary |= p.pfAt(r) != p.pfAt(0), bkVary |= p.bkAt(r) != p.bkAt(0);
+  out << "/* " << p.name << ": " << rows << " rows of " << p.lineHeight << " lines" << (anyAsym ? ", asymmetric rows" : "")
+      << ". Rows: top first. */\n";
+  out << "#define " << N << "_ROWS " << rows << "\n#define " << N << "_LINES " << p.lineHeight << "\n";
+  out << "#define " << N << "_CTRLPF " << (p.rows[0].mode == PfMode::Mirror ? "0x01" : "0x00") << "  /* first row */\n";
+  out << "#define " << N << "_COLUPF " << hex2(p.pfAt(0)) << "\n#define " << N << "_COLUBK " << hex2(p.bkAt(0)) << "\n";
+  auto table = [&](const std::string& label, auto value, bool picture) {
+    out << "static const uint8_t " << n << "_" << label << "[" << N << "_ROWS] = {\n";
+    for (int r = 0; r < rows; r++) {
+      out << "    " << value(r) << ",";
+      if (picture) {
+        out << "  /* |";
+        for (int c = 0; c < 40; c++) out << (p.pixel(r, c) ? 'X' : '.');
+        out << "| */";
+      }
+      out << "\n";
+    }
+    out << "};\n";
+  };
+  const char* reg[3] = {"pf0", "pf1", "pf2"};
+  for (int k = 0; k < 3; k++)
+    table(reg[k], [&](int r) { uint8_t L[3], R[3]; p.registers(r, L, R); return hex2(L[k]); }, k == 0);
+  if (anyAsym)
+    for (int k = 0; k < 3; k++)
+      table(std::string(reg[k]) + "r", [&](int r) { uint8_t L[3], R[3]; p.registers(r, L, R); return hex2(R[k]); }, false);
+  if (modes) table("ctrlpf", [&](int r) { return std::string(p.rows[r].mode == PfMode::Mirror ? "0x01" : "0x00"); }, false);
+  if (pfVary) table("colupf", [&](int r) { return hex2(p.pfAt(r)); }, false);
+  if (bkVary) table("colubk", [&](int r) { return hex2(p.bkAt(r)); }, false);
+  return out.str();
+}
+
+std::string cInclude(const Asset& a, const std::string& sourceName) {
+  std::string guard = upper(identifier(sourceName)) + "_H";
+  std::string out = "/* Generated by VCSIDE from " + sourceName + ": edit that file, not this one. */\n";
+  out += "#ifndef " + guard + "\n#define " + guard + "\n\n#include <stdint.h>\n\n";
+  // shared by every .gfx.h of the project
+  out += "#ifndef VCSGFX_TYPES\n#define VCSGFX_TYPES\n"
+         "typedef struct { uint8_t frame, ticks; } vcsgfx_step;\n"
+         "typedef struct { const vcsgfx_step *steps; uint8_t count, loop; } vcsgfx_animation;\n"
+         "typedef struct { const vcsgfx_animation *animation; uint8_t step, timer; } vcsgfx_player;\n\n"
+         "/* Starts an animation (nothing happens if it is already playing). */\n"
+         "static inline void vcsgfx_play(vcsgfx_player *p, const vcsgfx_animation *a)\n"
+         "{\n"
+         "    if (p->animation == a) return;\n"
+         "    p->animation = a;\n"
+         "    p->step = 0;\n"
+         "    p->timer = 0;\n"
+         "}\n\n"
+         "/* Once per video frame: advances the animation and returns the frame to draw. */\n"
+         "static inline int vcsgfx_animate(vcsgfx_player *p)\n"
+         "{\n"
+         "    const vcsgfx_animation *a = p->animation;\n"
+         "    if (!a || !a->count) return 0;\n"
+         "    if (++p->timer >= a->steps[p->step].ticks) {\n"
+         "        p->timer = 0;\n"
+         "        if (p->step + 1 < a->count) p->step++;\n"
+         "        else if (a->loop) p->step = 0;\n"
+         "    }\n"
+         "    return a->steps[p->step].frame;\n"
+         "}\n"
+         "#endif\n";
+  for (auto& s : a.sprites) out += "\n" + exportC(s);
+  for (auto& p : a.playfields) out += "\n" + exportC(p);
+  out += "\n#endif\n";
+  return out;
+}
+
 
 // The profile to use when the asset is for a kernel of one's own and still copied as
 // batari Basic: the standard kernel with the options the graphics need.

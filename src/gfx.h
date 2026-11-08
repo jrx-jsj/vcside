@@ -147,6 +147,8 @@ struct Profile {
   Kernel kernel = Kernel::Dasm;
   KernelOptions options;
 
+  bool c = false;  // a kernel of one's own written in C (ELF projects): the tables go to <name>.gfx.h
+
   bool basic() const { return kernel != Kernel::Dasm; }
   int players() const;                  // 2, 6, 10 or 17
   bool has(Obj o) const;                // the kernel draws it (with these options)
@@ -185,6 +187,12 @@ std::string exportDasm(const Playfield& p, const ExportOptions& o = {});
 // The file a program includes (<name>.gfx.asm): every item's tables, under a header that
 // names the .vcsgfx they come from.
 std::string dasmInclude(const Asset& a, const std::string& sourceName);
+// C (ELF projects, whose ARM feeds the TIA): const arrays, top row first, with #defines for
+// sizes and positions and the animations as step arrays; vcsgfx_animate() plays them.
+std::string exportC(const Sprite& s);
+std::string exportC(const Playfield& p);
+// <name>.gfx.h: every item, under the header that names the .vcsgfx and an include guard.
+std::string cInclude(const Asset& a, const std::string& sourceName);
 // batari Basic: playerN: blocks with their colours, playfield:, pfcolors:, bkcolors:, as the
 // kernel of the profile reads them (row order, width, which blocks exist).
 std::string exportBasic(const Sprite& s, const Profile& k, int frame = -1);  // frame -1: all of them

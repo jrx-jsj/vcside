@@ -636,7 +636,23 @@ static void testElfSpace() {
     }
   }
   CHECK(!Project::create((dir / "none").string(), "x", Language::Dasm, "NTSC", &p, &err, "nope") && !err.empty());
-  fs::remove_all(dir, ec);
+  // the ELF example: the template with the example's main.c, and hero.gfx.h next to it
+  CHECK(Project::examples(Language::ElfC).size() == 1);
+  fs::path ed = dir / "anim-elf";
+  CHECK(Project::create(ed.string(), "walker", Language::ElfC, "NTSC", &p, &err, "animation"));
+  for (auto f : {"Makefile", "include/vcs.h", "src/main.c", "src/trampolines.S", "src/hero.vcsgfx", "src/hero.gfx.h"})
+    CHECK(fs::exists(ed / f));
+  std::ifstream emain(ed / "src" / "main.c"), einc(ed / "src" / "hero.gfx.h");
+  std::string emtext((std::istreambuf_iterator<char>(emain)), {}), eitext((std::istreambuf_iterator<char>(einc)), {});
+  CHECK(emtext.find("walker - made with VCSIDE") != std::string::npos && emtext.find("hero.gfx.h") != std::string::npos);
+  CHECK(eitext.find("static const vcsgfx_animation hero_walk = {hero_walk_steps, 4, 1};") != std::string::npos);
+  std::string gcc = findInPath("arm-none-eabi-gcc"), make = findInPath("make");
+  if (!gcc.empty() && !make.empty()) {
+    std::string cmd = "cd \"" + ed.string() + "\" && \"" + make + "\" > make.log 2>&1";
+    CHECK(std::system(cmd.c_str()) == 0 && fs::exists(ed / "build" / "walker.bin"));
+  }
+  CHECK(!Project::create((dir / "none-elf").string(), "x", Language::ElfC, "NTSC", &p, &err, "nope") && !err.empty());
+  if (!std::getenv("VCSIDE_TEST_KEEP")) fs::remove_all(dir, ec);
 }
 
 static void testFormatOrder(const KnowledgeBase& kb) {
@@ -1080,8 +1096,45 @@ static void testGfx() {
     CHECK(n == 1 && probs.size() == 1 && up.find("walker_walk_show") != std::string::npos && up.find("animation run\n  rem vcsgfx end") != std::string::npos);
   }
 
-  // the exported tables assemble (when DASM is installed)
+  // C: arrays top row first, the animations as steps, one header per .vcsgfx
+  Asset ca;
+  ca.sprites = {sp, walker};
+  ca.playfields = {pf, p2};
+  std::string c = cInclude(ca, "my gfx.vcsgfx");
+  CHECK(c.find("from my gfx.vcsgfx") != std::string::npos && c.find("#ifndef MY_GFX_VCSGFX_H") != std::string::npos);
+  CHECK(c.find("#define HERO_FRAMES") != std::string::npos && c.find("static const uint8_t hero_P0_gfx[HERO_FRAMES][") != std::string::npos);
+  CHECK(c.find("static const uint8_t walker_P0_gfx[WALKER_FRAMES]") != std::string::npos);
+  CHECK(c.find("static const vcsgfx_step walker_walk_steps[] = {") != std::string::npos);
+  CHECK(c.find("static const uint8_t level_pf0r[LEVEL_ROWS]") != std::string::npos);  // asymmetric rows
+  CHECK(exportC(walker).find("0x18,  /* ...XX... ") != std::string::npos);
+  CHECK(exportC(sp).find("vcsgfx_animate") == std::string::npos && c.find("vcsgfx_animate") != std::string::npos);
+  Profile elf;
+  elf.c = true;
+  CHECK(elf.describe().find("C") == 0 && !elf.basic());
+
+  // the exported tables assemble (when DASM is installed); the C header compiles (with a C compiler)
   namespace fs = std::filesystem;
+  std::string cc = findInPath("cc");
+  if (!cc.empty()) {
+    fs::path dir = fs::temp_directory_path() / "vcside-gfx-test";
+    fs::create_directories(dir);
+    Asset other;
+    other.sprites = {walker};
+    other.sprites[0].name = "other";
+    std::ofstream(dir / "a.gfx.h") << c;
+    std::ofstream(dir / "b.gfx.h") << cInclude(other, "b.vcsgfx");
+    std::ofstream(dir / "g.c") << "#include \"a.gfx.h\"\n#include \"a.gfx.h\"\n#include \"b.gfx.h\"\n"
+                                  "int f(void) { vcsgfx_player p = {0}; vcsgfx_play(&p, &walker_walk);\n"
+                                  "  return vcsgfx_animate(&p) + hero_P0_gfx[0][0] + level_pf1[0] + other_P0_gfx[0][0]; }\n";
+    std::string cmd = "\"" + cc + "\" -std=c11 -Wall -Wextra -Werror -fsyntax-only \"" + (dir / "g.c").string() + "\" > \"" +
+                      (dir / "c.log").string() + "\" 2>&1";
+    int rc = std::system(cmd.c_str());
+    CHECK(rc == 0);
+    if (rc != 0) {
+      std::ifstream log(dir / "c.log");
+      std::fputs(std::string(std::istreambuf_iterator<char>(log), {}).c_str(), stderr);
+    }
+  }
   std::string dasm = findInPath("dasm");
   if (!dasm.empty()) {
     fs::path dir = fs::temp_directory_path() / "vcside-gfx-test";

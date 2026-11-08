@@ -290,20 +290,22 @@ static void replaceAll(std::string& s, const std::string& a, const std::string& 
 }
 
 std::vector<std::pair<std::string, const char*>> Project::examples(Language lang) {
-  if (lang == Language::Dasm) return {{"animation", N_("Example: an animated sprite")}};
+  if (lang == Language::Dasm || lang == Language::ElfC) return {{"animation", N_("Example: an animated sprite")}};
   return {};
 }
 
-// A .vcsgfx of an example comes with the tables a DASM program includes, written as
-// the graphics editor writes them on save.
-static void writeDasmIncludes(const fs::path& dir) {
+// A .vcsgfx of an example comes with the tables its program includes (.gfx.asm, or .gfx.h
+// for C), written as the graphics editor writes them on save.
+static void writeGfxIncludes(const fs::path& dir, bool c) {
   std::error_code ec;
   for (auto& e : fs::directory_iterator(dir, ec)) {
     if (e.path().extension() != ".vcsgfx") continue;
     gfx::Asset a;
     std::string err;
     if (!gfx::fromJson(readFile(e.path().string()), &a, &err)) continue;
-    std::ofstream(dir / (e.path().stem().string() + ".gfx.asm"), std::ios::binary) << gfx::dasmInclude(a, e.path().filename().string());
+    std::string src = e.path().filename().string();
+    std::ofstream(dir / (e.path().stem().string() + (c ? ".gfx.h" : ".gfx.asm")), std::ios::binary)
+        << (c ? gfx::cInclude(a, src) : gfx::dasmInclude(a, src));
   }
 }
 
@@ -349,7 +351,7 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
     for (auto& e : fs::directory_iterator(ex, ec))
       if (e.path().extension() == ".vcsgfx" && !fs::exists(fs::path(p.dir) / e.path().filename()))
         fs::copy_file(e.path(), fs::path(p.dir) / e.path().filename(), ec);
-    writeDasmIncludes(p.dir);
+    writeGfxIncludes(p.dir, false);
     p.main = "main.asm";
   } else if (lang == Language::BatariBasic) {
     p.main = "main.bas";
@@ -369,21 +371,27 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
       if (error) *error = T("ELF projects build with make, which does not take spaces in file names: choose a name without spaces.");
       return false;
     }
-    // data/templates/elf, copied whole; {{NAME}} in the Makefile and main.c
+    // data/templates/elf, copied whole, with an example's files over it; {{NAME}} in the
+    // Makefile and main.c
     fs::path tpl = fs::path(dataDir()) / "templates" / "elf";
-    if (!fs::exists(tpl / "Makefile")) {
-      if (error) *error = F("Template not found in {0}", {tpl.string()});
+    fs::path ex = fs::path(dataDir()) / "templates" / ("elf-" + example);
+    if (!fs::exists(tpl / "Makefile") || (!example.empty() && !fs::exists(ex / "src" / "main.c"))) {
+      if (error) *error = F("Template not found in {0}", {(example.empty() ? tpl : ex).string()});
       return false;
     }
-    for (auto& e : fs::recursive_directory_iterator(tpl, ec)) {
-      if (!e.is_regular_file()) continue;
-      fs::path rel = fs::relative(e.path(), tpl), dst = fs::path(p.dir) / rel;
-      if (rel == "LICENSE.md" || fs::exists(dst)) continue;
-      fs::create_directories(dst.parent_path(), ec);
-      std::string text = readFile(e.path().string());
-      replaceAll(text, "{{NAME}}", projName);
-      std::ofstream(dst, std::ios::binary) << text;
-    }
+    std::vector<fs::path> from{tpl};
+    if (!example.empty()) from.insert(from.begin(), ex);  // the first copy of a file wins
+    for (auto& t : from)
+      for (auto& e : fs::recursive_directory_iterator(t, ec)) {
+        if (!e.is_regular_file()) continue;
+        fs::path rel = fs::relative(e.path(), t), dst = fs::path(p.dir) / rel;
+        if (rel == "LICENSE.md" || fs::exists(dst)) continue;
+        fs::create_directories(dst.parent_path(), ec);
+        std::string text = readFile(e.path().string());
+        replaceAll(text, "{{NAME}}", projName);
+        std::ofstream(dst, std::ios::binary) << text;
+      }
+    writeGfxIncludes(fs::path(p.dir) / "src", true);
     p.main = "src/main.c";
     p.buildCommand = "make";
     p.format = "ELF";

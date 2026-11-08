@@ -85,13 +85,13 @@ bool GfxEditor::save(const std::string& path, const Profile& project, std::strin
   out << toJson(asset_);
   out.close();
   path_ = path;
-  if (!profile(project).basic()) {
+  if (Profile k = profile(project); !k.basic()) {
     // the tables for the program, next to the .vcsgfx
     fs::path p(path);
-    std::string inc = (p.parent_path() / (p.stem().string() + ".gfx.asm")).string();
+    std::string inc = (p.parent_path() / (p.stem().string() + (k.c ? ".gfx.h" : ".gfx.asm"))).string();
     std::ofstream g(inc, std::ios::binary);
     if (g) {
-      g << dasmInclude(asset_, p.filename().string());
+      g << (k.c ? cInclude(asset_, p.filename().string()) : dasmInclude(asset_, p.filename().string()));
       if (generated) *generated = inc;
     }
   }
@@ -240,7 +240,7 @@ void GfxEditor::toolbar(const Profile& project) {
   }
   ImGui::EndDisabled();
   // the kernel the graphics are for
-  std::string kname = asset_.kernel.empty() ? F("Kernel: the project's ({0})", {kernelName(project.kernel)}) : F("Kernel: {0}", {kernelName(k_.kernel)});
+  std::string kname = asset_.kernel.empty() ? F("Kernel: the project's ({0})", {project.describe()}) : F("Kernel: {0}", {kernelName(k_.kernel)});
   nextTo(kname.c_str(), 24);
   ImGui::SetNextItemWidth(std::min(ImGui::CalcTextSize(kname.c_str()).x + 40, 360.0f));
   if (ImGui::BeginCombo("##kernel", kname.c_str())) {
@@ -294,6 +294,11 @@ void GfxEditor::toolbar(const Profile& project) {
     if (ImGui::MenuItem(T("DASM tables"))) {
       copy(sprite ? exportDasm(asset_.sprites[item_]) : exportDasm(asset_.playfields[item_ - asset_.sprites.size()]), "DASM");
     }
+    if (ImGui::MenuItem(T("C arrays"))) {
+      copy(sprite ? exportC(asset_.sprites[item_]) : exportC(asset_.playfields[item_ - asset_.sprites.size()]), "C");
+    }
+    if (ImGui::IsItemHovered())
+      ImGui::SetTooltip("%s", T("For a C program (ELF cartridge). Animations use the types and functions of <file>.gfx.h."));
     if (ImGui::MenuItem(T("batari Basic"))) {
       copy(sprite ? exportBasic(asset_.sprites[item_], k_) : exportBasic(asset_.playfields[item_ - asset_.sprites.size()], k_), "batari Basic");
     }
@@ -304,7 +309,8 @@ void GfxEditor::toolbar(const Profile& project) {
     if (ImGui::IsItemHovered())
       ImGui::SetTooltip("%s", T("The blocks between `rem vcsgfx` lines. Saving this file rewrites them in the project's programs (one region per animation frame)."));
     ImGui::Separator();
-    ImGui::TextDisabled("%s", !k_.basic() ? T("On save, every item also goes to <file>.gfx.asm for the program to include.")
+    ImGui::TextDisabled("%s", k_.c ? T("On save, every item also goes to <file>.gfx.h for the program to include.")
+                              : !k_.basic() ? T("On save, every item also goes to <file>.gfx.asm for the program to include.")
                                                      : T("batari Basic: paste the blocks where the program sets its graphics."));
     ImGui::EndPopup();
   }
