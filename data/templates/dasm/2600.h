@@ -1,7 +1,8 @@
 ; 2600.h - Atari 2600 TIA and RIOT (6532) registers for DASM (VCSIDE template).
 ; SPDX-License-Identifier: CC0-1.0  (public domain: use it in any game)
 ; The names are the ones Atari's Stella Programmer's Guide (1979) gives the registers,
-; so programs written for other headers that use them assemble unchanged.
+; so programs written for other headers that use them assemble unchanged. The guide does
+; not name $285; TIMINT is the name programs know it by.
 ; Writes and reads both start at $00 (the TIA decodes reads from $00-$0D too).
 
         SEG.U TIA_WRITES
@@ -76,8 +77,7 @@ SWACNT  ds 1    ; $281 port A direction
 SWCHB   ds 1    ; $282 console switches: D0 reset, D1 select, D3 colour/BW, D6/D7 difficulty
 SWBCNT  ds 1    ; $283 port B direction
 INTIM   ds 1    ; $284 timer value
-        ; $285 reads the 6532's interrupt flags (D7 timer, D6 PA7 edge). The Stella guide does
-        ; not name it; give it a name here if you use it.
+TIMINT  ds 1    ; $285 interrupt flags: D7 timer, D6 PA7 edge (not named by the Stella guide)
 
         ORG $294
 TIM1T   ds 1    ; $294 set timer, 1 cycle per tick

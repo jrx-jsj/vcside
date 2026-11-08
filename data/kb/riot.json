@@ -130,7 +130,7 @@
     "The timer flag is cleared by reading INTIM or writing a timer register; the PA7 flag is cleared by reading TIMINT.",
     "The register is also visible at $0287 (A2:A0 = 111); INTIM is also visible at $0286.",
     "PA7 edge detection is rarely used in 2600 software.",
-    "The Stella guide does not name this register; TIMINT is the name DASM's vcs.h gave it in version 1.02 (2003), and other tools took it from there. VCSIDE's 2600.h leaves it unnamed."
+    "The Stella guide does not name this register; TIMINT is the name DASM's vcs.h gave it in version 1.02 (2003), and other tools took it from there. VCSIDE's 2600.h uses that name too."
    ],
    "example": "  bit TIMINT\n  bmi .timerExpired",
    "verified": true,

@@ -1375,8 +1375,8 @@ static void testGfx() {
   }
 }
 
-// The template's 2600.h: the register names of the Stella Programmer's Guide and no others,
-// and an empty DASM project assembles with it.
+// The template's 2600.h: the register names of the Stella Programmer's Guide, plus TIMINT
+// for $285, which the guide leaves unnamed; and an empty DASM project assembles with it.
 static void testHeader(const KnowledgeBase& kb, const std::string& data) {
   namespace fs = std::filesystem;
   std::ifstream h(data + "/templates/dasm/2600.h");
@@ -1392,12 +1392,13 @@ static void testHeader(const KnowledgeBase& kb, const std::string& data) {
   for (auto& r : kb.registers())  // registers, not areas such as RAM ($80-$FF)
     if (std::find(r.sources.begin(), r.sources.end(), "stella-guide") != r.sources.end() && r.address.find('-') == std::string::npos)
       guide.insert(r.name);
-  CHECK(header.size() == 68 && header == guide);
+  guide.insert("TIMINT");
+  CHECK(header.size() == 69 && header == guide);
   for (auto& n : header)
     if (!guide.count(n)) std::fprintf(stderr, "2600.h: %s is not a Stella guide name\n", n.c_str());
   for (auto& n : guide)
     if (!header.count(n)) std::fprintf(stderr, "2600.h: %s is missing\n", n.c_str());
-  CHECK(text.find("TIMINT") == std::string::npos && text.find("TIA_BASE") == std::string::npos);
+  CHECK(text.find("TIA_BASE") == std::string::npos);
   // a new DASM project
   fs::path dir = fs::temp_directory_path() / "vcside-test-2600h";
   std::error_code ec;
