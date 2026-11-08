@@ -23,6 +23,13 @@ std::string dataDir() {
 }
 
 std::string configDir() {
+  // VCSIDE_CONFIG_DIR: another settings folder (tests that must not touch the real one)
+  if (const char* env = SDL_getenv("VCSIDE_CONFIG_DIR"); env && *env) {
+    std::error_code ec;
+    fs::create_directories(env, ec);
+    std::string s = env;
+    return s.back() == '/' || s.back() == '\\' ? s : s + "/";
+  }
   char* p = SDL_GetPrefPath("vcside", "VCSIDE");
   std::string s = p ? p : "";
   SDL_free(p);

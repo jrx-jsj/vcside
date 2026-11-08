@@ -174,6 +174,14 @@ class App {
   std::map<std::string, int> liveValues_;          // the constants that evaluate
   std::map<std::string, ScannedFile> diskSymbols_;
   uint64_t liveTicks_ = 0, diskTicks_ = 0;
+  // The sources of the last build (from its listing): they are scanned too, even outside
+  // the folder, so a built symbol none of them defines now was deleted or renamed, and the
+  // last build's table no longer offers it.
+  std::vector<std::string> builtFiles_;
+  bool liveReady_ = false;  // the scan includes the last build's sources
+  bool builtGone(const std::string& name) const {
+    return liveReady_ && !builtFiles_.empty() && !liveSymbols_.count(name);
+  }
   void refreshLiveSymbols(bool force = false);
   std::string liveSymbolText(const LiveSymbol& s, bool full) const;
   AddressMap addresses_;

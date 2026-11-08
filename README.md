@@ -27,7 +27,7 @@ A small native IDE for making Atari 2600 games, on macOS, Windows and Linux. It 
   - DASM syntax colouring, with illegal opcodes in their own colours (purple for stable ones, red for unstable ones).
   - A cycle column for every instruction (e.g. `4/5` when crossing a page, `2/4` for a branch). Symbols from the last build are used to tell zero page from absolute.
   - Select lines to see their total cycles, bytes and fraction of a scanline in the status bar.
-  - Hover help for instructions, registers and symbols, plus completion (Ctrl+Space). Labels, constants and macros count as soon as they are written, in the open files and in the project's other sources, before any build; constants show their value and the cycle counts use it.
+  - Hover help for instructions, registers and symbols, plus completion (Ctrl+Space). Labels, constants and macros count as soon as they are written, in the open files and in the project's other sources, before any build; constants show their value and the cycle counts use it. A symbol of the last build that its sources no longer define (deleted or renamed) is no longer offered.
 - **Documentation panel** (F1 on a word):
   - all 256 6502 opcodes, grouped as legal, stable illegal and unstable illegal;
   - TIA and RIOT registers with their known issues;
@@ -65,7 +65,7 @@ docker build -t vcside-windows -f tools/docker/windows.Dockerfile tools/docker
 docker run --rm -v "$PWD":/src -w /src vcside-windows sh tools/docker/build-windows.sh  # build-windows/vcside.exe
 ```
 
-The Windows one is cross-compiled with MinGW-w64 and linked statically (SDL3 included): `vcside.exe` and `data/` are the whole program. Its tests run in Wine with `VCSIDE_TEST_DATA=Z:<repository>/data wine64 build-windows/vcside_tests.exe`. VCSIDE needs OpenGL 2.1 or later; it tries 3.0, 3.2 core and 2.1, and says so in a message box if none works.
+The Windows one is cross-compiled with MinGW-w64 and linked statically (SDL3 included): `vcside.exe` and `data/` are the whole program. Its tests run in Wine with `VCSIDE_TEST_DATA=Z:<repository>/data wine64 build-windows/vcside_tests.exe`. `VCSIDE_CONFIG_DIR=<folder>` makes VCSIDE keep its settings there instead of the user's (for tests). VCSIDE needs OpenGL 2.1 or later; it tries 3.0, 3.2 core and 2.1, and says so in a message box if none works.
 
 ## Translations
 

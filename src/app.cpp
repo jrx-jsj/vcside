@@ -150,6 +150,8 @@ void App::openProject(const std::string& file) {
   project_ = p;
   folder_ = p.dir;
   symbols_.clear();
+  builtFiles_.clear();
+  diskSymbols_.clear();
   diagnostics_.clear();
   loadSymbols();
   loadUserState();
@@ -447,6 +449,22 @@ void App::loadSymbols() {
   std::string sym = project_->stem() + ".sym";
   std::error_code ec;
   if (fs::exists(sym, ec)) symbols_ = parseDasmSymbols(readFile(sym));
+  builtFiles_.clear();
+  liveReady_ = false;  // the next scan includes these sources
+  if (fs::exists(project_->stem() + ".lst", ec)) {
+    std::istringstream in(readFile(project_->stem() + ".lst"));
+    std::set<std::string> seen;
+    for (std::string l; std::getline(in, l);) {
+      if (l.rfind("------- FILE ", 0) != 0) continue;
+      std::string name = l.substr(13, l.find(" LEVEL ") == std::string::npos ? std::string::npos : l.find(" LEVEL ") - 13);
+      std::string path = resolveSource(name);
+      if (!fs::is_regular_file(path, ec)) {  // a source that cannot be read: hide nothing
+        builtFiles_.clear();
+        break;
+      }
+      if (seen.insert(path).second) builtFiles_.push_back(path);
+    }
+  }
   addresses_ = AddressMap();
   std::string lst = project_->stem() + ".lst";
   bool basic = project_->language == Language::BatariBasic;
@@ -596,7 +614,7 @@ std::optional<int> App::lookupSymbol(const std::string& name) const {
   // a constant as the source says it now goes before the last build's value
   if (auto lv = liveValues_.find(name); lv != liveValues_.end()) return lv->second;
   auto it = symbols_.find(name);
-  if (it != symbols_.end()) return it->second;
+  if (it != symbols_.end() && !builtGone(name)) return it->second;
   if (const Register* r = kb_.reg(name)) {
     int a = r->addr();
     if (a >= 0) return r->access == "R" && a < 0x30 ? a + 0x30 : a;
@@ -604,10 +622,21 @@ std::optional<int> App::lookupSymbol(const std::string& name) const {
   return std::nullopt;
 }
 
+static std::vector<std::string> splitLines(const std::string& text) {
+  std::vector<std::string> lines;
+  std::istringstream in(text);
+  for (std::string l; std::getline(in, l);) {
+    if (!l.empty() && l.back() == '\r') l.pop_back();
+    lines.push_back(l);
+  }
+  return lines;
+}
+
 void App::refreshLiveSymbols(bool force) {
   if (activeFile_ < 0 || !files_[activeFile_]->asmSyntax) return;
   uint64_t now = SDL_GetTicks();
-  if (!force && now - liveTicks_ < 400) return;
+  if (!force && liveReady_ && now - liveTicks_ < 400) return;
+  force |= !liveReady_;
   liveTicks_ = now;
   std::map<std::string, LiveSymbol> live;
   auto add = [&](const std::string& file, const std::vector<SourceSymbol>& syms) {
@@ -621,41 +650,49 @@ void App::refreshLiveSymbols(bool force) {
       open.insert(f->path);
     }
   // the other sources of the folder, read again only when their date changes
-  if (!folder_.empty() && (force || now - diskTicks_ > 3000)) {
+  if ((!folder_.empty() || !builtFiles_.empty()) && (force || now - diskTicks_ > 3000)) {
     diskTicks_ = now;
     bool cHeaders = project_ && project_->language == Language::ElfC;
     std::map<std::string, ScannedFile> seen;
     std::error_code ec;
-    for (auto it = fs::recursive_directory_iterator(folder_, fs::directory_options::skip_permission_denied, ec);
-         it != fs::recursive_directory_iterator(); it.increment(ec)) {
-      if (ec) break;
-      std::string name = it->path().filename().string();
-      if (it->is_directory(ec) && (name == "build" || (!name.empty() && name[0] == '.'))) {
-        it.disable_recursion_pending();
-        continue;
+    if (!folder_.empty()) {
+      for (auto it = fs::recursive_directory_iterator(folder_, fs::directory_options::skip_permission_denied, ec);
+           it != fs::recursive_directory_iterator(); it.increment(ec)) {
+        if (ec) break;
+        std::string name = it->path().filename().string();
+        if (it->is_directory(ec) && (name == "build" || (!name.empty() && name[0] == '.'))) {
+          it.disable_recursion_pending();
+          continue;
+        }
+        if (!it->is_regular_file(ec) || !isAsmFile(it->path().string()) || it->file_size(ec) > 4 * 1024 * 1024) continue;
+        if (cHeaders && lower(it->path().extension().string()) == ".h") continue;  // C, not assembly
+        std::string path = fs::weakly_canonical(it->path(), ec).string();  // as the open files have it
+        long long mtime = (long long)it->last_write_time(ec).time_since_epoch().count();
+        auto old = diskSymbols_.find(path);
+        if (old != diskSymbols_.end() && old->second.mtime == mtime) {
+          seen[path] = std::move(old->second);
+          continue;
+        }
+        seen[path] = {mtime, scanAsmSymbols(splitLines(readFile(path)))};
       }
-      if (!it->is_regular_file(ec) || !isAsmFile(it->path().string()) || it->file_size(ec) > 4 * 1024 * 1024) continue;
-      if (cHeaders && lower(it->path().extension().string()) == ".h") continue;  // C, not assembly
-      std::string path = fs::weakly_canonical(it->path(), ec).string();  // as the open files have it
-      long long mtime = (long long)it->last_write_time(ec).time_since_epoch().count();
+    }
+    for (auto& path : builtFiles_) {
+      if (seen.count(path)) continue;
+      long long mtime = (long long)fs::last_write_time(path, ec).time_since_epoch().count();
+      if (ec) continue;
       auto old = diskSymbols_.find(path);
       if (old != diskSymbols_.end() && old->second.mtime == mtime) {
         seen[path] = std::move(old->second);
         continue;
       }
-      std::vector<std::string> lines;
-      std::istringstream in(readFile(path));
-      for (std::string l; std::getline(in, l);) {
-        if (!l.empty() && l.back() == '\r') l.pop_back();
-        lines.push_back(l);
-      }
-      seen[path] = {mtime, scanAsmSymbols(lines)};
+      seen[path] = {mtime, scanAsmSymbols(splitLines(readFile(path)))};
     }
     diskSymbols_ = std::move(seen);
   }
   for (auto& [path, f] : diskSymbols_)
     if (!open.count(path)) add(path, f.syms);
   liveSymbols_ = std::move(live);
+  liveReady_ = true;
   // constants that refer to other constants: a few passes
   liveValues_.clear();
   for (int pass = 0; pass < 6; pass++) {
@@ -855,7 +892,7 @@ EditorHooks App::asmHooks() {
                                        (live->second.sym.kind == SourceSymbol::Constant && liveValues_.count(word))))
       return liveSymbolText(live->second, true);
     auto it = symbols_.find(word);
-    if (it != symbols_.end()) {
+    if (it != symbols_.end() && !builtGone(word)) {
       char b[48];
       snprintf(b, sizeof b, "%s = $%04X (%d)", word.c_str(), it->second, it->second);
       return b;
@@ -901,7 +938,7 @@ EditorHooks App::asmHooks() {
         push(name, liveSymbolText(l, false),
              l.sym.kind == SourceSymbol::Macro ? TokenKind::Directive : l.sym.kind == SourceSymbol::Label ? TokenKind::Label : TokenKind::Symbol);
     for (auto& [name, v] : symbols_)
-      if (matches(name)) push(name, T("symbol"), TokenKind::Symbol);
+      if (matches(name) && !builtGone(name)) push(name, T("symbol"), TokenKind::Symbol);
     return out;
   };
   return h;
