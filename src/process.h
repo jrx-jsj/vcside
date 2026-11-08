@@ -7,6 +7,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 namespace vcs {
@@ -31,7 +32,10 @@ class Job {
 };
 
 // Starts a program and forgets it (emulators). Returns false and an error if it fails.
-bool launchDetached(const std::vector<std::string>& args, const std::string& workDir, std::string* error);
+// env: variables to set or replace in the program's environment (the rest is inherited).
+using EnvVars = std::vector<std::pair<std::string, std::string>>;
+bool launchDetached(const std::vector<std::string>& args, const std::string& workDir, std::string* error,
+                    const EnvVars& env = {});
 
 // Looks for an executable in PATH. Adds ".exe" on Windows.
 std::string findInPath(const std::string& name);

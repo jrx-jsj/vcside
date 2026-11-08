@@ -1,0 +1,2315 @@
+{
+ "notes": [
+  "Launch options of the emulators, for the project's Emulator options dialog. VCSIDE passes only what the project sets; anything left on 'default' is whatever the emulator itself is set to.",
+  "Stella saves every command-line option into its settings when it quits (Settings::load/save in its sources), except a few local ones (-basedir, -break, -debug, -holdreset, -holdselect) and the ROM properties (-bs, -format, -tv, -ld, -rd, -lc, -rc, -sp, -cp, -startbank...). So VCSIDE runs it with its own copy of the user's settings: '-basedir <dir>' for the Unix and Windows builds, HOME=<dir> for the macOS app, which ignores -basedir.",
+  "Stella's dev.* options only apply with the developer settings on (-dev.settings 1); VCSIDE adds it when one is used ('developer': true).",
+  "Gopher2600 has no command-line flags for its preferences (sound, VSYNC checks, random state...). VCSIDE runs it in portable mode (portable.txt in the working folder, preferences in ./Gopher2600_UserData) with a copy of the user's preferences file and the chosen values.",
+  "Labels and descriptions are VCSIDE's own words; values and meanings were checked against the emulators' help, manual and sources."
+ ],
+ "sources": [
+  {
+   "id": "stella-7.0-help",
+   "title": "Stella 7.0: stella -help",
+   "author": "Stella Team",
+   "url": "https://github.com/stella-emu/stella/tree/7.0",
+   "used_for": "Option names and value ranges"
+  },
+  {
+   "id": "stella-7.0-manual",
+   "title": "Stella 7.0 user's guide (docs/index.html) and sources (Settings.cxx, main.cxx, OSystem*.cxx, Control.cxx, Props.cxx)",
+   "author": "Stella Team",
+   "url": "https://stella-emu.github.io/docs/index.html",
+   "used_for": "Meaning of each option, accepted values, which options are saved, base directory per system; GPL-2, consulted only"
+  },
+  {
+   "id": "gopher2600-0.56.1",
+   "title": "Gopher2600 v0.56.1: RUN/DEBUG -help, preferences window and resources package (portable mode)",
+   "author": "JetSetIlly",
+   "url": "https://github.com/JetSetIlly/Gopher2600/tree/v0.56.1",
+   "used_for": "Flags, preference keys and their meaning, portable mode; GPL-3, consulted only"
+  }
+ ],
+ "emulators": {
+  "stella": {
+   "name": "Stella",
+   "options": [
+    {
+     "id": "tv",
+     "group": "Console",
+     "label": "TV type switch",
+     "description": "Position of the Color/B&W switch at power-up.",
+     "type": "choice",
+     "arg": "-tv",
+     "sources": [
+      "stella-7.0-help",
+      "stella-7.0-manual"
+     ],
+     "values": [
+      {
+       "value": "COLOR",
+       "label": "colour"
+      },
+      {
+       "value": "BW",
+       "label": "black and white"
+      }
+     ],
+     "i18n": {
+      "es": {
+       "label": "Interruptor de TV",
+       "description": "Posición del interruptor Color/B&N al encender."
+      }
+     }
+    },
+    {
+     "id": "ld",
+     "group": "Console",
+     "label": "Left difficulty",
+     "description": "Left difficulty switch at power-up (Stella's default is B).",
+     "type": "choice",
+     "arg": "-ld",
+     "sources": [
+      "stella-7.0-help",
+      "stella-7.0-manual"
+     ],
+     "values": [
+      {
+       "value": "A",
+       "label": "A"
+      },
+      {
+       "value": "B",
+       "label": "B"
+      }
+     ],
+     "i18n": {
+      "es": {
+       "label": "Dificultad izquierda",
+       "description": "Interruptor de dificultad izquierdo al encender (Stella pone B por defecto)."
+      }
+     }
+    },
+    {
+     "id": "rd",
+     "group": "Console",
+     "label": "Right difficulty",
+     "description": "Right difficulty switch at power-up (Stella's default is B).",
+     "type": "choice",
+     "arg": "-rd",
+     "sources": [
+      "stella-7.0-help",
+      "stella-7.0-manual"
+     ],
+     "values": [
+      {
+       "value": "A",
+       "label": "A"
+      },
+      {
+       "value": "B",
+       "label": "B"
+      }
+     ],
+     "i18n": {
+      "es": {
+       "label": "Dificultad derecha",
+       "description": "Interruptor de dificultad derecho al encender (Stella pone B por defecto)."
+      }
+     }
+    },
+    {
+     "id": "holdreset",
+     "group": "Console",
+     "label": "Hold RESET at start",
+     "description": "Starts with the Game Reset switch held down; press and release Reset to let it go.",
+     "type": "bool",
+     "arg": "-holdreset",
+     "sources": [
+      "stella-7.0-help",
+      "stella-7.0-manual"
+     ],
+     "no_value": true,
+     "values": [
+      {
+       "value": "1",
+       "label": "on"
+      }
+     ],
+     "i18n": {
+      "es": {
+       "label": "RESET pulsado al empezar",
+       "description": "Arranca con Game Reset pulsado; pulsa y suelta Reset para soltarlo."
+      }
+     }
+    },
+    {
+     "id": "holdselect",
+     "group": "Console",
+     "label": "Hold SELECT at start",
+     "description": "Starts with the Game Select switch held down.",
+     "type": "bool",
+     "arg": "-holdselect",
+     "sources": [
+      "stella-7.0-help",
+      "stella-7.0-manual"
+     ],
+     "no_value": true,
+     "values": [
+      {
+       "value": "1",
+       "label": "on"
+      }
+     ],
+     "i18n": {
+      "es": {
+       "label": "SELECT pulsado al empezar",
+       "description": "Arranca con Game Select pulsado."
+      }
+     }
+    },
+    {
+     "id": "startbank",
+     "group": "Console",
+     "label": "Start bank",
+     "description": "Bank selected at power-up, for the formats where it is not fixed (AUTO = Stella's choice).",
+     "type": "text",
+     "arg": "-startbank",
+     "sources": [
+      "stella-7.0-help",
+      "stella-7.0-manual"
+     ],
+     "i18n": {
+      "es": {
+       "label": "Banco inicial",
+       "description": "Banco al encender, en los formatos donde no es fijo (AUTO = el que elija Stella)."
+      }
+     }
+    },
+    {
+     "id": "dev.console",
+     "group": "Console",
+     "label": "Console",
+     "description": "2600 or 7800: changes how the B/W and Pause keys behave and how RAM starts up.",
+     "type": "choice",
+     "arg": "-dev.console",
+     "sources": [
+      "stella-7.0-help",
+      "stella-7.0-manual"
+     ],
+     "values": [
+      {
+       "value": "2600",
+       "label": "2600"
+      },
+      {
+       "value": "7800",
+       "label": "7800"
+      }
+     ],
+     "developer": true,
+     "i18n": {
+      "es": {
+       "label": "Consola",
+       "description": "2600 o 7800: cambia las teclas B/N y Pausa y cómo empieza la RAM."
+      }
+     }
+    },
+    {
+     "id": "lc",
+     "group": "Controllers",
+     "label": "Left controller",
+     "description": "Controller plugged into the left port.",
+     "type": "choice",
+     "arg": "-lc",
+     "sources": [
+      "stella-7.0-help",
+      "stella-7.0-manual"
+     ],
+     "values": [
+      {
+       "value": "AUTO",
+       "label": "auto"
+      },
+      {
+       "value": "JOYSTICK",
+       "label": "joystick"
+      },
+      {
+       "value": "PADDLES",
+       "label": "paddles"
+      },
+      {
+       "value": "KEYBOARD",
+       "label": "keypad"
+      },
+      {
+       "value": "DRIVING",
+       "label": "driving"
+      },
+      {
+       "value": "GENESIS",
+       "label": "Genesis pad"
+      },
+      {
+       "value": "BOOSTERGRIP",
+       "label": "Booster Grip"
+      },
+      {
+       "value": "SAVEKEY",
+       "label": "SaveKey"
+      },
+      {
+       "value": "ATARIVOX",
+       "label": "AtariVox"
+      },
+      {
+       "value": "TRAKBALL",
+       "label": "trak-ball"
+      },
+      {
+       "value": "AMIGAMOUSE",
+       "label": "Amiga mouse"
+      },
+      {
+       "value": "ATARIMOUSE",
+       "label": "Atari mouse"
+      },
+      {
+       "value": "MINDLINK",
+       "label": "MindLink"
+      },
+      {
+       "value": "LIGHTGUN",
+       "label": "light gun"
+      },
+      {
+       "value": "QUADTARI",
+       "label": "QuadTari"
+      },
+      {
+       "value": "KIDVID",
+       "label": "KidVid"
+      },
+      {
+       "value": "COMPUMATE",
+       "label": "CompuMate"
+      },
+      {
+       "value": "JOY_2B+",
+       "label": "Joy 2b+"
+      }
+     ],
+     "i18n": {
+      "es": {
+       "label": "Mando izquierdo",
+       "description": "Mando conectado al puerto izquierdo."
+      }
+     }
+    },
+    {
+     "id": "rc",
+     "group": "Controllers",
+     "label": "Right controller",
+     "description": "Controller plugged into the right port.",
+     "type": "choice",
+     "arg": "-rc",
+     "sources": [
+      "stella-7.0-help",
+      "stella-7.0-manual"
+     ],
+     "values": [
+      {
+       "value": "AUTO",
+       "label": "auto"
+      },
+      {
+       "value": "JOYSTICK",
+       "label": "joystick"
+      },
+      {
+       "value": "PADDLES",
+       "label": "paddles"
+      },
+      {
+       "value": "KEYBOARD",
+       "label": "keypad"
+      },
+      {
+       "value": "DRIVING",
+       "label": "driving"
+      },
+      {
+       "value": "GENESIS",
+       "label": "Genesis pad"
+      },
+      {
+       "value": "BOOSTERGRIP",
+       "label": "Booster Grip"
+      },
+      {
+       "value": "SAVEKEY",
+       "label": "SaveKey"
+      },
+      {
+       "value": "ATARIVOX",
+       "label": "AtariVox"
+      },
+      {
+       "value": "TRAKBALL",
+       "label": "trak-ball"
+      },
+      {
+       "value": "AMIGAMOUSE",
+       "label": "Amiga mouse"
+      },
+      {
+       "value": "ATARIMOUSE",
+       "label": "Atari mouse"
+      },
+      {
+       "value": "MINDLINK",
+       "label": "MindLink"
+      },
+      {
+       "value": "LIGHTGUN",
+       "label": "light gun"
+      },
+      {
+       "value": "QUADTARI",
+       "label": "QuadTari"
+      },
+      {
+       "value": "KIDVID",
+       "label": "KidVid"
+      },
+      {
+       "value": "COMPUMATE",
+       "label": "CompuMate"
+      },
+      {
+       "value": "JOY_2B+",
+       "label": "Joy 2b+"
+      }
+     ],
+     "i18n": {
+      "es": {
+       "label": "Mando derecho",
+       "description": "Mando conectado al puerto derecho."
+      }
+     }
+    },
+    {
+     "id": "sp",
+     "group": "Controllers",
+     "label": "Swap ports",
+     "description": "Swaps the left and right controller ports.",
+     "type": "choice",
+     "arg": "-sp",
+     "sources": [
+      "stella-7.0-help",
+      "stella-7.0-manual"
+     ],
+     "values": [
+      {
+       "value": "YES",
+       "label": "yes"
+      },
+      {
+       "value": "NO",
+       "label": "no"
+      }
+     ],
+     "i18n": {
+      "es": {
+       "label": "Cambiar puertos",
+       "description": "Intercambia los puertos izquierdo y derecho."
+      }
+     }
+    },
+    {
+     "id": "cp",
+     "group": "Controllers",
+     "label": "Swap paddles",
+     "description": "Swaps the two paddles of a port.",
+     "type": "choice",
+     "arg": "-cp",
+     "sources": [
+      "stella-7.0-help",
+      "stella-7.0-manual"
+     ],
+     "values": [
+      {
+       "value": "YES",
+       "label": "yes"
+      },
+      {
+       "value": "NO",
+       "label": "no"
+      }
+     ],
+     "i18n": {
+      "es": {
+       "label": "Cambiar paddles",
+       "description": "Intercambia los dos paddles de un puerto."
+      }
+     }
+    },
+    {
+     "id": "palette",
+     "group": "Video",
+     "label": "Palette",
+     "description": "Colour palette: Stella's, z26's, a user file or one generated from the custom settings.",
+     "type": "choice",
+     "arg": "-palette",
+     "sources": [
+      "stella-7.0-help",
+      "stella-7.0-manual"
+     ],
+     "values": [
+      {
+       "value": "standard",
+       "label": "standard"
+      },
+      {
+       "value": "z26",
+       "label": "z26"
+      },
+      {
+       "value": "user",
+       "label": "user"
+      },
+      {
+       "value": "custom",
+       "label": "custom"
+      }
+     ],
+     "i18n": {
+      "es": {
+       "label": "Paleta",
+       "description": "Paleta de colores: la de Stella, la de z26, un archivo del usuario o una generada con los ajustes personalizados."
+      }
+     }
+    },
+    {
+     "id": "tv.filter",
+     "group": "Video",
+     "label": "TV effects",
+     "description": "Blargg TV filter: off, or the RGB, S-Video, composite, bad-adjust and custom presets.",
+     "type": "choice",
+     "arg": "-tv.filter",
+     "sources": [
+      "stella-7.0-help",
+      "stella-7.0-manual"
+     ],
+     "values": [
+      {
+       "value": "0",
+       "label": "off"
+      },
+      {
+       "value": "1",
+       "label": "RGB"
+      },
+      {
+       "value": "2",
+       "label": "S-Video"
+      },
+      {
+       "value": "3",
+       "label": "composite"
+      },
+      {
+       "value": "4",
+       "label": "bad adjust"
+      },
+      {
+       "value": "5",
+       "label": "custom"
+      }
+     ],
+     "i18n": {
+      "es": {
+       "label": "Efectos de TV",
+       "description": "Filtro de TV de Blargg: apagado, o los preajustes RGB, S-Video, compuesto, mal ajustado y personalizado."
+      }
+     }
+    },
+    {
+     "id": "tv.phosphor",
+     "group": "Video",
+     "label": "Phosphor",
+     "description": "When to blend frames like a phosphor screen (for flicker): per ROM, always, or detected automatically.",
+     "type": "choice",
+     "arg": "-tv.phosphor",
+     "sources": [
+      "stella-7.0-help",
+      "stella-7.0-manual"
+     ],
+     "values": [
+      {
+       "value": "byrom",
+       "label": "by ROM"
+      },
+      {
+       "value": "always",
+       "label": "always"
+      },
+      {
+       "value": "autoon",
+       "label": "automatic, on"
+      },
+      {
+       "value": "auto",
+       "label": "automatic"
+      }
+     ],
+     "i18n": {
+      "es": {
+       "label": "Fósforo",
+       "description": "Cuándo mezclar fotogramas como una pantalla de fósforo (para el parpadeo): según la ROM, siempre o detectado solo."
+      }
+     }
+    },
+    {
+     "id": "tia.zoom",
+     "group": "Video",
+     "label": "Zoom",
+     "description": "Window zoom level (integer).",
+     "type": "int",
+     "arg": "-tia.zoom",
+     "sources": [
+      "stella-7.0-help",
+      "stella-7.0-manual"
+     ],
+     "min": 1,
+     "max": 10,
+     "i18n": {
+      "es": {
+       "label": "Zoom",
+       "description": "Aumento de la ventana (entero)."
+      }
+     }
+    },
+    {
+     "id": "fullscreen",
+     "group": "Video",
+     "label": "Full screen",
+     "description": "Starts in full-screen mode.",
+     "type": "bool",
+     "arg": "-fullscreen",
+     "sources": [
+      "stella-7.0-help",
+      "stella-7.0-manual"
+     ],
+     "values": [
+      {
+       "value": "1",
+       "label": "on"
+      },
+      {
+       "value": "0",
+       "label": "off"
+      }
+     ],
+     "i18n": {
+      "es": {
+       "label": "Pantalla completa",
+       "description": "Arranca a pantalla completa."
+      }
+     }
+    },
+    {
+     "id": "speed",
+     "group": "Video",
+     "label": "Speed",
+     "description": "Emulation speed (1.0 = real speed).",
+     "type": "text",
+     "arg": "-speed",
+     "sources": [
+      "stella-7.0-help",
+      "stella-7.0-manual"
+     ],
+     "i18n": {
+      "es": {
+       "label": "Velocidad",
+       "description": "Velocidad de emulación (1.0 = velocidad real)."
+      }
+     }
+    },
+    {
+     "id": "audio.enabled",
+     "group": "Audio",
+     "label": "Sound",
+     "description": "Turns sound on or off.",
+     "type": "bool",
+     "arg": "-audio.enabled",
+     "sources": [
+      "stella-7.0-help",
+      "stella-7.0-manual"
+     ],
+     "values": [
+      {
+       "value": "1",
+       "label": "on"
+      },
+      {
+       "value": "0",
+       "label": "off"
+      }
+     ],
+     "i18n": {
+      "es": {
+       "label": "Sonido",
+       "description": "Activa o quita el sonido."
+      }
+     }
+    },
+    {
+     "id": "audio.volume",
+     "group": "Audio",
+     "label": "Volume",
+     "description": "Volume, 0 to 100.",
+     "type": "int",
+     "arg": "-audio.volume",
+     "sources": [
+      "stella-7.0-help",
+      "stella-7.0-manual"
+     ],
+     "min": 0,
+     "max": 100,
+     "i18n": {
+      "es": {
+       "label": "Volumen",
+       "description": "Volumen, de 0 a 100."
+      }
+     }
+    },
+    {
+     "id": "audio.stereo",
+     "group": "Audio",
+     "label": "Stereo for every ROM",
+     "description": "Plays every ROM in stereo.",
+     "type": "bool",
+     "arg": "-audio.stereo",
+     "sources": [
+      "stella-7.0-help",
+      "stella-7.0-manual"
+     ],
+     "values": [
+      {
+       "value": "1",
+       "label": "on"
+      },
+      {
+       "value": "0",
+       "label": "off"
+      }
+     ],
+     "i18n": {
+      "es": {
+       "label": "Estéreo en todas las ROMs",
+       "description": "Toca todas las ROMs en estéreo."
+      }
+     }
+    },
+    {
+     "id": "dev.settings",
+     "group": "Debugging",
+     "label": "Developer settings",
+     "description": "Uses Stella's developer set of settings (the dev.* options) instead of the player set. VCSIDE turns it on by itself when a developer option is set here.",
+     "type": "bool",
+     "arg": "-dev.settings",
+     "values": [
+      {
+       "value": "1",
+       "label": "on"
+      },
+      {
+       "value": "0",
+       "label": "off"
+      }
+     ],
+     "sources": [
+      "stella-7.0-help",
+      "stella-7.0-manual"
+     ],
+     "i18n": {
+      "es": {
+       "label": "Ajustes de desarrollador",
+       "description": "Usa el juego de ajustes de desarrollador de Stella (las opciones dev.*) en vez del de jugador. VCSIDE lo activa solo cuando aquí se pone una opción de desarrollador."
+      }
+     }
+    },
+    {
+     "id": "dev.debugcolors",
+     "group": "Debugging",
+     "label": "Debug colours",
+     "description": "Draws each object (players, missiles, ball, playfield, background) in its own fixed colour, to see what is being drawn where.",
+     "type": "bool",
+     "arg": "-dev.debugcolors",
+     "sources": [
+      "stella-7.0-help",
+      "stella-7.0-manual"
+     ],
+     "values": [
+      {
+       "value": "1",
+       "label": "on"
+      },
+      {
+       "value": "0",
+       "label": "off"
+      }
+     ],
+     "developer": true,
+     "i18n": {
+      "es": {
+       "label": "Colores de depuración",
+       "description": "Pinta cada objeto (jugadores, misiles, bola, playfield, fondo) con un color fijo, para ver qué se dibuja y dónde."
+      }
+     }
+    },
+    {
+     "id": "dev.stats",
+     "group": "Debugging",
+     "label": "Console info overlay",
+     "description": "Shows scanlines, frame rate and the TV format on top of the image.",
+     "type": "bool",
+     "arg": "-dev.stats",
+     "sources": [
+      "stella-7.0-help",
+      "stella-7.0-manual"
+     ],
+     "values": [
+      {
+       "value": "1",
+       "label": "on"
+      },
+      {
+       "value": "0",
+       "label": "off"
+      }
+     ],
+     "developer": true,
+     "i18n": {
+      "es": {
+       "label": "Información sobre la imagen",
+       "description": "Muestra líneas, fotogramas por segundo y el formato de TV encima de la imagen."
+      }
+     }
+    },
+    {
+     "id": "dev.detectedinfo",
+     "group": "Debugging",
+     "label": "Detected settings",
+     "description": "Shows what Stella detected when the ROM loads.",
+     "type": "bool",
+     "arg": "-dev.detectedinfo",
+     "sources": [
+      "stella-7.0-help",
+      "stella-7.0-manual"
+     ],
+     "values": [
+      {
+       "value": "1",
+       "label": "on"
+      },
+      {
+       "value": "0",
+       "label": "off"
+      }
+     ],
+     "developer": true,
+     "i18n": {
+      "es": {
+       "label": "Ajustes detectados",
+       "description": "Muestra lo que Stella ha detectado al cargar la ROM."
+      }
+     }
+    },
+    {
+     "id": "dev.rwportbreak",
+     "group": "Debugging",
+     "label": "Break on reads from write ports",
+     "description": "Enters the debugger when the code reads a write address (for example the write port of Superchip RAM), which writes garbage on real hardware.",
+     "type": "bool",
+     "arg": "-dev.rwportbreak",
+     "sources": [
+      "stella-7.0-help",
+      "stella-7.0-manual"
+     ],
+     "values": [
+      {
+       "value": "1",
+       "label": "on"
+      },
+      {
+       "value": "0",
+       "label": "off"
+      }
+     ],
+     "developer": true,
+     "i18n": {
+      "es": {
+       "label": "Parar al leer puertos de escritura",
+       "description": "Entra en el depurador cuando el código lee una dirección de escritura (por ejemplo la de escritura de la RAM Superchip), que en el hardware real escribe basura."
+      }
+     }
+    },
+    {
+     "id": "dev.wrportbreak",
+     "group": "Debugging",
+     "label": "Break on writes to read ports",
+     "description": "Enters the debugger when the code writes to a read address, which does nothing but points to a bug.",
+     "type": "bool",
+     "arg": "-dev.wrportbreak",
+     "sources": [
+      "stella-7.0-help",
+      "stella-7.0-manual"
+     ],
+     "values": [
+      {
+       "value": "1",
+       "label": "on"
+      },
+      {
+       "value": "0",
+       "label": "off"
+      }
+     ],
+     "developer": true,
+     "i18n": {
+      "es": {
+       "label": "Parar al escribir en puertos de lectura",
+       "description": "Entra en el depurador cuando el código escribe en una dirección de lectura: no hace nada, pero delata un fallo."
+      }
+     }
+    },
+    {
+     "id": "dbg.ghostreadstrap",
+     "group": "Debugging",
+     "label": "Traps on ghost reads",
+     "description": "Lets read traps fire on the 'ghost' reads the 6507 does on some addressing modes.",
+     "type": "bool",
+     "arg": "-dbg.ghostreadstrap",
+     "sources": [
+      "stella-7.0-help",
+      "stella-7.0-manual"
+     ],
+     "values": [
+      {
+       "value": "1",
+       "label": "on"
+      },
+      {
+       "value": "0",
+       "label": "off"
+      }
+     ],
+     "i18n": {
+      "es": {
+       "label": "Trampas en lecturas fantasma",
+       "description": "Deja que las trampas de lectura salten con las lecturas «fantasma» que hace el 6507 en algunos modos de direccionamiento."
+      }
+     }
+    },
+    {
+     "id": "dev.colorloss",
+     "group": "Debugging",
+     "label": "PAL colour loss",
+     "description": "Shows PAL frames with an odd number of lines in black and white, as a PAL TV does.",
+     "type": "bool",
+     "arg": "-dev.colorloss",
+     "sources": [
+      "stella-7.0-help",
+      "stella-7.0-manual"
+     ],
+     "values": [
+      {
+       "value": "1",
+       "label": "on"
+      },
+      {
+       "value": "0",
+       "label": "off"
+      }
+     ],
+     "developer": true,
+     "i18n": {
+      "es": {
+       "label": "Pérdida de color PAL",
+       "description": "Muestra en blanco y negro los fotogramas PAL con un número impar de líneas, como una TV PAL."
+      }
+     }
+    },
+    {
+     "id": "dev.tv.jitter",
+     "group": "Debugging",
+     "label": "TV jitter",
+     "description": "Makes the picture roll when the frame timing changes, as a TV would.",
+     "type": "bool",
+     "arg": "-dev.tv.jitter",
+     "sources": [
+      "stella-7.0-help",
+      "stella-7.0-manual"
+     ],
+     "values": [
+      {
+       "value": "1",
+       "label": "on"
+      },
+      {
+       "value": "0",
+       "label": "off"
+      }
+     ],
+     "developer": true,
+     "i18n": {
+      "es": {
+       "label": "Temblor de la TV",
+       "description": "Hace que la imagen se desplace cuando cambia el tiempo del fotograma, como haría una TV."
+      }
+     }
+    },
+    {
+     "id": "dbg.fontsize",
+     "group": "Debugging",
+     "label": "Debugger font",
+     "description": "Font size of the debugger window.",
+     "type": "choice",
+     "arg": "-dbg.fontsize",
+     "sources": [
+      "stella-7.0-help",
+      "stella-7.0-manual"
+     ],
+     "values": [
+      {
+       "value": "small",
+       "label": "small"
+      },
+      {
+       "value": "medium",
+       "label": "medium"
+      },
+      {
+       "value": "large",
+       "label": "large"
+      }
+     ],
+     "i18n": {
+      "es": {
+       "label": "Letra del depurador",
+       "description": "Tamaño de letra de la ventana del depurador."
+      }
+     }
+    },
+    {
+     "id": "dbg.res",
+     "group": "Debugging",
+     "label": "Debugger window size",
+     "description": "Size of the debugger window, as WxH (for example 1280x900).",
+     "type": "text",
+     "arg": "-dbg.res",
+     "sources": [
+      "stella-7.0-help",
+      "stella-7.0-manual"
+     ],
+     "i18n": {
+      "es": {
+       "label": "Tamaño del depurador",
+       "description": "Tamaño de la ventana del depurador, como AnchoxAlto (por ejemplo 1280x900)."
+      }
+     }
+    },
+    {
+     "id": "dev.ramrandom",
+     "group": "Randomize on reset",
+     "label": "RAM",
+     "description": "Fills RAM with random values on reset instead of zeros, to find variables used before they are set.",
+     "type": "bool",
+     "arg": "-dev.ramrandom",
+     "sources": [
+      "stella-7.0-help",
+      "stella-7.0-manual"
+     ],
+     "values": [
+      {
+       "value": "1",
+       "label": "on"
+      },
+      {
+       "value": "0",
+       "label": "off"
+      }
+     ],
+     "developer": true,
+     "i18n": {
+      "es": {
+       "label": "RAM",
+       "description": "Llena la RAM con valores al azar al reiniciar en vez de ceros, para encontrar variables usadas antes de darles valor."
+      }
+     }
+    },
+    {
+     "id": "dev.cpurandom",
+     "group": "Randomize on reset",
+     "label": "CPU registers",
+     "description": "Registers to randomize on reset: any of S, A, X, Y, P (e.g. SAXYP).",
+     "type": "text",
+     "arg": "-dev.cpurandom",
+     "sources": [
+      "stella-7.0-help",
+      "stella-7.0-manual"
+     ],
+     "developer": true,
+     "i18n": {
+      "es": {
+       "label": "Registros de la CPU",
+       "description": "Registros que se ponen al azar al reiniciar: cualquiera de S, A, X, Y, P (p. ej. SAXYP)."
+      }
+     }
+    },
+    {
+     "id": "dev.tiarandom",
+     "group": "Randomize on reset",
+     "label": "TIA registers",
+     "description": "Randomizes the TIA registers on reset.",
+     "type": "bool",
+     "arg": "-dev.tiarandom",
+     "sources": [
+      "stella-7.0-help",
+      "stella-7.0-manual"
+     ],
+     "values": [
+      {
+       "value": "1",
+       "label": "on"
+      },
+      {
+       "value": "0",
+       "label": "off"
+      }
+     ],
+     "developer": true,
+     "i18n": {
+      "es": {
+       "label": "Registros del TIA",
+       "description": "Pone al azar los registros del TIA al reiniciar."
+      }
+     }
+    },
+    {
+     "id": "dev.bankrandom",
+     "group": "Randomize on reset",
+     "label": "Start bank",
+     "description": "Starts in a random bank, for the formats where real hardware does too.",
+     "type": "bool",
+     "arg": "-dev.bankrandom",
+     "sources": [
+      "stella-7.0-help",
+      "stella-7.0-manual"
+     ],
+     "values": [
+      {
+       "value": "1",
+       "label": "on"
+      },
+      {
+       "value": "0",
+       "label": "off"
+      }
+     ],
+     "developer": true,
+     "i18n": {
+      "es": {
+       "label": "Banco inicial",
+       "description": "Empieza en un banco al azar, en los formatos donde el hardware real también lo hace."
+      }
+     }
+    },
+    {
+     "id": "dev.hsrandom",
+     "group": "Randomize on reset",
+     "label": "Hotspot reads",
+     "description": "Reads of bank-switch hotspots return semi-random values.",
+     "type": "bool",
+     "arg": "-dev.hsrandom",
+     "sources": [
+      "stella-7.0-help",
+      "stella-7.0-manual"
+     ],
+     "values": [
+      {
+       "value": "1",
+       "label": "on"
+      },
+      {
+       "value": "0",
+       "label": "off"
+      }
+     ],
+     "developer": true,
+     "i18n": {
+      "es": {
+       "label": "Lecturas de hotspots",
+       "description": "Las lecturas de los hotspots de cambio de banco devuelven valores semialeatorios."
+      }
+     }
+    },
+    {
+     "id": "dev.tiadriven",
+     "group": "Randomize on reset",
+     "label": "Undriven TIA pins",
+     "description": "Unused TIA data pins read random bits instead of what was last on the bus.",
+     "type": "bool",
+     "arg": "-dev.tiadriven",
+     "sources": [
+      "stella-7.0-help",
+      "stella-7.0-manual"
+     ],
+     "values": [
+      {
+       "value": "1",
+       "label": "on"
+      },
+      {
+       "value": "0",
+       "label": "off"
+      }
+     ],
+     "developer": true,
+     "i18n": {
+      "es": {
+       "label": "Patillas del TIA sin conducir",
+       "description": "Las patillas de datos del TIA que no se usan leen bits al azar en vez de lo último que hubo en el bus."
+      }
+     }
+    },
+    {
+     "id": "dev.tia.type",
+     "group": "TIA chip",
+     "label": "TIA type",
+     "description": "Emulates the TIA quirks of particular consoles (named after games that show them); 'custom' uses the switches below.",
+     "type": "choice",
+     "arg": "-dev.tia.type",
+     "sources": [
+      "stella-7.0-help",
+      "stella-7.0-manual"
+     ],
+     "values": [
+      {
+       "value": "standard",
+       "label": "standard"
+      },
+      {
+       "value": "koolaidman",
+       "label": "koolaidman"
+      },
+      {
+       "value": "cosmicark",
+       "label": "cosmicark"
+      },
+      {
+       "value": "pesco",
+       "label": "pesco"
+      },
+      {
+       "value": "quickstep",
+       "label": "quickstep"
+      },
+      {
+       "value": "matchie",
+       "label": "matchie"
+      },
+      {
+       "value": "indy500",
+       "label": "indy500"
+      },
+      {
+       "value": "heman",
+       "label": "heman"
+      },
+      {
+       "value": "flashmenu",
+       "label": "flashmenu"
+      },
+      {
+       "value": "custom",
+       "label": "custom"
+      }
+     ],
+     "developer": true,
+     "i18n": {
+      "es": {
+       "label": "Tipo de TIA",
+       "description": "Emula las rarezas del TIA de algunas consolas (llevan el nombre de juegos que las muestran); «custom» usa los interruptores de abajo."
+      }
+     }
+    },
+    {
+     "id": "dev.tia.plinvphase",
+     "group": "TIA chip",
+     "label": "Players: inverted HMOVE phase",
+     "description": "Custom TIA: inverted HMOVE clock phase for the players.",
+     "type": "bool",
+     "arg": "-dev.tia.plinvphase",
+     "sources": [
+      "stella-7.0-help",
+      "stella-7.0-manual"
+     ],
+     "values": [
+      {
+       "value": "1",
+       "label": "on"
+      },
+      {
+       "value": "0",
+       "label": "off"
+      }
+     ],
+     "developer": true,
+     "i18n": {
+      "es": {
+       "label": "Jugadores: fase de HMOVE invertida",
+       "description": "TIA personalizado: fase del reloj de HMOVE invertida para los jugadores."
+      }
+     }
+    },
+    {
+     "id": "dev.tia.msinvphase",
+     "group": "TIA chip",
+     "label": "Missiles: inverted HMOVE phase",
+     "description": "Custom TIA: inverted HMOVE clock phase for the missiles.",
+     "type": "bool",
+     "arg": "-dev.tia.msinvphase",
+     "sources": [
+      "stella-7.0-help",
+      "stella-7.0-manual"
+     ],
+     "values": [
+      {
+       "value": "1",
+       "label": "on"
+      },
+      {
+       "value": "0",
+       "label": "off"
+      }
+     ],
+     "developer": true,
+     "i18n": {
+      "es": {
+       "label": "Misiles: fase de HMOVE invertida",
+       "description": "TIA personalizado: fase del reloj de HMOVE invertida para los misiles."
+      }
+     }
+    },
+    {
+     "id": "dev.tia.blinvphase",
+     "group": "TIA chip",
+     "label": "Ball: inverted HMOVE phase",
+     "description": "Custom TIA: inverted HMOVE clock phase for the ball.",
+     "type": "bool",
+     "arg": "-dev.tia.blinvphase",
+     "sources": [
+      "stella-7.0-help",
+      "stella-7.0-manual"
+     ],
+     "values": [
+      {
+       "value": "1",
+       "label": "on"
+      },
+      {
+       "value": "0",
+       "label": "off"
+      }
+     ],
+     "developer": true,
+     "i18n": {
+      "es": {
+       "label": "Bola: fase de HMOVE invertida",
+       "description": "TIA personalizado: fase del reloj de HMOVE invertida para la bola."
+      }
+     }
+    },
+    {
+     "id": "dev.tia.pllatehmove",
+     "group": "TIA chip",
+     "label": "Players: short late HMOVE",
+     "description": "Custom TIA: short late HMOVE for the players.",
+     "type": "bool",
+     "arg": "-dev.tia.pllatehmove",
+     "sources": [
+      "stella-7.0-help",
+      "stella-7.0-manual"
+     ],
+     "values": [
+      {
+       "value": "1",
+       "label": "on"
+      },
+      {
+       "value": "0",
+       "label": "off"
+      }
+     ],
+     "developer": true,
+     "i18n": {
+      "es": {
+       "label": "Jugadores: HMOVE tardío corto",
+       "description": "TIA personalizado: HMOVE tardío corto para los jugadores."
+      }
+     }
+    },
+    {
+     "id": "dev.tia.mslatehmove",
+     "group": "TIA chip",
+     "label": "Missiles: short late HMOVE",
+     "description": "Custom TIA: short late HMOVE for the missiles.",
+     "type": "bool",
+     "arg": "-dev.tia.mslatehmove",
+     "sources": [
+      "stella-7.0-help",
+      "stella-7.0-manual"
+     ],
+     "values": [
+      {
+       "value": "1",
+       "label": "on"
+      },
+      {
+       "value": "0",
+       "label": "off"
+      }
+     ],
+     "developer": true,
+     "i18n": {
+      "es": {
+       "label": "Misiles: HMOVE tardío corto",
+       "description": "TIA personalizado: HMOVE tardío corto para los misiles."
+      }
+     }
+    },
+    {
+     "id": "dev.tia.bllatehmove",
+     "group": "TIA chip",
+     "label": "Ball: short late HMOVE",
+     "description": "Custom TIA: short late HMOVE for the ball.",
+     "type": "bool",
+     "arg": "-dev.tia.bllatehmove",
+     "sources": [
+      "stella-7.0-help",
+      "stella-7.0-manual"
+     ],
+     "values": [
+      {
+       "value": "1",
+       "label": "on"
+      },
+      {
+       "value": "0",
+       "label": "off"
+      }
+     ],
+     "developer": true,
+     "i18n": {
+      "es": {
+       "label": "Bola: HMOVE tardío corto",
+       "description": "TIA personalizado: HMOVE tardío corto para la bola."
+      }
+     }
+    },
+    {
+     "id": "dev.tia.delaypfbits",
+     "group": "TIA chip",
+     "label": "Playfield bits one cycle late",
+     "description": "Custom TIA: extra delay cycle when the playfield bits change.",
+     "type": "bool",
+     "arg": "-dev.tia.delaypfbits",
+     "sources": [
+      "stella-7.0-help",
+      "stella-7.0-manual"
+     ],
+     "values": [
+      {
+       "value": "1",
+       "label": "on"
+      },
+      {
+       "value": "0",
+       "label": "off"
+      }
+     ],
+     "developer": true,
+     "i18n": {
+      "es": {
+       "label": "Bits del playfield un ciclo tarde",
+       "description": "TIA personalizado: un ciclo más de retraso al cambiar los bits del playfield."
+      }
+     }
+    },
+    {
+     "id": "dev.tia.delaypfcolor",
+     "group": "TIA chip",
+     "label": "Playfield colour one cycle late",
+     "description": "Custom TIA: extra delay cycle when the playfield colour changes.",
+     "type": "bool",
+     "arg": "-dev.tia.delaypfcolor",
+     "sources": [
+      "stella-7.0-help",
+      "stella-7.0-manual"
+     ],
+     "values": [
+      {
+       "value": "1",
+       "label": "on"
+      },
+      {
+       "value": "0",
+       "label": "off"
+      }
+     ],
+     "developer": true,
+     "i18n": {
+      "es": {
+       "label": "Color del playfield un ciclo tarde",
+       "description": "TIA personalizado: un ciclo más de retraso al cambiar el color del playfield."
+      }
+     }
+    },
+    {
+     "id": "dev.tia.pfscoreglitch",
+     "group": "TIA chip",
+     "label": "Score mode glitch",
+     "description": "Custom TIA: colour glitch of the playfield in score mode.",
+     "type": "bool",
+     "arg": "-dev.tia.pfscoreglitch",
+     "sources": [
+      "stella-7.0-help",
+      "stella-7.0-manual"
+     ],
+     "values": [
+      {
+       "value": "1",
+       "label": "on"
+      },
+      {
+       "value": "0",
+       "label": "off"
+      }
+     ],
+     "developer": true,
+     "i18n": {
+      "es": {
+       "label": "Fallo del modo marcador",
+       "description": "TIA personalizado: fallo de color del playfield en modo marcador."
+      }
+     }
+    },
+    {
+     "id": "dev.tia.delaybkcolor",
+     "group": "TIA chip",
+     "label": "Background colour one cycle late",
+     "description": "Custom TIA: extra delay cycle when the background colour changes.",
+     "type": "bool",
+     "arg": "-dev.tia.delaybkcolor",
+     "sources": [
+      "stella-7.0-help",
+      "stella-7.0-manual"
+     ],
+     "values": [
+      {
+       "value": "1",
+       "label": "on"
+      },
+      {
+       "value": "0",
+       "label": "off"
+      }
+     ],
+     "developer": true,
+     "i18n": {
+      "es": {
+       "label": "Color de fondo un ciclo tarde",
+       "description": "TIA personalizado: un ciclo más de retraso al cambiar el color de fondo."
+      }
+     }
+    },
+    {
+     "id": "dev.tia.delayplswap",
+     "group": "TIA chip",
+     "label": "VDELP0/1 swap one cycle late",
+     "description": "Custom TIA: extra delay cycle for the VDELP0/1 swap.",
+     "type": "bool",
+     "arg": "-dev.tia.delayplswap",
+     "sources": [
+      "stella-7.0-help",
+      "stella-7.0-manual"
+     ],
+     "values": [
+      {
+       "value": "1",
+       "label": "on"
+      },
+      {
+       "value": "0",
+       "label": "off"
+      }
+     ],
+     "developer": true,
+     "i18n": {
+      "es": {
+       "label": "Cambio VDELP0/1 un ciclo tarde",
+       "description": "TIA personalizado: un ciclo más de retraso en el intercambio de VDELP0/1."
+      }
+     }
+    },
+    {
+     "id": "dev.tia.delayblswap",
+     "group": "TIA chip",
+     "label": "VDELBL swap one cycle late",
+     "description": "Custom TIA: extra delay cycle for the VDELBL swap.",
+     "type": "bool",
+     "arg": "-dev.tia.delayblswap",
+     "sources": [
+      "stella-7.0-help",
+      "stella-7.0-manual"
+     ],
+     "values": [
+      {
+       "value": "1",
+       "label": "on"
+      },
+      {
+       "value": "0",
+       "label": "off"
+      }
+     ],
+     "developer": true,
+     "i18n": {
+      "es": {
+       "label": "Cambio VDELBL un ciclo tarde",
+       "description": "TIA personalizado: un ciclo más de retraso en el intercambio de VDELBL."
+      }
+     }
+    },
+    {
+     "id": "dev.thumb.trapfatal",
+     "group": "ARM (DPC+, CDFJ, ELF)",
+     "label": "Stop on ARM errors",
+     "description": "Enters the debugger on fatal errors of the ARM emulation; for ELF also checks writes to read-only memory and that every symbol can be relocated.",
+     "type": "bool",
+     "arg": "-dev.thumb.trapfatal",
+     "sources": [
+      "stella-7.0-help",
+      "stella-7.0-manual"
+     ],
+     "values": [
+      {
+       "value": "1",
+       "label": "on"
+      },
+      {
+       "value": "0",
+       "label": "off"
+      }
+     ],
+     "developer": true,
+     "i18n": {
+      "es": {
+       "label": "Parar en errores del ARM",
+       "description": "Entra en el depurador ante errores fatales de la emulación del ARM; con ELF también comprueba escrituras en memoria de solo lectura y que todos los símbolos se puedan reubicar."
+      }
+     }
+    },
+    {
+     "id": "dev.arm.mips",
+     "group": "ARM (DPC+, CDFJ, ELF)",
+     "label": "ARM speed limit",
+     "description": "For ELF ROMs: maximum ARM instructions per 6507 instruction (50-300).",
+     "type": "int",
+     "arg": "-dev.arm.mips",
+     "sources": [
+      "stella-7.0-help",
+      "stella-7.0-manual"
+     ],
+     "developer": true,
+     "min": 50,
+     "max": 300,
+     "i18n": {
+      "es": {
+       "label": "Límite de velocidad del ARM",
+       "description": "Para ROMs ELF: instrucciones ARM como máximo por cada instrucción del 6507 (50-300)."
+      }
+     }
+    },
+    {
+     "id": "dev.thumb.chiptype",
+     "group": "ARM (DPC+, CDFJ, ELF)",
+     "label": "ARM chip",
+     "description": "Emulated chip: LPC2103 or LPC2104 family (clock, flash timing and banks).",
+     "type": "choice",
+     "arg": "-dev.thumb.chiptype",
+     "sources": [
+      "stella-7.0-help",
+      "stella-7.0-manual"
+     ],
+     "values": [
+      {
+       "value": "0",
+       "label": "LPC2103"
+      },
+      {
+       "value": "1",
+       "label": "LPC2104"
+      }
+     ],
+     "developer": true,
+     "i18n": {
+      "es": {
+       "label": "Chip ARM",
+       "description": "Chip emulado: familia LPC2103 o LPC2104 (reloj, tiempos de la flash y bancos)."
+      }
+     }
+    },
+    {
+     "id": "snapsavedir",
+     "group": "Video",
+     "label": "Snapshot folder",
+     "description": "Where Stella saves its snapshots (F12). Default: the project's build folder.",
+     "type": "text",
+     "arg": "-snapsavedir",
+     "sources": [
+      "stella-7.0-help",
+      "stella-7.0-manual"
+     ],
+     "i18n": {
+      "es": {
+       "label": "Carpeta de capturas",
+       "description": "Dónde guarda Stella las capturas (F12). Por defecto: la carpeta build del proyecto."
+      }
+     }
+    }
+   ]
+  },
+  "gopher2600": {
+   "name": "Gopher2600",
+   "options": [
+    {
+     "id": "left",
+     "group": "Controllers",
+     "label": "Left controller",
+     "description": "Controller plugged into the left port.",
+     "type": "choice",
+     "sources": [
+      "gopher2600-0.56.1"
+     ],
+     "flag": "-left",
+     "modes": [
+      "RUN",
+      "DEBUG"
+     ],
+     "values": [
+      {
+       "value": "AUTO",
+       "label": "auto"
+      },
+      {
+       "value": "STICK",
+       "label": "joystick"
+      },
+      {
+       "value": "PADDLE",
+       "label": "paddles"
+      },
+      {
+       "value": "KEYPAD",
+       "label": "keypad"
+      },
+      {
+       "value": "GAMEPAD",
+       "label": "gamepad"
+      }
+     ],
+     "i18n": {
+      "es": {
+       "label": "Mando izquierdo",
+       "description": "Mando conectado al puerto izquierdo."
+      }
+     }
+    },
+    {
+     "id": "right",
+     "group": "Controllers",
+     "label": "Right controller",
+     "description": "Controller plugged into the right port.",
+     "type": "choice",
+     "sources": [
+      "gopher2600-0.56.1"
+     ],
+     "flag": "-right",
+     "modes": [
+      "RUN",
+      "DEBUG"
+     ],
+     "values": [
+      {
+       "value": "AUTO",
+       "label": "auto"
+      },
+      {
+       "value": "STICK",
+       "label": "joystick"
+      },
+      {
+       "value": "PADDLE",
+       "label": "paddles"
+      },
+      {
+       "value": "KEYPAD",
+       "label": "keypad"
+      },
+      {
+       "value": "GAMEPAD",
+       "label": "gamepad"
+      },
+      {
+       "value": "SAVEKEY",
+       "label": "SaveKey"
+      },
+      {
+       "value": "ATARIVOX",
+       "label": "AtariVox"
+      }
+     ],
+     "i18n": {
+      "es": {
+       "label": "Mando derecho",
+       "description": "Mando conectado al puerto derecho."
+      }
+     }
+    },
+    {
+     "id": "swap",
+     "group": "Controllers",
+     "label": "Swap ports",
+     "description": "Swaps the left and right controller ports.",
+     "type": "bool",
+     "sources": [
+      "gopher2600-0.56.1"
+     ],
+     "flag": "-swap",
+     "modes": [
+      "RUN",
+      "DEBUG"
+     ],
+     "values": [
+      {
+       "value": "true",
+       "label": "on"
+      },
+      {
+       "value": "false",
+       "label": "off"
+      }
+     ],
+     "i18n": {
+      "es": {
+       "label": "Cambiar puertos",
+       "description": "Intercambia los puertos izquierdo y derecho."
+      }
+     }
+    },
+    {
+     "id": "bank",
+     "group": "Console",
+     "label": "Start bank",
+     "description": "Bank selected on reset (AUTO = Gopher2600's choice).",
+     "type": "text",
+     "sources": [
+      "gopher2600-0.56.1"
+     ],
+     "flag": "-bank",
+     "modes": [
+      "RUN",
+      "DEBUG"
+     ],
+     "i18n": {
+      "es": {
+       "label": "Banco inicial",
+       "description": "Banco al reiniciar (AUTO = el que elija Gopher2600)."
+      }
+     }
+    },
+    {
+     "id": "fpscap",
+     "group": "Video",
+     "label": "Cap frame rate",
+     "description": "Runs at the TV's frame rate (off = as fast as possible).",
+     "type": "bool",
+     "sources": [
+      "gopher2600-0.56.1"
+     ],
+     "flag": "-fpscap",
+     "modes": [
+      "RUN",
+      "DEBUG"
+     ],
+     "values": [
+      {
+       "value": "true",
+       "label": "on"
+      },
+      {
+       "value": "false",
+       "label": "off"
+      }
+     ],
+     "i18n": {
+      "es": {
+       "label": "Limitar fotogramas",
+       "description": "Va a la velocidad de la TV (apagado = lo más rápido posible)."
+      }
+     }
+    },
+    {
+     "id": "log",
+     "group": "Debugging",
+     "label": "Log to the terminal",
+     "description": "Echoes Gopher2600's log to standard output.",
+     "type": "bool",
+     "sources": [
+      "gopher2600-0.56.1"
+     ],
+     "flag": "-log",
+     "modes": [
+      "RUN",
+      "DEBUG"
+     ],
+     "values": [
+      {
+       "value": "true",
+       "label": "on"
+      },
+      {
+       "value": "false",
+       "label": "off"
+      }
+     ],
+     "i18n": {
+      "es": {
+       "label": "Registro en la terminal",
+       "description": "Copia el registro de Gopher2600 en la salida estándar."
+      }
+     }
+    },
+    {
+     "id": "audioMutePlay",
+     "group": "Audio",
+     "label": "Mute (playing)",
+     "description": "Sound off while playing.",
+     "type": "bool",
+     "sources": [
+      "gopher2600-0.56.1"
+     ],
+     "pref": "sdlimgui.playmode.audioMute",
+     "values": [
+      {
+       "value": "true",
+       "label": "on"
+      },
+      {
+       "value": "false",
+       "label": "off"
+      }
+     ],
+     "i18n": {
+      "es": {
+       "label": "Silencio (jugando)",
+       "description": "Sin sonido mientras se juega."
+      }
+     }
+    },
+    {
+     "id": "audioMuteDebug",
+     "group": "Audio",
+     "label": "Mute (in the debugger)",
+     "description": "Sound off in the debugger.",
+     "type": "bool",
+     "sources": [
+      "gopher2600-0.56.1"
+     ],
+     "pref": "sdlimgui.debugger.audioMute",
+     "values": [
+      {
+       "value": "true",
+       "label": "on"
+      },
+      {
+       "value": "false",
+       "label": "off"
+      }
+     ],
+     "i18n": {
+      "es": {
+       "label": "Silencio (en el depurador)",
+       "description": "Sin sonido en el depurador."
+      }
+     }
+    },
+    {
+     "id": "haltVsync",
+     "group": "Debugging",
+     "label": "Stop on bad VSYNC",
+     "description": "Enters the debugger when VSYNC is bad.",
+     "type": "bool",
+     "sources": [
+      "gopher2600-0.56.1"
+     ],
+     "pref": "television.halt.changedvsync",
+     "values": [
+      {
+       "value": "true",
+       "label": "on"
+      },
+      {
+       "value": "false",
+       "label": "off"
+      }
+     ],
+     "i18n": {
+      "es": {
+       "label": "Parar con VSYNC incorrecto",
+       "description": "Entra en el depurador cuando el VSYNC es incorrecto."
+      }
+     }
+    },
+    {
+     "id": "haltVblank",
+     "group": "Debugging",
+     "label": "Stop when VBLANK changes",
+     "description": "Enters the debugger when the use of VBLANK changes.",
+     "type": "bool",
+     "sources": [
+      "gopher2600-0.56.1"
+     ],
+     "pref": "television.halt.changedvblank",
+     "values": [
+      {
+       "value": "true",
+       "label": "on"
+      },
+      {
+       "value": "false",
+       "label": "off"
+      }
+     ],
+     "i18n": {
+      "es": {
+       "label": "Parar cuando cambia VBLANK",
+       "description": "Entra en el depurador cuando cambia el uso de VBLANK."
+      }
+     }
+    },
+    {
+     "id": "randState",
+     "group": "Randomize on reset",
+     "label": "Random state at start",
+     "description": "Starts the console with random RAM, registers and TIA state.",
+     "type": "bool",
+     "sources": [
+      "gopher2600-0.56.1"
+     ],
+     "pref": "hardware.randState",
+     "values": [
+      {
+       "value": "true",
+       "label": "on"
+      },
+      {
+       "value": "false",
+       "label": "off"
+      }
+     ],
+     "i18n": {
+      "es": {
+       "label": "Estado al azar al empezar",
+       "description": "Arranca la consola con RAM, registros y TIA al azar."
+      }
+     }
+    },
+    {
+     "id": "randPins",
+     "group": "Randomize on reset",
+     "label": "Random undriven pins",
+     "description": "Undriven data-bus pins read random bits.",
+     "type": "bool",
+     "sources": [
+      "gopher2600-0.56.1"
+     ],
+     "pref": "hardware.randPins",
+     "values": [
+      {
+       "value": "true",
+       "label": "on"
+      },
+      {
+       "value": "false",
+       "label": "off"
+      }
+     ],
+     "i18n": {
+      "es": {
+       "label": "Patillas sin conducir al azar",
+       "description": "Las patillas del bus de datos sin conducir leen bits al azar."
+      }
+     }
+    },
+    {
+     "id": "armAbort",
+     "group": "ARM (DPC+, CDFJ, ELF)",
+     "label": "Stop on ARM memory faults",
+     "description": "Stops the ARM program on a memory fault instead of carrying on.",
+     "type": "bool",
+     "sources": [
+      "gopher2600-0.56.1"
+     ],
+     "pref": "hardware.arm7.abortOnMemoryFault",
+     "values": [
+      {
+       "value": "true",
+       "label": "on"
+      },
+      {
+       "value": "false",
+       "label": "off"
+      }
+     ],
+     "i18n": {
+      "es": {
+       "label": "Parar en fallos de memoria del ARM",
+       "description": "Detiene el programa ARM ante un fallo de memoria en vez de seguir."
+      }
+     }
+    },
+    {
+     "id": "tia.grp0.latevdel",
+     "group": "TIA chip",
+     "label": "GRP0: late VDEL",
+     "description": "TIA revision quirk found in some consoles: GRP0: late VDEL.",
+     "type": "bool",
+     "sources": [
+      "gopher2600-0.56.1"
+     ],
+     "pref": "tia.revision.grp0.latevdel",
+     "values": [
+      {
+       "value": "true",
+       "label": "on"
+      },
+      {
+       "value": "false",
+       "label": "off"
+      }
+     ],
+     "i18n": {
+      "es": {
+       "label": "GRP0: late VDEL",
+       "description": "Rareza de revisión del TIA presente en algunas consolas: GRP0: late VDEL."
+      }
+     }
+    },
+    {
+     "id": "tia.grp1.latevdel",
+     "group": "TIA chip",
+     "label": "GRP1: late VDEL",
+     "description": "TIA revision quirk found in some consoles: GRP1: late VDEL.",
+     "type": "bool",
+     "sources": [
+      "gopher2600-0.56.1"
+     ],
+     "pref": "tia.revision.grp1.latevdel",
+     "values": [
+      {
+       "value": "true",
+       "label": "on"
+      },
+      {
+       "value": "false",
+       "label": "off"
+      }
+     ],
+     "i18n": {
+      "es": {
+       "label": "GRP1: late VDEL",
+       "description": "Rareza de revisión del TIA presente en algunas consolas: GRP1: late VDEL."
+      }
+     }
+    },
+    {
+     "id": "tia.hmove.earlyscancounter",
+     "group": "TIA chip",
+     "label": "HMOVE: early scan counter",
+     "description": "TIA revision quirk found in some consoles: HMOVE: early scan counter.",
+     "type": "bool",
+     "sources": [
+      "gopher2600-0.56.1"
+     ],
+     "pref": "tia.revision.hmove.earlyscancounter",
+     "values": [
+      {
+       "value": "true",
+       "label": "on"
+      },
+      {
+       "value": "false",
+       "label": "off"
+      }
+     ],
+     "i18n": {
+      "es": {
+       "label": "HMOVE: early scan counter",
+       "description": "Rareza de revisión del TIA presente en algunas consolas: HMOVE: early scan counter."
+      }
+     }
+    },
+    {
+     "id": "tia.hmove.laterespx",
+     "group": "TIA chip",
+     "label": "HMOVE: late RESPx",
+     "description": "TIA revision quirk found in some consoles: HMOVE: late RESPx.",
+     "type": "bool",
+     "sources": [
+      "gopher2600-0.56.1"
+     ],
+     "pref": "tia.revision.hmove.laterespx",
+     "values": [
+      {
+       "value": "true",
+       "label": "on"
+      },
+      {
+       "value": "false",
+       "label": "off"
+      }
+     ],
+     "i18n": {
+      "es": {
+       "label": "HMOVE: late RESPx",
+       "description": "Rareza de revisión del TIA presente en algunas consolas: HMOVE: late RESPx."
+      }
+     }
+    },
+    {
+     "id": "tia.lostmotck",
+     "group": "TIA chip",
+     "label": "Lost MOTCK",
+     "description": "TIA revision quirk found in some consoles: Lost MOTCK.",
+     "type": "bool",
+     "sources": [
+      "gopher2600-0.56.1"
+     ],
+     "pref": "tia.revision.lostmotck",
+     "values": [
+      {
+       "value": "true",
+       "label": "on"
+      },
+      {
+       "value": "false",
+       "label": "off"
+      }
+     ],
+     "i18n": {
+      "es": {
+       "label": "Lost MOTCK",
+       "description": "Rareza de revisión del TIA presente en algunas consolas: Lost MOTCK."
+      }
+     }
+    },
+    {
+     "id": "tia.playfield.latecolor",
+     "group": "TIA chip",
+     "label": "Playfield: late colour",
+     "description": "TIA revision quirk found in some consoles: Playfield: late colour.",
+     "type": "bool",
+     "sources": [
+      "gopher2600-0.56.1"
+     ],
+     "pref": "tia.revision.playfield.latecolor",
+     "values": [
+      {
+       "value": "true",
+       "label": "on"
+      },
+      {
+       "value": "false",
+       "label": "off"
+      }
+     ],
+     "i18n": {
+      "es": {
+       "label": "Playfield: late colour",
+       "description": "Rareza de revisión del TIA presente en algunas consolas: Playfield: late colour."
+      }
+     }
+    },
+    {
+     "id": "tia.playfield.latepfx",
+     "group": "TIA chip",
+     "label": "Playfield: late PFx",
+     "description": "TIA revision quirk found in some consoles: Playfield: late PFx.",
+     "type": "bool",
+     "sources": [
+      "gopher2600-0.56.1"
+     ],
+     "pref": "tia.revision.playfield.latepfx",
+     "values": [
+      {
+       "value": "true",
+       "label": "on"
+      },
+      {
+       "value": "false",
+       "label": "off"
+      }
+     ],
+     "i18n": {
+      "es": {
+       "label": "Playfield: late PFx",
+       "description": "Rareza de revisión del TIA presente en algunas consolas: Playfield: late PFx."
+      }
+     }
+    },
+    {
+     "id": "tia.respx.hmovethreshold",
+     "group": "TIA chip",
+     "label": "RESPx: HMOVE threshold",
+     "description": "TIA revision quirk found in some consoles: RESPx: HMOVE threshold.",
+     "type": "bool",
+     "sources": [
+      "gopher2600-0.56.1"
+     ],
+     "pref": "tia.revision.respx.hmovethreshold",
+     "values": [
+      {
+       "value": "true",
+       "label": "on"
+      },
+      {
+       "value": "false",
+       "label": "off"
+      }
+     ],
+     "i18n": {
+      "es": {
+       "label": "RESPx: HMOVE threshold",
+       "description": "Rareza de revisión del TIA presente en algunas consolas: RESPx: HMOVE threshold."
+      }
+     }
+    }
+   ]
+  }
+ }
+}

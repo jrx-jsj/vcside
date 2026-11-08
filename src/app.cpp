@@ -10,6 +10,7 @@
 #include <sstream>
 
 #include "cycles.h"
+#include "emulator_launch.h"
 #include "i18n.h"
 #include "imgui.h"
 #include "imgui_internal.h"
@@ -22,7 +23,6 @@ using nlohmann::json;
 namespace vcs {
 
 static const int kLayoutVersion = 2;  // bump when a docked panel is added
-static const char* kTvIds[] = {"NTSC", "PAL", "PAL60", "SECAM"};
 static const char* kLangIds[] = {"dasm", "batari-basic", "elf-c"};
 static const char* kLangNames[] = {N_("Assembler (DASM)"), N_("batari Basic"), N_("C for ELF (vcsLib)")};
 
@@ -333,11 +333,18 @@ void App::run(bool debug) {
     auto extra = debugArgs(project_->emulator);
     args.insert(args.end() - 1, extra.begin(), extra.end());  // before the ROM
   }
-  if (args.empty() || !launchDetached(args, project_->dir, &err)) {
+  EmulatorLaunch l;
+  l.args = args;
+  if (!args.empty() && !prepareEmulatorLaunch(*project_, kb_, (fs::path(configDir()) / "emulators").string(), l, &err))
+    args.clear();
+  for (auto& n : l.notes) output_ += n + "\n";
+  if (args.empty() || !launchDetached(l.args, l.workDir, &err, l.env)) {
     output_ += err + "\n";
     lastStatus_ = err;
   } else {
-    output_ += "> " + quoteArgs(args) + "\n";
+    std::string envText;
+    for (auto& [k, v] : l.env) envText += k + "=" + quoteArgs({v}) + " ";
+    output_ += "> " + envText + quoteArgs(l.args) + "\n";
   }
   outputScroll_ = true;
 }
@@ -408,9 +415,8 @@ void App::saveUserState() {
   std::ofstream(project_->file + ".user") << json{{"breakpoints", bps}}.dump(2) << "\n";
 }
 
-// Sends the editor's breakpoints to the emulator. Gopher2600 reads a script
-// with -script; Stella's command line takes a single -break, so it gets the first
-// one (one-bank ROMs) plus a script to run from its prompt with exec.
+// Sends the editor's breakpoints to the emulator: Gopher2600 reads a script given
+// with -script, Stella the one named after the ROM in its user folder.
 std::vector<std::string> App::debugArgs(const std::string& emulator) {
   for (auto& f : files_)
     if (!f->editor.breakpoints().empty() || breakpoints_.count(f->path)) breakpoints_[f->path] = f->editor.breakpoints();
@@ -463,30 +469,19 @@ std::vector<std::string> App::debugArgs(const std::string& emulator) {
     }
     args = {"-script", path};
   } else if (emulator == "stella") {
-    std::string path = project_->stem() + ".stella.script";
+    // Stella's debugger runs <userdir>/<rom name>.script when it opens, and
+    // VCSIDE launches it with -userdir set to the build folder.
+    fs::remove(project_->stem() + ".stella.script", ec);  // VCSIDE 0.1 wrote this one
+    std::string path = project_->stem() + ".script";
     if (bps.empty()) {
       fs::remove(path, ec);
       return args;
     }
-    {
-      std::ofstream out(path);
-      for (auto& b : bps) {
-        char line[64];
-        snprintf(line, sizeof line, "break $%04lX %d\n", b.cpu, b.bank);
-        out << line;
-      }
-    }
-    if (addresses_.banks() == 1) {
-      char a[16];
-      snprintf(a, sizeof a, "$%04lX", bps[0].cpu);
-      args = {"-break", a};
-    }
-    if (bps.size() > 1 || addresses_.banks() > 1) {
-      // Stella's prompt groups an argument with {...}, not with quotes
-      std::string cmd = path.find(' ') == std::string::npos ? "exec " + path : "exec {" + path + "}";
-      SDL_SetClipboardText(cmd.c_str());
-      output_ += F("Stella takes only one breakpoint on its command line. To set all {0}, type this in its prompt (it is on the clipboard):",
-                   {std::to_string(bps.size())}) + "\n  " + cmd + "\n";
+    std::ofstream out(path);
+    for (auto& b : bps) {
+      char line[64];
+      snprintf(line, sizeof line, "break $%04lX %d\n", b.cpu, b.bank);
+      out << line;
     }
   }
   return args;
@@ -793,6 +788,7 @@ void App::frame() {
   aboutDialog();
   closeDialogs();
   goToAddressDialog();
+  emulatorOptionsDialog();
 }
 
 // The menu bar as data: ImGui draws it on Windows and Linux, macOS puts it in the
@@ -915,7 +911,14 @@ MenuBar App::buildMenuBar(bool native) {
       else m.label = f.name.find(f.id) != std::string::npos ? f.name : f.id + " — " + f.name;
       formats.push_back(m);
     }
-    for (auto tv : kTvIds) tvs.push_back(item(tv, "", set([tv](Project& pr) { pr.tv = tv; }), true, project_->tv == tv));
+    for (auto& tv : tvStandardIds()) {
+      MenuItem m = item(tv == "AUTO" ? T("Chosen by the emulator") : tv, "", set([tv](Project& pr) { pr.tv = tv; }), true, project_->tv == tv);
+      if (!tvSupported(project_->emulator, tv)) {
+        Tool* t = tools_.get(project_->emulator);
+        m.hint = F("not in {0}", {t ? t->name : project_->emulator});
+      }
+      tvs.push_back(m);
+    }
     for (auto e : {"stella", "gopher2600"}) {
       Tool* t = tools_.get(e);
       MenuItem m = item(t->name, "", set([e](Project& pr) { pr.emulator = e; }), true, project_->emulator == e);
@@ -930,6 +933,7 @@ MenuBar App::buildMenuBar(bool native) {
     b.push_back(sub(T("Format"), formats));
     b.push_back(sub(T("TV standard"), tvs));
     b.push_back(sub(T("Emulator"), emus));
+    b.push_back(item(T("Emulator options..."), "", [this] { showEmuOptions_ = true; }));
     b.push_back(sub(T("Illegal opcodes"), illegal));
   }
   bar.push_back(sub(T("Build"), b));
@@ -1261,6 +1265,157 @@ void App::problemsPanel() {
 }
 
 // From an address the emulator shows (PC, a break, a crash) to its source line.
+// ---------------------------------------------------------------------------
+// Emulator options (data/kb/emulators.json; stored in the project)
+
+// Group names and the common value labels of emulators.json, for the catalogs.
+[[maybe_unused]] static const char* kEmuWords[] = {
+    N_("Console"), N_("Controllers"), N_("Video"), N_("Audio"), N_("Debugging"), N_("Randomize on reset"),
+    N_("TIA chip"), N_("ARM (DPC+, CDFJ, ELF)"), N_("on"), N_("off"), N_("colour"), N_("black and white"),
+    N_("auto"), N_("joystick"), N_("paddles"), N_("keypad"), N_("driving"), N_("yes"), N_("no"),
+    N_("standard"), N_("user"), N_("custom"), N_("composite"), N_("bad adjust"), N_("by ROM"), N_("always"),
+    N_("automatic, on"), N_("automatic"), N_("small"), N_("medium"), N_("large"), N_("gamepad"),
+    N_("trak-ball"), N_("Amiga mouse"), N_("Atari mouse"), N_("light gun"), N_("Genesis pad")};
+
+static void wrappedTooltip(const std::string& text) {
+  if (!ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) return;
+  ImGui::BeginTooltip();
+  ImGui::PushTextWrapPos(ImGui::GetFontSize() * 30);
+  ImGui::TextUnformatted(text.c_str());
+  ImGui::PopTextWrapPos();
+  ImGui::EndTooltip();
+}
+
+void App::emulatorOptionsDialog() {
+  if (showEmuOptions_) {
+    ImGui::OpenPopup("###emuopts");
+    showEmuOptions_ = false;
+    emuOptionsTab_ = project_ ? project_->emulator : "";
+  }
+  char title[96];
+  snprintf(title, sizeof title, "%s###emuopts", T("Emulator options"));
+  float fs = ImGui::GetFontSize();
+  ImGui::SetNextWindowSize(ImVec2(fs * 50, fs * 42), ImGuiCond_Appearing);
+  bool open = true;
+  if (!ImGui::BeginPopupModal(title, &open)) return;
+  if (!project_) {
+    ImGui::CloseCurrentPopup();
+    ImGui::EndPopup();
+    return;
+  }
+  bool changed = false;
+  if (ImGui::BeginTabBar("emus")) {
+    for (const char* id : {"stella", "gopher2600"}) {
+      const EmulatorInfo* emu = kb_.emulator(id);
+      if (!emu) continue;
+      ImGuiTabItemFlags tabFlags = emuOptionsTab_ == id ? ImGuiTabItemFlags_SetSelected : 0;
+      if (!ImGui::BeginTabItem(emu->name.c_str(), nullptr, tabFlags)) continue;
+      auto& set = project_->emulatorOptions[id];
+      ImGui::BeginChild("opts", ImVec2(0, -ImGui::GetFrameHeightWithSpacing() * 6), ImGuiChildFlags_Borders);
+      // groups in the order they first appear, each with all its options
+      std::vector<const EmuOption*> ordered;
+      for (auto& g : emu->options)
+        if (std::none_of(ordered.begin(), ordered.end(), [&](const EmuOption* x) { return x->group == g.group; }))
+          for (auto& o : emu->options)
+            if (o.group == g.group) ordered.push_back(&o);
+      std::string group;
+      bool table = false;
+      for (const EmuOption* op : ordered) {
+        const EmuOption& o = *op;
+        if (o.group != group || !table) {
+          if (table) ImGui::EndTable();
+          group = o.group;
+          ImGui::SeparatorText(T(group.c_str()));
+          table = ImGui::BeginTable(group.c_str(), 2, ImGuiTableFlags_SizingStretchProp);
+          if (!table) continue;
+          ImGui::TableSetupColumn("label", ImGuiTableColumnFlags_WidthStretch, 3);
+          ImGui::TableSetupColumn("value", ImGuiTableColumnFlags_WidthStretch, 2);
+        }
+        ImGui::PushID(o.id.c_str());
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        auto cur = set.find(o.id);
+        std::string value = cur == set.end() ? "" : cur->second;
+        if (value.empty()) ImGui::TextUnformatted(o.labelText().c_str());
+        else ImGui::TextColored(ImVec4(0.55f, 0.85f, 1.0f, 1), "%s", o.labelText().c_str());
+        std::string tip = o.descriptionText() + "\n\n";
+        if (!o.arg.empty()) tip += o.arg + (o.noValue ? "" : " <" + o.type + ">");
+        else if (!o.flag.empty()) tip += o.flag;
+        else tip += F("Preference {0} (VCSIDE passes it through a copy of the preferences file)", {o.pref});
+        if (o.developer) tip += "\n" + std::string(T("Needs Stella's developer settings: VCSIDE turns them on."));
+        wrappedTooltip(tip);
+        ImGui::TableNextColumn();
+        ImGui::SetNextItemWidth(-1);
+        std::string next = value;
+        if (o.type == "int" || o.type == "text") {
+          std::string hint = T("default");
+          if (o.max > 0) hint += " (" + std::to_string(o.min) + "-" + std::to_string(o.max) + ")";
+          ImGuiInputTextFlags fl = o.type == "int" ? ImGuiInputTextFlags_CharsDecimal : 0;
+          ImGui::InputTextWithHint("##v", hint.c_str(), &next, fl);
+          if (o.type == "int" && !next.empty() && o.max > 0) {
+            int n = std::atoi(next.c_str());
+            if (n < o.min || n > o.max) ImGui::TextColored(ImVec4(1, 0.5f, 0.4f, 1), "%s", T("out of range"));
+          }
+        } else {
+          std::string preview = T("default");
+          for (auto& v : o.values)
+            if (v.value == value) preview = T(v.label.c_str());
+          if (ImGui::BeginCombo("##v", preview.c_str())) {
+            if (ImGui::Selectable(T("default"), value.empty())) next.clear();
+            for (auto& v : o.values)
+              if (ImGui::Selectable(T(v.label.c_str()), v.value == value)) next = v.value;
+            ImGui::EndCombo();
+          }
+        }
+        wrappedTooltip(tip);
+        if (next != value) {
+          if (next.empty()) set.erase(o.id);
+          else set[o.id] = next;
+          changed = true;
+        }
+        ImGui::PopID();
+      }
+      if (table) ImGui::EndTable();
+      ImGui::EndChild();
+
+      std::string& extra = project_->emulatorArgs[id];
+      ImGui::SetNextItemWidth(-fs * 12);
+      if (ImGui::InputText(T("Extra arguments"), &extra)) changed = true;
+      std::map<std::string, std::string> prefs;
+      auto args = emulatorOptionArgs(*project_, *emu, &prefs);
+      for (auto& a : splitCommand(extra)) args.push_back(a);
+      std::string line = args.empty() ? T("(nothing)") : quoteArgs(args);
+      ImGui::TextDisabled("%s", T("Added to the command line:"));
+      ImGui::SameLine();
+      ImGui::TextWrapped("%s", line.c_str());
+      if (!prefs.empty()) {
+        std::string p;
+        for (auto& [k, v] : prefs) p += (p.empty() ? "" : ", ") + k + " = " + v;
+        ImGui::TextDisabled("%s", T("Preferences:"));
+        ImGui::SameLine();
+        ImGui::TextWrapped("%s", p.c_str());
+      }
+      if (ImGui::Button(T("Reset to defaults"))) {
+        set.clear();
+        extra.clear();
+        changed = true;
+      }
+      ImGui::EndTabItem();
+    }
+    ImGui::EndTabBar();
+  }
+  emuOptionsTab_.clear();
+  ImGui::PushTextWrapPos(0);
+  ImGui::TextDisabled("%s", T("The emulators start with a copy of your own settings, so these options never change them; what you change in an emulator started from VCSIDE is not kept."));
+  ImGui::PopTextWrapPos();
+  if (ImGui::Button(T("Close")) || ImGui::IsKeyPressed(ImGuiKey_Escape)) ImGui::CloseCurrentPopup();
+  if (changed) {
+    std::string err;
+    if (!project_->save(&err)) lastStatus_ = err;
+  }
+  ImGui::EndPopup();
+}
+
 void App::goToAddressDialog() {
   if (showGoToAddress_) {
     ImGui::OpenPopup(T("Go to address"));
@@ -1588,7 +1743,12 @@ void App::newProjectDialog() {
     SDL_ShowOpenFolderDialog(dialogCallback, new DialogCtx{this, "newdir"}, window_, npDir_.c_str(), false);
   const char* langNames[3] = {T(kLangNames[0]), T(kLangNames[1]), T(kLangNames[2])};
   ImGui::Combo(T("Language of the project"), &npLang_, langNames, 3);
-  ImGui::Combo(T("TV standard"), &npTv_, kTvIds, 4);
+  {
+    std::vector<const char*> tvs;
+    for (auto& tv : tvStandardIds())
+      if (tv != "AUTO") tvs.push_back(tv.c_str());
+    ImGui::Combo(T("TV standard"), &npTv_, tvs.data(), (int)tvs.size());
+  }
   fs::path target = fs::path(npDir_) / npName_;
   ImGui::TextDisabled("%s", target.string().c_str());
   static std::string error;
@@ -1596,7 +1756,7 @@ void App::newProjectDialog() {
   if (ImGui::Button(T("Create"))) {
     Project p;
     error.clear();
-    if (Project::create(target.string(), npName_, languageFromId(kLangIds[npLang_]), kTvIds[npTv_], &p, &error)) {
+    if (Project::create(target.string(), npName_, languageFromId(kLangIds[npLang_]), tvStandardIds()[npTv_], &p, &error)) {
       openProject(p.file);
       ImGui::CloseCurrentPopup();
     }

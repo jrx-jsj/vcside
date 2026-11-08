@@ -66,6 +66,15 @@ bool Project::load(const std::string& path, std::string* error) {
     buildCommand = j.value("build_command", "");
     spaceWarnPercent = j.value("space_warn_percent", 90);
     stackReserve = j.value("stack_reserve", 8);
+    emulatorOptions.clear();
+    emulatorArgs.clear();
+    if (j.contains("emulator_options") && j["emulator_options"].is_object())
+      for (auto& [emu, opts] : j["emulator_options"].items())
+        for (auto& [k, v] : opts.items())
+          if (v.is_string() && !v.get<std::string>().empty()) emulatorOptions[emu][k] = v.get<std::string>();
+    if (j.contains("emulator_args") && j["emulator_args"].is_object())
+      for (auto& [emu, v] : j["emulator_args"].items())
+        if (v.is_string() && !v.get<std::string>().empty()) emulatorArgs[emu] = v.get<std::string>();
   } catch (const std::exception& e) {
     if (error) *error = path + ": " + e.what();
     return false;
@@ -82,6 +91,14 @@ bool Project::save(std::string* error) const {
   if (!buildCommand.empty()) j["build_command"] = buildCommand;
   if (spaceWarnPercent != 90) j["space_warn_percent"] = spaceWarnPercent;
   if (stackReserve != 8) j["stack_reserve"] = stackReserve;
+  json eo = json::object(), ea = json::object();
+  for (auto& [emu, opts] : emulatorOptions)
+    for (auto& [k, v] : opts)
+      if (!v.empty()) eo[emu][k] = v;
+  for (auto& [emu, v] : emulatorArgs)
+    if (!v.empty()) ea[emu] = v;
+  if (!eo.empty()) j["emulator_options"] = eo;
+  if (!ea.empty()) j["emulator_args"] = ea;
   std::ofstream f(file);
   if (!f) {
     if (error) *error = F("Cannot write {0}", {file});
@@ -101,7 +118,7 @@ std::string Project::stem() const {
   return (p.parent_path() / p.stem()).string();
 }
 
-static std::vector<std::string> splitCommand(const std::string& s) {
+std::vector<std::string> splitCommand(const std::string& s) {
   std::vector<std::string> out;
   std::string cur;
   bool q = false;
@@ -157,6 +174,22 @@ std::vector<std::string> Project::buildArgs(Toolchain& tc, std::string* error) c
   }
 }
 
+const std::vector<std::string>& tvStandardIds() {
+  static const std::vector<std::string> ids = {"NTSC", "PAL", "PAL60", "SECAM", "NTSC50", "SECAM60", "PAL-M", "AUTO"};
+  return ids;
+}
+
+// Stella's -format and Gopher2600's -tv (checked in their -help and sources).
+bool tvSupported(const std::string& emulator, const std::string& tv) {
+  if (tv == "NTSC" || tv == "PAL" || tv == "PAL60" || tv == "SECAM" || tv == "AUTO") return true;
+  if (emulator == "stella") return tv == "NTSC50" || tv == "SECAM60";
+  if (emulator == "gopher2600") return tv == "PAL-M";
+  return false;
+}
+
+// 312-line frames (the rest have 262): PAL, SECAM and NTSC colours at 50 Hz.
+bool tvIs50Hz(const std::string& tv) { return tv == "PAL" || tv == "SECAM" || tv == "NTSC50"; }
+
 std::vector<std::string> Project::runArgs(Toolchain& tc, bool debug, std::string* error) const {
   std::string rom = outputPath();
   if (!fs::exists(rom)) {
@@ -172,11 +205,11 @@ std::vector<std::string> Project::runArgs(Toolchain& tc, bool debug, std::string
   if (emulator == "stella") {
     if (debug) a.push_back("-debug");
     if (!format.empty() && format != "AUTO") a.insert(a.end(), {"-bs", stellaFormat(format)});
-    if (!tv.empty() && tv != "AUTO") a.insert(a.end(), {"-format", tv});
+    if (!tv.empty() && tv != "AUTO" && tvSupported(emulator, tv)) a.insert(a.end(), {"-format", tv});
   } else if (emulator == "gopher2600") {
     a.push_back(debug ? "DEBUG" : "RUN");
     if (!format.empty() && format != "AUTO") a.insert(a.end(), {"-mapping", format});
-    if (!tv.empty() && tv != "AUTO") a.insert(a.end(), {"-tv", tv});
+    if (!tv.empty() && tv != "AUTO" && tvSupported(emulator, tv)) a.insert(a.end(), {"-tv", tv});
   }
   a.push_back(rom);
   return a;
@@ -220,7 +253,7 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
       if (error) *error = F("Template not found in {0}", {tpl.string()});
       return false;
     }
-    bool pal = tvStd == "PAL" || tvStd == "SECAM";
+    bool pal = tvIs50Hz(tvStd);
     std::string defs = pal ? "VBLANK_LINES   = 45\nVISIBLE_LINES  = 228\nOVERSCAN_LINES = 36"
                            : "VBLANK_LINES   = 37\nVISIBLE_LINES  = 192\nOVERSCAN_LINES = 30";
     replaceAll(asmText, "{{NAME}}", projName);

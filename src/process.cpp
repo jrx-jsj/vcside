@@ -11,7 +11,8 @@ namespace fs = std::filesystem;
 
 namespace vcs {
 
-static SDL_Process* create(const std::vector<std::string>& args, const std::string& workDir, bool pipe) {
+static SDL_Process* create(const std::vector<std::string>& args, const std::string& workDir, bool pipe,
+                           const EnvVars& vars = {}) {
   std::vector<const char*> argv;
   for (auto& a : args) argv.push_back(a.c_str());
   argv.push_back(nullptr);
@@ -22,6 +23,12 @@ static SDL_Process* create(const std::vector<std::string>& args, const std::stri
 #else
   (void)workDir;
 #endif
+  SDL_Environment* env = nullptr;
+  if (!vars.empty()) {
+    env = SDL_CreateEnvironment(true);  // a copy of ours
+    for (auto& [k, v] : vars) SDL_SetEnvironmentVariable(env, k.c_str(), v.c_str(), true);
+    SDL_SetPointerProperty(props, SDL_PROP_PROCESS_CREATE_ENVIRONMENT_POINTER, env);
+  }
   if (pipe) {
     SDL_SetNumberProperty(props, SDL_PROP_PROCESS_CREATE_STDIN_NUMBER, SDL_PROCESS_STDIO_NULL);
     SDL_SetNumberProperty(props, SDL_PROP_PROCESS_CREATE_STDOUT_NUMBER, SDL_PROCESS_STDIO_APP);
@@ -34,6 +41,7 @@ static SDL_Process* create(const std::vector<std::string>& args, const std::stri
   }
   SDL_Process* p = SDL_CreateProcessWithProperties(props);
   SDL_DestroyProperties(props);
+  if (env) SDL_DestroyEnvironment(env);
   return p;
 }
 
@@ -85,8 +93,9 @@ std::string Job::output() {
   return output_;
 }
 
-bool launchDetached(const std::vector<std::string>& args, const std::string& workDir, std::string* error) {
-  SDL_Process* p = create(args, workDir, false);
+bool launchDetached(const std::vector<std::string>& args, const std::string& workDir, std::string* error,
+                    const EnvVars& env) {
+  SDL_Process* p = create(args, workDir, false, env);
   if (!p) {
     if (error) *error = SDL_GetError();
     return false;

@@ -48,6 +48,32 @@ struct TvStandard {
   bool verified = true;
 };
 
+// A launch option of an emulator (data/kb/emulators.json). Values are strings as
+// the emulator takes them; an option left unset is not passed at all.
+struct EmuChoice {
+  std::string value, label;
+};
+struct EmuOption {
+  std::string id, group, label, description;
+  std::string type;          // bool, choice, int, text
+  std::string arg;           // Stella: "-tv.filter"
+  bool noValue = false;      // Stella: an option without value (-holdreset); "1" = pass it
+  bool developer = false;    // Stella: needs -dev.settings 1
+  std::string flag;          // Gopher2600: command-line flag ("-left")
+  std::string pref;          // Gopher2600: preferences key ("hardware.randState")
+  int min = 0, max = 0;      // int: range (max 0 = none)
+  std::vector<EmuChoice> values;
+  std::map<std::string, std::pair<std::string, std::string>> i18n;  // language -> label, description
+  // In the interface language (English if there is no translation).
+  const std::string& labelText() const;
+  const std::string& descriptionText() const;
+};
+struct EmulatorInfo {
+  std::string id, name;
+  std::vector<EmuOption> options;
+  const EmuOption* option(const std::string& id) const;
+};
+
 // Where a fact comes from (data/kb/*.json "sources" arrays; docs/fuentes.md).
 struct Source {
   std::string id, title, author, url;
@@ -71,6 +97,7 @@ class KnowledgeBase {
   const CartFormat* format(const std::string& id) const;
   const TvStandard* tv(const std::string& id) const;
   const Source* source(const std::string& id) const;
+  const EmulatorInfo* emulator(const std::string& id) const;
 
   const std::map<std::string, Instruction>& instructions() const { return instructions_; }
   const std::vector<Register>& registers() const { return registers_; }
@@ -89,6 +116,7 @@ class KnowledgeBase {
   std::map<std::string, size_t> regIndex_;
   std::vector<CartFormat> formats_;
   std::vector<TvStandard> tv_;
+  std::vector<EmulatorInfo> emulators_;
   std::vector<std::string> cpuNotes_, tiaNotes_;
   std::map<std::string, Source> sources_;
 };

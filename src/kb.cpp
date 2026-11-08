@@ -2,6 +2,8 @@
 // Copyright (C) 2026 VCSIDE contributors
 #include "kb.h"
 
+#include "i18n.h"
+
 #include <algorithm>
 #include <cctype>
 #include <fstream>
@@ -196,7 +198,72 @@ bool KnowledgeBase::load(const std::string& dir, std::string* error) {
       tv_.push_back(s);
     }
   }
+  json e;
+  if (readJson(dir + "/emulators.json", e, error)) {
+    readSources(e, sources_);
+    if (e.contains("emulators") && e["emulators"].is_object())
+      for (auto& [id, d] : e["emulators"].items()) {
+        EmulatorInfo info;
+        info.id = id;
+        info.name = str(d, "name");
+        for (auto& o : d["options"]) {
+          EmuOption op;
+          op.id = str(o, "id");
+          op.group = str(o, "group");
+          op.label = str(o, "label");
+          op.description = str(o, "description");
+          op.type = str(o, "type");
+          op.arg = str(o, "arg");
+          op.noValue = o.value("no_value", false);
+          op.developer = o.value("developer", false);
+          op.flag = str(o, "flag");
+          op.pref = str(o, "pref");
+          op.min = o.value("min", 0);
+          op.max = o.value("max", 0);
+          if (o.contains("values"))
+            for (auto& v : o["values"]) op.values.push_back({str(v, "value"), str(v, "label")});
+          if (o.contains("i18n") && o["i18n"].is_object())
+            for (auto& [lang, t] : o["i18n"].items()) op.i18n[lang] = {str(t, "label"), str(t, "description")};
+          info.options.push_back(op);
+        }
+        emulators_.push_back(info);
+      }
+  }
   return ok && (!error || error->empty());
+}
+
+const EmulatorInfo* KnowledgeBase::emulator(const std::string& id) const {
+  for (auto& e : emulators_)
+    if (e.id == id) return &e;
+  return nullptr;
+}
+
+const EmuOption* EmulatorInfo::option(const std::string& id) const {
+  for (auto& o : options)
+    if (o.id == id) return &o;
+  return nullptr;
+}
+
+// "pt-BR" falls back to "pt", then to English.
+static const std::pair<std::string, std::string>* translation(const EmuOption& o) {
+  std::string lang = currentLanguage();
+  for (;;) {
+    auto it = o.i18n.find(lang);
+    if (it != o.i18n.end()) return &it->second;
+    size_t dash = lang.find_last_of("-_");
+    if (dash == std::string::npos) return nullptr;
+    lang.resize(dash);
+  }
+}
+
+const std::string& EmuOption::labelText() const {
+  auto* t = translation(*this);
+  return t && !t->first.empty() ? t->first : label;
+}
+
+const std::string& EmuOption::descriptionText() const {
+  auto* t = translation(*this);
+  return t && !t->second.empty() ? t->second : description;
 }
 
 const Source* KnowledgeBase::source(const std::string& id) const {

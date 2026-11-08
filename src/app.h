@@ -101,6 +101,7 @@ class App {
   void saveUserState();
   std::vector<std::string> debugArgs(const std::string& emulator);  // writes the scripts, returns extra arguments
   void goToAddressDialog();
+  void emulatorOptionsDialog();
   void lint(OpenFile& f);
   void showDoc(const std::string& word);
   bool gotoDefinition(const std::string& word, const std::string& fromFile, int fromLine);
@@ -142,6 +143,8 @@ class App {
   AddressMap addresses_;
   std::map<std::string, std::set<int>> breakpoints_;
   bool showGoToAddress_ = false;
+  bool showEmuOptions_ = false;
+  std::string emuOptionsTab_;  // emulator whose tab to select when the dialog opens
   char goToAddress_[64] = "";
   std::string pendingAddress_;  // tests
   std::string lastStatus_;

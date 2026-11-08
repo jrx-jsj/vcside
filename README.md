@@ -11,8 +11,10 @@ A small native IDE for making Atari 2600 games, on macOS, Windows and Linux. It 
 - **Run** in Stella or Gopher2600 (F5 build and run, F6 debug). The cartridge format and TV standard are passed on the command line, and both emulators load the `.sym` symbols of the build.
 - **Breakpoints**: click in the left margin or press F9. F6 places each one on its instruction's address and bank (from the listing, following `RORG`) and passes them to the emulator:
   - Gopher2600 gets them all in a script (`-script`);
-  - Stella's command line takes one (`-break`, one-bank ROMs). For the rest, VCSIDE writes `build/<rom>.stella.script` and copies `exec <path>` to the clipboard to paste into Stella's prompt.
+  - Stella gets them all in `build/<rom>.script`, which its debugger runs when it opens (VCSIDE points its user folder at `build/`).
   - They are kept in `<project>.vcsproj.user` (add it to `.gitignore` if you don't want to share it).
+- **Emulator options** (*Build → Emulator options...*): how each emulator starts, per project. Sound, debug colours, the TV switches and difficulty switches, controllers, palette and TV effects, random RAM/CPU/TIA on reset, breaks on bad port accesses, TIA revisions, ARM checks for DPC+/CDFJ/ELF... (54 Stella options, 21 Gopher2600 ones, with their help on hover), plus free extra arguments. TV standards: NTSC, PAL, PAL60, SECAM, NTSC50 and SECAM60 (Stella), PAL-M (Gopher2600) or the emulator's choice.
+  - The emulators start with a private copy of your own settings (Stella: `-basedir`, or `HOME` for the macOS app; Gopher2600: portable mode), because Stella saves every command-line option when it quits. So these options never end up in your settings, and changes made inside an emulator started from VCSIDE are not kept.
 - **Go to address** (Ctrl+Shift+G): from an address the emulator shows (PC, a break) to its source line, in every bank where it exists.
 - **Tools** are found in `PATH` and the usual install folders, or set by hand in *Settings → Tools*. Missing ones link to their official download page.
 - **Editor**:

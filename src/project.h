@@ -2,6 +2,7 @@
 // Copyright (C) 2026 VCSIDE contributors
 // A VCSIDE project: a folder with a .vcsproj (JSON) describing how to build and run it.
 #pragma once
+#include <map>
 #include <string>
 #include <vector>
 
@@ -20,13 +21,16 @@ struct Project {
   std::string main = "main.asm";  // relative to dir
   std::string output = "build/game.bin";
   std::string format = "4K";      // cartridge format id (formats.json)
-  std::string tv = "NTSC";        // NTSC, PAL, PAL60, SECAM
+  std::string tv = "NTSC";        // NTSC, PAL, PAL60, SECAM, NTSC50, SECAM60, PAL-M, AUTO
   std::string emulator = "stella";
   IllegalOpcodes illegal = IllegalOpcodes::Warn;
   std::vector<std::string> includeDirs;
   std::string buildCommand;     // optional: custom command (e.g. "make"), overrides the tool
   int spaceWarnPercent = 90;    // warn when a bank or RAM area is fuller than this
   int stackReserve = 8;         // bytes of 2600 RAM to keep free for the stack
+  // Launch options per emulator: option id (emulators.json) -> value. Unset = not passed.
+  std::map<std::string, std::map<std::string, std::string>> emulatorOptions;
+  std::map<std::string, std::string> emulatorArgs;  // extra arguments per emulator, before the ROM
 
   bool load(const std::string& path, std::string* error);
   bool save(std::string* error) const;
@@ -46,6 +50,11 @@ struct Project {
                      Project* out, std::string* error);
 };
 
+// TV standards a project can choose, and whether an emulator has each one.
+const std::vector<std::string>& tvStandardIds();
+bool tvSupported(const std::string& emulator, const std::string& tv);
+bool tvIs50Hz(const std::string& tv);
+std::vector<std::string> splitCommand(const std::string& s);  // "a \"b c\"" -> a, b c
 std::string stellaFormat(const std::string& formatId);  // value for Stella's -bs
 const char* languageId(Language l);
 Language languageFromId(const std::string& s);
