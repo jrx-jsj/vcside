@@ -182,6 +182,9 @@ struct ExportOptions {
 // so the table can be read back (and pasted into PlayerPal).
 std::string exportDasm(const Sprite& s, const ExportOptions& o = {});
 std::string exportDasm(const Playfield& p, const ExportOptions& o = {});
+// The file a program includes (<name>.gfx.asm): every item's tables, under a header that
+// names the .vcsgfx they come from.
+std::string dasmInclude(const Asset& a, const std::string& sourceName);
 // batari Basic: playerN: blocks with their colours, playfield:, pfcolors:, bkcolors:, as the
 // kernel of the profile reads them (row order, width, which blocks exist).
 std::string exportBasic(const Sprite& s, const Profile& k, int frame = -1);  // frame -1: all of them

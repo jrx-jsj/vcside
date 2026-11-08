@@ -156,6 +156,7 @@
     "ELF projects build with make, which does not take spaces in file names: choose a name without spaces.": "Los proyectos ELF se compilan con make, que no admite espacios en los nombres de archivo: elige un nombre sin espacios.",
     "ELF projects build with their Makefile. macOS: xcode-select --install. Linux: your package manager (build-essential). Windows: MSYS2 (pacman -S make) or another GNU Make build.": "Los proyectos ELF se compilan con su Makefile. macOS: xcode-select --install. Linux: el gestor de paquetes (build-essential). Windows: MSYS2 (pacman -S make) u otra versión de GNU Make.",
     "ELF-VCS projects build with their Makefile: set \"build_command\" (e.g. \"make\") in the project.": "Los proyectos ELF-VCS se compilan con su Makefile: pon \"build_command\" (p. ej. \"make\") en el proyecto.",
+    "Empty project": "Proyecto vacío",
     "emulator": "emulador",
     "Emulator": "Emulador",
     "Emulator options": "Opciones del emulador",
@@ -163,6 +164,7 @@
     "error": "error",
     "Estimate: the game plus about {0} bytes of flash and {1} of RAM for the firmware. Build the Chameleon image (make chameleon) for the exact figures.": "Estimación: el juego más unos {0} bytes de flash y {1} de RAM para el firmware. Compila la imagen del Chameleon (make chameleon) para tener las cifras exactas.",
     "Example": "Ejemplo",
+    "Example: an animated sprite": "Ejemplo: un sprite animado",
     "Extra arguments": "Argumentos extra",
     "Facts are cited, not copied: the texts are VCSIDE's own. Details in docs/fuentes.md.": "Los datos se citan, no se copian: los textos son de VCSIDE. Detalles en docs/fuentes.md.",
     "File": "Archivo",
@@ -367,6 +369,7 @@
     "Sprite: {0}": "Sprite: {0}",
     "Stable only": "Solo estables",
     "standard": "estándar",
+    "Start from": "Empezar con",
     "Starts with every frame in order; add, remove and reorder steps below.": "Empieza con todos los fotogramas en orden; debajo se añaden, quitan y reordenan pasos.",
     "step": "paso",
     "Step {0}: frame {1}": "Paso {0}: fotograma {1}",
@@ -498,5 +501,5 @@
     "{0}:{1}: no code at or after this line; breakpoint ignored.": "{0}:{1}: no hay código en esta línea ni después; se ignora el punto de ruptura.",
     "{0}:{1}: no listing to place the breakpoint: build first.": "{0}:{1}: no hay listado para situar el punto de ruptura: compila antes."
   },
-  "total": 495
+  "total": 498
 }

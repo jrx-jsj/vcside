@@ -620,6 +620,22 @@ static void testElfSpace() {
   std::ifstream bas(dir / "bb" / "main.bas");
   std::string btext((std::istreambuf_iterator<char>(bas)), {});
   CHECK(btext.find("rem Square Run - batari Basic") != std::string::npos && btext.find("drawscreen") != std::string::npos);
+  // the DASM example: its graphics, the tables they give, and a program that assembles
+  CHECK(Project::examples(Language::Dasm).size() == 1 && Project::examples(Language::BatariBasic).empty());
+  for (const char* tv : {"NTSC", "PAL"}) {
+    fs::path ad = dir / (std::string("anim-") + tv);
+    CHECK(Project::create(ad.string(), "walker", Language::Dasm, tv, &p, &err, "animation"));
+    for (auto f : {"main.asm", "hardware.h", "hero.vcsgfx", "hero.gfx.asm"}) CHECK(fs::exists(ad / f));
+    std::ifstream inc(ad / "hero.gfx.asm");
+    std::string itext((std::istreambuf_iterator<char>(inc)), {});
+    CHECK(itext.find("hero_walk_FRAME") != std::string::npos && itext.find("hero_P0_FramePtrLo") != std::string::npos);
+    std::string dasm = findInPath("dasm");
+    if (!dasm.empty()) {
+      std::string cmd = "cd \"" + ad.string() + "\" && \"" + dasm + "\" main.asm -f3 -oexample.bin > dasm.log 2>&1";
+      CHECK(std::system(cmd.c_str()) == 0 && fs::file_size(ad / "example.bin", ec) == 4096);
+    }
+  }
+  CHECK(!Project::create((dir / "none").string(), "x", Language::Dasm, "NTSC", &p, &err, "nope") && !err.empty());
   fs::remove_all(dir, ec);
 }
 

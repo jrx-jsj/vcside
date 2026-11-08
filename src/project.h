@@ -54,8 +54,11 @@ struct Project {
   std::vector<std::string> runArgs(Toolchain& tc, bool debug, std::string* error) const;
 
   // Creates a new project folder with a template for the language.
+  // example: "" for the empty template, or one of exampleIds(lang).
   static bool create(const std::string& dir, const std::string& name, Language lang, const std::string& tv,
-                     Project* out, std::string* error);
+                     Project* out, std::string* error, const std::string& example = "");
+  // Examples a new project can start from: id and name (for people, to translate).
+  static std::vector<std::pair<std::string, const char*>> examples(Language lang);
 };
 
 // TV standards a project can choose, and whether an emulator has each one.

@@ -2317,6 +2317,13 @@ void App::newProjectDialog() {
       if (tv != "AUTO") tvs.push_back(tv.c_str());
     ImGui::Combo(T("TV standard"), &npTv_, tvs.data(), (int)tvs.size());
   }
+  auto examples = Project::examples(languageFromId(kLangIds[npLang_]));
+  npExample_ = std::clamp(npExample_, 0, (int)examples.size());
+  if (!examples.empty()) {
+    std::vector<const char*> names = {T("Empty project")};
+    for (auto& e : examples) names.push_back(T(e.second));
+    ImGui::Combo(T("Start from"), &npExample_, names.data(), (int)names.size());
+  }
   fs::path target = fs::path(npDir_) / npName_;
   ImGui::TextDisabled("%s", target.string().c_str());
   static std::string error;
@@ -2324,7 +2331,8 @@ void App::newProjectDialog() {
   if (ImGui::Button(T("Create"))) {
     Project p;
     error.clear();
-    if (Project::create(target.string(), npName_, languageFromId(kLangIds[npLang_]), tvStandardIds()[npTv_], &p, &error)) {
+    std::string example = npExample_ > 0 && npExample_ <= (int)examples.size() ? examples[npExample_ - 1].first : "";
+    if (Project::create(target.string(), npName_, languageFromId(kLangIds[npLang_]), tvStandardIds()[npTv_], &p, &error, example)) {
       openProject(p.file);
       ImGui::CloseCurrentPopup();
     }

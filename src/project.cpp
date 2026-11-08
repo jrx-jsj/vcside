@@ -8,6 +8,7 @@
 #include <nlohmann/json.hpp>
 #include <sstream>
 
+#include "gfx.h"
 #include "i18n.h"
 #include "paths.h"
 
@@ -288,8 +289,26 @@ static void replaceAll(std::string& s, const std::string& a, const std::string& 
   for (size_t pos = 0; (pos = s.find(a, pos)) != std::string::npos; pos += b.size()) s.replace(pos, a.size(), b);
 }
 
+std::vector<std::pair<std::string, const char*>> Project::examples(Language lang) {
+  if (lang == Language::Dasm) return {{"animation", N_("Example: an animated sprite")}};
+  return {};
+}
+
+// A .vcsgfx of an example comes with the tables a DASM program includes, written as
+// the graphics editor writes them on save.
+static void writeDasmIncludes(const fs::path& dir) {
+  std::error_code ec;
+  for (auto& e : fs::directory_iterator(dir, ec)) {
+    if (e.path().extension() != ".vcsgfx") continue;
+    gfx::Asset a;
+    std::string err;
+    if (!gfx::fromJson(readFile(e.path().string()), &a, &err)) continue;
+    std::ofstream(dir / (e.path().stem().string() + ".gfx.asm"), std::ios::binary) << gfx::dasmInclude(a, e.path().filename().string());
+  }
+}
+
 bool Project::create(const std::string& dirIn, const std::string& projName, Language lang, const std::string& tvStd,
-                     Project* out, std::string* error) {
+                     Project* out, std::string* error, const std::string& example) {
   fs::path d(dirIn);
   std::error_code ec;
   fs::create_directories(d, ec);
@@ -310,9 +329,10 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
   }
   if (lang == Language::Dasm) {
     fs::path tpl = fs::path(dataDir()) / "templates" / "dasm";
-    std::string asmText = readFile((tpl / "main.asm").string());
+    fs::path ex = example.empty() ? tpl : fs::path(dataDir()) / "templates" / ("dasm-" + example);
+    std::string asmText = readFile((ex / "main.asm").string());
     if (asmText.empty()) {
-      if (error) *error = F("Template not found in {0}", {tpl.string()});
+      if (error) *error = F("Template not found in {0}", {ex.string()});
       return false;
     }
     bool pal = tvIs50Hz(tvStd);
@@ -325,6 +345,11 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
     if (!fs::exists(mainFile)) std::ofstream(mainFile) << asmText;
     fs::path hw = fs::path(p.dir) / "hardware.h";
     if (!fs::exists(hw)) fs::copy_file(tpl / "hardware.h", hw, ec);
+    // the example's graphics, and the tables they give
+    for (auto& e : fs::directory_iterator(ex, ec))
+      if (e.path().extension() == ".vcsgfx" && !fs::exists(fs::path(p.dir) / e.path().filename()))
+        fs::copy_file(e.path(), fs::path(p.dir) / e.path().filename(), ec);
+    writeDasmIncludes(p.dir);
     p.main = "main.asm";
   } else if (lang == Language::BatariBasic) {
     p.main = "main.bas";
