@@ -145,6 +145,8 @@ Un archivo `.vcsgfx` (JSON, con las filas escritas como `X` y `.` para que se le
 
 Hay proyectos que ya traen su forma de compilar (un Makefile, un `build.sh`, un `make.bat`). Al abrir su carpeta sin `.vcsproj`, el panel *Proyecto* lo dice y ofrece crear uno (`Project::detect`): la orden (`make` o el script), el lenguaje y la fuente principal (`main.*`, si no el primer `.asm` con `processor`, el `.bas` o el `.c`) y la ROM, que es la primera palabra del Makefile o del script que acaba en `.bin`, `.a26` o `.elf` sin ser una variable ni un patrón. La orden se ejecuta en la carpeta del proyecto con las carpetas de las herramientas encontradas por delante en el `PATH`; si lleva `&&`, `|`, `;` o redirecciones, la ejecuta el intérprete del sistema (`/bin/sh -c` o `cmd /c`). Los errores de DASM y de GCC que imprima van a *Problemas*.
 
+El `.vcsproj` se edita en una pestaña (*Compilar → Ajustes del proyecto...*, o con un clic en el árbol si es el proyecto abierto) como formulario o como texto, con un selector para pasar de uno a otro: al pasar al texto se escribe lo que tenga el formulario, y al volver se lee el texto (si no es JSON válido, se queda en el texto con el error). Al guardar, el proyecto abierto toma los cambios. Las claves que VCSIDE no usa se conservan (`Project::otherKeys`), y si los menús cambian un ajuste, la pestaña sin cambios propios se pone al día.
+
 Cada proyecto puede usar su propio DASM o batari Basic (`tool_paths`, rutas relativas al proyecto o absolutas) en lugar del de *Ajustes → Herramientas*, por ejemplo para fijar una versión, y pasar más argumentos a DASM (`build_flags`); los que cambian el código (`-D`, `-M`, `-I`) también van a la pasada que mide el espacio.
 
 ## Plegado de código

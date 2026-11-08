@@ -39,8 +39,13 @@ struct Project {
   std::map<std::string, std::map<std::string, std::string>> emulatorOptions;
   std::map<std::string, std::string> emulatorArgs;  // extra arguments per emulator, before the ROM
 
+  std::map<std::string, std::string> otherKeys;  // keys VCSIDE does not use, as JSON text: kept on save
+
   bool load(const std::string& path, std::string* error);
   bool save(std::string* error) const;
+  // The .vcsproj's text, and reading it back (path: where it lives, for dir and file).
+  std::string toJson() const;
+  bool fromJson(const std::string& text, const std::string& path, std::string* error);
 
   std::string abs(const std::string& rel) const;
   std::string outputPath() const { return abs(output); }

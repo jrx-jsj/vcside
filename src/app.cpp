@@ -175,6 +175,23 @@ void App::openPath(const std::string& path) {
   }
 }
 
+void App::projectSettings() {
+  if (!project_) return;
+  if (OpenFile* f = openFile(project_->file); f && f->form && !f->dirty()) f->form->showText(f->editor, false);
+}
+
+void App::projectFileSaved() {
+  Project p;
+  std::string err;
+  if (!p.load(project_->file, &err)) {
+    output_ += err + "\n";
+    return;
+  }
+  project_ = p;
+  SDL_SetWindowTitle(window_, ("VCSIDE - " + p.name).c_str());
+  for (auto& file : files_) lint(*file);
+}
+
 void App::openProject(const std::string& file) {
   if (hooks.raiseIfOpen && hooks.raiseIfOpen(fs::path(file).parent_path().string(), this)) return;
   Project p;
@@ -224,6 +241,19 @@ OpenFile* App::openFile(const std::string& pathIn, int line) {
     std::string err;
     if (!f->image->load(path, &err)) {
       output_ += F("Cannot read {0}: {1}", {path, err}) + "\n";
+      return nullptr;
+    }
+    f->requestFocus = true;
+    files_.push_back(std::move(f));
+    activeFile_ = (int)files_.size() - 1;
+    return files_.back().get();
+  }
+  if (lower(fs::path(path).extension().string()) == ".vcsproj") {
+    f->asmSyntax = false;
+    f->form = std::make_unique<ProjectForm>();
+    std::string err;
+    if (!f->form->load(path, f->editor, &err)) {
+      output_ += err + "\n";
       return nullptr;
     }
     f->requestFocus = true;
@@ -292,6 +322,24 @@ gfx::Tv App::gfxTv() const { return gfx::tvFromProject(project_ ? project_->tv :
 
 bool App::saveFile(OpenFile& f) {
   if (f.image) return true;  // nothing to save: the viewer never changes it
+  if (f.form) {
+    std::string text, err;
+    if (!f.form->contents(f.editor, &text, &err)) {
+      output_ += F("Not saved: {0}", {err}) + "\n";
+      lastStatus_ = F("Not saved: {0}", {err});
+      return false;
+    }
+    std::ofstream out(f.path, std::ios::binary);
+    if (!out) {
+      output_ += F("Cannot write {0}", {f.path}) + "\n";
+      return false;
+    }
+    out << text;
+    out.close();
+    f.form->saved(f.editor, text);
+    if (project_ && fs::weakly_canonical(project_->file) == fs::weakly_canonical(f.path)) projectFileSaved();
+    return true;
+  }
   if (f.gfx) {
     std::string err, generated;
     if (!f.gfx->save(f.path, gfxProfile(), &err, &generated)) {
@@ -1523,6 +1571,13 @@ MenuBar App::buildMenuBar(bool native) {
         f(*project_);
         std::string err;
         project_->save(&err);
+        // an open settings tab with no changes of its own shows the new value
+        for (auto& o : files_)
+          if (o->form && !o->dirty() && fs::weakly_canonical(o->path) == fs::weakly_canonical(project_->file)) {
+            bool text = o->form->showingText();
+            o->form->load(o->path, o->editor, &err);
+            o->form->showText(o->editor, text);
+          }
         for (auto& file : files_) lint(*file);
       };
     };
@@ -1573,6 +1628,7 @@ MenuBar App::buildMenuBar(bool native) {
     b.push_back(sub(T("TV standard"), tvs));
     b.push_back(sub(T("Emulator"), emus));
     b.push_back(item(T("Emulator options..."), "", [this] { showEmuOptions_ = true; }));
+    b.push_back(item(T("Project settings..."), "", [this] { projectSettings(); }));
     b.push_back(sub(T("Illegal opcodes"), illegal));
   }
   bar.push_back(sub(T("Build"), b));
@@ -1826,7 +1882,8 @@ void App::projectPanel() {
       } else {
         bool active = activeFile_ >= 0 && files_[activeFile_]->path == p;
         if (row(p, depth, n, files::kindOf(n, false), false, false, active, dim)) {
-          if (e.path().extension() == ".vcsproj") openProject(p);
+          if (e.path().extension() == ".vcsproj" && !(project_ && fs::weakly_canonical(project_->file) == fs::weakly_canonical(p))) openProject(p);
+          else if (e.path().extension() == ".vcsproj") projectSettings();
           else if (files::kindOf(n, false) != files::Kind::Rom) openFile(p);
         }
       }
@@ -1983,6 +2040,10 @@ void App::editorsPanel() {
         if (f.image) {
           ImGui::BeginChild("##image", ImVec2(0, 0), 0, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
           f.image->render();
+          ImGui::EndChild();
+        } else if (f.form) {
+          ImGui::BeginChild("##form", ImVec2(0, 0), 0, ImGuiWindowFlags_NoScrollbar);
+          f.form->render(f.editor, editorFont(), kb_, tools_);
           ImGui::EndChild();
         } else if (f.gfx) {
           ImGui::BeginChild("##gfx", ImVec2(0, 0), 0, ImGuiWindowFlags_NoScrollbar);

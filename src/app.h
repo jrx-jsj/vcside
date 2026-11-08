@@ -27,6 +27,7 @@
 #include "child_process.h"
 #include "cycles.h"
 #include "project.h"
+#include "project_form.h"
 #include "elf_space.h"
 #include "image_viewer.h"
 #include "space.h"
@@ -42,9 +43,10 @@ struct OpenFile {
   TextEditor editor;
   std::unique_ptr<GfxEditor> gfx;  // a .vcsgfx: the graphics editor instead of the text
   std::unique_ptr<ImageViewer> image;  // a PNG or BMP: shown, not edited
+  std::unique_ptr<ProjectForm> form;   // a .vcsproj: a form, or its text in the editor
   bool asmSyntax = true;
   bool requestFocus = false;
-  bool dirty() const { return gfx ? gfx->dirty() : editor.dirty(); }
+  bool dirty() const { return gfx ? gfx->dirty() : form ? form->dirty(editor) : editor.dirty(); }
 };
 
 class App;
@@ -130,6 +132,8 @@ class App {
 
   // actions
   void openProject(const std::string& vcsproj);
+  void projectSettings();     // the project's .vcsproj in a tab, as a form
+  void projectFileSaved();    // the .vcsproj changed: the project takes it again
   void openFolder(const std::string& dir);
   OpenFile* openFile(const std::string& path, int line = 0);
   bool saveFile(OpenFile& f);

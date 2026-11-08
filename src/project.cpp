@@ -48,50 +48,63 @@ IllegalOpcodes illegalFromId(const std::string& s) {
   return IllegalOpcodes::Warn;
 }
 
-bool Project::load(const std::string& path, std::string* error) {
-  std::ifstream f(path);
-  if (!f) {
-    if (error) *error = F("Cannot open {0}", {path});
-    return false;
-  }
+// The keys VCSIDE writes; the others are kept as they are.
+static const char* kKnownKeys[] = {"name", "language", "main", "output", "format", "tv", "emulator", "illegal_opcodes",
+                                   "include_dirs", "build_command", "tool_paths", "build_flags", "space_warn_percent",
+                                   "stack_reserve", "emulator_options", "emulator_args"};
+
+bool Project::fromJson(const std::string& text, const std::string& path, std::string* error) {
   try {
-    json j = json::parse(f);
-    file = fs::absolute(path).string();
-    dir = fs::path(file).parent_path().string();
-    name = j.value("name", fs::path(path).stem().string());
-    language = languageFromId(j.value("language", "dasm"));
-    main = j.value("main", main);
-    output = j.value("output", output);
-    format = j.value("format", format);
-    tv = j.value("tv", tv);
-    emulator = j.value("emulator", emulator);
-    illegal = illegalFromId(j.value("illegal_opcodes", "warn"));
-    includeDirs = j.value("include_dirs", std::vector<std::string>{});
-    buildCommand = j.value("build_command", "");
-    toolPaths.clear();
+    json j = json::parse(text);
+    if (!j.is_object()) throw std::runtime_error(T("the project is not a JSON object"));
+    Project p;
+    p.file = fs::absolute(path).string();
+    p.dir = fs::path(p.file).parent_path().string();
+    p.name = j.value("name", fs::path(path).stem().string());
+    p.language = languageFromId(j.value("language", "dasm"));
+    p.main = j.value("main", p.main);
+    p.output = j.value("output", p.output);
+    p.format = j.value("format", p.format);
+    p.tv = j.value("tv", p.tv);
+    p.emulator = j.value("emulator", p.emulator);
+    p.illegal = illegalFromId(j.value("illegal_opcodes", "warn"));
+    p.includeDirs = j.value("include_dirs", std::vector<std::string>{});
+    p.buildCommand = j.value("build_command", "");
     if (j.contains("tool_paths") && j["tool_paths"].is_object())
       for (auto& [k, v] : j["tool_paths"].items())
-        if (v.is_string() && !v.get<std::string>().empty()) toolPaths[k] = v.get<std::string>();
-    buildFlags = j.value("build_flags", "");
-    spaceWarnPercent = j.value("space_warn_percent", 90);
-    stackReserve = j.value("stack_reserve", 8);
-    emulatorOptions.clear();
-    emulatorArgs.clear();
+        if (v.is_string() && !v.get<std::string>().empty()) p.toolPaths[k] = v.get<std::string>();
+    p.buildFlags = j.value("build_flags", "");
+    p.spaceWarnPercent = j.value("space_warn_percent", 90);
+    p.stackReserve = j.value("stack_reserve", 8);
     if (j.contains("emulator_options") && j["emulator_options"].is_object())
       for (auto& [emu, opts] : j["emulator_options"].items())
         for (auto& [k, v] : opts.items())
-          if (v.is_string() && !v.get<std::string>().empty()) emulatorOptions[emu][k] = v.get<std::string>();
+          if (v.is_string() && !v.get<std::string>().empty()) p.emulatorOptions[emu][k] = v.get<std::string>();
     if (j.contains("emulator_args") && j["emulator_args"].is_object())
       for (auto& [emu, v] : j["emulator_args"].items())
-        if (v.is_string() && !v.get<std::string>().empty()) emulatorArgs[emu] = v.get<std::string>();
+        if (v.is_string() && !v.get<std::string>().empty()) p.emulatorArgs[emu] = v.get<std::string>();
+    for (auto& [k, v] : j.items())
+      if (std::find(std::begin(kKnownKeys), std::end(kKnownKeys), k) == std::end(kKnownKeys)) p.otherKeys[k] = v.dump();
+    *this = std::move(p);
   } catch (const std::exception& e) {
-    if (error) *error = path + ": " + e.what();
+    if (error) *error = fs::path(path).filename().string() + ": " + e.what();
     return false;
   }
   return true;
 }
 
-bool Project::save(std::string* error) const {
+bool Project::load(const std::string& path, std::string* error) {
+  std::ifstream f(path, std::ios::binary);
+  if (!f) {
+    if (error) *error = F("Cannot open {0}", {path});
+    return false;
+  }
+  std::ostringstream text;
+  text << f.rdbuf();
+  return fromJson(text.str(), path, error);
+}
+
+std::string Project::toJson() const {
   json j = {{"name", name},           {"language", languageId(language)},
             {"main", main},           {"output", output},
             {"format", format},       {"tv", tv},
@@ -113,12 +126,17 @@ bool Project::save(std::string* error) const {
     if (!v.empty()) ea[emu] = v;
   if (!eo.empty()) j["emulator_options"] = eo;
   if (!ea.empty()) j["emulator_args"] = ea;
-  std::ofstream f(file);
+  for (auto& [k, v] : otherKeys) j[k] = json::parse(v, nullptr, false);
+  return j.dump(2) + "\n";
+}
+
+bool Project::save(std::string* error) const {
+  std::ofstream f(file, std::ios::binary);
   if (!f) {
     if (error) *error = F("Cannot write {0}", {file});
     return false;
   }
-  f << j.dump(2) << "\n";
+  f << toJson();
   return true;
 }
 

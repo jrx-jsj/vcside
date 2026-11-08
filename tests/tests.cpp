@@ -658,6 +658,12 @@ static void testElfSpace() {
     CHECK(own.save(&why));
     Project back;
     CHECK(back.load(own.file, &why) && back.toolPaths.at("dasm") == "tools/dasm" && back.buildFlags == "-DPAL=1 -T1");
+    // keys VCSIDE does not use stay in the file; text that does not read is refused
+    Project kept;
+    CHECK(kept.fromJson(R"({"name":"k","notes":{"by":"me"},"tv":"PAL"})", (md / "k.vcsproj").string(), &why));
+    CHECK(kept.tv == "PAL" && kept.otherKeys.count("notes") && kept.toJson().find("\"by\": \"me\"") != std::string::npos);
+    CHECK(!kept.fromJson("{\"name\": ", (md / "k.vcsproj").string(), &why) && kept.name == "k" && !why.empty());
+    CHECK(!kept.fromJson("[1]", (md / "k.vcsproj").string(), &why));
     own.buildCommand = "make clean && make";
     a = own.buildArgs(tc, &why);
 #ifdef _WIN32
