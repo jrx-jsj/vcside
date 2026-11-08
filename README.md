@@ -28,6 +28,7 @@ A small native IDE for making Atari 2600 games, on macOS, Windows and Linux. It 
   - A cycle column for every instruction (e.g. `4/5` when crossing a page, `2/4` for a branch). Symbols from the last build are used to tell zero page from absolute.
   - Select lines to see their total cycles, bytes and fraction of a scanline in the status bar.
   - Hover help for instructions, registers and symbols, plus completion (Ctrl+Space). Labels, constants and macros count as soon as they are written, in the open files and in the project's other sources, before any build; constants show their value and the cycle counts use it. A symbol of the last build that its sources no longer define (deleted or renamed) is no longer offered.
+  - Folding (arrows in the gutter, Ctrl/Cmd+Alt+Up and Down, *Edit → Fold all*): regions found from the text. DASM: `MAC`/`ENDM`, `IF`/`ENDIF`, `REPEAT`/`REPEND`, `SEG` and `SUBROUTINE` sections, each global label to the next one and runs of comments. batari Basic: `function`, `data`, `asm`, blocks such as `player0:` up to `end`, the `rem vcsgfx` blocks, labels and runs of `rem`. C: braces, `#if`/`#endif` and comments.
 - **Documentation panel** (F1 on a word):
   - all 256 6502 opcodes, grouped as legal, stable illegal and unstable illegal;
   - TIA and RIOT registers with their known issues;

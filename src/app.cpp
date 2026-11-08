@@ -251,6 +251,7 @@ OpenFile* App::openFile(const std::string& pathIn, int line) {
   bool cLike = ext == ".c" || ext == ".cpp" || ext == ".hpp" || (ext == ".h" && project_ && project_->language == Language::ElfC);
   if (cLike) f->asmSyntax = false;
   f->editor.setCommentPrefix(cLike ? "//" : ext == ".bas" ? "rem" : ";");
+  f->editor.setFoldSyntax(cLike ? FoldSyntax::C : ext == ".bas" ? FoldSyntax::Basic : f->asmSyntax ? FoldSyntax::Asm : FoldSyntax::None);
   if (f->asmSyntax || ext == ".bas") {
     EditorHooks h = ext == ".bas" ? basicHooks() : asmHooks();
     OpenFile* self = f.get();
@@ -1495,6 +1496,11 @@ MenuBar App::buildMenuBar(bool native) {
       item(T("Move lines up"), "Alt+Up", onEditor([](TextEditor& e) { e.moveLines(-1); })),
       item(T("Move lines down"), "Alt+Down", onEditor([](TextEditor& e) { e.moveLines(1); })),
       item(T("Delete lines"), "Ctrl+Shift+K", onEditor([](TextEditor& e) { e.deleteLines(); })),
+      MenuItem::sep(),
+      item(T("Fold"), "Ctrl+Alt+Up", onEditor([](TextEditor& e) { e.foldAt(e.cursor().line); })),
+      item(T("Unfold"), "Ctrl+Alt+Down", onEditor([](TextEditor& e) { e.unfoldAt(e.cursor().line); })),
+      item(T("Fold all"), "", onEditor([](TextEditor& e) { e.foldAll(); })),
+      item(T("Unfold all"), "", onEditor([](TextEditor& e) { e.unfoldAll(); })),
   }, hasFile));
 
   // Build

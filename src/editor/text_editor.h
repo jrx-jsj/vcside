@@ -12,6 +12,8 @@
 
 #include "imgui.h"
 
+#include "folding.h"
+
 namespace vcs {
 
 enum class TokenKind { Text, Comment, String, Number, Mnemonic, IllegalMnemonic, UnstableMnemonic, Register, Directive, Label, Symbol };
@@ -116,6 +118,16 @@ class TextEditor {
   const std::set<int>& breakpoints();
   // True once after the breakpoints changed (toggled, or moved by an edit).
   bool takeBreakpointsChanged() { bool c = bpChanged_; bpChanged_ = false; return c; }
+  // Folding: the regions come from the text (folding.h); a folded region shows only its
+  // first line. Folds follow the text when lines are inserted or deleted above them, and
+  // a region opens when the cursor goes into it.
+  void setFoldSyntax(FoldSyntax s) { foldSyntax_ = s, regionsVersion_ = 0; }
+  bool foldAt(int line);    // the innermost region that starts at or holds the line
+  bool unfoldAt(int line);  // the folded region that starts at or holds the line
+  void foldAll();
+  void unfoldAll();
+  bool folded(int line);    // the line starts a folded region
+  bool hiddenLine(int line);
   // Ctrl (Cmd) + mouse wheel over the editor: zoom steps asked for since the last call.
   int takeZoomSteps() { int z = zoomSteps_; zoomSteps_ = 0; return z; }
 
@@ -147,6 +159,10 @@ class TextEditor {
   void updateCompletion();
   void acceptCompletion();
   void syncBreakpoints();
+  void syncFolds();         // regions for this text; folds moved with the edits
+  void updateRows();        // which lines show, after the folds
+  void reveal(int line);    // opens the folds that hide it
+  const FoldRegion* regionAt(int first) const;
 
   std::vector<std::string> lines_{""};
   Coord cursor_, selStart_, selEnd_, anchor_;
@@ -178,6 +194,14 @@ class TextEditor {
   std::string matchesQuery_;
   FindOptions matchesOpt_;
   int currentMatch_ = -1;
+
+  FoldSyntax foldSyntax_ = FoldSyntax::None;
+  std::vector<FoldRegion> regions_;
+  size_t regionsVersion_ = 0, foldVersion_ = 0;
+  std::set<int> folds_;               // first lines of the folded regions
+  std::vector<std::string> foldBase_;  // the text the folds refer to
+  std::vector<int> rowOf_, lineAt_;   // line -> visible row (hidden: its fold's row), row -> line
+  bool rowsDirty_ = true;
 };
 
 }  // namespace vcs

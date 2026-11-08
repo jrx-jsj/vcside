@@ -234,6 +234,8 @@
     "Flags: {0}": "Banderas: {0}",
     "Flash": "Flash",
     "flicker": "parpadeo",
+    "Fold": "Plegar",
+    "Fold all": "Plegar todo",
     "Folder": "Carpeta",
     "Folders": "Carpetas",
     "Fonts": "Tipografías",
@@ -598,6 +600,8 @@
     "Two animations are called {0}: their labels would clash.": "Hay dos animaciones llamadas {0}: sus etiquetas chocarían.",
     "Two variables the program does not use for anything else (a-z or ones it has dimmed).": "Dos variables que el programa no use para nada más (a-z o alguna que haya definido con dim).",
     "Undo": "Deshacer",
+    "Unfold": "Desplegar",
+    "Unfold all": "Desplegar todo",
     "Unknown project language.": "Lenguaje de proyecto desconocido.",
     "Unpack the release zip into the bb folder of VCSIDE's tools folder, or choose its 2600basic.sh (2600bas.bat on Windows). It brings its own DASM; version 1.9 also needs wasmtime.": "Descomprime el zip de la versión en la carpeta bb de la carpeta de herramientas de VCSIDE, o elige su 2600basic.sh (2600bas.bat en Windows). Trae su propio DASM; la versión 1.9 necesita además wasmtime.",
     "Unsaved changes": "Cambios sin guardar",
@@ -686,5 +690,5 @@
     "{0}:{1}: no code at or after this line; breakpoint ignored.": "{0}:{1}: no hay código en esta línea ni después; se ignora el punto de ruptura.",
     "{0}:{1}: no listing to place the breakpoint: build first.": "{0}:{1}: no hay listado para situar el punto de ruptura: compila antes."
   },
-  "total": 683
+  "total": 687
 }

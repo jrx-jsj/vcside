@@ -7,6 +7,7 @@
 
 #include "builder_parse.h"
 #include "editor/text_editor.h"
+#include "editor/folding.h"
 #include "cycles.h"
 #include "kb.h"
 #include "space.h"
@@ -774,6 +775,123 @@ static bool hasIssue(const std::vector<gfx::Issue>& v, gfx::Issue::Severity sev,
   return false;
 }
 
+static std::vector<std::string> splitLines(const std::string& t) {
+  std::vector<std::string> v;
+  std::string l;
+  for (char c : t) {
+    if (c == '\n') v.push_back(l), l.clear();
+    else l += c;
+  }
+  v.push_back(l);
+  return v;
+}
+
+static bool hasRegion(const std::vector<FoldRegion>& rs, int first, int last) {
+  for (auto& r : rs)
+    if (r.first == first && r.last == last) return true;
+  return false;
+}
+
+static void testFolding() {
+  // DASM
+  auto a = splitLines(
+      "; ----\n"            // 0  comment run 0-1
+      "; header\n"          // 1
+      "        processor 6502\n"
+      "        SEG Code\n"  // 3  section 3-22
+      "        ORG $F000\n"
+      "Reset   sei\n"       // 5  label 5-10 (blank and comment trimmed)
+      "        cld\n"
+      "        MAC WAIT\n"  // 7  macro 7-9
+      "        sta WSYNC\n"
+      "        ENDM\n"
+      "        IF PAL\n"    // 10 if 10-12
+      "        nop\n"
+      "        ENDIF\n"
+      "\n"
+      "; next\n"
+      "Kernel  SUBROUTINE\n"  // 15
+      "        REPEAT 4\n"    // 16 repeat 16-18
+      "        nop\n"
+      "        REPEND\n"
+      ".loop   dex\n"
+      "        bne .loop\n"
+      "Value = 5\n"          // 21 not a block
+      "        rts\n");
+  auto ra = foldRegions(a, FoldSyntax::Asm);
+  CHECK(hasRegion(ra, 0, 1));
+  CHECK(hasRegion(ra, 3, 22));
+  CHECK(hasRegion(ra, 5, 12));
+  CHECK(hasRegion(ra, 7, 9));
+  CHECK(hasRegion(ra, 10, 12));
+  CHECK(hasRegion(ra, 15, 22));
+  CHECK(hasRegion(ra, 16, 18));
+  for (auto& r : ra) CHECK(r.first != 21 && r.first != 19);
+
+  // batari Basic
+  auto b = splitLines(
+      "  rem my game\n"      // 0 comment run 0-1
+      "  rem by me\n"
+      "  set kernel multisprite\n"
+      "main\n"               // 3 label 3-13
+      "  player0:\n"         // 4 block 4-7
+      "  %00111100\n"
+      "  %01000010\n"
+      "end\n"
+      "  data level\n"       // 8 data 8-10
+      "  1, 2, 3\n"
+      "  end\n"
+      "  rem vcsgfx hero.vcsgfx hero\n"  // 11 vcsgfx 11-13
+      "  player0:\n"
+      "  rem vcsgfx end\n"
+      "\n"
+      "loop\n"               // 15 label 15-16
+      "  goto loop\n");
+  auto rb = foldRegions(b, FoldSyntax::Basic);
+  CHECK(hasRegion(rb, 0, 1));
+  CHECK(hasRegion(rb, 3, 13));
+  CHECK(hasRegion(rb, 4, 7));
+  CHECK(hasRegion(rb, 8, 10));
+  CHECK(hasRegion(rb, 11, 13));
+  CHECK(hasRegion(rb, 15, 16));
+
+  // C
+  auto c = splitLines(
+      "/* licence\n"         // 0 block comment 0-1
+      "   text */\n"
+      "#ifdef DEBUG\n"       // 2 #if 2-4
+      "int x;\n"
+      "#endif\n"
+      "void f(void)\n"       // 5 braces 5-9 (the lone brace joins the line above)
+      "{\n"
+      "  const char *s = \"}\";\n"
+      "  if (x) { x = 0; }\n"
+      "}\n"
+      "// a\n"               // 10 comment run 10-11
+      "// b\n");
+  auto rc = foldRegions(c, FoldSyntax::C);
+  CHECK(hasRegion(rc, 0, 1));
+  CHECK(hasRegion(rc, 2, 4));
+  CHECK(hasRegion(rc, 5, 9));
+  CHECK(hasRegion(rc, 10, 11));
+  CHECK(rc.size() == 4);
+
+  // the editor: folding hides the lines; editing above moves the fold; the cursor unfolds
+  TextEditor ed;
+  ed.setFoldSyntax(FoldSyntax::Asm);
+  ed.setText("Start   nop\n        nop\n        nop\nOther   nop\n        nop\n");
+  CHECK(ed.foldAt(0) && ed.folded(0) && ed.hiddenLine(1) && ed.hiddenLine(2) && !ed.hiddenLine(3));
+  ed.goTo(0);
+  ed.replaceText("; new\nStart   nop\n        nop\n        nop\nOther   nop\n        nop\n");
+  CHECK(ed.folded(1) && !ed.folded(0) && ed.hiddenLine(2));
+  ed.goTo(2);
+  CHECK(!ed.folded(1) && !ed.hiddenLine(2));
+  ed.foldAll();
+  CHECK(ed.folded(1) && ed.folded(4));
+  ed.unfoldAll();
+  CHECK(!ed.folded(1) && !ed.folded(4));
+}
+
 static void testGfx() {
   using namespace gfx;
   // palette: grey hue 0, SECAM by luminance only
@@ -1352,6 +1470,7 @@ int main() {
   testBasicSyntax(kb);
   testFormatOrder(kb);
   testGfx();
+  testFolding();
   testThemes(data);
   testHeader(kb, data);
   std::printf("%d checks, %d failures\n", checks, failures);

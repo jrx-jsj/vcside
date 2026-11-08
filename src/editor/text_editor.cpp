@@ -133,6 +133,23 @@ void TextEditor::pushUndo(bool mergeTyping) {
 
 // Moves the breakpoints with the text: the lines before and after the changed
 // block are matched, so breakpoints below an insertion or deletion move with it.
+// Lines of an older text, moved to where they are in the new one: lines above the change
+// stay, lines below it shift, lines inside it stay if the text still has them.
+static std::set<int> followEdit(const std::set<int>& marks, const std::vector<std::string>& a, const std::vector<std::string>& b) {
+  size_t n = std::min(a.size(), b.size()), p = 0, q = 0;
+  while (p < n && a[p] == b[p]) p++;
+  while (q < n - p && a[a.size() - 1 - q] == b[b.size() - 1 - q]) q++;
+  long oldEnd = (long)a.size() - (long)q, newEnd = (long)b.size() - (long)q;
+  long delta = (long)b.size() - (long)a.size();
+  std::set<int> moved;
+  for (int l : marks) {
+    if (l < (long)p) moved.insert(l);
+    else if (l >= oldEnd) moved.insert((int)(l + delta));
+    else if (l < newEnd) moved.insert(l);
+  }
+  return moved;
+}
+
 void TextEditor::syncBreakpoints() {
   if (bpVersion_ == textVersion_) return;
   bpVersion_ = textVersion_;
@@ -140,22 +157,109 @@ void TextEditor::syncBreakpoints() {
     bpBase_.clear();
     return;
   }
-  const auto& a = bpBase_;
-  const auto& b = lines_;
-  size_t n = std::min(a.size(), b.size()), p = 0, q = 0;
-  while (p < n && a[p] == b[p]) p++;
-  while (q < n - p && a[a.size() - 1 - q] == b[b.size() - 1 - q]) q++;
-  long oldEnd = (long)a.size() - (long)q, newEnd = (long)b.size() - (long)q;
-  long delta = (long)b.size() - (long)a.size();
-  std::set<int> moved;
-  for (int l : bps_) {
-    if (l < (long)p) moved.insert(l);
-    else if (l >= oldEnd) moved.insert((int)(l + delta));
-    else if (l < newEnd) moved.insert(l);  // inside the changed block: stays if the line still exists
-  }
+  std::set<int> moved = followEdit(bps_, bpBase_, lines_);
   if (moved != bps_) bpChanged_ = true;
   bps_ = std::move(moved);
   bpBase_ = lines_;
+}
+
+void TextEditor::syncFolds() {
+  if (regionsVersion_ != textVersion_) {
+    regionsVersion_ = textVersion_;
+    regions_ = foldRegions(lines_, foldSyntax_);
+    rowsDirty_ = true;
+  }
+  if (foldVersion_ != textVersion_) {
+    foldVersion_ = textVersion_;
+    if (!folds_.empty()) {
+      std::set<int> moved = followEdit(folds_, foldBase_, lines_), kept;
+      for (int l : moved)
+        if (regionAt(l)) kept.insert(l);  // the region is still there
+      folds_ = std::move(kept);
+    }
+    foldBase_ = lines_;
+    rowsDirty_ = true;
+  }
+}
+
+const FoldRegion* TextEditor::regionAt(int first) const {
+  auto it = std::lower_bound(regions_.begin(), regions_.end(), first, [](const FoldRegion& r, int l) { return r.first < l; });
+  return it != regions_.end() && it->first == first ? &*it : nullptr;
+}
+
+void TextEditor::updateRows() {
+  syncFolds();
+  if (!rowsDirty_ && rowOf_.size() == lines_.size()) return;
+  rowsDirty_ = false;
+  int n = (int)lines_.size();
+  std::vector<char> hidden(n, 0);
+  for (int f : folds_)
+    if (const FoldRegion* r = regionAt(f))
+      for (int l = r->first + 1; l <= r->last && l < n; l++) hidden[l] = 1;
+  rowOf_.assign(n, 0);
+  lineAt_.clear();
+  for (int l = 0; l < n; l++) {
+    if (!hidden[l]) lineAt_.push_back(l);
+    rowOf_[l] = std::max(0, (int)lineAt_.size() - 1);
+  }
+  if (lineAt_.empty()) lineAt_.push_back(0);
+}
+
+bool TextEditor::foldAt(int line) {
+  syncFolds();
+  const FoldRegion* best = regionAt(line);
+  if (!best || folds_.count(line))  // the innermost region around it that is still open
+    for (auto& r : regions_)
+      if (r.first < line && r.last >= line && !folds_.count(r.first) && (!best || folds_.count(best->first) || r.first > best->first)) best = &r;
+  if (!best || folds_.count(best->first)) return false;
+  folds_.insert(best->first);
+  rowsDirty_ = true;
+  // the cursor goes to the line that stays
+  if (cursor_.line > best->first && cursor_.line <= best->last) moveCursor({best->first, (int)lines_[best->first].size()}, false);
+  return true;
+}
+
+bool TextEditor::unfoldAt(int line) {
+  syncFolds();
+  if (folds_.erase(line)) return rowsDirty_ = true;
+  int best = -1;
+  for (int f : folds_)
+    if (const FoldRegion* r = regionAt(f); r && r->first < line && r->last >= line) best = std::max(best, f);
+  if (best < 0) return false;
+  folds_.erase(best);
+  return rowsDirty_ = true;
+}
+
+void TextEditor::foldAll() {
+  syncFolds();
+  for (auto& r : regions_) folds_.insert(r.first);
+  rowsDirty_ = true;
+  updateRows();
+  if (hiddenLine(cursor_.line)) moveCursor({lineAt_[rowOf_[cursor_.line]], 0}, false);
+}
+
+void TextEditor::unfoldAll() {
+  folds_.clear();
+  rowsDirty_ = true;
+}
+
+bool TextEditor::folded(int line) {
+  syncFolds();
+  return folds_.count(line) > 0;
+}
+
+bool TextEditor::hiddenLine(int line) {
+  updateRows();
+  return line >= 0 && line < (int)rowOf_.size() && lineAt_[rowOf_[line]] != line;
+}
+
+void TextEditor::reveal(int line) {
+  updateRows();
+  while (hiddenLine(line)) {
+    int open = lineAt_[rowOf_[line]];  // the fold that hides it starts on its row
+    if (!folds_.erase(open)) break;
+    rowsDirty_ = true;
+  }
 }
 
 void TextEditor::toggleBreakpoint(int line) {
@@ -315,6 +419,7 @@ void TextEditor::moveCursor(Coord c, bool select) {
 
 void TextEditor::goTo(int line, int col) {
   moveCursor({line, col}, false);
+  reveal(cursor_.line);
 }
 
 std::pair<int, int> TextEditor::selectedLines() const {
@@ -453,7 +558,10 @@ void TextEditor::handleKeyboard() {
   } else if (pressed(ImGuiKey_UpArrow) || pressed(ImGuiKey_DownArrow) || pressed(ImGuiKey_PageUp) || pressed(ImGuiKey_PageDown)) {
     int d = pressed(ImGuiKey_UpArrow) ? -1 : pressed(ImGuiKey_DownArrow) ? 1 : pressed(ImGuiKey_PageUp) ? -pageLines : pageLines;
     int v = visualCol(c.line, c.col);
-    c.line = std::clamp(c.line + d, 0, (int)lines_.size() - 1);
+    if (rowOf_.size() == lines_.size() && !lineAt_.empty())  // by rows on screen: folded regions are skipped
+      c.line = lineAt_[std::clamp(rowOf_[c.line] + d, 0, (int)lineAt_.size() - 1)];
+    else
+      c.line = std::clamp(c.line + d, 0, (int)lines_.size() - 1);
     c.col = byteCol(c.line, v);
     moveCursor(c, shift);
   } else if (pressed(ImGuiKey_Home)) {
@@ -776,8 +884,12 @@ bool TextEditor::render(const char* id, ImFont* font) {
   float numW = numChars * charW_;
   float cycW = gutterChars_ * charW_;
   float bpW = charW_ * 1.8f;  // breakpoint column
-  float gutterW = bpW + numW + cycW + charW_ * 1.5f;
+  float foldW = foldSyntax_ != FoldSyntax::None ? charW_ * 1.6f : 0;  // fold arrows
+  float gutterW = bpW + numW + cycW + foldW + charW_ * 1.5f;
   syncBreakpoints();
+  updateRows();
+  if (hiddenLine(cursor_.line)) reveal(cursor_.line);  // an edit, a search or a jump went inside a fold
+  updateRows();
 
   int maxCols = 0;
   for (int i = 0; i < (int)lines_.size(); i++) maxCols = std::max(maxCols, visualCol(i, (int)lines_[i].size()));
@@ -792,6 +904,9 @@ bool TextEditor::render(const char* id, ImFont* font) {
       if (!kio.KeyShift && ImGui::IsKeyPressed(ImGuiKey_G, false)) openGoto();  // Ctrl+Shift+G: go to address (app)
     }
     if (here && ImGui::IsKeyPressed(ImGuiKey_F9, false)) toggleBreakpoint(cursor_.line);
+    // Ctrl/Cmd+Alt+Up folds the region around the cursor, +Down opens it
+    if (here && kio.KeyCtrl && kio.KeyAlt && ImGui::IsKeyPressed(ImGuiKey_UpArrow, false)) foldAt(cursor_.line), updateRows();
+    if (here && kio.KeyCtrl && kio.KeyAlt && ImGui::IsKeyPressed(ImGuiKey_DownArrow, false)) unfoldAt(cursor_.line), updateRows();
     if (here && ImGui::IsKeyPressed(ImGuiKey_F3)) {
       if (bar_ == Bar::None) openFind(false), focusBar_ = false;
       findNext(kio.KeyShift);
@@ -813,7 +928,7 @@ bool TextEditor::render(const char* id, ImFont* font) {
   ImGui::PopStyleVar();
 
   ImVec2 origin = ImGui::GetCursorScreenPos();
-  ImVec2 contentSize(gutterW + (maxCols + 4) * charW_, lines_.size() * lineH_ + ImGui::GetWindowHeight() * 0.5f);
+  ImVec2 contentSize(gutterW + (maxCols + 4) * charW_, lineAt_.size() * lineH_ + ImGui::GetWindowHeight() * 0.5f);
   ImGui::InvisibleButton("##text", ImVec2(std::max(contentSize.x, ImGui::GetContentRegionAvail().x), contentSize.y));
   bool hovered = ImGui::IsItemHovered();
   bool focused = ImGui::IsWindowFocused();
@@ -825,17 +940,31 @@ bool TextEditor::render(const char* id, ImFont* font) {
   float scrollX = ImGui::GetScrollX();
   float textX = origin.x + gutterW;
 
+  // the line on a row of the screen, and the top of a line
+  auto lineAtY = [&](float y) {
+    int row = std::clamp((int)std::floor((y - origin.y) / lineH_), 0, (int)lineAt_.size() - 1);
+    return lineAt_[row];
+  };
+  auto lineY = [&](int line) { return origin.y + rowOf_[std::clamp(line, 0, (int)rowOf_.size() - 1)] * lineH_; };
   auto mouseCoord = [&]() {
     ImVec2 m = io.MousePos;
-    int line = std::clamp((int)std::floor((m.y - origin.y) / lineH_), 0, (int)lines_.size() - 1);
+    int line = lineAtY(m.y);
     int vis = std::max(0, (int)std::lround((m.x - textX) / charW_));
     return clamp({line, byteCol(line, vis)});
   };
 
   // mouse
+  float foldX = ImGui::GetWindowPos().x + bpW + numW + cycW;
   bool inMargin = io.MousePos.x < ImGui::GetWindowPos().x + bpW + numW;
+  bool inFolds = foldW > 0 && io.MousePos.x >= foldX && io.MousePos.x < foldX + foldW + charW_ * 0.5f;
   if (hovered && inMargin && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
-    toggleBreakpoint(std::clamp((int)std::floor((io.MousePos.y - origin.y) / lineH_), 0, (int)lines_.size() - 1));
+    toggleBreakpoint(lineAtY(io.MousePos.y));
+  } else if (hovered && inFolds && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+    int line = lineAtY(io.MousePos.y);
+    if (regionAt(line)) {
+      if (!unfoldAt(line)) foldAt(line);
+      updateRows();
+    }
   } else if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && io.KeyCtrl && hooks_.gotoDefinition) {
     Coord c = mouseCoord();
     moveCursor(c, false);
@@ -859,12 +988,13 @@ bool TextEditor::render(const char* id, ImFont* font) {
   }
 
   if (focused) handleKeyboard();
+  updateRows();  // the keys may have changed the text
 
   // visible lines
   float scrollY = ImGui::GetScrollY();
   float viewH = ImGui::GetWindowHeight();
-  int first = std::max(0, (int)(scrollY / lineH_) - 1);
-  int last = std::min((int)lines_.size() - 1, (int)((scrollY + viewH) / lineH_) + 1);
+  int firstRow = std::max(0, (int)(scrollY / lineH_) - 1);
+  int lastRow = std::min((int)lineAt_.size() - 1, (int)((scrollY + viewH) / lineH_) + 1);
   ImDrawList* dl = ImGui::GetWindowDrawList();
   float fontSize = ImGui::GetFontSize();
   ImVec2 winPos = ImGui::GetWindowPos();
@@ -875,14 +1005,16 @@ bool TextEditor::render(const char* id, ImFont* font) {
     if (c & 0xFF) indentColours.push_back(theme::u32(c));
   ImU32 indentGuide = (theme::colour(Role::EdIndentGuide) & 0xFF) ? col(Role::EdIndentGuide) : 0;
   int spaceUnit = 0;
-  for (int i = first; i <= last; i++) {
+  for (int r = firstRow; r <= lastRow; r++) {
+    int i = lineAt_[r];
     int n = 0;
     while (n < (int)lines_[i].size() && lines_[i][n] == ' ') n++;
     if (n > 0 && n < (int)lines_[i].size()) spaceUnit = spaceUnit ? std::min(spaceUnit, n) : n;
   }
   spaceUnit = spaceUnit >= 2 && spaceUnit <= 8 ? spaceUnit : 4;
-  for (int i = first; i <= last; i++) {
-    float y = origin.y + i * lineH_;
+  for (int r = firstRow; r <= lastRow; r++) {
+    int i = lineAt_[r];
+    float y = origin.y + r * lineH_;
     // current line
     if (i == cursor_.line && !hasSelection())
       dl->AddRectFilled(ImVec2(winPos.x, y), ImVec2(winPos.x + ImGui::GetWindowWidth() + scrollX, y + lineH_), col(Role::EdCurrentLine));
@@ -938,11 +1070,19 @@ bool TextEditor::render(const char* id, ImFont* font) {
       v++;
       b += len;
     }
+    // a folded region: a box after the line says how many lines it hides
+    if (folds_.count(i))
+      if (const FoldRegion* fr = regionAt(i)) {
+        std::string tag = " ... " + std::to_string(fr->last - fr->first) + " ";
+        float x0 = textX + (v + 1) * charW_, x1 = x0 + ImGui::CalcTextSize(tag.c_str()).x;
+        dl->AddRectFilled(ImVec2(x0, y + 1), ImVec2(x1, y + lineH_ - 1), col(Role::EdMatch), lineH_ * 0.25f);
+        dl->AddText(font, fontSize, ImVec2(x0, y + 1), col(Role::EdLineNumber), tag.c_str());
+      }
   }
 
   // Ctrl/Cmd over a symbol with a definition: underlined like a link, hand cursor.
   if (hovered && io.KeyCtrl && !io.KeyAlt && !inMargin && hooks_.gotoDefinition && io.MousePos.x > textX) {
-    int line = (int)std::floor((io.MousePos.y - origin.y) / lineH_);
+    int line = lineAtY(io.MousePos.y);
     if (line >= 0 && line < (int)lines_.size()) {
       int s, e;
       std::string w = wordAt(clamp({line, byteCol(line, (int)((io.MousePos.x - textX) / charW_))}), &s, &e);
@@ -953,7 +1093,7 @@ bool TextEditor::render(const char* id, ImFont* font) {
       }
       if (linkOk_) {
         float x0 = textX + visualCol(line, s) * charW_, x1 = textX + visualCol(line, e) * charW_;
-        float y = origin.y + line * lineH_ + lineH_ - 1;
+        float y = lineY(line) + lineH_ - 1;
         dl->AddLine(ImVec2(x0, y), ImVec2(x1, y), col(Role::EdLink), 1.0f);
         ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
       }
@@ -965,8 +1105,9 @@ bool TextEditor::render(const char* id, ImFont* font) {
   // gutter (drawn over the text so it stays fixed when scrolling horizontally)
   float gx = winPos.x;
   dl->AddRectFilled(ImVec2(gx, winPos.y), ImVec2(gx + gutterW - charW_ * 0.5f, winPos.y + viewH), col(Role::EdGutter));
-  for (int i = first; i <= last; i++) {
-    float y = origin.y + i * lineH_;
+  for (int r = firstRow; r <= lastRow; r++) {
+    int i = lineAt_[r];
+    float y = origin.y + r * lineH_;
     char num[32];
     snprintf(num, sizeof num, "%*d", std::min(numChars - 1, 12), i + 1);
     auto mk = markers_.find(i + 1);
@@ -982,6 +1123,17 @@ bool TextEditor::render(const char* id, ImFont* font) {
         dl->AddText(font, fontSize, ImVec2(gx + bpW + numW + cycW - w, y + 1), col(Role::EdCycles), g.c_str());
       }
     }
+    // fold arrow: always on a folded region, on the others while the mouse is over the gutter
+    if (foldW > 0 && regionAt(i)) {
+      bool isFolded = folds_.count(i) > 0;
+      bool overGutter = hovered && io.MousePos.x < gx + gutterW;
+      if (isFolded || overGutter) {
+        float cx = gx + bpW + numW + cycW + foldW * 0.5f, cy = y + lineH_ * 0.5f, a = std::min(foldW, lineH_) * 0.22f;
+        ImU32 c = isFolded ? col(Role::EdLineNumberCurrent) : col(Role::EdLineNumber);
+        if (isFolded) dl->AddTriangleFilled(ImVec2(cx - a * 0.6f, cy - a), ImVec2(cx - a * 0.6f, cy + a), ImVec2(cx + a * 0.9f, cy), c);
+        else dl->AddTriangleFilled(ImVec2(cx - a, cy - a * 0.6f), ImVec2(cx + a, cy - a * 0.6f), ImVec2(cx, cy + a * 0.9f), c);
+      }
+    }
   }
   dl->AddLine(ImVec2(gx + gutterW - charW_ * 0.5f, winPos.y), ImVec2(gx + gutterW - charW_ * 0.5f, winPos.y + viewH), col(Role::EdGutterBorder));
   // offset the gutter by the horizontal scroll so it stays on screen
@@ -990,7 +1142,7 @@ bool TextEditor::render(const char* id, ImFont* font) {
   // cursor
   if (focused) {
     float cx = textX + visualCol(cursor_.line, cursor_.col) * charW_;
-    float cy = origin.y + cursor_.line * lineH_;
+    float cy = lineY(cursor_.line);
     if (std::fmod(ImGui::GetTime(), 1.0) < 0.6 || io.InputQueueCharacters.Size)
       dl->AddRectFilled(ImVec2(cx, cy), ImVec2(cx + 2, cy + lineH_), col(Role::EdCursor));
     // completion popup
@@ -1014,7 +1166,7 @@ bool TextEditor::render(const char* id, ImFont* font) {
   if (hovered && hooks_.hover && !ImGui::IsMouseDown(ImGuiMouseButton_Left) && !completionOpen_ &&
       ImGui::GetIO().MouseDelta.x == 0 && ImGui::GetIO().MouseDelta.y == 0) {
     ImVec2 m = io.MousePos;
-    int line = (int)std::floor((m.y - origin.y) / lineH_);
+    int line = lineAtY(m.y);
     if (line >= 0 && line < (int)lines_.size() && m.x > textX) {
       Coord c = clamp({line, byteCol(line, (int)((m.x - textX) / charW_))});
       std::string w = wordAt(c);
@@ -1031,7 +1183,7 @@ bool TextEditor::render(const char* id, ImFont* font) {
   }
 
   if (scrollToCursor_) {
-    float cy = cursor_.line * lineH_;
+    float cy = rowOf_[std::clamp(cursor_.line, 0, (int)rowOf_.size() - 1)] * lineH_;
     if (centerOnCursor_ && (cy < scrollY + lineH_ * 2 || cy > scrollY + viewH - lineH_ * 3))
       ImGui::SetScrollY(std::max(0.0f, cy - viewH * 0.4f));
     else if (cy < scrollY) ImGui::SetScrollY(cy);
