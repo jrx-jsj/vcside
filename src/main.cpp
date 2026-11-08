@@ -13,6 +13,7 @@
 #include "imgui_impl_opengl3.h"
 #include "imgui_impl_sdl3.h"
 #include "paths.h"
+#include "window_icon.h"
 
 namespace fs = std::filesystem;
 
@@ -93,6 +94,7 @@ int main(int argc, char** argv) {
     SDL_Log("SDL_CreateWindow: %s", SDL_GetError());
     return 1;
   }
+  vcs::setWindowIcon(window);
   SDL_GLContext gl = SDL_GL_CreateContext(window);
   SDL_GL_MakeCurrent(window, gl);
   SDL_GL_SetSwapInterval(1);
