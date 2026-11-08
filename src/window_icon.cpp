@@ -1,0 +1,42 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 VCSIDE contributors
+#include "window_icon.h"
+
+#include <string>
+
+#include "paths.h"
+
+// SDL 3.4 reads PNG itself; older SDL 3 builds use stb_image (MIT / public domain).
+#if !SDL_VERSION_ATLEAST(3, 4, 0)
+#define STB_IMAGE_IMPLEMENTATION
+#define STBI_ONLY_PNG
+#define STBI_WINDOWS_UTF8
+#include "stb_image.h"
+#endif
+
+namespace vcs {
+
+void setWindowIcon(SDL_Window* window) {
+  const std::string path = dataDir() + "/vcside.png";
+#if SDL_VERSION_ATLEAST(3, 4, 0)
+  SDL_Surface* icon = SDL_LoadPNG(path.c_str());
+#else
+  SDL_Surface* icon = nullptr;
+  int w = 0, h = 0, n = 0;
+  if (unsigned char* px = stbi_load(path.c_str(), &w, &h, &n, 4)) {
+    if (SDL_Surface* view = SDL_CreateSurfaceFrom(w, h, SDL_PIXELFORMAT_RGBA32, px, w * 4)) {
+      icon = SDL_DuplicateSurface(view);
+      SDL_DestroySurface(view);
+    }
+    stbi_image_free(px);
+  }
+#endif
+  if (!icon) {
+    SDL_Log("Window icon %s: %s", path.c_str(), SDL_GetError());
+    return;
+  }
+  SDL_SetWindowIcon(window, icon);
+  SDL_DestroySurface(icon);
+}
+
+}  // namespace vcs

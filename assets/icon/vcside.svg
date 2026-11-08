@@ -1,0 +1,52 @@
+<!-- VCSIDE icon. SPDX-License-Identifier: GPL-3.0-or-later
+     Original stylised drawing of a 1977-style six-switch console with a cartridge.
+     The «VCS» lettering is regenerated per size by tools/make_icons.py. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+<defs><linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e7d9bd"/><stop offset="1" stop-color="#bfa77e"/></linearGradient></defs>
+<rect x="100" y="100" width="824" height="824" rx="184" fill="url(#bg)"/>
+<polygon points="895.8,692.0 911.7,610.7 786.6,400.5 779.0,462.8" fill="#17181b" stroke="#0b0b0d" stroke-width="0.3" stroke-linejoin="round" />
+<polygon points="911.7,610.7 878.7,581.2 812.4,432.7 806.6,373.7 778.3,332.0 786.6,400.5" fill="#3a3d44" stroke="#0b0b0d" stroke-width="0.3" stroke-linejoin="round" />
+<polygon points="128.2,692.0 112.3,610.7 237.4,400.5 245.0,462.8" fill="#17181b" stroke="#0b0b0d" stroke-width="0.3" stroke-linejoin="round" />
+<polygon points="112.3,610.7 145.3,581.2 211.6,432.7 217.4,373.7 245.7,332.0 237.4,400.5" fill="#3a3d44" stroke="#0b0b0d" stroke-width="0.3" stroke-linejoin="round" />
+<polygon points="806.6,373.7 217.4,373.7 245.7,332.0 778.3,332.0" fill="#3a3d44" stroke="#0b0b0d" stroke-width="0.3" stroke-linejoin="round" />
+<polygon points="611.0,369.0 413.0,369.0 415.8,356.8 608.2,356.8" fill="#0b0b0d" stroke="none" stroke-width="0.0" stroke-linejoin="round" />
+<polygon points="812.4,432.7 211.6,432.7 217.4,373.7 806.6,373.7" fill="#2a2c31" stroke="#0b0b0d" stroke-width="0.3" stroke-linejoin="round" />
+<polygon points="796.2,419.6 227.8,419.6 231.2,384.3 792.8,384.3" fill="#121315" stroke="none" stroke-width="0.0" stroke-linejoin="round" />
+<line x1="755.3" y1="403.0" x2="762.3" y2="386.5" stroke="#0b0b0d" stroke-width="21.9" stroke-linecap="round" />
+<line x1="755.3" y1="403.0" x2="762.3" y2="386.5" stroke="#e2e2e6" stroke-width="14.9" stroke-linecap="round" />
+<line x1="702.9" y1="403.0" x2="708.4" y2="386.5" stroke="#0b0b0d" stroke-width="21.8" stroke-linecap="round" />
+<line x1="702.9" y1="403.0" x2="708.4" y2="386.5" stroke="#e2e2e6" stroke-width="14.8" stroke-linecap="round" />
+<line x1="650.5" y1="403.0" x2="654.5" y2="386.5" stroke="#0b0b0d" stroke-width="21.8" stroke-linecap="round" />
+<line x1="650.5" y1="403.0" x2="654.5" y2="386.5" stroke="#e2e2e6" stroke-width="14.8" stroke-linecap="round" />
+<line x1="373.5" y1="403.0" x2="369.5" y2="386.5" stroke="#0b0b0d" stroke-width="21.8" stroke-linecap="round" />
+<line x1="373.5" y1="403.0" x2="369.5" y2="386.5" stroke="#e2e2e6" stroke-width="14.8" stroke-linecap="round" />
+<line x1="321.1" y1="403.0" x2="315.6" y2="386.5" stroke="#0b0b0d" stroke-width="21.8" stroke-linecap="round" />
+<line x1="321.1" y1="403.0" x2="315.6" y2="386.5" stroke="#e2e2e6" stroke-width="14.8" stroke-linecap="round" />
+<line x1="268.7" y1="403.0" x2="261.7" y2="386.5" stroke="#0b0b0d" stroke-width="21.9" stroke-linecap="round" />
+<line x1="268.7" y1="403.0" x2="261.7" y2="386.5" stroke="#e2e2e6" stroke-width="14.9" stroke-linecap="round" />
+<polygon points="878.7,581.2 145.3,581.2 211.6,432.7 812.4,432.7" fill="#101113" stroke="#0b0b0d" stroke-width="0.3" stroke-linejoin="round" />
+<polygon points="859.7,574.6 164.3,574.6 171.2,558.3 852.8,558.3" fill="#34363c" stroke="none" stroke-width="0.0" stroke-linejoin="round" />
+<polygon points="847.5,545.9 176.5,545.9 183.0,530.7 841.0,530.7" fill="#34363c" stroke="none" stroke-width="0.0" stroke-linejoin="round" />
+<polygon points="836.1,519.2 187.9,519.2 194.0,505.0 830.0,505.0" fill="#34363c" stroke="none" stroke-width="0.0" stroke-linejoin="round" />
+<polygon points="825.4,494.2 198.6,494.2 204.2,480.9 819.8,480.9" fill="#34363c" stroke="none" stroke-width="0.0" stroke-linejoin="round" />
+<polygon points="815.5,470.8 208.5,470.8 213.9,458.4 810.1,458.4" fill="#34363c" stroke="none" stroke-width="0.0" stroke-linejoin="round" />
+<polygon points="806.1,448.9 217.9,448.9 222.9,437.2 801.1,437.2" fill="#34363c" stroke="none" stroke-width="0.0" stroke-linejoin="round" />
+<polygon points="911.7,610.7 112.3,610.7 145.3,581.2 878.7,581.2" fill="#3a3d44" stroke="#0b0b0d" stroke-width="0.3" stroke-linejoin="round" />
+<polygon points="895.8,692.0 128.2,692.0 112.3,610.7 911.7,610.7" fill="#0b0b0d" stroke="#0b0b0d" stroke-width="0.3" stroke-linejoin="round" />
+<polygon points="891.2,681.2 132.8,681.2 121.0,619.7 903.0,619.7" fill="#b8722f" stroke="none" stroke-width="0.0" stroke-linejoin="round" />
+<line x1="810.7" y1="658.4" x2="466.0" y2="658.4" stroke="#8c5220" stroke-width="6.1" stroke-linecap="round" />
+<line x1="604.7" y1="641.2" x2="233.9" y2="641.2" stroke="#8c5220" stroke-width="6.2" stroke-linecap="round" />
+<defs><filter id="cblur" x="-0.2" y="-0.2" width="1.4" height="1.4"><feGaussianBlur stdDeviation="12"/></filter></defs>
+<g id="cartridge">
+<rect x="286" y="182" width="472" height="704" rx="26" fill="#000" opacity="0.35" filter="url(#cblur)"/>
+<path d="M304 160 H720 L748 188 V840 a24 24 0 0 1 -24 24 H300 a24 24 0 0 1 -24 -24 V188 Z" fill="#2f3036" stroke="#0b0b0d" stroke-width="12" stroke-linejoin="round"/>
+<path d="M304 160 H720 L748 188 H276 Z" fill="#45464d" stroke="#0b0b0d" stroke-width="12" stroke-linejoin="round"/>
+<rect x="308" y="216" width="408" height="368" rx="12" fill="#f6a623"/>
+<g id="label-text" data-label="308 216 408 368" fill="#2a1606" shape-rendering="crispEdges"><rect x="334" y="340" width="21" height="17"/><rect x="418" y="340" width="21" height="17"/><rect x="334" y="357" width="21" height="17"/><rect x="418" y="357" width="21" height="17"/><rect x="334" y="374" width="21" height="17"/><rect x="418" y="374" width="21" height="17"/><rect x="334" y="391" width="21" height="17"/><rect x="418" y="391" width="21" height="17"/><rect x="355" y="408" width="21" height="17"/><rect x="397" y="408" width="21" height="17"/><rect x="355" y="425" width="21" height="17"/><rect x="397" y="425" width="21" height="17"/><rect x="376" y="442" width="21" height="17"/><rect x="481" y="340" width="63" height="17"/><rect x="460" y="357" width="21" height="17"/><rect x="544" y="357" width="21" height="17"/><rect x="460" y="374" width="21" height="17"/><rect x="460" y="391" width="21" height="17"/><rect x="460" y="408" width="21" height="17"/><rect x="460" y="425" width="21" height="17"/><rect x="544" y="425" width="21" height="17"/><rect x="481" y="442" width="63" height="17"/><rect x="607" y="340" width="84" height="17"/><rect x="586" y="357" width="21" height="17"/><rect x="586" y="374" width="21" height="17"/><rect x="607" y="391" width="63" height="17"/><rect x="670" y="408" width="21" height="17"/><rect x="670" y="425" width="21" height="17"/><rect x="586" y="442" width="84" height="17"/></g>
+<rect x="352" y="624" width="320" height="20" rx="10" fill="#1b1c20"/>
+<rect x="352" y="672" width="320" height="20" rx="10" fill="#1b1c20"/>
+<rect x="352" y="720" width="320" height="20" rx="10" fill="#1b1c20"/>
+<rect x="352" y="768" width="320" height="20" rx="10" fill="#1b1c20"/>
+<rect x="352" y="816" width="320" height="20" rx="10" fill="#1b1c20"/>
+</g>
+</svg>
