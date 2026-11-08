@@ -179,6 +179,14 @@ Tras cada compilación con DASM, el IDE mide cuánto espacio queda (`src/space.*
   - formatos sin datos de espacio (3E, DPC, DPC+, CDFJ…), que se miden como bancos de 4 KB;
   - avisar de las lecturas del puerto de escritura del Superchip.
 
+## Ideas pendientes
+
+- **Cancelar una compilación en marcha** (un botón y una orden de menú), y reintentar si el guardado coincide con ella.
+- **Enviar la ROM al PlusCart** desde el IDE. Hay que ver con los autores del PlusCart qué vía ofrece (red o USB) y cómo se autoriza.
+- **Imagen para el Chameleon Cart**: generar el archivo que se graba en el cartucho a partir de la ROM, eligiendo el firmware que se usa.
+- **Buscar referencias** de un símbolo (todos los sitios donde se usa) y **ver su definición en una ventana flotante** sin salir del archivo.
+- **Esquema del archivo**: la lista de etiquetas, subrutinas, macros y constantes, para saltar a cualquiera.
+
 ## Fases
 
 1. Esqueleto: ventana, workspace, editor, compilar con DASM, ejecutar en Stella. Base de conocimiento 6502/TIA/RIOT, contador de ciclos.

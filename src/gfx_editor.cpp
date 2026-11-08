@@ -131,6 +131,127 @@ void GfxEditor::endFrame() {
 }
 
 // ---------------------------------------------------------------------------
+// Drawing tools: the cells each one covers, in pixel coordinates.
+
+using Cells = std::vector<std::pair<int, int>>;  // x, y
+
+static Cells lineCells(int x0, int y0, int x1, int y1) {
+  Cells c;
+  int dx = std::abs(x1 - x0), sx = x0 < x1 ? 1 : -1, dy = -std::abs(y1 - y0), sy = y0 < y1 ? 1 : -1, err = dx + dy;
+  for (;;) {
+    c.push_back({x0, y0});
+    if (x0 == x1 && y0 == y1) break;
+    int e2 = 2 * err;
+    if (e2 >= dy) err += dy, x0 += sx;
+    if (e2 <= dx) err += dx, y0 += sy;
+  }
+  return c;
+}
+
+static Cells rectCells(int x0, int y0, int x1, int y1, bool filled) {
+  Cells c;
+  if (x0 > x1) std::swap(x0, x1);
+  if (y0 > y1) std::swap(y0, y1);
+  for (int y = y0; y <= y1; y++)
+    for (int x = x0; x <= x1; x++)
+      if (filled || y == y0 || y == y1 || x == x0 || x == x1) c.push_back({x, y});
+  return c;
+}
+
+// The cells whose centre falls inside the ellipse that fits the box; the outline keeps
+// those with a neighbour outside, so it stays one pixel thick and closed.
+static Cells ellipseCells(int x0, int y0, int x1, int y1, bool filled) {
+  if (x0 > x1) std::swap(x0, x1);
+  if (y0 > y1) std::swap(y0, y1);
+  float cx = (x0 + x1 + 1) * 0.5f, cy = (y0 + y1 + 1) * 0.5f, rx = (x1 - x0 + 1) * 0.5f, ry = (y1 - y0 + 1) * 0.5f;
+  auto inside = [&](int x, int y) {
+    if (x < x0 || x > x1 || y < y0 || y > y1) return false;
+    float u = (x + 0.5f - cx) / rx, v = (y + 0.5f - cy) / ry;
+    return u * u + v * v <= 1.0f;
+  };
+  Cells c;
+  for (int y = y0; y <= y1; y++)
+    for (int x = x0; x <= x1; x++)
+      if (inside(x, y) && (filled || !inside(x - 1, y) || !inside(x + 1, y) || !inside(x, y - 1) || !inside(x, y + 1)))
+        c.push_back({x, y});
+  return c;
+}
+
+// Every cell joined to (x, y) that has the same value, within w x h.
+static Cells fillCells(int x, int y, int w, int h, const std::function<bool(int, int)>& get) {
+  Cells c;
+  if (x < 0 || y < 0 || x >= w || y >= h) return c;
+  bool target = get(x, y);
+  std::vector<char> seen((size_t)w * h, 0);
+  std::vector<std::pair<int, int>> todo = {{x, y}};
+  while (!todo.empty()) {
+    auto [px, py] = todo.back();
+    todo.pop_back();
+    if (px < 0 || py < 0 || px >= w || py >= h || seen[(size_t)py * w + px] || get(px, py) != target) continue;
+    seen[(size_t)py * w + px] = 1;
+    c.push_back({px, py});
+    todo.push_back({px + 1, py}), todo.push_back({px - 1, py}), todo.push_back({px, py + 1}), todo.push_back({px, py - 1});
+  }
+  return c;
+}
+
+// A tool's icon, drawn in a square button.
+static void toolIcon(ImDrawList* dl, ImVec2 p, float s, int tool, ImU32 c) {
+  float t = std::max(1.0f, s * 0.09f), m = s * 0.22f;
+  ImVec2 a(p.x + m, p.y + m), b(p.x + s - m, p.y + s - m);
+  switch (tool) {
+    case 0: {  // pencil: a slanted body and its tip
+      ImVec2 q[4] = {{b.x - s * 0.12f, a.y}, {b.x, a.y + s * 0.12f}, {a.x + s * 0.12f, b.y}, {a.x, b.y - s * 0.12f}};
+      dl->AddConvexPolyFilled(q, 4, c);
+      dl->AddTriangleFilled(ImVec2(a.x, b.y - s * 0.12f), ImVec2(a.x + s * 0.12f, b.y), ImVec2(a.x - s * 0.04f, b.y + s * 0.04f), c);
+      break;
+    }
+    case 1: dl->AddLine(ImVec2(a.x, b.y), ImVec2(b.x, a.y), c, t * 1.4f); break;
+    case 2: dl->AddRect(a, b, c, 0, 0, t * 1.4f); break;
+    case 3: dl->AddRectFilled(a, b, c); break;
+    case 4: dl->AddEllipse(ImVec2((a.x + b.x) / 2, (a.y + b.y) / 2), ImVec2((b.x - a.x) / 2, (b.y - a.y) / 2.6f), c, 0, 0, t * 1.4f); break;
+    case 5: dl->AddEllipseFilled(ImVec2((a.x + b.x) / 2, (a.y + b.y) / 2), ImVec2((b.x - a.x) / 2, (b.y - a.y) / 2.6f), c); break;
+    case 6: {  // fill: a tipped bucket and a drop
+      ImVec2 q[4] = {{a.x + s * 0.06f, a.y + s * 0.22f}, {a.x + s * 0.36f, a.y - s * 0.04f}, {b.x - s * 0.04f, a.y + s * 0.34f}, {a.x + s * 0.3f, b.y - s * 0.02f}};
+      dl->AddConvexPolyFilled(q, 4, c);
+      dl->AddCircleFilled(ImVec2(b.x - s * 0.02f, b.y - s * 0.06f), s * 0.09f, c);
+      break;
+    }
+  }
+}
+
+bool GfxEditor::toolBar() {
+  static const char* names[] = {N_("Pencil (P)"), N_("Line (L)"), N_("Rectangle (R)"), N_("Filled rectangle (Shift+R)"),
+                                N_("Ellipse (E)"), N_("Filled ellipse (Shift+E)"), N_("Fill (F)")};
+  bool picked = false;
+  float s = ImGui::GetFrameHeight();
+  for (int i = 0; i < 7; i++) {
+    if (i) ImGui::SameLine(0, 2);
+    ImGui::PushID(i);
+    bool on = (int)tool_ == i;
+    ImVec2 p = ImGui::GetCursorScreenPos();
+    if (ImGui::InvisibleButton("tool", ImVec2(s, s))) tool_ = (Tool)i, picked = true;
+    bool hov = ImGui::IsItemHovered();
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    ImU32 bg = theme::col(on ? theme::Role::UiButtonActive : hov ? theme::Role::UiButtonHover : theme::Role::UiButton);
+    dl->AddRectFilled(p, ImVec2(p.x + s, p.y + s), bg, ImGui::GetStyle().FrameRounding);
+    toolIcon(dl, p, s, i, theme::col(theme::Role::UiText));
+    if (hov) ImGui::SetTooltip("%s", T(names[i]));
+    ImGui::PopID();
+  }
+  // keys, while no text field has the keyboard
+  ImGuiIO& io = ImGui::GetIO();
+  if (!io.WantTextInput && !io.KeyCtrl && !io.KeyAlt && ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)) {
+    if (ImGui::IsKeyPressed(ImGuiKey_P, false)) tool_ = Tool::Pen;
+    if (ImGui::IsKeyPressed(ImGuiKey_L, false)) tool_ = Tool::Line;
+    if (ImGui::IsKeyPressed(ImGuiKey_R, false)) tool_ = io.KeyShift ? Tool::RectFilled : Tool::Rect;
+    if (ImGui::IsKeyPressed(ImGuiKey_E, false)) tool_ = io.KeyShift ? Tool::EllipseFilled : Tool::Ellipse;
+    if (ImGui::IsKeyPressed(ImGuiKey_F, false)) tool_ = Tool::Fill;
+  }
+  return picked;
+}
+
+// ---------------------------------------------------------------------------
 // Colours
 
 bool GfxEditor::colourButton(const char* id, int colour, Tv tv, int* out, bool allowInherit, float size) {
@@ -556,6 +677,7 @@ void GfxEditor::spriteView(Sprite& s, Tv tv) {
   float rightW = narrow ? 0 : em(270);
   float centreW = std::max(160.0f, ImGui::GetContentRegionAvail().x - rightW - (narrow ? 0 : 8));
   ImGui::BeginChild("canvas", ImVec2(centreW, h), ImGuiChildFlags_Borders, ImGuiWindowFlags_HorizontalScrollbar);
+  toolBar();
   ImGui::SetNextItemWidth(em(120));
   ImGui::SliderFloat(T("zoom"), &zoom_, 6, 32, "%.0f");
   ImGui::SameLine();
@@ -583,36 +705,69 @@ void GfxEditor::spriteView(Sprite& s, Tv tv) {
     Layer& l = s.layers[layer_];
     ImVec2 a(o.x + (l.dx - b[0]) * cw, o.y + (l.dy - b[1]) * ch);
     dl->AddRect(a, ImVec2(a.x + l.width() * cw, a.y + l.height * ch), theme::col(theme::Role::GfxOutline), 0, 0, 1.5f);
-    // painting: left sets or clears what was under the first click, right clears; Shift moves
+    // painting: the pencil sets or clears what was under the first click, the other
+    // tools draw with the left button and erase with the right; Shift+drag moves
     ImVec2 m = ImGui::GetMousePos();
     int mx = b[0] + (int)std::floor((m.x - o.x) / cw), my = b[1] + (int)std::floor((m.y - o.y) / ch);
-    if (hovered && (ImGui::IsMouseClicked(ImGuiMouseButton_Left) || ImGui::IsMouseClicked(ImGuiMouseButton_Right))) {
-      if (ImGui::GetIO().KeyShift) {
+    int lx = mx - l.dx, ly = my - l.dy;
+    auto setPx = [&](int x, int y, bool on) {
+      if (x < 0 || x >= l.width() || y < 0 || y >= l.height) return;
+      uint8_t& v = l.bits[frame_][y];
+      uint8_t nv = v;
+      if (isPlayer(l.obj)) {
+        int bit = x / l.size;
+        if (l.reflect) bit = 7 - bit;
+        nv = on ? v | (0x80 >> bit) : v & ~(0x80 >> bit);
+      } else {
+        nv = on ? 1 : 0;
+      }
+      if (nv != v) v = nv, changed();
+    };
+    bool pressed = hovered && (ImGui::IsMouseClicked(ImGuiMouseButton_Left) || ImGui::IsMouseClicked(ImGuiMouseButton_Right));
+    bool right = ImGui::IsMouseClicked(ImGuiMouseButton_Right) || ImGui::IsMouseDown(ImGuiMouseButton_Right);
+    if (pressed) {
+      if (ImGui::GetIO().KeyShift && tool_ == Tool::Pen) {
         moving_ = true;
         moveDx_ = mx - l.dx, moveDy_ = my - l.dy;
+      } else if (tool_ == Tool::Pen) {
+        paintValue_ = right ? 0 : !l.pixel(frame_, ly, lx);
+      } else if (tool_ == Tool::Fill) {
+        bool on = !right && !l.pixel(frame_, ly, lx);
+        for (auto [x, y] : fillCells(lx, ly, l.width(), l.height, [&](int x, int y) { return l.pixel(frame_, y, x); }))
+          setPx(x, y, on);
       } else {
-        bool on = l.pixel(frame_, my - l.dy, mx - l.dx);
-        paintValue_ = ImGui::IsMouseClicked(ImGuiMouseButton_Right) ? 0 : !on;
+        shapeX_ = lx, shapeY_ = ly, paintValue_ = right ? 0 : 1;
       }
     }
+    auto shape = [&]() -> Cells {
+      switch (tool_) {
+        case Tool::Line: return lineCells(shapeX_, shapeY_, lx, ly);
+        case Tool::Rect: return rectCells(shapeX_, shapeY_, lx, ly, false);
+        case Tool::RectFilled: return rectCells(shapeX_, shapeY_, lx, ly, true);
+        case Tool::Ellipse: return ellipseCells(shapeX_, shapeY_, lx, ly, false);
+        case Tool::EllipseFilled: return ellipseCells(shapeX_, shapeY_, lx, ly, true);
+        default: return {};
+      }
+    };
+    bool shapeTool = tool_ != Tool::Pen && tool_ != Tool::Fill;
     if (active && moving_) {
       if (l.dx != mx - moveDx_ || l.dy != my - moveDy_) l.dx = mx - moveDx_, l.dy = my - moveDy_, changed();
-    } else if (active && paintValue_ >= 0) {
-      int lx = mx - l.dx, ly = my - l.dy;
-      if (lx >= 0 && lx < l.width() && ly >= 0 && ly < l.height) {
-        uint8_t& v = l.bits[frame_][ly];
-        uint8_t nv = v;
-        if (isPlayer(l.obj)) {
-          int bit = lx / l.size;
-          if (l.reflect) bit = 7 - bit;
-          nv = paintValue_ ? v | (0x80 >> bit) : v & ~(0x80 >> bit);
-        } else {
-          nv = paintValue_ ? 1 : 0;
+    } else if (active && paintValue_ >= 0 && tool_ == Tool::Pen) {
+      setPx(lx, ly, paintValue_);
+    } else if (active && paintValue_ >= 0 && shapeTool) {
+      // the shape as it would be, over the canvas, until the button is let go
+      ImU32 pc = theme::col(paintValue_ ? theme::Role::GfxOutline : theme::Role::GfxLockedHatch);
+      for (auto [x, y] : shape())
+        if (x >= 0 && x < l.width() && y >= 0 && y < l.height) {
+          ImVec2 q(o.x + (l.dx + x - b[0]) * cw, o.y + (l.dy + y - b[1]) * ch);
+          dl->AddRectFilled(ImVec2(q.x + 1, q.y + 1), ImVec2(q.x + cw - 1, q.y + ch - 1), pc);
         }
-        if (nv != v) v = nv, changed();
-      }
     }
-    if (!active) paintValue_ = -1, moving_ = false;
+    if (paintValue_ >= 0 && shapeTool && !ImGui::IsMouseDown(ImGuiMouseButton_Left) && !ImGui::IsMouseDown(ImGuiMouseButton_Right)) {
+      for (auto [x, y] : shape()) setPx(x, y, paintValue_);
+      paintValue_ = -1;
+    }
+    if (!active && !(paintValue_ >= 0 && shapeTool)) paintValue_ = -1, moving_ = false;
     if (hovered && !active)
       ImGui::SetTooltip("x %d, %s %d", mx - l.dx, T("row"), my - l.dy + 1);
 
@@ -639,7 +794,7 @@ void GfxEditor::spriteView(Sprite& s, Tv tv) {
   }
   ImGui::Dummy(ImVec2(0, 6));
   ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
-  ImGui::TextWrapped("%s", T("Left: draw or erase · Right: erase · Shift+drag: move the layer · Alt+colour: every frame"));
+  ImGui::TextWrapped("%s", T("Left: draw · Right: erase · Shift+drag with the pencil: move the layer · Alt+colour: every frame"));
   ImGui::PopStyleColor();
 
   // frames

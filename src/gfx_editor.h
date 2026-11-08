@@ -54,6 +54,10 @@ class GfxEditor {
   bool flicker_ = true, othersDim_ = true;
   int previewScale_ = 3;
   int paintValue_ = -1;   // while dragging: 1 set, 0 clear
+  enum class Tool { Pen, Line, Rect, RectFilled, Ellipse, EllipseFilled, Fill };
+  Tool tool_ = Tool::Pen;
+  int shapeX_ = 0, shapeY_ = 0;  // where a line, rectangle or ellipse started (layer pixels)
+  bool toolBar();         // the drawing tools; true if one was picked
   bool moving_ = false;
   ImVec2 moveFrom_;
   int moveDx_ = 0, moveDy_ = 0;
