@@ -16,6 +16,8 @@
     "2600 RAM": "RAM de la 2600",
     "[ILLEGAL, UNSTABLE]": "[ILEGAL, INESTABLE]",
     "[ILLEGAL]": "[ILEGAL]",
+    "A copy of \"{0}\"": "Una copia de «{0}»",
+    "A new theme based on \"{0}\"": "Un tema nuevo basado en «{0}»",
     "a playfield of {0} rows": "un playfield de {0} filas",
     "A small native IDE for creating Atari 2600 games.": "Un IDE nativo y pequeño para crear juegos de Atari 2600.",
     "A step with the frame being edited, after the selected step": "Un paso con el fotograma que se está editando, detrás del paso elegido",
@@ -156,6 +158,7 @@
     "Create": "Crear",
     "Current search result": "Resultado actual de la búsqueda",
     "Cursor": "Cursor",
+    "Custom": "Personalizado",
     "custom": "personalizado",
     "Cut": "Cortar",
     "Cycle counts": "Ciclos",
@@ -593,7 +596,6 @@
     "Zoom": "Zoom",
     "Zoom in": "Ampliar",
     "Zoom out": "Reducir",
-    "{0} (copy)": "{0} (copia)",
     "{0} / {1} bytes ({2} %), {3} free": "{0} / {1} bytes ({2} %), {3} libres",
     "{0} already exists.": "{0} ya existe.",
     "{0} bytes": "{0} bytes",
@@ -628,7 +630,6 @@
     "{0} takes the colour of {1} ({2}). On rows {3} they differ: {0} will show {1}'s.": "{0} toma el color de {1} ({2}). En las filas {3} son distintos: {0} saldrá con el de {1}.",
     "{0} unknown": "{0} desconocidos",
     "{0} video frames ({1} s on NTSC)": "{0} fotogramas de vídeo ({1} s en NTSC)",
-    "{0}, mine": "{0}, mío",
     "{0}: cannot read \"{1}\".": "{0}: no se puede leer «{1}».",
     "{0}: its bases go round in a loop.": "{0}: sus bases forman un bucle.",
     "{0}: label ({1}). Build to get its address.": "{0}: etiqueta ({1}). Compila para saber su dirección.",
@@ -642,5 +643,5 @@
     "{0}:{1}: no code at or after this line; breakpoint ignored.": "{0}:{1}: no hay código en esta línea ni después; se ignora el punto de ruptura.",
     "{0}:{1}: no listing to place the breakpoint: build first.": "{0}:{1}: no hay listado para situar el punto de ruptura: compila antes."
   },
-  "total": 639
+  "total": 640
 }

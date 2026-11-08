@@ -154,24 +154,47 @@ void Editor::draw(Library& lib, const std::string& current, const Hooks& h) {
       message_ = err;
     }
   };
-  if (ImGui::Button(T("New, based on this one"))) {
-    Theme n;
-    n.name = F("{0}, mine", {displayName(*t)});
-    n.base = t->id;
-    adopt(n);
-    t = lib.find(selected_);
-  }
+  // New and Duplicate ask for the name first ("Custom", "Custom 2"... by default).
+  auto askName = [&](bool duplicate) {
+    duplicate_ = duplicate;
+    std::string name = T("Custom");
+    for (int n = 2;; n++) {
+      bool taken = false;
+      for (auto& o : lib.themes()) taken |= displayName(o) == name;
+      if (!taken) break;
+      name = std::string(T("Custom")) + " " + std::to_string(n);
+    }
+    snprintf(newName_, sizeof newName_, "%s", name.c_str());
+    focusName_ = true;
+    ImGui::OpenPopup("newtheme");
+  };
+  if (ImGui::Button(T("New, based on this one"))) askName(false);
   if (ImGui::IsItemHovered())
     ImGui::SetTooltip("%s", T("An empty theme that takes every colour from this one: change only what you want, and it keeps following the base."));
   ImGui::SameLine();
-  if (ImGui::Button(T("Duplicate"))) {
-    Theme n = *t;
-    n.id.clear();
-    n.path.clear();
-    n.builtIn = false;
-    n.name = F("{0} (copy)", {displayName(*t)});
-    adopt(n);
-    t = lib.find(selected_);
+  if (ImGui::Button(T("Duplicate"))) askName(true);
+  if (ImGui::BeginPopup("newtheme")) {
+    ImGui::TextUnformatted(duplicate_ ? F("A copy of \"{0}\"", {displayName(*t)}).c_str()
+                                      : F("A new theme based on \"{0}\"", {displayName(*t)}).c_str());
+    if (focusName_) ImGui::SetKeyboardFocusHere(), focusName_ = false;
+    ImGui::SetNextItemWidth(260);
+    bool enter = ImGui::InputText(T("name"), newName_, sizeof newName_, ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll);
+    std::string name = newName_;
+    while (!name.empty() && name.back() == ' ') name.pop_back();
+    ImGui::BeginDisabled(name.empty());
+    if ((ImGui::Button(T("Create")) || enter) && !name.empty()) {
+      Theme n;
+      if (duplicate_) n = *t, n.id.clear(), n.path.clear(), n.builtIn = false;
+      else n.base = t->id;
+      n.name = name;
+      adopt(n);
+      t = lib.find(selected_);
+      ImGui::CloseCurrentPopup();
+    }
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    if (ImGui::Button(T("Cancel"))) ImGui::CloseCurrentPopup();
+    ImGui::EndPopup();
   }
   ImGui::SameLine();
   ImGui::BeginDisabled(t->builtIn);
@@ -248,7 +271,12 @@ void Editor::draw(Library& lib, const std::string& current, const Hooks& h) {
   ImGui::BeginDisabled(t->builtIn);
 
   // name and base
-  if (inputString(T("name"), &t->name, 200)) changed = true;
+  if (t->builtIn) {
+    std::string shown = displayName(*t);  // translated, and read-only anyway
+    inputString(T("name"), &shown, 200);
+  } else if (inputString(T("name"), &t->name, 200)) {
+    changed = true;
+  }
   ImGui::SameLine();
   ImGui::SetNextItemWidth(180);
   const Theme* base = lib.find(t->base);

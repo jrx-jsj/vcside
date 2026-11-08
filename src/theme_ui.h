@@ -38,6 +38,8 @@ class Editor {
   std::string selected_, message_, filter_;
   bool dirty_ = false;
   char newPalette_[64] = "";
+  char newName_[128] = "";
+  bool duplicate_ = false, focusName_ = false;
 };
 
 }  // namespace vcs::theme
