@@ -8,6 +8,7 @@
 | Icono (`assets/icon/`, `data/vcside.png`) | GPL-3.0-or-later | [`LICENSE`](../LICENSE) |
 | Base de conocimiento (`data/kb/`) | CC BY-SA 4.0 | `CC-BY-SA-4.0.txt` |
 | Plantillas de proyecto (`data/templates/`) | CC0 1.0 (dominio público) | `CC0-1.0.txt` |
+| Temas (`data/themes/`) | CC0 1.0 (dominio público), salvo la paleta de los dos Solarized | `CC0-1.0.txt`; paleta Solarized: MIT, `solarized.txt` |
 
 Los juegos hechos con VCSIDE no heredan ninguna de estas licencias.
 
@@ -29,6 +30,8 @@ Herramientas externas (DASM, Stella, Gopher2600, batari Basic, Arm GNU toolchain
 stb_image solo se descarga y se usa cuando la SDL 3 es anterior a la 3.4 (la 3.4 ya trae `SDL_LoadPNG`): sirve para leer el icono de la ventana.
 
 El icono es un dibujo original de VCSIDE: una consola de seis interruptores y un cartucho estilizados, sin logotipos ni marcas. El rótulo «VCS» usa una tipografía de bloques hecha para el icono.
+
+Los temas Solarized Light y Solarized Dark toman los 16 valores de la paleta [Solarized](https://ethanschoonover.com/solarized/) de Ethan Schoonover (MIT, `solarized.txt`); cómo se reparten entre los colores de VCSIDE es propio.
 
 Las tipografías son las del sistema (Menlo, SF, Segoe UI, Consolas, DejaVu): se cargan en tiempo de ejecución y no se redistribuyen.
 

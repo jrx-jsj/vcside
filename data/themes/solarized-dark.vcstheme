@@ -1,0 +1,21 @@
+{
+  "vcstheme": 1,
+  "name": "Solarized Dark",
+  "base": "solarized-light",
+  "palette": {
+    "bg": "$base03",
+    "bgHi": "$base02",
+    "fg": "$base0",
+    "fgEm": "$base1",
+    "dim": "$base01"
+  },
+  "colours": {
+    "ui.modalDim": "#00000060"
+  },
+  "indent": [
+    "$yellow/12",
+    "$green/12",
+    "$red/10",
+    "$blue/10"
+  ]
+}

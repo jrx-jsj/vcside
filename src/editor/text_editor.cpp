@@ -4,6 +4,7 @@
 
 #include "imgui_stdlib.h"
 #include "i18n.h"
+#include "theme_ui.h"
 
 #include <algorithm>
 #include <cctype>
@@ -11,18 +12,22 @@
 
 namespace vcs {
 
+using theme::Role;
+using theme::col;
+
 static ImU32 colorOf(TokenKind k) {
   switch (k) {
-    case TokenKind::Comment: return IM_COL32(106, 153, 85, 255);
-    case TokenKind::String: return IM_COL32(206, 145, 120, 255);
-    case TokenKind::Number: return IM_COL32(181, 206, 168, 255);
-    case TokenKind::Mnemonic: return IM_COL32(86, 156, 214, 255);
-    case TokenKind::IllegalMnemonic: return IM_COL32(197, 134, 192, 255);
-    case TokenKind::UnstableMnemonic: return IM_COL32(244, 71, 71, 255);
-    case TokenKind::Register: return IM_COL32(78, 201, 176, 255);
-    case TokenKind::Directive: return IM_COL32(220, 220, 170, 255);
-    case TokenKind::Label: return IM_COL32(156, 220, 254, 255);
-    default: return IM_COL32(212, 212, 212, 255);
+    case TokenKind::Comment: return col(Role::SynComment);
+    case TokenKind::String: return col(Role::SynString);
+    case TokenKind::Number: return col(Role::SynNumber);
+    case TokenKind::Mnemonic: return col(Role::SynMnemonic);
+    case TokenKind::IllegalMnemonic: return col(Role::SynIllegal);
+    case TokenKind::UnstableMnemonic: return col(Role::SynUnstable);
+    case TokenKind::Register: return col(Role::SynRegister);
+    case TokenKind::Directive: return col(Role::SynDirective);
+    case TokenKind::Label: return col(Role::SynLabel);
+    case TokenKind::Symbol: return col(Role::SynSymbol);
+    default: return col(Role::EdText);
   }
 }
 
@@ -728,7 +733,7 @@ void TextEditor::renderFindBar() {
     ImGui::SameLine();
     refreshMatches();
     if (findText_.empty()) ImGui::TextDisabled(" ");
-    else if (matches_.empty()) ImGui::TextColored(ImVec4(1, 0.5f, 0.4f, 1), "%s", T("No results"));
+    else if (matches_.empty()) ImGui::TextColored(theme::colv(Role::MsgError), "%s", T("No results"));
     else ImGui::TextDisabled("%s", F("{0} of {1}", {currentMatch_ < 0 ? "?" : std::to_string(currentMatch_ + 1),
                                                        std::to_string(matches_.size())}).c_str());
     ImGui::SameLine();
@@ -793,7 +798,7 @@ bool TextEditor::render(const char* id, ImFont* font) {
     }
   }
   renderFindBar();
-  ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(30, 30, 30, 255));
+  ImGui::PushStyleColor(ImGuiCol_ChildBg, col(Role::EdBackground));
   ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
   if (focusEditor_) {
     ImGui::SetNextWindowFocus();
@@ -864,28 +869,54 @@ bool TextEditor::render(const char* id, ImFont* font) {
   float fontSize = ImGui::GetFontSize();
   ImVec2 winPos = ImGui::GetWindowPos();
 
+  // indentation: tabs are a level each; spaces go by the smallest indentation in sight (2-8, else 4)
+  std::vector<ImU32> indentColours;
+  for (auto c : theme::current().indent)
+    if (c & 0xFF) indentColours.push_back(theme::u32(c));
+  ImU32 indentGuide = (theme::colour(Role::EdIndentGuide) & 0xFF) ? col(Role::EdIndentGuide) : 0;
+  int spaceUnit = 0;
+  for (int i = first; i <= last; i++) {
+    int n = 0;
+    while (n < (int)lines_[i].size() && lines_[i][n] == ' ') n++;
+    if (n > 0 && n < (int)lines_[i].size()) spaceUnit = spaceUnit ? std::min(spaceUnit, n) : n;
+  }
+  spaceUnit = spaceUnit >= 2 && spaceUnit <= 8 ? spaceUnit : 4;
   for (int i = first; i <= last; i++) {
     float y = origin.y + i * lineH_;
     // current line
     if (i == cursor_.line && !hasSelection())
-      dl->AddRectFilled(ImVec2(winPos.x, y), ImVec2(winPos.x + ImGui::GetWindowWidth() + scrollX, y + lineH_), IM_COL32(40, 40, 46, 255));
+      dl->AddRectFilled(ImVec2(winPos.x, y), ImVec2(winPos.x + ImGui::GetWindowWidth() + scrollX, y + lineH_), col(Role::EdCurrentLine));
+    // indentation levels: a shade per level and a guide where each one starts
+    if (!indentColours.empty() || indentGuide) {
+      const std::string& il = lines_[i];
+      int v = 0, level = 0;
+      for (size_t b = 0; b < il.size() && (il[b] == ' ' || il[b] == '\t'); level++) {
+        int from = v;
+        if (il[b] == '\t') v = (v / tabSize_ + 1) * tabSize_, b++;
+        else
+          for (int n = 0; n < spaceUnit && b < il.size() && il[b] == ' '; n++) v++, b++;
+        float x0 = textX + from * charW_, x1 = textX + v * charW_;
+        if (!indentColours.empty()) dl->AddRectFilled(ImVec2(x0, y), ImVec2(x1, y + lineH_), indentColours[level % indentColours.size()]);
+        if (indentGuide && level > 0) dl->AddLine(ImVec2(x0, y), ImVec2(x0, y + lineH_), indentGuide);
+      }
+    }
     // marker background
     auto mk = markers_.find(i + 1);
     if (mk != markers_.end())
       dl->AddRectFilled(ImVec2(textX, y), ImVec2(textX + contentSize.x, y + lineH_),
-                        mk->second.first ? IM_COL32(110, 30, 30, 120) : IM_COL32(110, 90, 20, 110));
+                        mk->second.first ? col(Role::EdErrorLine) : col(Role::EdWarningLine));
     // search matches
     for (int k = 0; k < (int)matches_.size(); k++) {
       const Match& m = matches_[k];
       if (m.line != i) continue;
       float x0 = textX + visualCol(i, m.start) * charW_, x1 = textX + visualCol(i, m.end) * charW_;
-      dl->AddRectFilled(ImVec2(x0, y), ImVec2(x1, y + lineH_), k == currentMatch_ ? IM_COL32(200, 140, 30, 150) : IM_COL32(120, 100, 40, 110));
+      dl->AddRectFilled(ImVec2(x0, y), ImVec2(x1, y + lineH_), k == currentMatch_ ? col(Role::EdMatchCurrent) : col(Role::EdMatch));
     }
     // selection
     if (hasSelection() && i >= selStart_.line && i <= selEnd_.line) {
       int a = i == selStart_.line ? visualCol(i, selStart_.col) : 0;
       int b = i == selEnd_.line ? visualCol(i, selEnd_.col) : visualCol(i, (int)lines_[i].size()) + 1;
-      dl->AddRectFilled(ImVec2(textX + a * charW_, y), ImVec2(textX + b * charW_, y + lineH_), IM_COL32(38, 79, 120, 255));
+      dl->AddRectFilled(ImVec2(textX + a * charW_, y), ImVec2(textX + b * charW_, y + lineH_), col(Role::EdSelection));
     }
     // text
     const std::string& l = lines_[i];
@@ -911,26 +942,26 @@ bool TextEditor::render(const char* id, ImFont* font) {
 
   // gutter (drawn over the text so it stays fixed when scrolling horizontally)
   float gx = winPos.x;
-  dl->AddRectFilled(ImVec2(gx, winPos.y), ImVec2(gx + gutterW - charW_ * 0.5f, winPos.y + viewH), IM_COL32(30, 30, 30, 255));
+  dl->AddRectFilled(ImVec2(gx, winPos.y), ImVec2(gx + gutterW - charW_ * 0.5f, winPos.y + viewH), col(Role::EdGutter));
   for (int i = first; i <= last; i++) {
     float y = origin.y + i * lineH_;
     char num[32];
     snprintf(num, sizeof num, "%*d", std::min(numChars - 1, 12), i + 1);
     auto mk = markers_.find(i + 1);
-    ImU32 numCol = mk != markers_.end() ? (mk->second.first ? IM_COL32(240, 90, 90, 255) : IM_COL32(230, 190, 80, 255))
-                   : i == cursor_.line ? IM_COL32(200, 200, 200, 255) : IM_COL32(110, 110, 110, 255);
+    ImU32 numCol = mk != markers_.end() ? (mk->second.first ? col(Role::EdErrorNumber) : col(Role::EdWarningNumber))
+                   : i == cursor_.line ? col(Role::EdLineNumberCurrent) : col(Role::EdLineNumber);
     if (bps_.count(i))
-      dl->AddCircleFilled(ImVec2(gx + bpW * 0.5f, y + lineH_ * 0.5f), std::min(bpW, lineH_) * 0.32f, IM_COL32(220, 60, 60, 255));
+      dl->AddCircleFilled(ImVec2(gx + bpW * 0.5f, y + lineH_ * 0.5f), std::min(bpW, lineH_) * 0.32f, col(Role::EdBreakpoint));
     dl->AddText(font, fontSize, ImVec2(gx + bpW, y + 1), numCol, num);
     if (cycW > 0 && hooks_.gutter) {
       std::string g = hooks_.gutter(i, lines_[i]);
       if (!g.empty()) {
         float w = ImGui::CalcTextSize(g.c_str()).x;
-        dl->AddText(font, fontSize, ImVec2(gx + bpW + numW + cycW - w, y + 1), IM_COL32(150, 150, 90, 255), g.c_str());
+        dl->AddText(font, fontSize, ImVec2(gx + bpW + numW + cycW - w, y + 1), col(Role::EdCycles), g.c_str());
       }
     }
   }
-  dl->AddLine(ImVec2(gx + gutterW - charW_ * 0.5f, winPos.y), ImVec2(gx + gutterW - charW_ * 0.5f, winPos.y + viewH), IM_COL32(60, 60, 60, 255));
+  dl->AddLine(ImVec2(gx + gutterW - charW_ * 0.5f, winPos.y), ImVec2(gx + gutterW - charW_ * 0.5f, winPos.y + viewH), col(Role::EdGutterBorder));
   // offset the gutter by the horizontal scroll so it stays on screen
   (void)scrollX;
 
@@ -939,7 +970,7 @@ bool TextEditor::render(const char* id, ImFont* font) {
     float cx = textX + visualCol(cursor_.line, cursor_.col) * charW_;
     float cy = origin.y + cursor_.line * lineH_;
     if (std::fmod(ImGui::GetTime(), 1.0) < 0.6 || io.InputQueueCharacters.Size)
-      dl->AddRectFilled(ImVec2(cx, cy), ImVec2(cx + 2, cy + lineH_), IM_COL32(230, 230, 230, 255));
+      dl->AddRectFilled(ImVec2(cx, cy), ImVec2(cx + 2, cy + lineH_), col(Role::EdCursor));
     // completion popup
     if (completionOpen_) {
       ImGui::SetNextWindowPos(ImVec2(cx, cy + lineH_));

@@ -140,6 +140,20 @@ Un archivo `.vcsgfx` (JSON, con las filas escritas como `X` y `.` para que se le
 - **Intercambio.** *Importar* lee del portapapeles esas mismas tablas, las de PlayerPal (`.byte #%...;$xx`, con el color de la fila en el comentario) y los bloques de batari Basic (en el orden de filas del kernel; si el texto es un programa con `set kernel`, el suyo), y los playfields del *Tiny VCS Playfield Editor* de masswerk.at: su cabecera `; mode: symmetric|asymmetric repeat|mirrored line-height N` da el modo de las filas y su alto, y vale tanto una línea `.byte` por fila (en la primera columna, con tres o seis valores) como una tabla por registro, que en modo asimétrico alterna la mitad izquierda y la derecha de cada fila, así que los gráficos pueden ir y venir entre VCSIDE y esas herramientas. Hay enlaces a PlayerPal y a Atari Background Builder para quien prefiera dibujar allí.
 - **Colores.** Las paletas NTSC y PAL se calculan con la disposición de tonos y luminancias de cada norma (son aproximadas; el emulador muestra las exactas). SECAM usa sus ocho colores fijos por luminancia.
 
+## Temas
+
+Todos los colores de VCSIDE tienen un papel con nombre, agrupados: `ui.*` (interfaz), `editor.*` (editor de código), `syntax.*` (colores de la sintaxis), `messages.*` (errores, avisos, notas), `space.*` (informe de espacio) y `graphics.*` (editor de gráficos). La lista está en `src/theme.h`; el código nunca usa un color fijo, salvo los de la propia 2600 (la paleta NTSC/PAL/SECAM del editor de gráficos). A partir de los papeles `ui.*` se calculan todos los colores de ImGui, y un tema puede corregir cualquiera de ellos por su nombre en `imgui`.
+
+Un tema es un archivo `.vcstheme` (JSON):
+
+- `base`: el tema del que toma lo que no dice. Un tema basado en otro solo guarda sus diferencias y sigue los cambios de la base.
+- `palette`: colores con nombre. Un papel puede ser `#RRGGBB`, `#RRGGBBAA`, `$nombre` (de la paleta), `@papel` (otro papel) y cualquiera de ellos con `/AA` para fijar el alfa (`$blue/40`). Las referencias se resuelven después de juntar las bases, así que cambiar una entrada de la paleta o `ui.accent` cambia todo lo que se refiere a ellos.
+- `colours`: los papeles. `indent`: un color por nivel de sangría en el editor (lista vacía, sin sombreado), con la línea `editor.indentGuide` donde empieza cada nivel. `imgui`: colores de ImGui sueltos.
+
+Vienen cuatro (`data/themes`): Oscuro (los colores de siempre), Claro, Solarized Light y Solarized Dark. Los dos Solarized usan la paleta publicada de Solarized con nombres por función (`bg`, `bgHi`, `fg`, `fgEm`, `dim`); el oscuro es el claro con esas cinco entradas cambiadas, como hace la propia paleta. Un problema (un papel sin color, una referencia que no existe, un bucle de referencias o de bases) se ve en magenta y se lista en el editor de temas.
+
+*Ver → Tema* cambia de tema. *Editar temas...* abre una ventana con los temas (incluidos y tuyos), la paleta, los papeles por grupo con buscador, los niveles de sangría y los problemas. Los cambios se ven al momento y se guardan solos en la carpeta de temas del usuario (`<carpeta de ajustes>/themes`). Los temas incluidos no se cambian: «Nuevo, basado en este» crea uno vacío que lo sigue y «Duplicar», una copia. Para compartir: exportar a un archivo o copiar como texto, e importar un archivo o pegar un tema. Lo exportado lleva dentro las bases que no son de VCSIDE, así que solo necesita un tema incluido. Al importar nunca se pisa un tema: si el nombre existe, se le da otro.
+
 ## Avisos de espacio
 
 Tras cada compilación con DASM, el IDE mide cuánto espacio queda (`src/space.*`). Los datos de cada formato (tamaños de ROM válidos, tamaño de banco, direcciones reservadas, RAM extra y sus ventanas) están en el objeto `space` de `formats.json`.

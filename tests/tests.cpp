@@ -16,6 +16,7 @@
 #include "emulator_launch.h"
 #include "i18n.h"
 #include "gfx.h"
+#include "theme.h"
 #include "child_process.h"
 
 #include <algorithm>
@@ -1185,6 +1186,81 @@ static void testGfx() {
   }
 }
 
+static void testThemes(const std::string& data) {
+  using namespace vcs::theme;
+  namespace fs = std::filesystem;
+  Rgba c = 0;
+  CHECK(parseColour("#268BD2", &c) && c == 0x268BD2FF && parseColour("#268bd240", &c) && c == 0x268BD240);
+  CHECK(!parseColour("268BD2", &c) && !parseColour("#12345", &c) && !parseColour("#GG0000", &c));
+  CHECK(colourText(0x268BD2FF) == "#268BD2" && colourText(0x268BD240) == "#268BD240");
+  Role r;
+  CHECK(roleFromId("syntax.comment", &r) && r == Role::SynComment && !roleFromId("syntax.nope", &r));
+
+  // the built-in themes: every colour, nothing that cannot be read
+  fs::path user = fs::temp_directory_path() / "vcside-test-themes";
+  std::error_code ec;
+  fs::remove_all(user, ec);
+  Library lib;
+  lib.load(data + "/themes", user.string());
+  for (const char* id : {"dark", "light", "solarized-light", "solarized-dark"}) {
+    const Theme* t = lib.find(id);
+    CHECK(t && t->builtIn && !t->name.empty());
+    Resolved res = lib.resolve(id);
+    for (auto& p : res.problems) std::fprintf(stderr, "theme %s: %s\n", id, p.c_str());
+    CHECK(res.problems.empty() && !res.indent.empty());
+  }
+  // Solarized Dark is Solarized Light with the palette turned round
+  Resolved sl = lib.resolve("solarized-light"), sd = lib.resolve("solarized-dark");
+  CHECK(sl.colour[(int)Role::EdBackground] == 0xFDF6E3FF && sd.colour[(int)Role::EdBackground] == 0x002B36FF);
+  CHECK(sl.colour[(int)Role::SynMnemonic] == sd.colour[(int)Role::SynMnemonic]);  // the accents stay
+  CHECK(sl.colour[(int)Role::UiSelection] == 0x268BD240);                         // "$blue/40"
+  CHECK(lib.resolve("dark").colour[(int)Role::SynSymbol] == lib.resolve("dark").colour[(int)Role::EdText]);  // "@editor.text"
+
+  // a theme of one's own: a base, a palette entry, references, alpha, a loop
+  Theme mine;
+  std::string err;
+  CHECK(fromJson(R"({"vcstheme":1,"name":"Mine","base":"solarized-light","palette":{"blue":"#FF0000","paper":"#FFFFFF"},
+                      "colours":{"editor.background":"$paper","ui.accent":"@editor.background/80"},"indent":[]})", &mine, &err));
+  CHECK(lib.save(mine, &err) && mine.id == "mine" && fs::exists(user / "mine.vcstheme"));
+  Resolved m = lib.resolve("mine");
+  CHECK(m.problems.empty() && m.colour[(int)Role::EdBackground] == 0xFFFFFFFF && m.colour[(int)Role::UiAccent] == 0xFFFFFF80);
+  CHECK(m.colour[(int)Role::SynMnemonic] == 0xFF0000FF);  // the base's "$blue" is now this palette's
+  CHECK(m.indent.empty());                                // an empty list: no shading
+  CHECK(lib.resolveSpec("mine", "$blue/20", &c) && c == 0xFF000020 && !lib.resolveSpec("mine", "$nope", &c));
+  Theme loop;
+  CHECK(fromJson(R"({"vcstheme":1,"name":"Loop","base":"mine","colours":{"ui.text":"@ui.textDim","ui.textDim":"@ui.text","editor.nope":"#000"}})", &loop, &err));
+  CHECK(lib.save(loop, &err));
+  Resolved lr = lib.resolve("loop");
+  CHECK(lr.problems.size() == 3 && lr.colour[(int)Role::UiText] == 0xFF00FFFF);  // two that refer to each other, one unknown
+  CHECK(!fromJson("{\"name\":\"x\"}", &loop, &err) && !err.empty());
+
+  // sharing: an exported theme carries its own bases up to a built-in one
+  Theme child;
+  CHECK(fromJson(R"({"vcstheme":1,"name":"Child","base":"mine","colours":{"ui.text":"#010203"}})", &child, &err) && lib.save(child, &err));
+  Theme out;
+  CHECK(fromJson(lib.exportJson("child"), &out, &err));
+  CHECK(out.base == "solarized-light" && out.palette["blue"] == "#FF0000" && out.colours["ui.text"] == "#010203" &&
+        out.colours["editor.background"] == "$paper" && out.hasIndent && out.indent.empty());
+  // importing never overwrites: the same file twice gives two themes
+  std::ofstream(user / "shared.vcstheme.tmp") << lib.exportJson("child");
+  fs::path file = fs::temp_directory_path() / "Child.vcstheme";
+  fs::copy_file(user / "shared.vcstheme.tmp", file, fs::copy_options::overwrite_existing, ec);
+  std::string id1, id2;
+  CHECK(lib.import(file.string(), &id1, &err) && lib.import(file.string(), &id2, &err) && id1 != id2 && id1 != "child");
+  Resolved imported = lib.resolve(id1);
+  CHECK(imported.problems.empty() && imported.colour[(int)Role::UiText] == 0x010203FF && imported.colour[(int)Role::EdBackground] == 0xFFFFFFFF);
+  // a user theme with a built-in one's id is not possible through save, and built-in ones cannot be deleted
+  CHECK(!lib.remove("dark", &err) && lib.remove(id2, &err) && !lib.find(id2));
+  CHECK(lib.uniqueId("Solarized Light") == "solarized-light-2" && lib.uniqueId("  ") == "theme");
+  CHECK(lib.uniqueId("Claro, mío") == "claro-mio" && lib.uniqueId("Año ñu — 2") == "ano-nu-2");
+  // what the user folder holds is read back
+  Library again;
+  again.load(data + "/themes", user.string());
+  CHECK(again.find("mine") && !again.find("mine")->builtIn && again.find(id1));
+  fs::remove_all(user, ec);
+  fs::remove(file, ec);
+}
+
 int main() {
   KnowledgeBase kb;
   std::string err;
@@ -1208,6 +1284,7 @@ int main() {
   testBasicSyntax(kb);
   testFormatOrder(kb);
   testGfx();
+  testThemes(data);
   std::printf("%d checks, %d failures\n", checks, failures);
   return failures ? 1 : 0;
 }

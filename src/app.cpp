@@ -78,6 +78,8 @@ void App::loadSettings() {
   std::string code = j.value("language", "");
   setLanguage(code.empty() ? systemLanguage() : code);
   recent_ = j.value("recent", std::vector<std::string>{});
+  themes_.load(dataDir() + "/themes", configDir() + "themes");
+  useTheme(j.value("theme", std::string("dark")), false);
   showCycles_ = j.value("show_cycles", true);
   editorZoom_ = std::clamp(j.value("editor_zoom", 1.0f), 0.5f, 3.0f);
   tools_.loadSettings(j.value("tools", std::map<std::string, std::string>{}));
@@ -93,9 +95,19 @@ void App::saveSettings() {
             {"recent", recent_},
             {"show_cycles", showCycles_},
             {"editor_zoom", editorZoom_},
+            {"theme", themeId_},
             {"tools", tools_.userPaths()},
             {"layout_version", kLayoutVersion}};
   std::ofstream(configDir() + "settings.json") << j.dump(2) << "\n";
+}
+
+void App::useTheme(const std::string& id, bool save) {
+  themeId_ = themes_.find(id) ? id : "dark";
+  theme::Resolved r = themes_.resolve(themeId_);
+  for (auto& p : r.problems) SDL_Log("Theme %s: %s", themeId_.c_str(), p.c_str());
+  theme::setCurrent(r);
+  theme::applyImGui(r);
+  if (save) saveSettings();
 }
 
 void App::addRecent(const std::string& path) {
@@ -1222,6 +1234,17 @@ void App::frame() {
       else if (kind == "folder") openPath(path);
       else if (kind == "file") openFile(path);
       else if (kind == "newdir") npDir_ = path;
+      else if (kind == "themeimport") {
+        std::string id, err;
+        if (themes_.import(path, &id, &err)) useTheme(id), themeEditor_.open = true;
+        else lastStatus_ = err;
+      } else if (kind.rfind("themeexport:", 0) == 0) {
+        std::string p = path;
+        if (lower(fs::path(p).extension().string()) != ".vcstheme") p += ".vcstheme";
+        std::ofstream out(p, std::ios::binary);
+        if (out << themes_.exportJson(kind.substr(12))) lastStatus_ = F("Theme saved in {0}", {p});
+        else lastStatus_ = F("Cannot write {0}", {p});
+      }
       else if (kind == "newgfx") {
         std::string p = path;
         if (lower(fs::path(p).extension().string()) != ".vcsgfx") p += ".vcsgfx";
@@ -1277,6 +1300,22 @@ void App::frame() {
   docsPanel();
   newProjectDialog();
   toolsDialog();
+  themeEditor_.draw(themes_, themeId_,
+                    {[this](const std::string& id) { useTheme(id); },
+                     [this] {
+                       static const SDL_DialogFileFilter filters[] = {{"VCSIDE theme", "vcstheme"}};
+                       SDL_ShowOpenFileDialog(dialogCallback, new DialogCtx{this, "themeimport"}, window_, filters, 1, nullptr, false);
+                     },
+                     [this](const std::string& id) {
+                       static const SDL_DialogFileFilter filters[] = {{"VCSIDE theme", "vcstheme"}};
+                       std::string where = (fs::path(SDL_GetUserFolder(SDL_FOLDER_DOCUMENTS) ? SDL_GetUserFolder(SDL_FOLDER_DOCUMENTS) : ".") / (id + ".vcstheme")).string();
+                       SDL_ShowSaveFileDialog(dialogCallback, new DialogCtx{this, "themeexport:" + id}, window_, filters, 1, where.c_str());
+                     },
+                     [](const std::string& dir) {
+                       std::error_code ec;
+                       fs::create_directories(dir, ec);
+                       SDL_OpenURL(("file://" + fs::absolute(dir).string()).c_str());
+                     }});
   aboutDialog();
   missingToolDialog();
   closeDialogs();
@@ -1460,6 +1499,18 @@ MenuBar App::buildMenuBar(bool native) {
   bar.push_back(sub(T("Build"), b));
 
   // View
+  std::vector<MenuItem> themeMenu;
+  for (int pass = 0; pass < 2; pass++) {
+    bool first = true;
+    for (auto& t : themes_.themes())
+      if (t.builtIn == (pass == 0)) {
+        if (pass == 1 && first) themeMenu.push_back(MenuItem::sep());  // the user's themes after the built-in ones
+        first = false;
+        themeMenu.push_back(item(theme::displayName(t), "", [this, id = t.id] { useTheme(id); }, true, t.id == themeId_));
+      }
+  }
+  themeMenu.push_back(MenuItem::sep());
+  themeMenu.push_back(item(T("Edit themes..."), "", [this] { themeEditor_.open = true; }));
   bar.push_back(sub(T("View"), {
       item(T("Show cycle column"), "", [this] {
         showCycles_ = !showCycles_;
@@ -1472,6 +1523,7 @@ MenuBar App::buildMenuBar(bool native) {
       item(F("Actual size ({0} %)", {std::to_string((int)(editorZoom_ * 100 + 0.5f))}), "Ctrl+0", [this] { zoomEditor(0); },
            editorZoom_ != 1.0f),
       MenuItem::sep(),
+      sub(T("Theme"), themeMenu),
       item(T("Reset layout"), "", [this] { resetLayout_ = true; }),
   }));
   if (!native) bar.push_back(sub(T("Settings"), settings));
@@ -1566,7 +1618,7 @@ void App::statusBar() {
       ImGui::SameLine();
       std::string cyc = std::to_string(c.min) + (c.max != c.min ? "-" + std::to_string(c.max) : "");
       std::string buf = "|  " + F("{0} lines: {1} cycles, {2} bytes", {std::to_string(c.lines), cyc, std::to_string(c.bytes)});
-      ImGui::TextColored(ImVec4(0.95f, 0.85f, 0.4f, 1), "%s", buf.c_str());
+      ImGui::TextColored(theme::colv(theme::Role::MsgHighlight), "%s", buf.c_str());
       ImGui::SameLine();
       char sl[48];
       snprintf(sl, sizeof sl, "%.2f-%.2f", c.min / 76.0, c.max / 76.0);
@@ -1583,7 +1635,7 @@ void App::statusBar() {
       err |= d.severity == Diagnostic::Error, warn |= d.severity == Diagnostic::Warning;
     float w = ImGui::CalcTextSize(sum.c_str()).x;
     ImGui::SameLine(std::max(ImGui::GetCursorPosX() + 20, ImGui::GetWindowWidth() - w - 12));
-    ImVec4 col = err ? ImVec4(1, 0.45f, 0.45f, 1) : warn ? ImVec4(1, 0.8f, 0.3f, 1) : ImVec4(0.7f, 0.7f, 0.7f, 1);
+    ImVec4 col = theme::colv(err ? theme::Role::MsgError : warn ? theme::Role::MsgWarning : theme::Role::UiTextDim);
     ImGui::TextColored(col, "%s", sum.c_str());
   }
   ImGui::End();
@@ -1768,7 +1820,7 @@ void App::problemsPanel() {
         auto& d = diagnostics_[i];
         ImGui::TableNextRow();
         ImGui::TableNextColumn();
-        ImVec4 col = d.severity == Diagnostic::Error ? ImVec4(1, 0.4f, 0.4f, 1) : d.severity == Diagnostic::Warning ? ImVec4(1, 0.8f, 0.3f, 1) : ImVec4(0.6f, 0.8f, 1, 1);
+        ImVec4 col = theme::colv(d.severity == Diagnostic::Error ? theme::Role::MsgError : d.severity == Diagnostic::Warning ? theme::Role::MsgWarning : theme::Role::MsgInfo);
         ImGui::PushID((int)i);
         ImGui::PushStyleColor(ImGuiCol_Text, col);
         bool clicked = ImGui::Selectable(d.severity == Diagnostic::Error ? T("error") : d.severity == Diagnostic::Warning ? T("warning") : T("info"), false,
@@ -1872,7 +1924,7 @@ void App::emulatorOptionsDialog() {
         auto cur = set.find(o.id);
         std::string value = cur == set.end() ? "" : cur->second;
         if (value.empty()) ImGui::TextUnformatted(o.labelText().c_str());
-        else ImGui::TextColored(ImVec4(0.55f, 0.85f, 1.0f, 1), "%s", o.labelText().c_str());
+        else ImGui::TextColored(theme::colv(theme::Role::MsgInfo), "%s", o.labelText().c_str());
         std::string tip = o.descriptionText() + "\n\n";
         if (!o.arg.empty()) tip += o.arg + (o.noValue ? "" : " <" + o.type + ">");
         else if (!o.flag.empty()) tip += o.flag;
@@ -1889,7 +1941,7 @@ void App::emulatorOptionsDialog() {
           ImGui::InputTextWithHint("##v", hint.c_str(), &next, fl);
           if (o.type == "int" && !next.empty() && o.max > 0) {
             int n = std::atoi(next.c_str());
-            if (n < o.min || n > o.max) ImGui::TextColored(ImVec4(1, 0.5f, 0.4f, 1), "%s", T("out of range"));
+            if (n < o.min || n > o.max) ImGui::TextColored(theme::colv(theme::Role::MsgError), "%s", T("out of range"));
           }
         } else {
           std::string preview = T("default");
@@ -2004,7 +2056,7 @@ static void spaceBar(const SpaceReport::Area& a, int warnPercent) {
   }
   float frac = a.size > 0 ? (float)a.used / (float)a.size : 0;
   int pct = a.size > 0 ? (int)((a.used * 100 + a.size - 1) / a.size) : 0;
-  ImVec4 col = a.used > a.size ? ImVec4(0.85f, 0.25f, 0.25f, 1) : pct >= warnPercent ? ImVec4(0.9f, 0.7f, 0.2f, 1) : ImVec4(0.3f, 0.65f, 0.35f, 1);
+  ImVec4 col = theme::colv(a.used > a.size ? theme::Role::SpaceFull : pct >= warnPercent ? theme::Role::SpaceWarning : theme::Role::SpaceOk);
   std::string label = F("{0} / {1} bytes ({2} %), {3} free",
                         {std::to_string(a.used), std::to_string(a.size), std::to_string(pct), std::to_string(std::max(0L, a.size - a.used))});
   ImGui::PushStyleColor(ImGuiCol_PlotHistogram, col);
@@ -2070,7 +2122,7 @@ void App::spacePanel() {
 // Shows whether an entry is fully verified and where its facts come from.
 static void unverifiedNotice(bool verified) {
   if (verified) return;
-  ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 0.75f, 0.3f, 1));
+  ImGui::PushStyleColor(ImGuiCol_Text, theme::colv(theme::Role::MsgWarning));
   ImGui::TextWrapped("%s", T("Contains statements not confirmed by the sources (marked \"Unverified\")."));
   ImGui::PopStyleColor();
 }
@@ -2117,7 +2169,8 @@ void App::docsPanel() {
     if (ImGui::Selectable((label + "##" + id).c_str(), docTopic_ == id)) docTopic_ = id;
     ImGui::PopStyleColor();
   };
-  const ImVec4 legal(0.34f, 0.61f, 0.84f, 1), illegal(0.77f, 0.53f, 0.75f, 1), unstable(0.96f, 0.28f, 0.28f, 1), plain(0.85f, 0.85f, 0.85f, 1);
+  const ImVec4 legal = theme::colv(theme::Role::SynMnemonic), illegal = theme::colv(theme::Role::SynIllegal),
+               unstable = theme::colv(theme::Role::SynUnstable), plain = theme::colv(theme::Role::UiText);
   ImGui::SetNextItemOpen(true, ImGuiCond_Once);
   if (ImGui::TreeNode(T("Instructions"))) {
     const char* groups[] = {N_("Legal"), N_("Illegal (stable)"), N_("Illegal (unstable)")};
@@ -2227,7 +2280,7 @@ void App::docsPanel() {
   } else if (topic.rfind("R:", 0) == 0) {
     if (const Register* r = kb_.reg(topic.substr(2))) {
       ImGui::PushFont(mono_);
-      ImGui::TextColored(ImVec4(0.31f, 0.79f, 0.69f, 1), "%s", r->name.c_str());
+      ImGui::TextColored(theme::colv(theme::Role::MsgName), "%s", r->name.c_str());
       ImGui::PopFont();
       ImGui::SameLine();
       ImGui::Text("%s %s  %s  bits %s", r->chip.c_str(), r->address.c_str(), r->access == "R" ? T("read") : T("write"), r->bits.c_str());
@@ -2331,7 +2384,7 @@ void App::newProjectDialog() {
   fs::path target = fs::path(npDir_) / npName_;
   ImGui::TextDisabled("%s", target.string().c_str());
   static std::string error;
-  if (!error.empty()) ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "%s", error.c_str());
+  if (!error.empty()) ImGui::TextColored(theme::colv(theme::Role::MsgError), "%s", error.c_str());
   if (ImGui::Button(T("Create"))) {
     Project p;
     error.clear();
@@ -2370,9 +2423,9 @@ void App::toolsDialog() {
       ImGui::TextUnformatted(t.name.c_str());
       ImGui::TextDisabled("%s", T(t.role.c_str()));
       ImGui::TableNextColumn();
-      if (t.found()) ImGui::TextColored(ImVec4(0.5f, 0.9f, 0.5f, 1), "%s", t.path.c_str());
+      if (t.found()) ImGui::TextColored(theme::colv(theme::Role::MsgOk), "%s", t.path.c_str());
       else {
-        ImGui::TextColored(ImVec4(1, 0.5f, 0.4f, 1), "%s", T("not found"));
+        ImGui::TextColored(theme::colv(theme::Role::MsgError), "%s", T("not found"));
         ImGui::TextWrapped("%s", T(t.note.c_str()));
       }
       ImGui::TableNextColumn();
@@ -2431,7 +2484,7 @@ void App::missingToolDialog() {
     ImGui::TextDisabled("%s", F("Once installed, VCSIDE finds it in PATH, in the usual folders, or in {0}. You can also choose the file yourself.",
                                 {Toolchain::toolsDir()}).c_str());
   } else {
-    ImGui::TextColored(ImVec4(0.5f, 0.9f, 0.5f, 1), "%s", F("Found: {0}", {t->path}).c_str());
+    ImGui::TextColored(theme::colv(theme::Role::MsgOk), "%s", F("Found: {0}", {t->path}).c_str());
   }
   ImGui::PopTextWrapPos();
   ImGui::Spacing();
@@ -2500,7 +2553,7 @@ void App::aboutDialog() {
   ImGui::TextDisabled("%s", a.credit.c_str());
   ImGui::TextDisabled("%s", a.copyright.c_str());
   ImGui::EndGroup();
-  if (!kbError_.empty()) ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "%s", kbError_.c_str());
+  if (!kbError_.empty()) ImGui::TextColored(theme::colv(theme::Role::MsgError), "%s", kbError_.c_str());
   ImGui::Spacing();
   ImGui::BeginChild("credits", ImVec2(0, -ImGui::GetFrameHeightWithSpacing() * 2.2f), ImGuiChildFlags_Borders);
   ImGui::PushTextWrapPos(0);

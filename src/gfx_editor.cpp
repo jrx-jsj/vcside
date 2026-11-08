@@ -9,6 +9,7 @@
 #include <sstream>
 
 #include "i18n.h"
+#include "theme_ui.h"
 #include "imgui_stdlib.h"
 
 namespace fs = std::filesystem;
@@ -326,7 +327,7 @@ void GfxEditor::issues(const std::vector<Issue>& list) {
     return;
   }
   for (auto& i : list) {
-    ImVec4 c = i.severity == Issue::Error ? ImVec4(1, 0.4f, 0.4f, 1) : i.severity == Issue::Warning ? ImVec4(1, 0.8f, 0.3f, 1) : ImVec4(0.6f, 0.75f, 1, 1);
+    ImVec4 c = theme::colv(i.severity == Issue::Error ? theme::Role::MsgError : i.severity == Issue::Warning ? theme::Role::MsgWarning : theme::Role::MsgInfo);
     ImGui::PushStyleColor(ImGuiCol_Text, c);
     ImGui::Bullet();
     ImGui::PopStyleColor();
@@ -444,9 +445,8 @@ void GfxEditor::spriteView(Sprite& s, Tv tv) {
   ImGui::SetNextItemWidth(110);
   if (ImGui::SliderInt(T("frames per step"), &ticks, 1, 30)) s.frameTicks = ticks, changed();
   ImGui::SeparatorText(T("Layers"));
-  static const ImVec4 objColour[] = {ImVec4(0.95f, 0.75f, 0.3f, 1), ImVec4(0.45f, 0.8f, 1, 1), ImVec4(0.95f, 0.55f, 0.2f, 1),
-                                     ImVec4(0.3f, 0.6f, 1, 1), ImVec4(0.6f, 0.9f, 0.5f, 1)};
-  auto objCol = [&](Obj o) { return (int)o < 5 ? objColour[(int)o] : ImVec4(0.6f, 0.75f, 1, 1); };  // extra players: P1's family
+  static const theme::Role objRole[] = {theme::Role::GfxP0, theme::Role::GfxP1, theme::Role::GfxM0, theme::Role::GfxM1, theme::Role::GfxBL};
+  auto objCol = [&](Obj o) { return theme::colv((int)o < 5 ? objRole[(int)o] : theme::Role::GfxP1); };  // extra players: P1's family
   for (int i = 0; i < (int)s.layers.size(); i++) {
     auto& l = s.layers[i];
     ImGui::PushID(i);
@@ -573,13 +573,13 @@ void GfxEditor::spriteView(Sprite& s, Tv tv) {
   drawSprite(s, frame_, -1, o, cw, ch, tv, previewBk_, layer_, b);
   ImDrawList* dl = ImGui::GetWindowDrawList();
   for (int x = b[0]; x <= b[2]; x++)
-    dl->AddLine(ImVec2(o.x + (x - b[0]) * cw, o.y), ImVec2(o.x + (x - b[0]) * cw, o.y + size.y), IM_COL32(128, 128, 128, x % 8 == 0 ? 90 : 35));
+    dl->AddLine(ImVec2(o.x + (x - b[0]) * cw, o.y), ImVec2(o.x + (x - b[0]) * cw, o.y + size.y), theme::col(x % 8 == 0 ? theme::Role::GfxGridMajor : theme::Role::GfxGrid));
   for (int y = b[1]; y <= b[3]; y++)
-    dl->AddLine(ImVec2(o.x, o.y + (y - b[1]) * ch), ImVec2(o.x + size.x, o.y + (y - b[1]) * ch), IM_COL32(128, 128, 128, 35));
+    dl->AddLine(ImVec2(o.x, o.y + (y - b[1]) * ch), ImVec2(o.x + size.x, o.y + (y - b[1]) * ch), theme::col(theme::Role::GfxGrid));
   if (!s.layers.empty()) {
     Layer& l = s.layers[layer_];
     ImVec2 a(o.x + (l.dx - b[0]) * cw, o.y + (l.dy - b[1]) * ch);
-    dl->AddRect(a, ImVec2(a.x + l.width() * cw, a.y + l.height * ch), IM_COL32(255, 255, 255, 160), 0, 0, 1.5f);
+    dl->AddRect(a, ImVec2(a.x + l.width() * cw, a.y + l.height * ch), theme::col(theme::Role::GfxOutline), 0, 0, 1.5f);
     // painting: left sets or clears what was under the first click, right clears; Shift moves
     ImVec2 m = ImGui::GetMousePos();
     int mx = b[0] + (int)std::floor((m.x - o.x) / cw), my = b[1] + (int)std::floor((m.y - o.y) / ch);
@@ -651,7 +651,7 @@ void GfxEditor::spriteView(Sprite& s, Tv tv) {
     ImVec2 ts((tb[2] - tb[0]) * tcw + 6, (tb[3] - tb[1]) * tch + 6);
     if (ImGui::InvisibleButton("f", ts)) frame_ = f;
     drawSprite(s, f, -1, ImVec2(to.x + 3, to.y + 3), tcw, tch, tv, previewBk_, -1, tb);
-    dl->AddRect(to, ImVec2(to.x + ts.x, to.y + ts.y), f == frame_ ? IM_COL32(255, 255, 255, 220) : IM_COL32(128, 128, 128, 90), 3, 0,
+    dl->AddRect(to, ImVec2(to.x + ts.x, to.y + ts.y), theme::col(f == frame_ ? theme::Role::GfxThumbSelected : theme::Role::GfxThumbFrame), 3, 0,
                 f == frame_ ? 2.0f : 1.0f);
     ImGui::PopID();
   }
@@ -734,7 +734,7 @@ void GfxEditor::animations(Sprite& s, Tv tv, int tb[4], float tcw, float tch) {
     if (ImGui::InvisibleButton("s", ts)) step_ = i, frame_ = std::clamp(st.frame, 0, s.frames - 1);
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", F("Step {0}: frame {1}", {std::to_string(i + 1), std::to_string(st.frame + 1)}).c_str());
     drawSprite(s, std::clamp(st.frame, 0, s.frames - 1), -1, ImVec2(to.x + 3, to.y + 3), tcw, tch, tv, previewBk_, -1, tb);
-    dl->AddRect(to, ImVec2(to.x + ts.x, to.y + ts.y), i == step_ ? IM_COL32(255, 200, 80, 230) : IM_COL32(128, 128, 128, 90), 3, 0,
+    dl->AddRect(to, ImVec2(to.x + ts.x, to.y + ts.y), theme::col(i == step_ ? theme::Role::GfxStepSelected : theme::Role::GfxThumbFrame), 3, 0,
                 i == step_ ? 2.0f : 1.0f);
     int t = st.ticks;
     ImGui::SetNextItemWidth(thumbW);
@@ -905,17 +905,17 @@ void GfxEditor::playfieldView(Playfield& p, Tv tv) {
     for (int c = 0; c <= 40; c++) {
       bool reg = c == 4 || c == 12 || c == 24 || c == 32, half = c == 20;
       dl->AddLine(ImVec2(o.x + c * cw, o.y), ImVec2(o.x + c * cw, o.y + size.y),
-                  half ? IM_COL32(255, 255, 255, 140) : IM_COL32(128, 128, 128, reg ? 110 : 30), half ? 2.0f : 1.0f);
+                  theme::col(half ? theme::Role::GfxOutline : reg ? theme::Role::GfxGridMajor : theme::Role::GfxGrid), half ? 2.0f : 1.0f);
     }
     for (int r = 0; r <= (int)p.rows.size(); r++)
-      dl->AddLine(ImVec2(o.x, o.y + r * ch), ImVec2(o.x + size.x, o.y + r * ch), IM_COL32(128, 128, 128, 30));
+      dl->AddLine(ImVec2(o.x, o.y + r * ch), ImVec2(o.x + size.x, o.y + r * ch), theme::col(theme::Role::GfxGrid));
     // the columns the kernel does not show, hatched; they cannot be drawn on
     auto hatch = [&](int c0, int c1) {
       if (c1 <= c0) return;
       float x0 = o.x + c0 * cw, x1 = o.x + c1 * cw;
-      dl->AddRectFilled(ImVec2(x0, o.y), ImVec2(x1, o.y + size.y), IM_COL32(0, 0, 0, 110));
+      dl->AddRectFilled(ImVec2(x0, o.y), ImVec2(x1, o.y + size.y), theme::col(theme::Role::GfxLocked));
       dl->PushClipRect(ImVec2(x0, o.y), ImVec2(x1, o.y + size.y), true);
-      for (float d = -size.y; d < x1 - x0; d += 8) dl->AddLine(ImVec2(x0 + d, o.y + size.y), ImVec2(x0 + d + size.y, o.y), IM_COL32(255, 255, 255, 30));
+      for (float d = -size.y; d < x1 - x0; d += 8) dl->AddLine(ImVec2(x0 + d, o.y + size.y), ImVec2(x0 + d + size.y, o.y), theme::col(theme::Role::GfxLockedHatch));
       dl->PopClipRect();
     };
     hatch(0, firstCol);
@@ -965,7 +965,7 @@ void GfxEditor::playfieldView(Playfield& p, Tv tv) {
       if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", row.mode == PfMode::Mirror ? T("Mirror: the right half is the left one reversed") : T("Repeat: the right half is the left one again"));
       ImGui::SameLine(0, 2);
       bool asym = row.asymmetric;
-      ImGui::PushStyleColor(ImGuiCol_Button, asym ? ImVec4(0.7f, 0.45f, 0.1f, 1) : ImGui::GetStyle().Colors[ImGuiCol_Button]);
+      ImGui::PushStyleColor(ImGuiCol_Button, asym ? theme::colv(theme::Role::GfxAsymmetric) : ImGui::GetStyle().Colors[ImGuiCol_Button]);
       if (ImGui::Button("A", ImVec2(bh + 6, bh))) p.setAsymmetric(r, !asym), changed();
       ImGui::PopStyleColor();
       if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", asym ? T("Asymmetric: the right half is drawn on its own. Click to copy the left half again.") : T("Symmetric: the right half follows the left one"));

@@ -160,23 +160,7 @@ static void applyStyle() {
   s.WindowBorderSize = 1;
   s.FramePadding = ImVec2(6, 4);
   s.ItemSpacing = ImVec2(8, 5);
-  ImVec4* c = s.Colors;
-  c[ImGuiCol_WindowBg] = ImVec4(0.12f, 0.12f, 0.13f, 1);
-  c[ImGuiCol_ChildBg] = ImVec4(0.12f, 0.12f, 0.13f, 1);
-  c[ImGuiCol_MenuBarBg] = ImVec4(0.16f, 0.16f, 0.17f, 1);
-  c[ImGuiCol_TitleBg] = ImVec4(0.14f, 0.14f, 0.15f, 1);
-  c[ImGuiCol_TitleBgActive] = ImVec4(0.17f, 0.17f, 0.19f, 1);
-  c[ImGuiCol_Tab] = ImVec4(0.16f, 0.16f, 0.17f, 1);
-  c[ImGuiCol_TabSelected] = ImVec4(0.12f, 0.12f, 0.13f, 1);
-  c[ImGuiCol_TabHovered] = ImVec4(0.28f, 0.22f, 0.12f, 1);
-  c[ImGuiCol_Header] = ImVec4(0.30f, 0.22f, 0.10f, 0.8f);
-  c[ImGuiCol_HeaderHovered] = ImVec4(0.45f, 0.32f, 0.12f, 0.8f);
-  c[ImGuiCol_HeaderActive] = ImVec4(0.55f, 0.38f, 0.12f, 1);
-  c[ImGuiCol_Button] = ImVec4(0.25f, 0.25f, 0.27f, 1);
-  c[ImGuiCol_ButtonHovered] = ImVec4(0.55f, 0.38f, 0.12f, 1);
-  c[ImGuiCol_CheckMark] = ImVec4(0.95f, 0.65f, 0.2f, 1);
-  c[ImGuiCol_DockingPreview] = ImVec4(0.95f, 0.65f, 0.2f, 0.5f);
-  c[ImGuiCol_TabSelectedOverline] = ImVec4(0.95f, 0.65f, 0.2f, 1);
+  // the colours come from the theme (App::useTheme)
 }
 
 int main(int argc, char** argv) {

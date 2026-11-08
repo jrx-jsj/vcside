@@ -29,6 +29,7 @@
 #include "project.h"
 #include "elf_space.h"
 #include "space.h"
+#include "theme_ui.h"
 #include "toolchain.h"
 
 struct ImFont;
@@ -235,6 +236,11 @@ class App {
   std::vector<std::string> recent_;
   bool showCycles_ = true;
   bool resetLayout_ = false;
+  // themes
+  theme::Library themes_;
+  std::string themeId_ = "dark";
+  theme::Editor themeEditor_;
+  void useTheme(const std::string& id, bool save = true);
   bool nativeMenu_ = false;  // menus in the system menu bar (macOS)
 
   std::mutex dialogMutex_;
