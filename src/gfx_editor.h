@@ -31,6 +31,7 @@ class GfxEditor {
 
  private:
   void toolbar(const gfx::Profile& project);
+  void groupField(std::string& group);
   void spriteView(gfx::Sprite& s, gfx::Tv tv);
   void playfieldView(gfx::Playfield& p, gfx::Tv tv);
   void animations(gfx::Sprite& s, gfx::Tv tv, int thumbBounds[4], float cw, float ch);

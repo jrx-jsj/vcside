@@ -6,6 +6,7 @@
 #include <cmath>
 #include <filesystem>
 #include <fstream>
+#include <set>
 #include <sstream>
 
 #include "i18n.h"
@@ -78,6 +79,10 @@ Profile GfxEditor::profile(const Profile& project) const {
   return p;
 }
 
+static bool endsWith(const std::string& s, const std::string& e) {
+  return s.size() >= e.size() && s.compare(s.size() - e.size(), e.size(), e) == 0;
+}
+
 bool GfxEditor::save(const std::string& path, const Profile& project, std::string* error, std::string* generated) {
   std::ofstream out(path, std::ios::binary);
   if (!out) {
@@ -90,11 +95,29 @@ bool GfxEditor::save(const std::string& path, const Profile& project, std::strin
   if (Profile k = profile(project); !k.basic()) {
     // the tables for the program, next to the .vcsgfx
     fs::path p(path);
-    std::string inc = (p.parent_path() / (p.stem().string() + (k.c ? ".gfx.h" : ".gfx.asm"))).string();
-    std::ofstream g(inc, std::ios::binary);
-    if (g) {
-      g << (k.c ? cInclude(asset_, p.filename().string()) : dasmInclude(asset_, p.filename().string()));
-      if (generated) *generated = inc;
+    std::string source = p.filename().string();
+    auto files = generatedFiles(asset_, source, k.c);
+    std::set<std::string> now;
+    for (auto& f : files) {
+      std::string inc = (p.parent_path() / f.name).string();
+      std::ofstream g(inc, std::ios::binary);
+      if (!g) continue;
+      g << f.text;
+      now.insert(f.name);
+      if (generated && generated->empty()) *generated = inc;
+    }
+    // what an earlier split generated from this file and no longer does
+    std::string stem = p.stem().string() + ".";
+    std::error_code ec;
+    for (auto& e : fs::directory_iterator(p.parent_path().empty() ? fs::path(".") : p.parent_path(), ec)) {
+      std::string n = e.path().filename().string();
+      bool ours = n.rfind(stem, 0) == 0 && (endsWith(n, ".gfx.asm") || endsWith(n, ".gfx.h"));
+      if (!ours || now.count(n)) continue;
+      std::ifstream in(e.path(), std::ios::binary);
+      std::string first;
+      std::getline(in, first);
+      in.close();
+      if (generatedFrom(first, source)) fs::remove(e.path(), ec);
     }
   }
   dirty_ = false;
@@ -325,6 +348,26 @@ static void nextTo(const char* label, float spacing = -1) {
   if (right < ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x) ImGui::SameLine(0, spacing);
 }
 
+// The group a sprite or playfield goes to when the tables are split by group.
+void GfxEditor::groupField(std::string& group) {
+  if (asset_.split != Asset::Split::Group) return;
+  std::set<std::string> known;
+  for (auto& s : asset_.sprites) if (!s.group.empty()) known.insert(s.group);
+  for (auto& p : asset_.playfields) if (!p.group.empty()) known.insert(p.group);
+  float pick = ImGui::GetFrameHeight();
+  ImGui::SetNextItemWidth(-pick - ImGui::GetStyle().ItemInnerSpacing.x);
+  std::string g = group;
+  if (ImGui::InputTextWithHint("##group", T("group (none: the main file)"), &g)) group = g, changed();
+  if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", T("Items of the same group share a generated file."));
+  ImGui::SameLine(0, ImGui::GetStyle().ItemInnerSpacing.x);
+  if (ImGui::BeginCombo("##groups", "", ImGuiComboFlags_NoPreview | ImGuiComboFlags_PopupAlignLeft)) {
+    if (ImGui::Selectable(T("(none)"), group.empty())) group.clear(), changed();
+    for (auto& k : known)
+      if (ImGui::Selectable(k.c_str(), k == group)) group = k, changed();
+    ImGui::EndCombo();
+  }
+}
+
 void GfxEditor::toolbar(const Profile& project) {
   auto itemName = [&](int i) {
     if (i < (int)asset_.sprites.size()) return F("Sprite: {0}", {asset_.sprites[i].name});
@@ -376,6 +419,20 @@ void GfxEditor::toolbar(const Profile& project) {
   if (ImGui::IsItemHovered())
     ImGui::SetTooltip("%s", F("What draws these graphics: {0}. The editor offers what it can show, and the warnings and the batari Basic copy follow it. The options (kernel_options, pfres) are read from the project's main program.",
                               {k_.describe()}).c_str());
+  // where the tables go: one file, or split (assembly and C; batari Basic copies its blocks)
+  if (!k_.basic()) {
+    const char* splits[3] = {T("Tables: one file"), T("Tables: a file per item"), T("Tables: a file per group")};
+    const char* cur = splits[(int)asset_.split];
+    nextTo(cur, 24);
+    ImGui::SetNextItemWidth(ImGui::CalcTextSize(cur).x + em(40));
+    if (ImGui::BeginCombo("##split", cur)) {
+      for (int i = 0; i < 3; i++)
+        if (ImGui::Selectable(splits[i], (int)asset_.split == i)) asset_.split = (Asset::Split)i, changed();
+      ImGui::EndCombo();
+    }
+    if (ImGui::IsItemHovered())
+      ImGui::SetTooltip("%s", T("What saving writes for the program: all the tables in <name>.gfx.asm, each sprite and playfield in <name>.<item>.gfx.asm, or the items of each group together in <name>.<group>.gfx.asm (those with no group stay in <name>.gfx.asm). Files an earlier choice wrote are removed. C projects: .gfx.h."));
+  }
   nextTo(T("Import"), 24);
   if (ImGui::Button(T("Import"))) ImGui::OpenPopup("import");
   if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", T("Reads the clipboard: assembly tables (VCSIDE, PlayerPal) or batari Basic blocks (player0:, playfield:...)."));
@@ -556,6 +613,7 @@ void GfxEditor::spriteView(Sprite& s, Tv tv) {
   if (ImGui::InputText("##name", &name, ImGuiInputTextFlags_EnterReturnsTrue) || (ImGui::IsItemDeactivatedAfterEdit())) {
     if (!name.empty()) s.name = name, changed();
   }
+  groupField(s.group);
   int lh = s.lineHeight;
   ImGui::SetNextItemWidth(em(110));
   if (ImGui::SliderInt(T("lines per row"), &lh, 1, 4)) s.lineHeight = lh, changed();
@@ -965,6 +1023,7 @@ void GfxEditor::playfieldView(Playfield& p, Tv tv) {
     std::string name = p.name;
     ImGui::SetNextItemWidth(-1);
     if (ImGui::InputText("##name", &name) && !name.empty()) p.name = name, changed();
+    groupField(p.group);
     int rows = (int)p.rows.size();
     ImGui::SetNextItemWidth(em(110));
     if (ImGui::DragInt(T("rows"), &rows, 0.2f, 1, k_.pfRowsMax())) {

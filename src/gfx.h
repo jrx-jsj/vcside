@@ -74,6 +74,7 @@ struct Sprite {
   int lineHeight = 2;      // scanlines per row in the preview (1 = 1LK, 2 = 2LK...)
   int frameTicks = 8;      // animation speed in the preview: video frames per animation frame
   int background = 0x00;   // colour behind it while editing (not exported: the program sets COLUBK)
+  std::string group;       // the generated file it goes to when the asset splits by group ("" = the main one)
   std::vector<Layer> layers;
   std::vector<Animation> animations;
 
@@ -102,6 +103,7 @@ struct Playfield {
   std::string name = "playfield";
   int lineHeight = 8;      // scanlines per row
   int pfColour = 0x0E, bkColour = 0x00;
+  std::string group;       // as Sprite::group
   std::vector<PfRow> rows = std::vector<PfRow>(24);
 
   bool pixel(int row, int col) const;    // what the screen shows (symmetric rows: from the left half)
@@ -123,6 +125,8 @@ struct Asset {
   std::vector<Sprite> sprites;
   std::vector<Playfield> playfields;
   std::string kernel;  // "" = the project's; otherwise a kernelId()
+  // The tables for the program: one file, a file per sprite and playfield, or a file per group.
+  enum class Split { One, Each, Group } split = Split::One;
 };
 
 std::string toJson(const Asset& a);
@@ -194,6 +198,15 @@ std::string exportC(const Sprite& s);
 std::string exportC(const Playfield& p);
 // <name>.gfx.h: every item, under the header that names the .vcsgfx and an include guard.
 std::string cInclude(const Asset& a, const std::string& sourceName);
+// The files generated from <stem>.vcsgfx, by the asset's split: name and contents.
+// One: <stem>.gfx.asm. Each: <stem>.<item>.gfx.asm. Group: <stem>.<group>.gfx.asm, and the
+// items with no group in <stem>.gfx.asm. C: .gfx.h instead.
+struct GeneratedFile {
+  std::string name, text;
+};
+std::vector<GeneratedFile> generatedFiles(const Asset& a, const std::string& sourceName, bool c);
+// A file VCSIDE generated from that source (it says so in its first line).
+bool generatedFrom(const std::string& firstLine, const std::string& sourceName);
 // batari Basic: playerN: blocks with their colours, playfield:, pfcolors:, bkcolors:, as the
 // kernel of the profile reads them (row order, width, which blocks exist).
 std::string exportBasic(const Sprite& s, const Profile& k, int frame = -1);  // frame -1: all of them

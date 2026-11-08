@@ -258,6 +258,7 @@
     "Graphics editor": "Editor de gráficos",
     "Grid (over the 2600's picture)": "Rejilla (sobre la imagen de la 2600)",
     "Grid every 8 pixels and register limits (over the picture)": "Rejilla cada 8 píxeles y límites de registro (sobre la imagen)",
+    "group (none: the main file)": "grupo (ninguno: el archivo principal)",
     "Hardware registers": "Registros del hardware",
     "Hatching of those columns": "Rayado de esas columnas",
     "Headers and includes (.h, .inc)": "Cabeceras e includes (.h, .inc)",
@@ -288,6 +289,7 @@
     "Instructions and keywords": "Instrucciones y palabras clave",
     "Interface": "Interfaz",
     "it is not a relocatable ELF object": "no es un objeto ELF reubicable",
+    "Items of the same group share a generated file.": "Los elementos del mismo grupo comparten archivo generado.",
     "joystick": "joystick",
     "Kernel: the project's ({0})": "Kernel: el del proyecto ({0})",
     "Kernel: {0}": "Kernel: {0}",
@@ -527,6 +529,9 @@
     "Tab": "Pestaña",
     "Tab under the mouse": "Pestaña bajo el ratón",
     "Table header": "Cabecera de las tablas",
+    "Tables: a file per group": "Tablas: un archivo por grupo",
+    "Tables: a file per item": "Tablas: un archivo por elemento",
+    "Tables: one file": "Tablas: un archivo",
     "Template not found in {0}": "No se encuentra la plantilla en {0}",
     "Tested with {0}.": "Probado con {0}.",
     "Text": "Texto",
@@ -611,6 +616,7 @@
     "warning": "aviso",
     "Warnings": "Avisos",
     "What draws these graphics: {0}. The editor offers what it can show, and the warnings and the batari Basic copy follow it. The options (kernel_options, pfres) are read from the project's main program.": "Lo que dibuja estos gráficos: {0}. El editor ofrece lo que puede mostrar, y los avisos y la copia para batari Basic lo siguen. Las opciones (kernel_options, pfres) se leen del programa principal del proyecto.",
+    "What saving writes for the program: all the tables in <name>.gfx.asm, each sprite and playfield in <name>.<item>.gfx.asm, or the items of each group together in <name>.<group>.gfx.asm (those with no group stay in <name>.gfx.asm). Files an earlier choice wrote are removed. C projects: .gfx.h.": "Lo que se escribe al guardar para el programa: todas las tablas en <nombre>.gfx.asm, cada sprite y playfield en <nombre>.<elemento>.gfx.asm, o los elementos de cada grupo juntos en <nombre>.<grupo>.gfx.asm (los que no tienen grupo se quedan en <nombre>.gfx.asm). Se borran los archivos que escribió una elección anterior. Proyectos en C: .gfx.h.",
     "Where a dragged panel will dock": "Dónde se acoplará un panel arrastrado",
     "Whole word": "Palabra completa",
     "width": "ancho",
@@ -678,5 +684,5 @@
     "{0}:{1}: no code at or after this line; breakpoint ignored.": "{0}:{1}: no hay código en esta línea ni después; se ignora el punto de ruptura.",
     "{0}:{1}: no listing to place the breakpoint: build first.": "{0}:{1}: no hay listado para situar el punto de ruptura: compila antes."
   },
-  "total": 675
+  "total": 681
 }
