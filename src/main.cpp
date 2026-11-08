@@ -95,7 +95,10 @@ int main(int argc, char** argv) {
   }
   SDL_GLContext gl = SDL_GL_CreateContext(window);
   SDL_GL_MakeCurrent(window, gl);
-  SDL_GL_SetSwapInterval(1);
+  // No vsync: on macOS a swap with vsync blocks while the window is not visible
+  // (another Space, behind other windows, launched in the background), which froze
+  // the whole program. The loop below paces itself instead.
+  SDL_GL_SetSwapInterval(0);
   SDL_ShowWindow(window);
 
   IMGUI_CHECKVERSION();
@@ -147,9 +150,6 @@ int main(int argc, char** argv) {
     else app.openPath(a);
   }
   int frame = 0, shotFrame = -1;
-  // macOS pauses buffer swaps with vsync on while the window is hidden; a test
-  // run must not depend on the window being visible.
-  if (!shot.empty()) SDL_GL_SetSwapInterval(0);
 
   while (!app.wantsQuit()) {
     if (!shot.empty()) {
@@ -167,7 +167,9 @@ int main(int argc, char** argv) {
       if (e.type == SDL_EVENT_DROP_FILE && e.drop.data) app.openPath(e.drop.data);
       any = SDL_PollEvent(&e);
     }
-    if (SDL_GetWindowFlags(window) & SDL_WINDOW_MINIMIZED) continue;
+    // Nothing to draw while the window cannot be seen (a test shot still renders).
+    if (shot.empty() && (SDL_GetWindowFlags(window) & (SDL_WINDOW_MINIMIZED | SDL_WINDOW_HIDDEN | SDL_WINDOW_OCCLUDED))) continue;
+    Uint64 frameStart = SDL_GetTicksNS();
 
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplSDL3_NewFrame();
@@ -188,6 +190,10 @@ int main(int argc, char** argv) {
       break;
     }
     SDL_GL_SwapWindow(window);
+    // At most ~60 frames per second while events keep coming (typing, dragging).
+    const Uint64 frameNs = 1000000000ull / 60;
+    Uint64 spent = SDL_GetTicksNS() - frameStart;
+    if (spent < frameNs) SDL_DelayNS(frameNs - spent);
   }
 
   app.shutdown();
