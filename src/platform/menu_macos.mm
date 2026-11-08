@@ -318,6 +318,7 @@ bool vcs::nativeShowAbout(const vcs::AboutInfo& info) {
       [credits appendAttributedString:[[NSAttributedString alloc] initWithString:ns(text) attributes:attrs]];
     };
     add(info.tagline + "\n", body);
+    add(info.credit + "\n", dim);
     for (auto& sec : info.sections) {
       add("\n" + sec.title + "\n", head);
       if (!sec.note.empty()) add(sec.note + "\n", dim);

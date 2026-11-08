@@ -29,8 +29,10 @@ static std::string sdlVersion() {
 AboutInfo aboutInfo(const KnowledgeBase& kb, Toolchain& tools) {
   AboutInfo a;
   a.version = VCSIDE_VERSION;
-  a.tagline = T("A small native IDE for Atari 2600 games.");
-  a.copyright = "Copyright © 2026 VCSIDE contributors · GPL-3.0-or-later";
+  a.tagline = T("A small native IDE for creating Atari 2600 games.");
+  a.author = "Juan Sánchez Jurado";
+  a.credit = T("Made with the help of Claude Code (Opus 5.5).");
+  a.copyright = "Copyright © 2026 " + a.author + " · GPL-3.0-or-later";
   a.dataDir = dataDir();
 
   AboutSection own{T("VCSIDE"), T("Games made with VCSIDE do not inherit any of these licences."), {}};

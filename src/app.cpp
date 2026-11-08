@@ -2204,6 +2204,7 @@ void App::aboutDialog() {
   ImGui::SetWindowFontScale(1.0f);
   ImGui::TextUnformatted(F("Version {0}", {a.version}).c_str());
   ImGui::TextUnformatted(a.tagline.c_str());
+  ImGui::TextDisabled("%s", a.credit.c_str());
   ImGui::TextDisabled("%s", a.copyright.c_str());
   ImGui::EndGroup();
   if (!kbError_.empty()) ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "%s", kbError_.c_str());

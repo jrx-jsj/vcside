@@ -13,7 +13,7 @@
     "2600 RAM": "RAM de la 2600",
     "[ILLEGAL, UNSTABLE]": "[ILEGAL, INESTABLE]",
     "[ILLEGAL]": "[ILEGAL]",
-    "A small native IDE for Atari 2600 games.": "Un IDE nativo y pequeño para juegos de Atari 2600.",
+    "A small native IDE for creating Atari 2600 games.": "Un IDE nativo y pequeño para crear juegos de Atari 2600.",
     "Aa": "Aa",
     "About VCSIDE": "Acerca de VCSIDE",
     "About {0}": "Acerca de {0}",
@@ -173,6 +173,7 @@
     "light gun": "pistola de luz",
     "Line": "Línea",
     "macOS: brew install dasm. Linux: your package manager or the release binaries. Windows: dasm.exe from the releases page.": "macOS: brew install dasm. Linux: el gestor de paquetes o los binarios publicados. Windows: dasm.exe de la página de versiones.",
+    "Made with the help of Claude Code (Opus 5.5).": "Hecho con la ayuda de Claude Code (Opus 5.5).",
     "Match case": "Distinguir mayúsculas",
     "Measured on the Chameleon image (make chameleon), firmware included.": "Medido en la imagen del Chameleon (make chameleon), con el firmware.",
     "Measuring...": "Midiendo...",
@@ -338,5 +339,5 @@
     "{0}:{1}: no code at or after this line; breakpoint ignored.": "{0}:{1}: no hay código en esta línea ni después; se ignora el punto de ruptura.",
     "{0}:{1}: no listing to place the breakpoint: build first.": "{0}:{1}: no hay listado para situar el punto de ruptura: compila antes."
   },
-  "total": 335
+  "total": 336
 }

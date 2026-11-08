@@ -20,7 +20,7 @@ struct AboutSection {
   std::vector<AboutLine> lines;
 };
 struct AboutInfo {
-  std::string version, tagline, copyright, dataDir;
+  std::string version, tagline, author, credit, copyright, dataDir;
   std::vector<AboutSection> sections;
 };
 
