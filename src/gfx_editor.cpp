@@ -413,6 +413,8 @@ void GfxEditor::spriteView(Sprite& s, Tv tv) {
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", T("Background"));
     int tick = (int)(ImGui::GetTime() * 60);
     int pf = (tick / std::max(1, s.frameTicks)) % s.frames;
+    if (anim_ >= 0 && anim_ < (int)s.animations.size() && !s.animations[anim_].steps.empty())
+      pf = s.frameAt(s.animations[anim_], (int)((ImGui::GetTime() - animStart_) * 60));
     int phase = flicker_ && s.phases() > 1 ? tick % s.phases() : -1;
     int pb[4];
     spriteBounds(s, pb, 1);
@@ -657,18 +659,111 @@ void GfxEditor::spriteView(Sprite& s, Tv tv) {
   if (ImGui::Button(T("Delete frame"))) s.removeFrame(frame_), frame_ = std::min(frame_, s.frames - 1), changed();
   ImGui::EndDisabled();
   ImGui::SameLine();
-  auto swapFrames = [&](int a, int c) {
-    for (auto& l : s.layers) std::swap(l.bits[a], l.bits[c]), std::swap(l.colours[a], l.colours[c]);
-  };
-  if (ImGui::ArrowButton("fl", ImGuiDir_Left) && frame_ > 0) swapFrames(frame_, frame_ - 1), frame_--, changed();
+  if (ImGui::ArrowButton("fl", ImGuiDir_Left) && frame_ > 0) s.swapFrames(frame_, frame_ - 1), frame_--, changed();
   ImGui::SameLine();
-  if (ImGui::ArrowButton("fr", ImGuiDir_Right) && frame_ + 1 < s.frames) swapFrames(frame_, frame_ + 1), frame_++, changed();
+  if (ImGui::ArrowButton("fr", ImGuiDir_Right) && frame_ + 1 < s.frames) s.swapFrames(frame_, frame_ + 1), frame_++, changed();
+  animations(s, tv, tb, tcw, tch);
   ImGui::EndChild();
   if (!narrow) {
     ImGui::SameLine();
     ImGui::BeginChild("preview", ImVec2(rightW, h), ImGuiChildFlags_Borders);
     preview();
     ImGui::EndChild();
+  }
+}
+
+// Animations: named sequences of steps, each a frame shown for some video frames.
+void GfxEditor::animations(Sprite& s, Tv tv, int tb[4], float tcw, float tch) {
+  ImGui::SeparatorText(T("Animations"));
+  anim_ = std::clamp(anim_, 0, std::max(0, (int)s.animations.size() - 1));
+  if (!s.animations.empty()) {
+    ImGui::SetNextItemWidth(150);
+    if (ImGui::BeginCombo("##anim", s.animations[anim_].name.c_str())) {
+      for (int i = 0; i < (int)s.animations.size(); i++)
+        if (ImGui::Selectable((s.animations[i].name + "##" + std::to_string(i)).c_str(), i == anim_)) anim_ = i, step_ = 0, animStart_ = ImGui::GetTime();
+      ImGui::EndCombo();
+    }
+    ImGui::SameLine();
+  }
+  if (ImGui::Button(T("New animation"))) {
+    Animation an;
+    an.name = s.animations.empty() ? "walk" : "anim" + std::to_string(s.animations.size() + 1);
+    for (int f = 0; f < s.frames; f++) an.steps.push_back({f, s.frameTicks});
+    s.animations.push_back(an);
+    anim_ = (int)s.animations.size() - 1, step_ = 0, animStart_ = ImGui::GetTime();
+    changed();
+  }
+  if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", T("Starts with every frame in order; add, remove and reorder steps below."));
+  if (s.animations.empty()) {
+    ImGui::TextDisabled("%s", T("No animations: the preview shows the frames in order."));
+    return;
+  }
+  ImGui::SameLine();
+  if (ImGui::Button(T("Delete animation"))) {
+    s.animations.erase(s.animations.begin() + anim_);
+    anim_ = std::max(0, anim_ - 1);
+    changed();
+    return;
+  }
+  Animation& an = s.animations[anim_];
+  std::string name = an.name;
+  ImGui::SetNextItemWidth(150);
+  if (ImGui::InputText((std::string(T("name")) + "##anim").c_str(), &name) && !name.empty()) an.name = name, changed();
+  ImGui::SameLine();
+  if (ImGui::Checkbox(T("loops"), &an.loop)) changed(), animStart_ = ImGui::GetTime();
+  char secs[16];
+  std::snprintf(secs, sizeof secs, "%.2f", an.length() / 60.0);
+  std::string length = F("{0} video frames ({1} s on NTSC)", {std::to_string(an.length()), secs});
+  nextTo(length.c_str());
+  ImGui::TextDisabled("%s", length.c_str());
+  // the steps: the frame each shows and for how long
+  step_ = std::clamp(step_, 0, std::max(0, (int)an.steps.size() - 1));
+  ImDrawList* dl = ImGui::GetWindowDrawList();
+  float thumbW = std::max(30.0f, (tb[2] - tb[0]) * tcw + 6);
+  for (int i = 0; i < (int)an.steps.size(); i++) {
+    AnimStep& st = an.steps[i];
+    ImGui::PushID(i + 1000);
+    if (i && ImGui::GetItemRectMax().x + thumbW + 8 < ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x) ImGui::SameLine();
+    ImGui::BeginGroup();
+    ImVec2 to = ImGui::GetCursorScreenPos();
+    ImVec2 ts(thumbW, (tb[3] - tb[1]) * tch + 6);
+    if (ImGui::InvisibleButton("s", ts)) step_ = i, frame_ = std::clamp(st.frame, 0, s.frames - 1);
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", F("Step {0}: frame {1}", {std::to_string(i + 1), std::to_string(st.frame + 1)}).c_str());
+    drawSprite(s, std::clamp(st.frame, 0, s.frames - 1), -1, ImVec2(to.x + 3, to.y + 3), tcw, tch, tv, previewBk_, -1, tb);
+    dl->AddRect(to, ImVec2(to.x + ts.x, to.y + ts.y), i == step_ ? IM_COL32(255, 200, 80, 230) : IM_COL32(128, 128, 128, 90), 3, 0,
+                i == step_ ? 2.0f : 1.0f);
+    int t = st.ticks;
+    ImGui::SetNextItemWidth(thumbW);
+    if (ImGui::DragInt("##t", &t, 0.2f, 1, 255)) st.ticks = t, changed();
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", T("Video frames this step lasts (60 a second on NTSC, 50 on PAL)"));
+    ImGui::EndGroup();
+    ImGui::PopID();
+  }
+  if (ImGui::Button(F("Add frame {0}", {std::to_string(frame_ + 1)}).c_str())) {
+    int ticks = an.steps.empty() ? s.frameTicks : an.steps[step_].ticks;
+    an.steps.insert(an.steps.begin() + (an.steps.empty() ? 0 : step_ + 1), AnimStep{frame_, ticks});
+    step_ = an.steps.empty() ? 0 : step_ + 1;
+    changed();
+  }
+  if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", T("A step with the frame being edited, after the selected step"));
+  ImGui::SameLine();
+  ImGui::BeginDisabled(an.steps.empty());
+  if (ImGui::Button(T("Remove step"))) an.steps.erase(an.steps.begin() + step_), step_ = std::max(0, step_ - 1), changed();
+  ImGui::SameLine();
+  if (ImGui::ArrowButton("sl", ImGuiDir_Left) && step_ > 0) std::swap(an.steps[step_], an.steps[step_ - 1]), step_--, changed();
+  ImGui::SameLine();
+  if (ImGui::ArrowButton("sr", ImGuiDir_Right) && step_ + 1 < (int)an.steps.size()) std::swap(an.steps[step_], an.steps[step_ + 1]), step_++, changed();
+  ImGui::EndDisabled();
+  if (k_.basic()) {
+    ImGui::TextUnformatted(T("batari Basic variables:"));
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(60);
+    if (ImGui::InputText(T("counter"), &an.basicTimer)) changed();
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", T("Two variables the program does not use for anything else (a-z or ones it has dimmed)."));
+    nextTo((std::string("12345678") + T("step")).c_str());
+    ImGui::SetNextItemWidth(60);
+    if (ImGui::InputText(T("step"), &an.basicStep)) changed();
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", T("Two variables the program does not use for anything else (a-z or ones it has dimmed)."));
   }
 }
 

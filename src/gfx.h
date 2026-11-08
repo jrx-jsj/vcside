@@ -55,17 +55,34 @@ struct Layer {
   void resize(int frames, int height);
 };
 
+// An animation: steps that each show a frame for some video frames (1/60 s on NTSC).
+struct AnimStep {
+  int frame = 0;
+  int ticks = 8;
+};
+struct Animation {
+  std::string name = "anim";
+  std::vector<AnimStep> steps;
+  bool loop = true;            // off: it stays on the last step
+  std::string basicTimer, basicStep;  // batari Basic: the variables it uses ("" = to be chosen)
+  int length() const;          // video frames of one pass
+};
+
 struct Sprite {
   std::string name = "sprite";
   int frames = 1;
   int lineHeight = 2;      // scanlines per row in the preview (1 = 1LK, 2 = 2LK...)
   int frameTicks = 8;      // animation speed in the preview: video frames per animation frame
   std::vector<Layer> layers;
+  std::vector<Animation> animations;
 
   int phases() const;      // flicker phases in use (1 = no flicker)
   void setFrames(int n);
-  void insertFrame(int at, int copyOf);  // copyOf -1 = blank
-  void removeFrame(int at);
+  void insertFrame(int at, int copyOf);  // copyOf -1 = blank; the animations' steps follow
+  void removeFrame(int at);              // steps that showed it go
+  void swapFrames(int a, int b);
+  // The frame an animation shows at a video frame (counted from its start).
+  int frameAt(const Animation& a, int tick) const;
 };
 
 // ---------------------------------------------------------------------------
@@ -168,15 +185,18 @@ std::string exportDasm(const Playfield& p, const ExportOptions& o = {});
 // batari Basic: playerN: blocks with their colours, playfield:, pfcolors:, bkcolors:, as the
 // kernel of the profile reads them (row order, width, which blocks exist).
 std::string exportBasic(const Sprite& s, const Profile& k, int frame = -1);  // frame -1: all of them
+// A subroutine that plays an animation: `gosub <sprite>_<animation>` once per frame (before
+// drawscreen) advances it and sets the frame's blocks. `<sprite>_<animation>_reset` restarts it.
+std::string exportBasicAnimation(const Sprite& s, const Animation& a, const Profile& k);
 std::string exportBasic(const Playfield& p, const Profile& k);
 std::string identifier(const std::string& name);  // "my hero" -> "my_hero"
 
 // A batari Basic program can hold graphics that VCSIDE keeps up to date: the lines between
-//   rem vcsgfx <file>.vcsgfx <item name> [frame N]
+//   rem vcsgfx <file>.vcsgfx <item name> [frame N | animation NAME]
 //   rem vcsgfx end
 // are the item's export (one animation frame, if given) for the asset's kernel.
 // basicRegion: the region for an item (sprites first, then playfields), ready to paste;
-// a sprite of several frames gives one region per frame.
+// a sprite of several frames gives one region per frame, or one per animation if it has them.
 std::string basicRegion(const std::string& file, const Asset& a, int item, const Profile& k);
 // Rewrites the regions of `file` in a program. *updated counts them; *problems gets a
 // line for each region that names an item the asset does not have or has no end.

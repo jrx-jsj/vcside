@@ -33,6 +33,7 @@ class GfxEditor {
   void toolbar(const gfx::Profile& project);
   void spriteView(gfx::Sprite& s, gfx::Tv tv);
   void playfieldView(gfx::Playfield& p, gfx::Tv tv);
+  void animations(gfx::Sprite& s, gfx::Tv tv, int thumbBounds[4], float cw, float ch);
   void issues(const std::vector<gfx::Issue>& list);
   bool colourButton(const char* id, int colour, gfx::Tv tv, int* out, bool allowInherit, float size);
   void drawSprite(const gfx::Sprite& s, int frame, int phase, ImVec2 origin, float cw, float ch, gfx::Tv tv, int bk,
@@ -47,6 +48,8 @@ class GfxEditor {
   bool dirty_ = false, changed_ = false;
   int item_ = 0;          // sprites first, then playfields
   int layer_ = 0, frame_ = 0;
+  int anim_ = 0, step_ = 0;  // the animation shown under the frames and its selected step
+  double animStart_ = 0;     // when the preview started playing it
   float zoom_ = 14;
   bool flicker_ = true, othersDim_ = true;
   int previewScale_ = 3;

@@ -119,11 +119,43 @@ void Sprite::insertFrame(int at, int copyOf) {
     l.bits.insert(l.bits.begin() + at, b);
     l.colours.insert(l.colours.begin() + at, c);
   }
+  for (auto& an : animations)
+    for (auto& st : an.steps)
+      if (st.frame >= at) st.frame++;
   frames++;
+}
+
+int Animation::length() const {
+  int n = 0;
+  for (auto& st : steps) n += std::max(1, st.ticks);
+  return n;
+}
+
+int Sprite::frameAt(const Animation& a, int tick) const {
+  if (a.steps.empty()) return 0;
+  int len = a.length();
+  tick = a.loop ? tick % len : std::min(tick, len - 1);
+  for (auto& st : a.steps) {
+    if (tick < std::max(1, st.ticks)) return std::clamp(st.frame, 0, frames - 1);
+    tick -= std::max(1, st.ticks);
+  }
+  return std::clamp(a.steps.back().frame, 0, frames - 1);
+}
+
+void Sprite::swapFrames(int a, int b) {
+  if (a < 0 || b < 0 || a >= frames || b >= frames || a == b) return;
+  for (auto& l : layers) std::swap(l.bits[a], l.bits[b]), std::swap(l.colours[a], l.colours[b]);
+  for (auto& an : animations)
+    for (auto& st : an.steps) st.frame = st.frame == a ? b : st.frame == b ? a : st.frame;
 }
 
 void Sprite::removeFrame(int at) {
   if (frames <= 1 || at < 0 || at >= frames) return;
+  for (auto& an : animations) {
+    an.steps.erase(std::remove_if(an.steps.begin(), an.steps.end(), [&](const AnimStep& st) { return st.frame == at; }), an.steps.end());
+    for (auto& st : an.steps)
+      if (st.frame > at) st.frame--;
+  }
   for (auto& l : layers) {
     l.resize(frames, l.height);
     l.bits.erase(l.bits.begin() + at);
@@ -227,6 +259,16 @@ std::string toJson(const Asset& a) {
       }
       js["layers"].push_back(jl);
     }
+    if (!s.animations.empty()) {
+      js["animations"] = json::array();
+      for (auto& an : s.animations) {
+        json ja = {{"name", an.name}, {"loop", an.loop}};
+        ja["steps"] = json::array();
+        for (auto& st : an.steps) ja["steps"].push_back({st.frame, st.ticks});
+        if (!an.basicTimer.empty() || !an.basicStep.empty()) ja["basic_vars"] = {an.basicTimer, an.basicStep};
+        js["animations"].push_back(ja);
+      }
+    }
     j["sprites"].push_back(js);
   }
   j["playfields"] = json::array();
@@ -279,6 +321,17 @@ bool fromJson(const std::string& text, Asset* a, std::string* error) {
           f++;
         }
         s.layers.push_back(l);
+      }
+      for (auto& ja : js.value("animations", json::array())) {
+        Animation an;
+        an.name = ja.value("name", an.name);
+        an.loop = ja.value("loop", true);
+        for (auto& st : ja.value("steps", json::array()))
+          if (st.is_array() && st.size() == 2)
+            an.steps.push_back({std::clamp(st[0].get<int>(), 0, s.frames - 1), std::clamp(st[1].get<int>(), 1, 255)});
+        auto vars = ja.value("basic_vars", json::array());
+        if (vars.size() == 2) an.basicTimer = vars[0].get<std::string>(), an.basicStep = vars[1].get<std::string>();
+        s.animations.push_back(an);
       }
       out.sprites.push_back(s);
     }
@@ -499,6 +552,13 @@ std::vector<Issue> check(const Sprite& s, const Profile& k) {
                                      {std::to_string(phases), std::to_string(60 / phases), std::to_string(50 / phases)})});
     if (!empty.empty()) out.push_back({Issue::Warning, F("Phases without layers: {0}. The other layers flicker more than they need to.", {rowList(empty)})});
   }
+  // animations: names become labels
+  std::set<std::string> animNames;
+  for (auto& an : s.animations) {
+    if (an.steps.empty()) out.push_back({Issue::Warning, F("The animation {0} has no steps.", {an.name})});
+    if (!animNames.insert(identifier(an.name)).second)
+      out.push_back({Issue::Error, F("Two animations are called {0}: their labels would clash.", {an.name})});
+  }
   // the kernels with more players draw them all with the TIA's player 1
   if (k.players() > 2) {
     bool shared = false;
@@ -602,6 +662,9 @@ std::vector<Issue> check(const Sprite& s, const Profile& k) {
       out.push_back({Issue::Warning, F("{0} changes colour per row, but this kernel gives each player one colour: only the first row's is kept.", {objName(l.obj)})});
   }
   if (s.layers.size() > 1) out.push_back({Issue::Info, T("The layers' positions are exported as comments: the program places each object relative to the first one.")});
+  for (auto& an : s.animations)
+    if (an.basicTimer.empty() || an.basicStep.empty())
+      out.push_back({Issue::Warning, F("The animation {0} needs two batari Basic variables (its counter and its step): choose them in the animation.", {an.name})});
   return out;
 }
 
@@ -734,6 +797,31 @@ std::string exportDasm(const Sprite& s, const ExportOptions& o) {
         out << id << "_Colour" << f << "\n";
         for (int i = 0; i < l.height; i++) out << "        .byte #" << hexColour(l.colour(f, o.upsideDown ? l.height - 1 - i : i)) << "\n";
       }
+    if (s.frames > 1) {
+      // the frames by number: lda Ptr,x
+      auto pointers = [&](const char* table, const char* label) {
+        for (const char* half : {"Lo", "Hi"}) {
+          out << id << "_" << table << "Ptr" << half << "\n        .byte ";
+          for (int f = 0; f < s.frames; f++) out << (f ? "," : "") << (half[0] == 'L' ? "<" : ">") << id << "_" << label << f;
+          out << "\n";
+        }
+      };
+      pointers("Frame", "Frame");
+      if (l.obj != Obj::M0 && l.obj != Obj::M1) pointers("Colour", "Colour");
+    }
+  }
+  out << "\n" << n << "_FRAMES = " << s.frames << "\n";
+  for (auto& an : s.animations) {
+    // steps: the frame and how many video frames it stays
+    std::string a = n + "_" + identifier(an.name);
+    out << "\n; animation " << an.name << ": " << an.steps.size() << " steps, " << an.length() << " video frames"
+        << (an.loop ? ", loops" : ", stops on the last step") << "\n";
+    out << a << "_STEPS = " << an.steps.size() << "\n" << a << "_LOOP = " << (an.loop ? 1 : 0) << "\n";
+    out << a << "_FRAME\n        .byte ";
+    for (size_t i = 0; i < an.steps.size(); i++) out << (i ? "," : "") << an.steps[i].frame;
+    out << "\n" << a << "_TICKS\n        .byte ";
+    for (size_t i = 0; i < an.steps.size(); i++) out << (i ? "," : "") << an.steps[i].ticks;
+    out << "\n";
   }
   return out.str();
 }
@@ -820,13 +908,15 @@ std::string exportBasic(const Sprite& whole, const Profile& in, int frame) {
   }
   Profile k = basicFor(s, in);
   std::ostringstream out;
-  out << "  rem " << s.name << ": " << s.frames << " frame(s), " << s.phases() << " phase(s); " << k.describe() << "\n";
+  bool one = frame >= 0 && frame < whole.frames;
+  if (one) out << "  rem " << s.name << ", frame " << frame + 1 << "; " << k.describe() << "\n";
+  else out << "  rem " << s.name << ": " << s.frames << " frame(s), " << s.phases() << " phase(s); " << k.describe() << "\n";
   const Layer* first = nullptr;
   for (auto& l : s.layers)
     if (isPlayer(l.obj) && k.has(l.obj) && !first) first = &l;
   for (int ph = 0; ph < s.phases(); ph++)
     for (int f = 0; f < s.frames; f++) {
-      out << "  rem frame " << f + 1 << (s.phases() > 1 ? ", phase " + std::to_string(ph + 1) : "") << "\n";
+      if (!one || s.phases() > 1) out << "  rem frame " << (one ? frame : f) + 1 << (s.phases() > 1 ? ", phase " + std::to_string(ph + 1) : "") << "\n";
       for (auto& l : s.layers) {
         if (l.phase != ph || !isPlayer(l.obj) || !k.has(l.obj)) continue;
         std::string pn = basicName(l.obj);
@@ -869,6 +959,35 @@ std::string exportBasic(const Sprite& whole, const Profile& in, int frame) {
       out << "  rem " << o << "x = " << basicName(first->obj) << "x + " << l.dx - first->dx << " : " << o << "y = "
           << basicName(first->obj) << "y + " << l.dy - first->dy << "\n";
   }
+  return out.str();
+}
+
+std::string exportBasicAnimation(const Sprite& s, const Animation& an, const Profile& in) {
+  Profile k = basicFor(s, in);
+  std::ostringstream out;
+  std::string a = identifier(s.name) + "_" + identifier(an.name), t = a + "_t", st = a + "_s";
+  int n = (int)an.steps.size();
+  out << "  rem " << s.name << ", animation " << an.name << ": " << n << " steps" << (an.loop ? ", loops" : "")
+      << ". gosub " << a << " once per frame; gosub " << a << "_reset restarts it\n";
+  if (n == 0) return out.str() + "  rem (no steps)\n";
+  if (!an.basicTimer.empty() && !an.basicStep.empty())
+    out << "  dim " << t << " = " << an.basicTimer << "\n  dim " << st << " = " << an.basicStep << "\n";
+  else
+    out << "  rem dim " << t << " and " << st << " to two free variables (the animation's batari Basic variables)\n";
+  out << "  data " << a << "_ticks\n  ";
+  for (int i = 0; i < n; i++) out << (i ? ", " : "") << std::clamp(an.steps[i].ticks, 1, 255);
+  out << "\nend\n  goto " << a << "_end\n";
+  out << a << "_reset\n  " << t << " = 0 : " << st << " = 0\n  return\n";
+  out << a << "\n  " << t << " = " << t << " + 1\n  temp1 = " << a << "_ticks[" << st << "]\n";
+  out << "  if " << t << " < temp1 then goto " << a << "_show\n  " << t << " = 0\n  " << st << " = " << st << " + 1\n";
+  out << "  if " << st << " >= " << n << " then " << st << " = " << (an.loop ? 0 : n - 1) << "\n";
+  out << a << "_show\n  on " << st << " goto";
+  for (auto& step : an.steps) out << " " << a << "_f" << step.frame;
+  out << "\n";
+  std::set<int> frames;
+  for (auto& step : an.steps) frames.insert(std::clamp(step.frame, 0, s.frames - 1));
+  for (int f : frames) out << a << "_f" << f << "\n" << exportBasic(s, k, f) << "  return\n";
+  out << a << "_end\n";
   return out.str();
 }
 
@@ -921,7 +1040,7 @@ static std::string lowered(std::string s) {
 // "rem vcsgfx art.vcsgfx hero frame 2" -> file, item, frame (-1); "rem vcsgfx end" -> end
 struct Marker {
   bool is = false, end = false;
-  std::string file, item;
+  std::string file, item, animation;
   int frame = -1;
 };
 static Marker marker(const std::string& line) {
@@ -938,14 +1057,27 @@ static Marker marker(const std::string& line) {
   m.file = w[0];
   size_t n = w.size();
   if (n >= 3 && lowered(w[n - 2]) == "frame") m.frame = std::atoi(w[n - 1].c_str()) - 1, n -= 2;
+  for (size_t i = 2; i < n; i++)
+    if (lowered(w[i]) == "animation") {
+      for (size_t j = i + 1; j < n; j++) m.animation += (j > i + 1 ? " " : "") + w[j];
+      n = i;
+      break;
+    }
   for (size_t i = 1; i < n; i++) m.item += (i > 1 ? " " : "") + w[i];
   return m;
 }
 
-static std::string regionBody(const Asset& a, const std::string& item, int frame, const Profile& k, bool* found) {
+static std::string regionBody(const Asset& a, const std::string& item, int frame, const std::string& animation, const Profile& k,
+                              bool* found) {
   *found = true;
   for (auto& s : a.sprites)
-    if (s.name == item) return exportBasic(s, k, frame);
+    if (s.name == item) {
+      if (animation.empty()) return exportBasic(s, k, frame);
+      for (auto& an : s.animations)
+        if (an.name == animation) return exportBasicAnimation(s, an, k);
+      *found = false;
+      return "";
+    }
   for (auto& p : a.playfields)
     if (p.name == item) return exportBasic(p, k);
   *found = false;
@@ -957,14 +1089,20 @@ std::string basicRegion(const std::string& file, const Asset& a, int item, const
   bool found;
   if (item < (int)a.sprites.size()) {
     const Sprite& s = a.sprites[item];
+    if (!s.animations.empty()) {
+      for (size_t i = 0; i < s.animations.size(); i++)
+        out += (i ? "\n" : "") + std::string("  rem vcsgfx ") + file + " " + s.name + " animation " + s.animations[i].name + "\n" +
+               exportBasicAnimation(s, s.animations[i], k) + "  rem vcsgfx end\n";
+      return out;
+    }
     for (int f = 0; f < s.frames; f++) {
       if (f) out += "\n";
       std::string frame = s.frames > 1 ? " frame " + std::to_string(f + 1) : "";
-      out += "  rem vcsgfx " + file + " " + s.name + frame + "\n" + regionBody(a, s.name, s.frames > 1 ? f : -1, k, &found) + "  rem vcsgfx end\n";
+      out += "  rem vcsgfx " + file + " " + s.name + frame + "\n" + regionBody(a, s.name, s.frames > 1 ? f : -1, "", k, &found) + "  rem vcsgfx end\n";
     }
   } else if (item - a.sprites.size() < a.playfields.size()) {
     const Playfield& p = a.playfields[item - a.sprites.size()];
-    out = "  rem vcsgfx " + file + " " + p.name + "\n" + regionBody(a, p.name, -1, k, &found) + "  rem vcsgfx end\n";
+    out = "  rem vcsgfx " + file + " " + p.name + "\n" + regionBody(a, p.name, -1, "", k, &found) + "  rem vcsgfx end\n";
   }
   return out;
 }
@@ -999,9 +1137,12 @@ std::string updateBasicRegions(const std::string& source, const std::string& fil
       continue;
     }
     bool found;
-    std::string body = regionBody(a, m.item, m.frame, k, &found);
+    std::string body = regionBody(a, m.item, m.frame, m.animation, k, &found);
     if (!found) {
-      if (problems) problems->push_back(F("Line {0}: {1} has no sprite or playfield called {2}.", {std::to_string(i + 1), file, m.item}));
+      if (problems)
+        problems->push_back(m.animation.empty() || sp == a.sprites.end()
+                                ? F("Line {0}: {1} has no sprite or playfield called {2}.", {std::to_string(i + 1), file, m.item})
+                                : F("Line {0}: {1} has no animation called {2}.", {std::to_string(i + 1), m.item, m.animation}));
       continue;
     }
     std::istringstream b(body);
@@ -1225,6 +1366,7 @@ bool importText(const std::string& text, Asset* out, std::string* what, const Pr
   {
     // VCSIDE's own labels: <sprite>_<object>[n][_<layer name>]_Frame<f> / _Colour<f>
     std::map<std::string, std::vector<const Block*>> frames, colours;  // by label prefix
+    std::map<std::string, const Block*> animFrames, animTicks;          // <sprite>_<animation>
     std::vector<std::string> order;
     static const std::regex ours(R"(^(.*)_(?:Frame|Colour)\d+$)");
     static const std::regex colourLabel("colou?r", std::regex::icase);
@@ -1234,6 +1376,15 @@ bool importText(const std::string& text, Asset* out, std::string* what, const Pr
       bool isPf = false;
       for (const char* k : {"pf0r", "pf1r", "pf2r", "pf0", "pf1", "pf2", "colupf_rows", "colubk_rows", "ctrlpf_rows"}) isPf |= endsWith(l, k);
       if (isPf) continue;
+      // frame pointers are not frames; animation tables are read below
+      static const std::regex pointers(R"(_(?:Frame|Colour)Ptr(?:Lo|Hi)$)");
+      static const std::regex animTable(R"(^(.*)_(FRAME|TICKS)$)");
+      std::smatch am;
+      if (std::regex_search(b.label, pointers)) continue;
+      if (std::regex_match(b.label, am, animTable)) {
+        (am[2] == "FRAME" ? animFrames : animTicks)[am[1].str()] = &b;
+        continue;
+      }
       std::smatch m;
       std::string key = std::regex_match(b.label, m, ours) && m[1].str().find('_') != std::string::npos ? m[1].str() : "";
       bool colour = std::regex_search(b.label, colourLabel);
@@ -1293,6 +1444,16 @@ bool importText(const std::string& text, Asset* out, std::string* what, const Pr
     if (!s.layers.empty()) {
       if (s.name.empty()) s.name = "sprite";
       s.setFrames(s.frames);
+      for (auto& [prefix, fb] : animFrames) {
+        if (prefix.rfind(s.name + "_", 0) != 0) continue;
+        Animation an;
+        an.name = prefix.substr(s.name.size() + 1);
+        const Block* tb = animTicks.count(prefix) ? animTicks[prefix] : nullptr;
+        for (size_t i = 0; i < fb->values.size(); i++)
+          an.steps.push_back({std::clamp(fb->values[i], 0, s.frames - 1), tb && i < tb->values.size() ? std::clamp(tb->values[i], 1, 255) : 8});
+        an.loop = text.find(prefix + "_LOOP = 0") == std::string::npos;
+        s.animations.push_back(an);
+      }
       out->sprites.push_back(s);
       found.push_back(F("{0} layer(s), {1} frame(s)", {std::to_string(s.layers.size()), std::to_string(s.frames)}));
     }

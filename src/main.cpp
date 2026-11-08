@@ -36,6 +36,7 @@ static void keepTextInput(ImGuiContext*, ImGuiViewport* vp, ImGuiPlatformImeData
 //   move X Y | down [right] | up [right] | click X Y [right] | drag X1 Y1 X2 Y2 [right]
 //   key NAME [shift|ctrl|alt...] (NAME: a-z, z, y, enter, escape, tab, delete...)
 //   hold shift|ctrl|alt | release shift|ctrl|alt | text WORDS | wait N | shot FILE.bmp
+//   scroll DY (wheel steps; negative = down)
 struct InputScript {
   std::vector<std::string> lines;
   size_t next = 0;
@@ -116,6 +117,8 @@ struct InputScript {
     } else if (op == "text") {
       std::string t = lines[next - 1].substr(lines[next - 1].find("text") + 5);
       io.AddInputCharactersUTF8(t.c_str());
+    } else if (op == "scroll") {
+      io.AddMouseWheelEvent(0, num(0));
     } else if (op == "wait") {
       waitFrames = (int)num(0);
     } else if (op == "shot" && !a.empty()) {

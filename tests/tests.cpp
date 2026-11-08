@@ -981,7 +981,7 @@ static void testGfx() {
     std::string up = updateBasicRegions(prog, "art.vcsgfx", art, std, &n, &probs);
     CHECK(n == 3 && probs.empty());
     CHECK(up.find("old") == std::string::npos && up.find("keep\r\n") != std::string::npos && up.find("drawscreen\r\n") != std::string::npos);
-    CHECK(up.find("  rem vcsgfx art.vcsgfx walk frame 1\r\n  rem walk:") != std::string::npos);
+    CHECK(up.find("  rem vcsgfx art.vcsgfx walk frame 1\r\n  rem walk, frame 1;") != std::string::npos);
     CHECK(up.find("  %00011000\r\nend\r\n") != std::string::npos);  // frame 2's top row, bottom first: last
     CHECK(up.find("  playfield:\r\n") != std::string::npos && up.find("\n\n") == std::string::npos);
     // a second pass changes nothing
@@ -993,13 +993,84 @@ static void testGfx() {
   }
   CHECK(!importText("lda #1\n", &imp, &what) && what.empty());
 
+  // animations: steps of frames with their durations
+  Sprite walker = sp;
+  walker.name = "walker";
+  walker.insertFrame(1, 0);
+  walker.insertFrame(2, -1);
+  walker.layers[0].bits[1][0] = 0x18;
+  walker.layers[0].bits[2][0] = 0x24;
+  Animation wa, idle;
+  wa.name = "walk";
+  wa.steps = {{0, 8}, {1, 4}, {2, 8}, {1, 4}};
+  idle.name = "idle";
+  idle.loop = false;
+  idle.steps = {{2, 10}, {0, 5}};
+  walker.animations = {wa, idle};
+  CHECK(wa.length() == 24 && walker.frameAt(wa, 0) == 0 && walker.frameAt(wa, 8) == 1 && walker.frameAt(wa, 12) == 2 &&
+        walker.frameAt(wa, 23) == 1 && walker.frameAt(wa, 24) == 0);
+  CHECK(walker.frameAt(idle, 100) == 0 && walker.frameAt(idle, 3) == 2);
+  {
+    Sprite w2 = walker;
+    w2.insertFrame(0, -1);
+    CHECK(w2.frames == 4 && w2.animations[0].steps[0].frame == 1 && w2.animations[0].steps[1].frame == 2);
+    w2.removeFrame(2);  // the old frame 1: its steps go
+    CHECK(w2.animations[0].steps.size() == 2 && w2.animations[0].steps[0].frame == 1 && w2.animations[0].steps[1].frame == 2);
+    w2 = walker;
+    w2.swapFrames(0, 2);
+    CHECK(w2.animations[0].steps[0].frame == 2 && w2.animations[0].steps[2].frame == 0 && w2.layers[0].bits[0][0] == 0x24);
+  }
+  {
+    Asset aa, bb;
+    aa.sprites = {walker};
+    aa.sprites[0].animations[0].basicTimer = "y";
+    aa.sprites[0].animations[0].basicStep = "z";
+    CHECK(fromJson(toJson(aa), &bb, &err) && bb.sprites.size() == 1 && bb.sprites[0].animations.size() == 2);
+    CHECK(!bb.sprites[0].animations[1].loop && bb.sprites[0].animations[0].steps[1].ticks == 4 && bb.sprites[0].animations[0].basicStep == "z");
+    CHECK(toJson(bb) == toJson(aa));
+  }
+  d = exportDasm(walker);
+  CHECK(d.find("walker_P0_FramePtrLo\n        .byte <walker_P0_Frame0,<walker_P0_Frame1,<walker_P0_Frame2\n") != std::string::npos);
+  CHECK(d.find("walker_walk_FRAME\n        .byte 0,1,2,1\nwalker_walk_TICKS\n        .byte 8,4,8,4\n") != std::string::npos &&
+        d.find("walker_idle_LOOP = 0") != std::string::npos && d.find("walker_FRAMES = 3") != std::string::npos);
+  imp = Asset();
+  CHECK(importText(d, &imp, &what) && imp.sprites.size() == 1);
+  if (imp.sprites.size() == 1) {
+    auto& w = imp.sprites[0];
+    CHECK(w.frames == 3 && w.layers.size() == 2 && w.animations.size() == 2);
+    for (auto& an : w.animations) {
+      if (an.name == "walk") CHECK(an.loop && an.steps.size() == 4 && an.steps[2].frame == 2 && an.steps[3].ticks == 4);
+      else CHECK(an.name == "idle" && !an.loop && an.steps.size() == 2 && an.steps[0].ticks == 10);
+    }
+  }
+  // batari Basic: a subroutine that plays it
+  CHECK(hasIssue(check(walker, std), Issue::Warning, "walk") && !hasIssue(check(walker, own), Issue::Warning, "variables"));
+  walker.animations[0].basicTimer = "y";
+  walker.animations[0].basicStep = "z";
+  b = exportBasicAnimation(walker, walker.animations[0], std);
+  CHECK(b.find("  dim walker_walk_t = y\n  dim walker_walk_s = z\n  data walker_walk_ticks\n  8, 4, 8, 4\nend\n") != std::string::npos);
+  CHECK(b.find("  on walker_walk_s goto walker_walk_f0 walker_walk_f1 walker_walk_f2 walker_walk_f1\n") != std::string::npos);
+  CHECK(b.find("\nwalker_walk_f2\n") != std::string::npos && b.find("  if walker_walk_s >= 4 then walker_walk_s = 0\n") != std::string::npos);
+  CHECK(exportBasicAnimation(walker, walker.animations[1], std).find("then walker_idle_s = 1\n") != std::string::npos);
+  {
+    Asset aa;
+    aa.sprites = {walker};
+    std::string reg = basicRegion("w.vcsgfx", aa, 0, std);
+    CHECK(reg.find("  rem vcsgfx w.vcsgfx walker animation walk\n") == 0 && reg.find("  rem vcsgfx w.vcsgfx walker animation idle\n") != std::string::npos);
+    int n = 0;
+    std::vector<std::string> probs;
+    std::string prog = "  rem vcsgfx w.vcsgfx walker animation walk\n  rem vcsgfx end\n  rem vcsgfx w.vcsgfx walker animation run\n  rem vcsgfx end\n";
+    std::string up = updateBasicRegions(prog, "w.vcsgfx", aa, std, &n, &probs);
+    CHECK(n == 1 && probs.size() == 1 && up.find("walker_walk_show") != std::string::npos && up.find("animation run\n  rem vcsgfx end") != std::string::npos);
+  }
+
   // the exported tables assemble (when DASM is installed)
   namespace fs = std::filesystem;
   std::string dasm = findInPath("dasm");
   if (!dasm.empty()) {
     fs::path dir = fs::temp_directory_path() / "vcside-gfx-test";
     fs::create_directories(dir);
-    std::ofstream(dir / "g.asm") << "    processor 6502\n    org $F000\n" << exportDasm(sp) << exportDasm(p2) << exportDasm(pf)
+    std::ofstream(dir / "g.asm") << "    processor 6502\n    org $F000\n" << exportDasm(sp) << exportDasm(p2) << exportDasm(pf) << exportDasm(walker)
                                  << "    org $FFFC\n    .word $F000\n    .word $F000\n";
     std::string cmd = "\"" + dasm + "\" \"" + (dir / "g.asm").string() + "\" -f3 -o\"" + (dir / "g.bin").string() + "\" > \"" +
                       (dir / "g.log").string() + "\" 2>&1";
