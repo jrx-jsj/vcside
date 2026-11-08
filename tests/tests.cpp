@@ -588,6 +588,18 @@ static void testElfSpace() {
   fs::remove_all(dir, ec);
 }
 
+static void testFormatOrder(const KnowledgeBase& kb) {
+  CHECK(naturalLess("Atari 8K (F8)", "Atari 16K (F6)") && !naturalLess("Atari 16K (F6)", "Atari 8K (F8)"));
+  CHECK(naturalLess("Atari 8K (F8)", "Atari 8K with Superchip (F8SC)") && naturalLess("bus", "CDF") && naturalLess("x2", "x010"));
+  CHECK(!naturalLess("a", "a") && naturalLess("a", "ab"));
+  std::set<std::string> cats;
+  for (auto& [id, title] : formatCategories()) cats.insert(id);
+  for (auto& f : kb.formats()) {
+    CHECK(cats.count(f.category));
+    if (!cats.count(f.category)) std::fprintf(stderr, "  format %s: category '%s'\n", f.id.c_str(), f.category.c_str());
+  }
+}
+
 static void testBasicSyntax(const KnowledgeBase& kb) {
   // keywords from data/kb/batari-basic.json, ranges expanded
   CHECK(kb.basic("drawscreen") && kb.basic("drawscreen")->kind == "statement");
@@ -706,6 +718,7 @@ int main() {
   testElfSpace();
   testBasic();
   testBasicSyntax(kb);
+  testFormatOrder(kb);
   std::printf("%d checks, %d failures\n", checks, failures);
   return failures ? 1 : 0;
 }

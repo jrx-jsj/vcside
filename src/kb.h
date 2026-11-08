@@ -35,6 +35,7 @@ struct Register {
 
 struct CartFormat {
   std::string id, name, size, description, stella, gopher2600, detection, ram;
+  std::string category;  // atari, classic, homebrew, arm
   std::vector<std::string> hotspots, issues, sources;
   bool verified = true;
   FormatSpace space;  // sizes for the space warnings (space.known = false if not given)
@@ -135,6 +136,10 @@ class KnowledgeBase {
 };
 
 std::string upper(std::string s);
+// Compares text with the numbers in it as numbers ("8K" < "16K"), ignoring case.
+bool naturalLess(const std::string& a, const std::string& b);
+// Format categories in menu order, with their titles (translated).
+std::vector<std::pair<std::string, std::string>> formatCategories();
 std::vector<std::string> dasmDirectives();
 
 }  // namespace vcs

@@ -154,6 +154,7 @@ bool KnowledgeBase::load(const std::string& dir, std::string* error) {
       CartFormat c;
       c.id = str(d, "id");
       c.name = str(d, "name");
+      c.category = str(d, "category");
       c.size = str(d, "size");
       c.description = str(d, "description");
       c.stella = str(d, "stella");
@@ -368,6 +369,37 @@ std::vector<KbEntry> KnowledgeBase::complete(const std::string& prefix, size_t m
   for (auto& d : dasmDirectives())
     if (starts(d) && out.size() < max) out.push_back({KbEntry::Directive, d, "DASM directive"});
   return out;
+}
+
+bool naturalLess(const std::string& a, const std::string& b) {
+  size_t i = 0, j = 0;
+  while (i < a.size() && j < b.size()) {
+    if (std::isdigit((unsigned char)a[i]) && std::isdigit((unsigned char)b[j])) {
+      size_t ei = i, ej = j;
+      while (ei < a.size() && std::isdigit((unsigned char)a[ei])) ei++;
+      while (ej < b.size() && std::isdigit((unsigned char)b[ej])) ej++;
+      // compare by length without leading zeros, then digit by digit
+      size_t zi = i, zj = j;
+      while (zi + 1 < ei && a[zi] == '0') zi++;
+      while (zj + 1 < ej && b[zj] == '0') zj++;
+      if (ei - zi != ej - zj) return ei - zi < ej - zj;
+      int c = a.compare(zi, ei - zi, b, zj, ej - zj);
+      if (c != 0) return c < 0;
+      i = ei, j = ej;
+      continue;
+    }
+    int ca = std::tolower((unsigned char)a[i]), cb = std::tolower((unsigned char)b[j]);
+    if (ca != cb) return ca < cb;
+    i++, j++;
+  }
+  return a.size() - i < b.size() - j;
+}
+
+std::vector<std::pair<std::string, std::string>> formatCategories() {
+  return {{"atari", T("Atari")},
+          {"classic", T("Other makers of the time")},
+          {"homebrew", T("Modern bank switching")},
+          {"arm", T("ARM cartridges (Harmony, PlusCart, Chameleon...)")}};
 }
 
 }  // namespace vcs

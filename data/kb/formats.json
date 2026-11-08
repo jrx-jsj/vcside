@@ -1,5 +1,6 @@
 {
  "notes": [
+  "category groups the formats in the menus: atari (Atari's own boards), classic (other makers of the time), homebrew (modern bank switching) and arm (cartridges with an ARM co-processor).",
   "Stella's option for the cartridge type is '-bs <type>' (also '-type'); '-format' selects the TV display format, not the cartridge. The 'stella' field is the name Stella lists for that type (names are case-insensitive; AUTO detects).",
   "Gopher2600 takes '-mapping <id>' (default AUTO). The 'gopher2600' field lists the ids its cartridge loader accepts, or 'none' when it has no mapper for the format.",
   "The 6507 sees 13 address bits, so the cartridge window is $1000-$1FFF and the same bytes appear at $3000, $5000, ... ($F000-$FFFF in the usual assembler notation). Hotspots fire on any read or write unless stated otherwise, and the access still happens on the bus.",
@@ -10,6 +11,7 @@
  "formats": [
   {
    "id": "2K",
+   "category": "atari",
    "name": "Atari 2K",
    "size": "2K (2048 bytes)",
    "banks": 1,
@@ -42,6 +44,7 @@
   },
   {
    "id": "4K",
+   "category": "atari",
    "name": "Atari 4K",
    "size": "4K (4096 bytes)",
    "banks": 1,
@@ -73,6 +76,7 @@
   },
   {
    "id": "F8",
+   "category": "atari",
    "name": "Atari 8K (F8)",
    "size": "8K",
    "banks": 2,
@@ -112,6 +116,7 @@
   },
   {
    "id": "F8SC",
+   "category": "atari",
    "name": "Atari 8K with Superchip (F8SC)",
    "size": "8K",
    "banks": 2,
@@ -157,6 +162,7 @@
   },
   {
    "id": "F6",
+   "category": "atari",
    "name": "Atari 16K (F6)",
    "size": "16K",
    "banks": 4,
@@ -196,6 +202,7 @@
   },
   {
    "id": "F6SC",
+   "category": "atari",
    "name": "Atari 16K with Superchip (F6SC)",
    "size": "16K",
    "banks": 4,
@@ -238,6 +245,7 @@
   },
   {
    "id": "F4",
+   "category": "atari",
    "name": "Atari 32K (F4)",
    "size": "32K",
    "banks": 8,
@@ -274,6 +282,7 @@
   },
   {
    "id": "F4SC",
+   "category": "atari",
    "name": "Atari 32K with Superchip (F4SC)",
    "size": "32K",
    "banks": 8,
@@ -316,6 +325,7 @@
   },
   {
    "id": "SC",
+   "category": "atari",
    "name": "Superchip (128 bytes of RAM added to 2K/4K/F8/F6/F4/EF/DF/BF)",
    "size": "n/a",
    "banks": 0,
@@ -341,6 +351,7 @@
   },
   {
    "id": "FE",
+   "category": "classic",
    "name": "Activision FE (8K, stack-sensed)",
    "size": "8K",
    "banks": 2,
@@ -376,6 +387,7 @@
   },
   {
    "id": "E0",
+   "category": "classic",
    "name": "Parker Brothers E0 (8K, 1K slices)",
    "size": "8K",
    "banks": 8,
@@ -413,6 +425,7 @@
   },
   {
    "id": "E7",
+   "category": "classic",
    "name": "M-Network E7 (16K + 2K RAM)",
    "size": "8K-16K (8K, 12K or 16K images)",
    "banks": 8,
@@ -453,6 +466,7 @@
   },
   {
    "id": "3F",
+   "category": "classic",
    "name": "Tigervision 3F (up to 512K, 2K banks)",
    "size": "8K-512K",
    "banks": 4,
@@ -486,6 +500,7 @@
   },
   {
    "id": "3E",
+   "category": "homebrew",
    "name": "Tigervision 3E (3F + RAM)",
    "size": "up to 512K ROM + up to 32K RAM",
    "banks": 0,
@@ -513,6 +528,7 @@
   },
   {
    "id": "3E+",
+   "category": "homebrew",
    "name": "Tigervision 3E+ (segmented ROM/RAM)",
    "size": "up to 64K ROM + 32K RAM",
    "banks": 0,
@@ -539,6 +555,7 @@
   },
   {
    "id": "FA",
+   "category": "classic",
    "name": "CBS RAM Plus (FA)",
    "size": "12K",
    "banks": 3,
@@ -582,6 +599,7 @@
   },
   {
    "id": "FA2",
+   "category": "homebrew",
    "name": "FA2 (CBS RAM Plus 28K/32K)",
    "size": "24K-32K (29K typical)",
    "banks": 7,
@@ -608,6 +626,7 @@
   },
   {
    "id": "F0",
+   "category": "classic",
    "name": "Dynacom Megaboy F0 (64K)",
    "size": "64K",
    "banks": 16,
@@ -643,6 +662,7 @@
   },
   {
    "id": "UA",
+   "category": "classic",
    "name": "UA Limited (8K)",
    "size": "8K",
    "banks": 2,
@@ -678,6 +698,7 @@
   },
   {
    "id": "0840",
+   "category": "homebrew",
    "name": "EconoBanking (0840)",
    "size": "8K",
    "banks": 2,
@@ -702,6 +723,7 @@
   },
   {
    "id": "X07",
+   "category": "homebrew",
    "name": "X07 (AtariAge 64K)",
    "size": "64K",
    "banks": 16,
@@ -726,6 +748,7 @@
   },
   {
    "id": "DPC",
+   "category": "classic",
    "name": "Pitfall II DPC",
    "size": "10K (8K ROM + 2K display data)",
    "banks": 2,
@@ -753,6 +776,7 @@
   },
   {
    "id": "DPC+",
+   "category": "arm",
    "name": "DPC+ (Harmony/Melody)",
    "size": "32K image (Stella accepts 16K-64K)",
    "banks": 6,
@@ -780,6 +804,7 @@
   },
   {
    "id": "CDFJ",
+   "category": "arm",
    "name": "CDF / CDFJ (Harmony/Melody, ARM)",
    "size": "32K image",
    "banks": 7,
@@ -806,6 +831,7 @@
   },
   {
    "id": "CDFJ+",
+   "category": "arm",
    "name": "CDFJ+ (larger ROM and RAM)",
    "size": "64K, 128K, 256K or 512K",
    "banks": 0,
@@ -831,6 +857,7 @@
   },
   {
    "id": "BUS",
+   "category": "arm",
    "name": "BUS (BusStuffing / Harmony cart)",
    "size": "32K",
    "banks": 0,
@@ -856,6 +883,7 @@
   },
   {
    "id": "ELF",
+   "category": "arm",
    "name": "ELF (relocatable ARM ELF: PlusCart, Chameleon, UnoCart)",
    "size": "variable",
    "banks": 0,
@@ -881,6 +909,7 @@
   },
   {
    "id": "AR",
+   "category": "classic",
    "name": "Supercharger (AR)",
    "size": "8448 bytes per load (multi-load images are multiples)",
    "banks": 3,
@@ -907,6 +936,7 @@
   },
   {
    "id": "EF",
+   "category": "homebrew",
    "name": "EF (64K)",
    "size": "64K",
    "banks": 16,
@@ -943,6 +973,7 @@
   },
   {
    "id": "DF",
+   "category": "homebrew",
    "name": "DF (128K)",
    "size": "128K",
    "banks": 32,
@@ -968,6 +999,7 @@
   },
   {
    "id": "SB",
+   "category": "homebrew",
    "name": "SB (128K-256K)",
    "size": "128K or 256K",
    "banks": 0,
@@ -992,6 +1024,7 @@
   },
   {
    "id": "4A50",
+   "category": "homebrew",
    "name": "4A50 (64K)",
    "size": "64K (Stella accepts exactly 64K)",
    "banks": 0,
@@ -1017,6 +1050,7 @@
   },
   {
    "id": "BF",
+   "category": "homebrew",
    "name": "BF (CPUWIZ 256K)",
    "size": "256K",
    "description": "Extension of EF/DF to 64 banks of 4 KB: accessing $1F80-$1FBF selects the bank whose number is the low 6 bits of the address. The BFSC variant adds the 128-byte Superchip RAM.",
@@ -1039,6 +1073,7 @@
   },
   {
    "id": "CV",
+   "category": "classic",
    "name": "CV (Commavid extra RAM)",
    "size": "2K ROM + 1K RAM (2K or 4K image)",
    "description": "Commavid scheme: 2 KB of ROM at $1800-$1FFF and 1 KB of RAM in the lower half of the window, with a read port at $1000-$13FF and a write port at $1400-$17FF. There is no bankswitching.",

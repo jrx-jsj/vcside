@@ -1058,11 +1058,28 @@ MenuBar App::buildMenuBar(bool native) {
       };
     };
     std::vector<MenuItem> formats, tvs, emus, illegal;
-    for (auto& f : kb_.formats()) {
-      MenuItem m = item(f.id, "", set([id = f.id](Project& pr) { pr.format = id; }), true, project_->format == f.id);
-      if (!native) m.hint = f.name;  // on the right
-      else m.label = f.name.find(f.id) != std::string::npos ? f.name : f.id + " — " + f.name;
-      formats.push_back(m);
+    // AUTO, then a submenu per category with its formats in name order (8K before 16K)
+    formats.push_back(item(T("Detected by the emulator (AUTO)"), "", set([](Project& pr) { pr.format = "AUTO"; }), true,
+                           project_->format == "AUTO"));
+    formats.push_back(MenuItem::sep());
+    for (auto& [cat, title] : formatCategories()) {
+      std::vector<const CartFormat*> in;
+      for (auto& f : kb_.formats())
+        if (f.category == cat) in.push_back(&f);
+      std::sort(in.begin(), in.end(), [](auto* a, auto* b) { return naturalLess(a->name, b->name); });
+      std::vector<MenuItem> items;
+      bool current = false;
+      for (auto* f : in) {
+        MenuItem m = item(f->id, "", set([id = f->id](Project& pr) { pr.format = id; }), true, project_->format == f->id);
+        if (!native) m.hint = f->name;  // on the right
+        else m.label = f->name.find(f->id) != std::string::npos ? f->name : f->id + " — " + f->name;
+        current = current || m.checked;
+        items.push_back(m);
+      }
+      if (items.empty()) continue;
+      MenuItem s = sub(title, items);
+      s.checked = current;  // marks the category of the project's format
+      formats.push_back(s);
     }
     for (auto& tv : tvStandardIds()) {
       MenuItem m = item(tv == "AUTO" ? T("Chosen by the emulator") : tv, "", set([tv](Project& pr) { pr.tv = tv; }), true, project_->tv == tv);
@@ -1079,7 +1096,7 @@ MenuBar App::buildMenuBar(bool native) {
       emus.push_back(m);
     }
     const IllegalOpcodes vals[] = {IllegalOpcodes::Allow, IllegalOpcodes::StableOnly, IllegalOpcodes::Warn, IllegalOpcodes::Forbid};
-    const char* names[] = {N_("allow"), N_("stable only"), N_("warn"), N_("forbid")};
+    const char* names[] = {N_("Allow"), N_("Stable only"), N_("Warn"), N_("Forbid")};
     for (int i = 0; i < 4; i++)
       illegal.push_back(item(T(names[i]), "", set([v = vals[i]](Project& pr) { pr.illegal = v; }), true, project_->illegal == vals[i]));
     b.push_back(MenuItem::sep());
@@ -1759,8 +1776,15 @@ void App::docsPanel() {
     ImGui::TreePop();
   }
   if (ImGui::TreeNode(T("Cartridge formats"))) {
-    for (auto& f : kb_.formats())
-      if (match(f.id) || match(f.name)) item("F:" + f.id, f.id + "  " + f.name, plain);
+    for (auto& [cat, title] : formatCategories()) {
+      std::vector<const CartFormat*> in;
+      for (auto& f : kb_.formats())
+        if (f.category == cat && (match(f.id) || match(f.name))) in.push_back(&f);
+      if (in.empty()) continue;
+      std::sort(in.begin(), in.end(), [](auto* a, auto* b) { return naturalLess(a->name, b->name); });
+      ImGui::SeparatorText(title.c_str());
+      for (auto* f : in) item("F:" + f->id, f->id + "  " + f->name, plain);
+    }
     ImGui::TreePop();
   }
   if (ImGui::TreeNode(T("TV standards"))) {
