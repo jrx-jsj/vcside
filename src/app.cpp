@@ -31,6 +31,7 @@ namespace vcs {
 
 static const int kLayoutVersion = 2;  // bump when a docked panel is added
 static const char* kLangIds[] = {"dasm", "batari-basic", "elf-c"};
+static const char* kTvMultipleHelp = N_("The program runs on more than one system and handles it in its code: the DASM template chooses with -DPAL=1, batari Basic with set tv, C detects it when it starts. The emulator is not told one: it detects it from the frame.");
 static const char* kLangNames[] = {N_("Assembler (DASM)"), N_("batari Basic"), N_("C for ELF (vcsLib)")};
 
 static std::string readFile(const std::string& p) {
@@ -1636,7 +1637,7 @@ MenuBar App::buildMenuBar(bool native) {
     tvIds.push_back("AUTO");
     if (std::find(tvIds.begin(), tvIds.end(), project_->tv) == tvIds.end()) tvIds.push_back(project_->tv);  // set by hand
     for (auto& tv : tvIds) {
-      MenuItem m = item(tv == "AUTO" ? T("Chosen by the emulator") : tv, "", set([tv](Project& pr) { pr.tv = tv; }), true, project_->tv == tv);
+      MenuItem m = item(tvLabel(tv), "", set([tv](Project& pr) { pr.tv = tv; }), true, project_->tv == tv);
       if (!tvSupported(project_->emulator, tv)) {
         Tool* t = tools_.get(project_->emulator);
         m.hint = F("not in {0}", {t ? t->name : project_->emulator});
@@ -1769,7 +1770,7 @@ void App::statusBar() {
     ImGui::SameLine();
   }
   if (project_) {
-    ImGui::Text("%s  |  %s  %s  %s", project_->name.c_str(), project_->format.c_str(), project_->tv.c_str(),
+    ImGui::Text("%s  |  %s  %s  %s", project_->name.c_str(), project_->format.c_str(), tvLabel(project_->tv).c_str(),
                 project_->emulator.c_str());
     ImGui::SameLine();
   }
@@ -2744,15 +2745,19 @@ void App::newProjectDialog() {
   {
     // only the standards this language can build for; the choice stays if the new list has it
     auto ids = tvStandardsFor(languageFromId(kLangIds[npLang_]));
+    ids.push_back("AUTO");
     if (std::find(ids.begin(), ids.end(), npTvId_) == ids.end()) npTvId_ = ids[0];
-    if (ImGui::BeginCombo(T("TV standard"), npTvId_.c_str())) {
+    if (ImGui::BeginCombo(T("TV standard"), tvLabel(npTvId_).c_str())) {
       for (auto& tv : ids) {
+        if (tv == "AUTO") ImGui::Separator();
         bool sel = tv == npTvId_;
-        std::string label = tv;
-        if (!tvSupported("stella", tv)) label += "  " + F("(not in {0})", {"Stella"});
+        std::string label = tvLabel(tv);
+        if (tv != "AUTO" && !tvSupported("stella", tv)) label += "  " + F("(not in {0})", {"Stella"});
         if (ImGui::Selectable(label.c_str(), sel)) npTvId_ = tv;
-        if (ImGui::IsItemHovered())
-          if (const TvStandard* t = kb_.tv(tv)) ImGui::SetTooltip("%s", F("{0} lines, {1} Hz", {std::to_string(t->linesTotal), t->fps}).c_str());
+        if (ImGui::IsItemHovered()) {
+          if (tv == "AUTO") ImGui::SetTooltip("%s", T(kTvMultipleHelp));
+          else if (const TvStandard* t = kb_.tv(tv)) ImGui::SetTooltip("%s", F("{0} lines, {1} Hz", {std::to_string(t->linesTotal), t->fps}).c_str());
+        }
       }
       ImGui::EndCombo();
     }

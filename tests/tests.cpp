@@ -683,7 +683,7 @@ static void testElfSpace() {
 
   // the DASM example: its graphics, the tables they give, and a program that assembles
   CHECK(Project::examples(Language::Dasm).size() == 1 && Project::examples(Language::BatariBasic).empty());
-  for (const char* tv : {"NTSC", "PAL"}) {
+  for (const char* tv : {"NTSC", "PAL", "AUTO"}) {
     fs::path ad = dir / (std::string("anim-") + tv);
     CHECK(Project::create(ad.string(), "walker", Language::Dasm, tv, &p, &err, "animation"));
     for (auto f : {"main.asm", "2600.h", "hero.vcsgfx", "hero.gfx.asm"}) CHECK(fs::exists(ad / f));
@@ -694,6 +694,13 @@ static void testElfSpace() {
     if (!dasm.empty()) {
       std::string cmd = "cd \"" + ad.string() + "\" && \"" + dasm + "\" main.asm -f3 -oexample.bin > dasm.log 2>&1";
       CHECK(std::system(cmd.c_str()) == 0 && fs::file_size(ad / "example.bin", ec) == 4096);
+      if (std::string(tv) == "AUTO") {  // both systems from one source: -DPAL=1 gives the 50 Hz one
+        std::string pal = "cd \"" + ad.string() + "\" && \"" + dasm + "\" main.asm -f3 -DPAL=1 -opal.bin > dasm.log 2>&1";
+        CHECK(std::system(pal.c_str()) == 0 && fs::file_size(ad / "pal.bin", ec) == 4096);
+        std::ifstream a(ad / "example.bin", std::ios::binary), b(ad / "pal.bin", std::ios::binary);
+        std::string ta((std::istreambuf_iterator<char>(a)), {}), tb((std::istreambuf_iterator<char>(b)), {});
+        CHECK(ta != tb);
+      }
     }
   }
   CHECK(!Project::create((dir / "none").string(), "x", Language::Dasm, "NTSC", &p, &err, "nope") && !err.empty());

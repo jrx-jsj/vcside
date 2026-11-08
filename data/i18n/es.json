@@ -144,7 +144,6 @@
     "Chameleon flash {0}/{1}  ·  RAM {2}/{3}{4}": "Flash del Chameleon {0}/{1}  ·  RAM {2}/{3}{4}",
     "Choose the file...": "Elegir el archivo...",
     "Choose...": "Elegir...",
-    "Chosen by the emulator": "Lo elige el emulador",
     "Clear all breakpoints": "Quitar todos los puntos de ruptura",
     "Click: zoom in · Alt+click or right button: zoom out · drag: move": "Clic: acercar · Alt+clic o botón derecho: alejar · arrastrar: mover",
     "Close": "Cerrar",
@@ -378,6 +377,7 @@
     "Modern bank switching": "Cambio de banco moderno",
     "Move lines down": "Bajar líneas",
     "Move lines up": "Subir líneas",
+    "Multiple (in the code)": "Varias (en el código)",
     "name": "nombre",
     "Name": "Nombre",
     "Named colours. A colour that refers to one ($name) changes with it.": "Colores con nombre. Un color que se refiere a uno ($nombre) cambia con él.",
@@ -585,6 +585,7 @@
     "The layers' positions are exported as comments: the program places each object relative to the first one.": "Las posiciones de las capas se exportan como comentarios: el programa coloca cada objeto respecto al primero.",
     "The multisprite kernel draws {0} one line high: only its position is kept.": "El kernel multisprite dibuja {0} de una línea de alto: solo se conserva su posición.",
     "The multisprite kernel's playfield is mirrored (the right half is the left one reversed); these rows are not: {0}.": "El playfield del kernel multisprite va reflejado (la mitad derecha es la izquierda invertida); estas filas no lo están: {0}.",
+    "The program runs on more than one system and handles it in its code: the DASM template chooses with -DPAL=1, batari Basic with set tv, C detects it when it starts. The emulator is not told one: it detects it from the frame.": "El programa funciona en más de un sistema y lo resuelve en su código: la plantilla de DASM elige con -DPAL=1, batari Basic con set tv, y C lo detecta al arrancar. Al emulador no se le indica ninguno: lo detecta por el cuadro.",
     "the project is not a JSON object": "el proyecto no es un objeto JSON",
     "The project's ({0})": "El del proyecto ({0})",
     "The project's batari Basic ({0}) does not exist.": "No existe el batari Basic del proyecto ({0}).",
@@ -725,5 +726,5 @@
     "{0}:{1}: no code at or after this line; breakpoint ignored.": "{0}:{1}: no hay código en esta línea ni después; se ignora el punto de ruptura.",
     "{0}:{1}: no listing to place the breakpoint: build first.": "{0}:{1}: no hay listado para situar el punto de ruptura: compila antes."
   },
-  "total": 722
+  "total": 723
 }

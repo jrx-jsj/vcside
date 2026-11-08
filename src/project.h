@@ -86,6 +86,9 @@ const std::vector<std::string>& tvStandardIds();
 // (PAL60 is its NTSC timing with PAL colours) and vcsLib detects NTSC, PAL and PAL60;
 // a DASM kernel is the programmer's, so any.
 std::vector<std::string> tvStandardsFor(Language lang);
+std::string tvLabel(const std::string& tv);  // for people: AUTO is "Multiple (in the code)"
+// AUTO in a project: it runs on several systems, handled in its code (a DASM template
+// chooses with -DPAL=1, vcsLib detects it); the emulator is not told one and detects it.
 bool tvSupported(const std::string& emulator, const std::string& tv);
 bool tvIs50Hz(const std::string& tv);
 std::vector<std::string> splitCommand(const std::string& s);  // "a \"b c\"" -> a, b c

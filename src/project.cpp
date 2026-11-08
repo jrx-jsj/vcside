@@ -371,6 +371,8 @@ const std::vector<std::string>& tvStandardIds() {
   return ids;
 }
 
+std::string tvLabel(const std::string& tv) { return tv == "AUTO" ? std::string(T("Multiple (in the code)")) : tv; }
+
 std::vector<std::string> tvStandardsFor(Language lang) {
   if (lang == Language::BatariBasic || lang == Language::ElfC) return {"NTSC", "PAL", "PAL60"};
   std::vector<std::string> v;
@@ -475,10 +477,16 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
       return false;
     }
     bool pal = tvIs50Hz(tvStd);
-    std::string defs = pal ? "VBLANK_LINES   = 45\nVISIBLE_LINES  = 228\nOVERSCAN_LINES = 36"
-                           : "VBLANK_LINES   = 37\nVISIBLE_LINES  = 192\nOVERSCAN_LINES = 30";
+    const char* lines50 = "VBLANK_LINES   = 45\nVISIBLE_LINES  = 228\nOVERSCAN_LINES = 36";
+    const char* lines60 = "VBLANK_LINES   = 37\nVISIBLE_LINES  = 192\nOVERSCAN_LINES = 30";
+    std::string defs = pal ? lines50 : lines60, tvText = tvStd + " timing";
+    if (tvStd == "AUTO") {  // several systems: the program chooses when it is assembled
+      defs = std::string("        IFCONST PAL     ; 50 Hz: assemble with -DPAL=1 (Project settings > DASM arguments)\n") +
+             lines50 + "\n        ELSE\n" + lines60 + "\n        ENDIF";
+      tvText = "NTSC timing, or PAL assembled with -DPAL=1";
+    }
     replaceAll(asmText, "{{NAME}}", projName);
-    replaceAll(asmText, "{{TV}}", tvStd);
+    replaceAll(asmText, "{{TV}} timing", tvText);
     replaceAll(asmText, "{{TVDEFS}}", defs);
     fs::path mainFile = fs::path(p.dir) / "main.asm";
     if (!fs::exists(mainFile)) std::ofstream(mainFile) << asmText;
