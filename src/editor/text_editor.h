@@ -37,6 +37,8 @@ struct EditorHooks {
   std::function<std::vector<Completion>(const std::string& prefix, const std::string& line)> complete;
   // Jumps to where a symbol is defined (F12 / Ctrl+click); false if not found.
   std::function<bool(const std::string& word)> gotoDefinition;
+  // Whether gotoDefinition would find it (Ctrl/Cmd over a word underlines it as a link).
+  std::function<bool(const std::string& word, int line)> hasDefinition;
 };
 
 struct Match {
@@ -134,6 +136,10 @@ class TextEditor {
   int visualCol(int line, int byteCol) const;
   int byteCol(int line, int visCol) const;
   std::string wordAt(Coord c, int* start = nullptr, int* end = nullptr) const;
+  // The word last checked for a definition under Ctrl/Cmd, and the answer.
+  std::string linkWord_;
+  int linkLine_ = -1;
+  bool linkOk_ = false;
   void handleKeyboard();
   void renderFindBar();
   void refreshMatches();

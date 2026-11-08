@@ -217,6 +217,11 @@ OpenFile* App::openFile(const std::string& pathIn, int line) {
     EditorHooks h = ext == ".bas" ? basicHooks() : asmHooks();
     OpenFile* self = f.get();
     h.gotoDefinition = [this, self](const std::string& w) { return gotoDefinition(w, self->path, self->editor.cursor().line); };
+    h.hasDefinition = [this, self](const std::string& w, int line) {
+      std::string path;
+      int at = 0;
+      return findDefinition(w, self->path, line, path, at);
+    };
     f->editor.setHooks(h);
   }
   f->requestFocus = true;
@@ -1163,7 +1168,7 @@ static bool definesWord(const std::string& line, const std::string& word) {
   return false;
 }
 
-bool App::gotoDefinition(const std::string& word, const std::string& fromFile, int fromLine) {
+bool App::findDefinition(const std::string& word, const std::string& fromFile, int fromLine, std::string& path, int& line) {
   if (word.empty()) return false;
   bool bas = lower(fs::path(fromFile).extension().string()) == ".bas";
   auto defines = [&](const std::string& line) { return bas ? basicLabelOf(line) == word : definesWord(line, word); };
@@ -1177,7 +1182,7 @@ bool App::gotoDefinition(const std::string& word, const std::string& fromFile, i
     for (int i = 0; i < (int)lines.size(); i++)
       if (defines(lines[i]) && (best < 0 || i <= fromLine)) best = i;
     if (best >= 0) {
-      openFile(f->path, best + 1);
+      path = f->path, line = best + 1;
       return true;
     }
   }
@@ -1194,16 +1199,26 @@ bool App::gotoDefinition(const std::string& word, const std::string& fromFile, i
     }
     if (!it->is_regular_file() || !searched(it->path().string()) || it->path().string() == fromFile) continue;
     std::ifstream in(it->path());
-    std::string line;
-    for (int n = 1; std::getline(in, line); n++) {
-      if (!line.empty() && line.back() == '\r') line.pop_back();
-      if (defines(line)) {
-        openFile(it->path().string(), n);
+    std::string text;
+    for (int n = 1; std::getline(in, text); n++) {
+      if (!text.empty() && text.back() == '\r') text.pop_back();
+      if (defines(text)) {
+        path = it->path().string(), line = n;
         return true;
       }
     }
   }
-  lastStatus_ = F("No definition found for {0}", {word});
+  return false;
+}
+
+bool App::gotoDefinition(const std::string& word, const std::string& fromFile, int fromLine) {
+  std::string path;
+  int line = 0;
+  if (findDefinition(word, fromFile, fromLine, path, line)) {
+    openFile(path, line);
+    return true;
+  }
+  if (!word.empty()) lastStatus_ = F("No definition found for {0}", {word});
   return false;
 }
 

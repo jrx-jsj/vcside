@@ -940,6 +940,28 @@ bool TextEditor::render(const char* id, ImFont* font) {
     }
   }
 
+  // Ctrl/Cmd over a symbol with a definition: underlined like a link, hand cursor.
+  if (hovered && io.KeyCtrl && !io.KeyAlt && !inMargin && hooks_.gotoDefinition && io.MousePos.x > textX) {
+    int line = (int)std::floor((io.MousePos.y - origin.y) / lineH_);
+    if (line >= 0 && line < (int)lines_.size()) {
+      int s, e;
+      std::string w = wordAt(clamp({line, byteCol(line, (int)((io.MousePos.x - textX) / charW_))}), &s, &e);
+      if (!w.empty() && std::isdigit((unsigned char)w[0])) w.clear();
+      if (w != linkWord_ || line != linkLine_) {
+        linkWord_ = w, linkLine_ = line;
+        linkOk_ = !w.empty() && (!hooks_.hasDefinition || hooks_.hasDefinition(w, line));
+      }
+      if (linkOk_) {
+        float x0 = textX + visualCol(line, s) * charW_, x1 = textX + visualCol(line, e) * charW_;
+        float y = origin.y + line * lineH_ + lineH_ - 1;
+        dl->AddLine(ImVec2(x0, y), ImVec2(x1, y), col(Role::EdLink), 1.0f);
+        ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+      }
+    }
+  } else {
+    linkWord_.clear(), linkLine_ = -1;
+  }
+
   // gutter (drawn over the text so it stays fixed when scrolling horizontally)
   float gx = winPos.x;
   dl->AddRectFilled(ImVec2(gx, winPos.y), ImVec2(gx + gutterW - charW_ * 0.5f, winPos.y + viewH), col(Role::EdGutter));

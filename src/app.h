@@ -132,6 +132,8 @@ class App {
   void lint(OpenFile& f);
   void showDoc(const std::string& word);
   bool gotoDefinition(const std::string& word, const std::string& fromFile, int fromLine);
+  // Where a symbol is defined: the open file first, then the project's sources.
+  bool findDefinition(const std::string& word, const std::string& fromFile, int fromLine, std::string& path, int& line);
 
   // editor hooks
   EditorHooks asmHooks();
