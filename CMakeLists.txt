@@ -80,7 +80,7 @@ add_custom_command(TARGET vcside POST_BUILD
 
 # --- Tests (no GUI) ---------------------------------------------------------
 enable_testing()
-add_executable(vcside_tests tests/tests.cpp src/kb.cpp src/cycles.cpp src/builder_parse.cpp src/editor/text_editor.cpp src/i18n.cpp)
+add_executable(vcside_tests tests/tests.cpp src/kb.cpp src/cycles.cpp src/builder_parse.cpp src/editor/text_editor.cpp src/i18n.cpp src/space.cpp)
 target_include_directories(vcside_tests PRIVATE src)
 target_link_libraries(vcside_tests PRIVATE imgui nlohmann_json::nlohmann_json)
 target_compile_definitions(vcside_tests PRIVATE VCSIDE_SOURCE_DATA="${CMAKE_SOURCE_DIR}/data")

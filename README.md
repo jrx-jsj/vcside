@@ -19,6 +19,10 @@ A small native IDE for making Atari 2600 games, on macOS, Windows and Linux. It 
   - all 256 6502 opcodes, grouped as legal, stable illegal and unstable illegal;
   - TIA and RIOT registers with their known issues;
   - cartridge formats and TV standards.
+- **Space report** after each DASM build:
+  - bytes used and free per ROM bank, in the 2600's RAM (with room left for the stack) and in the cartridge's RAM (Superchip, FA, CV);
+  - warnings for full banks, wrong ROM sizes and code on bank-switch hotspots, with the source line when possible;
+  - thresholds per project: `space_warn_percent` and `stack_reserve` in the `.vcsproj`.
 - **Illegal-opcode policy** per project: allow, stable only, warn or forbid.
 - **Interface languages**: English, plus catalogs in `data/i18n/` (Spanish included). Catalogs can be partial, and anything missing falls back to English.
 

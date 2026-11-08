@@ -162,6 +162,17 @@ bool KnowledgeBase::load(const std::string& dir, std::string* error) {
       c.issues = strs(d, "issues");
       c.sources = strs(d, "sources");
       c.verified = d.value("verified", true);
+      if (d.contains("space") && d["space"].is_object()) {
+        auto& sp = d["space"];
+        c.space.known = true;
+        c.space.romSizes = sp.value("rom_sizes", std::vector<long>{});
+        c.space.bankSize = sp.value("bank_size", 4096L);
+        c.space.ramBytes = sp.value("ram_bytes", 0L);
+        for (auto& r : sp.value("reserved", std::vector<std::string>{}))
+          if (auto x = parseRange(r)) c.space.reserved.push_back(*x);
+        for (auto& r : sp.value("ram_windows", std::vector<std::string>{}))
+          if (auto x = parseRange(r)) c.space.ramWindows.push_back(*x);
+      }
       formats_.push_back(c);
     }
   }

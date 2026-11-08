@@ -3,6 +3,7 @@
 // VCSIDE main window: menus, docked panels and the build/run cycle.
 #pragma once
 #include <SDL3/SDL.h>
+#include <imgui.h>
 
 #include <deque>
 #include <map>
@@ -17,6 +18,7 @@
 #include "kb.h"
 #include "process.h"
 #include "project.h"
+#include "space.h"
 #include "toolchain.h"
 
 struct ImFont;
@@ -41,9 +43,10 @@ class App {
 
   // Scripted actions for automatic tests (--build, --select, --doc).
   void testBuild() { build(0); }
-  bool testBusy() const { return building_; }
+  bool testBusy() const { return building_ || spaceRunning_; }
   void testSelect(int firstLine, int lastLine);
   void testDoc(const std::string& word) { showDoc(word); }
+  void testFocus(const std::string& panel) { ImGui::SetWindowFocus(("###" + panel).c_str()); }
   void testDefinition(const std::string& w) {
     if (activeFile_ >= 0) gotoDefinition(w, files_[activeFile_]->path, files_[activeFile_]->editor.cursor().line);
   }
@@ -63,6 +66,7 @@ class App {
   void editorsPanel();
   void outputPanel();
   void problemsPanel();
+  void spacePanel();
   void docsPanel();
   void statusBar();
   void newProjectDialog();
@@ -79,6 +83,8 @@ class App {
   void build(int thenRun);  // 0 = no, 1 = run, 2 = debug
   void run(bool debug);
   void pollBuild();
+  void startSpace();
+  void pollSpace();
   void loadSymbols();
   void lint(OpenFile& f);
   void showDoc(const std::string& word);
@@ -119,6 +125,11 @@ class App {
   std::vector<Diagnostic> diagnostics_;
   std::map<std::string, int> symbols_;
   std::string lastStatus_;
+  Job spaceJob_;               // second DASM run (-f2) for the space report
+  bool spaceRunning_ = false;
+  unsigned bottomDock_ = 0;    // dock node of the output panel (the space panel joins it)
+  std::optional<SpaceReport> space_;
+  std::string spaceNote_;      // why there is no report (ELF, custom build...)
 
   // docs
   std::string docQuery_;

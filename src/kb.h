@@ -7,6 +7,8 @@
 #include <string>
 #include <vector>
 
+#include "format_space.h"
+
 namespace vcs {
 
 struct Opcode {
@@ -35,6 +37,7 @@ struct CartFormat {
   std::string id, name, size, description, stella, gopher2600, detection, ram;
   std::vector<std::string> hotspots, issues, sources;
   bool verified = true;
+  FormatSpace space;  // sizes for the space warnings (space.known = false if not given)
 };
 
 struct TvStandard {

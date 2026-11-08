@@ -21,6 +21,7 @@ using nlohmann::json;
 
 namespace vcs {
 
+static const int kLayoutVersion = 2;  // bump when a docked panel is added
 static const char* kTvIds[] = {"NTSC", "PAL", "PAL60", "SECAM"};
 static const char* kLangIds[] = {"dasm", "batari-basic", "elf-c"};
 static const char* kLangNames[] = {N_("Assembler (DASM)"), N_("batari Basic"), N_("C for ELF (vcsLib)")};
@@ -70,13 +71,19 @@ void App::loadSettings() {
   recent_ = j.value("recent", std::vector<std::string>{});
   showCycles_ = j.value("show_cycles", true);
   tools_.loadSettings(j.value("tools", std::map<std::string, std::string>{}));
+  // A new docked panel needs the default layout once (imgui.ini would keep it floating).
+  if (j.value("layout_version", 0) < kLayoutVersion) {
+    resetLayout_ = true;
+    saveSettings();
+  }
 }
 
 void App::saveSettings() {
   json j = {{"language", currentLanguage()},
             {"recent", recent_},
             {"show_cycles", showCycles_},
-            {"tools", tools_.userPaths()}};
+            {"tools", tools_.userPaths()},
+            {"layout_version", kLayoutVersion}};
   std::ofstream(configDir() + "settings.json") << j.dump(2) << "\n";
 }
 
@@ -216,6 +223,8 @@ void App::build(int thenRun) {
   }
   output_.clear();
   diagnostics_.clear();
+  space_.reset();
+  spaceNote_.clear();
   building_ = true;
   runAfterBuild_ = thenRun;
   lastStatus_ = T("Building...");
@@ -244,10 +253,70 @@ void App::pollBuild() {
     auto size = fs::file_size(project_->outputPath(), ec);
     if (!ec) output_ += F("{0}: {1} bytes", {project_->outputPath(), std::to_string(size)}) + "\n";
     loadSymbols();
+    startSpace();
   }
   for (auto& f : files_) lint(*f);
   if (ok && runAfterBuild_) run(runAfterBuild_ == 2);
   runAfterBuild_ = 0;
+}
+
+// Space report: DASM again with -f2 (exact blocks of emitted bytes), then the listing for RAM.
+void App::startSpace() {
+  auto args = project_->rasArgs(tools_);
+  if (args.empty()) {
+    spaceNote_ = T("The space report is only available for DASM projects built by VCSIDE.");
+    return;
+  }
+  spaceRunning_ = spaceJob_.start(args, project_->dir);
+}
+
+void App::pollSpace() {
+  if (!spaceRunning_ || spaceJob_.running()) return;
+  spaceRunning_ = false;
+  if (!project_ || spaceJob_.exitCode() != 0) {
+    spaceNote_ = T("Could not measure the space: DASM failed writing the block file.");
+    return;
+  }
+  std::error_code ec;
+  long romSize = (long)fs::file_size(project_->outputPath(), ec);
+  if (ec) romSize = 0;
+  std::string rasPath = project_->stem() + ".ras";
+  auto rom = parseDasmRas(readFile(rasPath));
+  fs::remove(rasPath, ec);
+  std::string lst = readFile(project_->stem() + ".lst");
+  // Listing file names are as DASM opened them: absolute, or relative to the project or an include folder.
+  auto readSource = [this](const std::string& name) {
+    std::vector<std::string> dirs = {project_->dir};
+    for (auto& d : project_->includeDirs) dirs.push_back(project_->abs(d));
+    fs::path p(name);
+    std::error_code e;
+    if (!p.is_absolute())
+      for (auto& d : dirs)
+        if (fs::exists(fs::path(d) / name, e)) {
+          p = fs::path(d) / name;
+          break;
+        }
+    std::vector<std::string> lines;
+    std::istringstream in(readFile(p.string()));
+    for (std::string l; std::getline(in, l);) lines.push_back(l);
+    return lines;
+  };
+  auto ram = parseDasmListingRam(lst, readSource, [this](const std::string& s) { return lookupSymbol(s); });
+  auto code = parseDasmListingCode(lst);
+  FormatSpace fmt;
+  if (const CartFormat* f = kb_.format(project_->format)) fmt = f->space;
+  SpaceOptions opt;
+  opt.warnPercent = project_->spaceWarnPercent;
+  opt.stackReserve = project_->stackReserve;
+  space_ = analyzeSpace(rom, romSize, ram, code, fmt, opt);
+  if (!fmt.known) spaceNote_ = F("The {0} format has no space data yet: 4 KB banks assumed.", {project_->format});
+  for (auto d : space_->diagnostics) {
+    d.message = T("Space") + std::string(": ") + d.message;
+    diagnostics_.push_back(d);
+  }
+  output_ += space_->summary() + "\n";
+  outputScroll_ = true;
+  for (auto& f : files_) lint(*f);
 }
 
 void App::run(bool debug) {
@@ -536,6 +605,7 @@ void App::frame() {
     }
   }
   pollBuild();
+  pollSpace();
 
   // global shortcuts
   ImGuiIO& io = ImGui::GetIO();
@@ -561,6 +631,7 @@ void App::frame() {
   editorsPanel();
   outputPanel();
   problemsPanel();
+  spacePanel();
   docsPanel();
   newProjectDialog();
   toolsDialog();
@@ -718,6 +789,7 @@ void App::dockspace() {
     ImGui::DockBuilderDockWindow("###docs", right);
     ImGui::DockBuilderDockWindow("###output", bottom);
     ImGui::DockBuilderDockWindow("###problems", bottom);
+    ImGui::DockBuilderDockWindow("###space", bottom);
     ImGui::DockBuilderDockWindow("###editors", center);
     ImGui::DockBuilderFinish(id);
   }
@@ -761,6 +833,15 @@ void App::statusBar() {
       if (c.guessed) extra += "  " + F("{0} guessed (~)", {std::to_string(c.guessed)});
       ImGui::TextDisabled("%s", extra.c_str());
     }
+  }
+  if (space_) {
+    std::string sum = space_->summary();
+    bool err = false, warn = false;
+    for (auto& d : space_->diagnostics) err |= d.severity == Diagnostic::Error, warn |= d.severity == Diagnostic::Warning;
+    float w = ImGui::CalcTextSize(sum.c_str()).x;
+    ImGui::SameLine(std::max(ImGui::GetCursorPosX() + 20, ImGui::GetWindowWidth() - w - 12));
+    ImVec4 col = err ? ImVec4(1, 0.45f, 0.45f, 1) : warn ? ImVec4(1, 0.8f, 0.3f, 1) : ImVec4(0.7f, 0.7f, 0.7f, 1);
+    ImGui::TextColored(col, "%s", sum.c_str());
   }
   ImGui::End();
 }
@@ -909,7 +990,9 @@ void App::closeDialogs() {
 void App::outputPanel() {
   char title[64];
   snprintf(title, sizeof title, "%s###output", T("Output"));
-  if (ImGui::Begin(title)) {
+  bool open = ImGui::Begin(title);
+  bottomDock_ = ImGui::GetWindowDockID();
+  if (open) {
     ImGui::PushFont(mono_);
     ImGui::TextUnformatted(output_.c_str());
     if (outputScroll_ || building_) ImGui::SetScrollHereY(1.0f);
@@ -939,7 +1022,15 @@ void App::problemsPanel() {
         ImGui::PopStyleColor();
         ImGui::PopID();
         ImGui::TableNextColumn();
-        if (d.line) ImGui::Text("%s:%d", d.file.c_str(), d.line);
+        if (d.line) {
+          std::string shown = d.file;
+          std::error_code ec;
+          if (project_ && fs::path(d.file).is_absolute()) {
+            auto rel = fs::relative(d.file, project_->dir, ec);
+            if (!ec && !rel.empty() && rel.native()[0] != '.') shown = rel.string();
+          }
+          ImGui::Text("%s:%d", shown.c_str(), d.line);
+        }
         ImGui::TableNextColumn();
         ImGui::TextUnformatted(d.message.c_str());
         if (clicked && d.line && project_) {
@@ -949,6 +1040,48 @@ void App::problemsPanel() {
         }
       }
       ImGui::EndTable();
+    }
+  }
+  ImGui::End();
+}
+
+static void spaceBar(const SpaceReport::Area& a, int warnPercent) {
+  ImGui::TextUnformatted(a.name.c_str());
+  ImGui::SameLine(ImGui::GetFontSize() * 9);
+  if (!a.measured) {
+    ImGui::TextDisabled("%s", a.note.c_str());
+    return;
+  }
+  float frac = a.size > 0 ? (float)a.used / (float)a.size : 0;
+  int pct = a.size > 0 ? (int)((a.used * 100 + a.size - 1) / a.size) : 0;
+  ImVec4 col = a.used > a.size ? ImVec4(0.85f, 0.25f, 0.25f, 1) : pct >= warnPercent ? ImVec4(0.9f, 0.7f, 0.2f, 1) : ImVec4(0.3f, 0.65f, 0.35f, 1);
+  std::string label = F("{0} / {1} bytes ({2} %), {3} free",
+                        {std::to_string(a.used), std::to_string(a.size), std::to_string(pct), std::to_string(std::max(0L, a.size - a.used))});
+  ImGui::PushStyleColor(ImGuiCol_PlotHistogram, col);
+  ImGui::ProgressBar(std::min(frac, 1.0f), ImVec2(ImGui::GetFontSize() * 24, 0), label.c_str());
+  ImGui::PopStyleColor();
+}
+
+void App::spacePanel() {
+  char title[64];
+  snprintf(title, sizeof title, "%s###space", T("Space"));
+  if (bottomDock_) ImGui::SetNextWindowDockID(bottomDock_, ImGuiCond_FirstUseEver);
+  if (ImGui::Begin(title)) {
+    if (spaceRunning_) ImGui::TextDisabled("%s", T("Measuring..."));
+    if (!spaceNote_.empty()) ImGui::TextWrapped("%s", spaceNote_.c_str());
+    if (!space_) {
+      if (!spaceRunning_ && spaceNote_.empty()) ImGui::TextDisabled("%s", T("Build the project (F7) to see the space used."));
+    } else {
+      int warn = project_ ? project_->spaceWarnPercent : 90;
+      ImGui::SeparatorText(F("ROM ({0} bytes)", {std::to_string(space_->romFileSize)}).c_str());
+      for (auto& b : space_->banks) spaceBar(b, warn);
+      ImGui::SeparatorText(T("RAM"));
+      spaceBar(space_->ram, warn);
+      if (space_->ram.measured)
+        ImGui::TextDisabled("%s", F("{0} bytes above the variables for the stack (reserve: {1}).",
+                                     {std::to_string(space_->stackRoom), std::to_string(project_ ? project_->stackReserve : 8)})
+                                      .c_str());
+      if (space_->cartRam) spaceBar(*space_->cartRam, warn);
     }
   }
   ImGui::End();

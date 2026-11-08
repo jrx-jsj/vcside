@@ -25,6 +25,8 @@ struct Project {
   IllegalOpcodes illegal = IllegalOpcodes::Warn;
   std::vector<std::string> includeDirs;
   std::string buildCommand;     // optional: custom command (e.g. "make"), overrides the tool
+  int spaceWarnPercent = 90;    // warn when a bank or RAM area is fuller than this
+  int stackReserve = 8;         // bytes of 2600 RAM to keep free for the stack
 
   bool load(const std::string& path, std::string* error);
   bool save(std::string* error) const;
@@ -33,6 +35,8 @@ struct Project {
   std::string outputPath() const { return abs(output); }
   std::string stem() const;  // output path without extension (for .lst/.sym)
 
+  // DASM run that writes the emitted blocks (-f2) to <stem>.ras, for the space report.
+  std::vector<std::string> rasArgs(Toolchain& tc) const;
   // Command lines; empty vector + error when a tool is missing.
   std::vector<std::string> buildArgs(Toolchain& tc, std::string* error) const;
   std::vector<std::string> runArgs(Toolchain& tc, bool debug, std::string* error) const;

@@ -60,24 +60,28 @@ El autocompletado, la ayuda flotante y el panel de documentación salen de estos
 
 Al seleccionar un bloque de ensamblador se suman los ciclos mínimos y máximos (cruce de página, ramas tomadas), los bytes y la posición en la línea (76 ciclos por línea, 228 relojes de color). Se muestra en la barra de estado y como columna junto al código.
 
-## Avisos de espacio (pendiente)
+## Avisos de espacio
 
-Tras cada compilación, el IDE dirá cuánto espacio queda y avisará antes de que se acabe. Los datos de cada formato (tamaño de banco, RAM extra, puertos) salen de `formats.json`.
+Tras cada compilación con DASM, el IDE mide cuánto espacio queda (`src/space.*`). Los datos de cada formato (tamaños de ROM válidos, tamaño de banco, direcciones reservadas, RAM extra y sus ventanas) están en el objeto `space` de `formats.json`.
 
-- **ROM**, en todos los formatos:
-  - lo ocupado y lo libre por banco y en total, a partir del listado (`.lst`) y de los `ORG`/`RORG` de DASM, o del mapa de enlace en los proyectos ELF;
-  - aviso amarillo al pasar del 90 % y rojo al llenarse o desbordarse;
-  - en formatos con bancos: qué banco se llena;
-  - avisar si algo pisa los vectores (`$FFFA-$FFFF`) o las direcciones de cambio de banco (*hotspots*).
-- **RAM de la 2600** (128 bytes, `$80-$FF`):
-  - lo que reservan los `SEG.U`/`ds` del programa frente a lo que queda para la pila;
-  - aviso con un margen de pila configurable (por ejemplo, 8 bytes por defecto) y error si las variables se solapan con la pila.
-- **RAM extra del cartucho**, solo en los formatos que la tienen:
-  - Superchip (`SC`, 128 bytes), E7 (2 KB), FA/CBS (256 bytes), 3E/3E+, DPC+ y CDFJ (RAM del ARM), ELF (RAM del Chameleon/PlusCart);
-  - avisos con el mismo criterio;
-  - en Superchip y similares, avisar también de las lecturas del puerto de escritura (escriben basura).
-- **Dónde se ve:** una barra por banco y por RAM en el panel de salida, el resumen en la barra de estado, y los avisos en *Problemas* con su línea cuando se pueda (la `ds` o el `ORG` que desborda).
-- **Política de cada proyecto:** márgenes y si un desbordamiento es aviso o error.
+- **Cómo se mide:**
+  - **ROM:** una segunda pasada de DASM con `-f2` escribe cada bloque de bytes emitidos con su origen y longitud, así que se sabe exactamente qué está ocupado. El relleno de `ALIGN` y `ds` cuenta como ocupado. El listado no sirve para esto: `incbin` no da tamaño y las macros arrastran direcciones viejas.
+  - **RAM:** las líneas sin inicializar (`U`) del listado, con el tamaño de cada `ds` leído de su línea de código y evaluado con los símbolos. Las variables declaradas con `=` no se cuentan; si no hay ningún `SEG.U`, la RAM sale como «sin medir».
+- **ROM:**
+  - lo ocupado y lo libre por banco;
+  - error si la imagen es mayor que la que admite el formato, aviso si es de otro tamaño;
+  - aviso si código o datos caen en un *hotspot* o en los puertos de la RAM del cartucho. No avisa del relleno `ds`/`align`, que es la forma normal de saltarse la ventana del Superchip.
+- **RAM de la 2600:** lo que ocupan las variables y lo que queda por encima para la pila. Aviso si queda menos que la reserva del proyecto y error si una variable pasa de `$FF`.
+- **RAM del cartucho:**
+  - Superchip (128 bytes), FA (256) y CV (1 KB): las declaraciones a través de la ventana de lectura o de escritura se cuentan juntas;
+  - E7 sale como «sin medir», porque su RAM se direcciona por bancos.
+- **Umbrales:** aviso al llegar a `space_warn_percent` (90 % por defecto) y error al desbordarse. La reserva de pila es `stack_reserve` (8 bytes por defecto). Los dos se configuran en el `.vcsproj`.
+- **Dónde se ve:** el panel *Espacio* (una barra por banco y por RAM), el resumen en la barra de estado y los avisos en *Problemas*, con su línea cuando se puede.
+- **Pendiente:**
+  - formatos sin datos de espacio (3E, DPC, DPC+, CDFJ…), que se miden como bancos de 4 KB;
+  - proyectos ELF, con el mapa de enlace;
+  - batari Basic;
+  - avisar de las lecturas del puerto de escritura del Superchip.
 
 ## Fases
 

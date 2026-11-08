@@ -4,7 +4,8 @@
   "Gopher2600 takes '-mapping <id>' (default AUTO). The 'gopher2600' field lists the ids its cartridge loader accepts, or 'none' when it has no mapper for the format.",
   "The 6507 sees 13 address bits, so the cartridge window is $1000-$1FFF and the same bytes appear at $3000, $5000, ... ($F000-$FFFF in the usual assembler notation). Hotspots fire on any read or write unless stated otherwise, and the access still happens on the bus.",
   "Power-up bank is not specified by the schemes: keep the reset and interrupt vectors in every bank (or in the fixed bank for 3F, E0 and E7).",
-  "Entries with 'verified': false hold statements that two independent sources did not confirm; they are marked in 'issues' with 'Unverified'."
+  "Entries with 'verified': false hold statements that two independent sources did not confirm; they are marked in 'issues' with 'Unverified'.",
+  "The optional 'space' object of a format gives the numbers VCSIDE uses for its space warnings: possible ROM image sizes, bank size, ranges of the 4K window that must not hold code or data in each bank (hotspots, Superchip/FA RAM ports), cartridge RAM size and the windows through which it is declared. ram_windows empty with ram_bytes > 0 means the RAM exists but VCSIDE cannot measure it from the DASM output. The numbers repeat the 'size', 'hotspots' and 'ram' fields of the same entry."
  ],
  "formats": [
   {
@@ -28,7 +29,16 @@
    "sources": [
     "stella-src",
     "gopher-src"
-   ]
+   ],
+   "space": {
+    "rom_sizes": [
+     2048
+    ],
+    "bank_size": 2048,
+    "reserved": [],
+    "ram_bytes": 0,
+    "ram_windows": []
+   }
   },
   {
    "id": "4K",
@@ -50,7 +60,16 @@
    "sources": [
     "stella-src",
     "gopher-src"
-   ]
+   ],
+   "space": {
+    "rom_sizes": [
+     4096
+    ],
+    "bank_size": 4096,
+    "reserved": [],
+    "ram_bytes": 0,
+    "ram_windows": []
+   }
   },
   {
    "id": "F8",
@@ -78,7 +97,18 @@
     "stella-src",
     "gopher-src",
     "horton"
-   ]
+   ],
+   "space": {
+    "rom_sizes": [
+     8192
+    ],
+    "bank_size": 4096,
+    "reserved": [
+     "$1FF8-$1FF9"
+    ],
+    "ram_bytes": 0,
+    "ram_windows": []
+   }
   },
   {
    "id": "F8SC",
@@ -108,7 +138,22 @@
    "sources": [
     "stella-src",
     "gopher-src"
-   ]
+   ],
+   "space": {
+    "rom_sizes": [
+     8192
+    ],
+    "bank_size": 4096,
+    "reserved": [
+     "$1000-$10FF",
+     "$1FF8-$1FF9"
+    ],
+    "ram_bytes": 128,
+    "ram_windows": [
+     "$1000-$107F",
+     "$1080-$10FF"
+    ]
+   }
   },
   {
    "id": "F6",
@@ -136,7 +181,18 @@
     "stella-src",
     "gopher-src",
     "horton"
-   ]
+   ],
+   "space": {
+    "rom_sizes": [
+     16384
+    ],
+    "bank_size": 4096,
+    "reserved": [
+     "$1FF6-$1FF9"
+    ],
+    "ram_bytes": 0,
+    "ram_windows": []
+   }
   },
   {
    "id": "F6SC",
@@ -163,7 +219,22 @@
     "stella-src",
     "gopher-src",
     "horton"
-   ]
+   ],
+   "space": {
+    "rom_sizes": [
+     16384
+    ],
+    "bank_size": 4096,
+    "reserved": [
+     "$1000-$10FF",
+     "$1FF6-$1FF9"
+    ],
+    "ram_bytes": 128,
+    "ram_windows": [
+     "$1000-$107F",
+     "$1080-$10FF"
+    ]
+   }
   },
   {
    "id": "F4",
@@ -188,7 +259,18 @@
     "stella-src",
     "gopher-src",
     "horton"
-   ]
+   ],
+   "space": {
+    "rom_sizes": [
+     32768
+    ],
+    "bank_size": 4096,
+    "reserved": [
+     "$1FF4-$1FFB"
+    ],
+    "ram_bytes": 0,
+    "ram_windows": []
+   }
   },
   {
    "id": "F4SC",
@@ -215,7 +297,22 @@
     "stella-src",
     "gopher-src",
     "horton"
-   ]
+   ],
+   "space": {
+    "rom_sizes": [
+     32768
+    ],
+    "bank_size": 4096,
+    "reserved": [
+     "$1000-$10FF",
+     "$1FF4-$1FFB"
+    ],
+    "ram_bytes": 128,
+    "ram_windows": [
+     "$1000-$107F",
+     "$1080-$10FF"
+    ]
+   }
   },
   {
    "id": "SC",
@@ -266,7 +363,16 @@
     "stella-src",
     "gopher-src",
     "horton"
-   ]
+   ],
+   "space": {
+    "rom_sizes": [
+     8192
+    ],
+    "bank_size": 4096,
+    "reserved": [],
+    "ram_bytes": 0,
+    "ram_windows": []
+   }
   },
   {
    "id": "E0",
@@ -294,7 +400,16 @@
     "stella-src",
     "gopher-src",
     "horton"
-   ]
+   ],
+   "space": {
+    "rom_sizes": [
+     8192
+    ],
+    "bank_size": 1024,
+    "reserved": [],
+    "ram_bytes": 0,
+    "ram_windows": []
+   }
   },
   {
    "id": "E7",
@@ -323,7 +438,18 @@
     "stella-src",
     "gopher-src",
     "horton"
-   ]
+   ],
+   "space": {
+    "rom_sizes": [
+     8192,
+     12288,
+     16384
+    ],
+    "bank_size": 2048,
+    "reserved": [],
+    "ram_bytes": 2048,
+    "ram_windows": []
+   }
   },
   {
    "id": "3F",
@@ -349,7 +475,14 @@
     "stella-src",
     "gopher-src",
     "horton"
-   ]
+   ],
+   "space": {
+    "rom_sizes": [],
+    "bank_size": 2048,
+    "reserved": [],
+    "ram_bytes": 0,
+    "ram_windows": []
+   }
   },
   {
    "id": "3E",
@@ -430,7 +563,22 @@
     "stella-src",
     "gopher-src",
     "horton"
-   ]
+   ],
+   "space": {
+    "rom_sizes": [
+     12288
+    ],
+    "bank_size": 4096,
+    "reserved": [
+     "$1000-$11FF",
+     "$1FF8-$1FFA"
+    ],
+    "ram_bytes": 256,
+    "ram_windows": [
+     "$1000-$10FF",
+     "$1100-$11FF"
+    ]
+   }
   },
   {
    "id": "FA2",
@@ -480,7 +628,18 @@
    "sources": [
     "stella-src",
     "horton"
-   ]
+   ],
+   "space": {
+    "rom_sizes": [
+     65536
+    ],
+    "bank_size": 4096,
+    "reserved": [
+     "$1FF0-$1FF0"
+    ],
+    "ram_bytes": 0,
+    "ram_windows": []
+   }
   },
   {
    "id": "UA",
@@ -506,7 +665,16 @@
    "sources": [
     "stella-src",
     "gopher-src"
-   ]
+   ],
+   "space": {
+    "rom_sizes": [
+     8192
+    ],
+    "bank_size": 4096,
+    "reserved": [],
+    "ram_bytes": 0,
+    "ram_windows": []
+   }
   },
   {
    "id": "0840",
@@ -760,7 +928,18 @@
     "stella-src",
     "gopher-src",
     "horton"
-   ]
+   ],
+   "space": {
+    "rom_sizes": [
+     65536
+    ],
+    "bank_size": 4096,
+    "reserved": [
+     "$1FE0-$1FEF"
+    ],
+    "ram_bytes": 0,
+    "ram_windows": []
+   }
   },
   {
    "id": "DF",
@@ -878,7 +1057,20 @@
    "sources": [
     "stella-src",
     "gopher-src"
-   ]
+   ],
+   "space": {
+    "rom_sizes": [
+     2048,
+     4096
+    ],
+    "bank_size": 2048,
+    "reserved": [],
+    "ram_bytes": 1024,
+    "ram_windows": [
+     "$1000-$13FF",
+     "$1400-$17FF"
+    ]
+   }
   }
  ],
  "sources": [

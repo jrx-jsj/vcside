@@ -138,8 +138,9 @@ int main(int argc, char** argv) {
   // Options for automatic tests: --shot file.bmp saves the window and quits;
   // --build builds first, --select A-B selects lines, --doc WORD shows its documentation,
   // --find/--replace TEXT opens the find bar, --definition WORD jumps to it,
-  // --lang CODE switches the interface language.
-  std::string shot, select, doc, find, def;
+  // --lang CODE switches the interface language, --focus PANEL (output, problems,
+  // space, docs...) brings a panel to the front before the capture.
+  std::string shot, select, doc, find, def, focus;
   bool findReplace = false;
   bool doBuild = false;
   for (int i = 1; i < argc; i++) {
@@ -150,6 +151,7 @@ int main(int argc, char** argv) {
     else if (a == "--definition" && i + 1 < argc) def = argv[++i];
     else if ((a == "--find" || a == "--replace") && i + 1 < argc) findReplace = a == "--replace", find = argv[++i];
     else if (a == "--build") doBuild = true;
+    else if (a == "--focus" && i + 1 < argc) focus = argv[++i];
     else if (a == "--lang" && i + 1 < argc) vcs::setLanguage(argv[++i]);
     else app.openPath(a);
   }
@@ -163,6 +165,7 @@ int main(int argc, char** argv) {
       if (frame == 9 && !find.empty()) app.testFind(find, findReplace);
       if (frame == 9 && !def.empty()) app.testDefinition(def);
       if (frame > 10 && shotFrame < 0 && !app.testBusy()) shotFrame = frame + 5;
+      if (frame == shotFrame - 3 && !focus.empty()) app.testFocus(focus);
     }
     SDL_Event e;
     bool any = SDL_WaitEventTimeout(&e, shot.empty() ? 50 : 10);  // idle when nothing happens (a build polls every 50 ms)

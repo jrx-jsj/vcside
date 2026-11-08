@@ -8,6 +8,7 @@
 #include "editor/text_editor.h"
 #include "cycles.h"
 #include "kb.h"
+#include "space.h"
 
 static int failures = 0, checks = 0;
 #define CHECK(cond)                                                     \
@@ -171,6 +172,115 @@ static void testEditor() {
   CHECK(r.text() == "lda Frame\nsta Frame");
 }
 
+static std::string ras(const std::vector<std::pair<long, long>>& blocks) {
+  std::string d;
+  for (auto [org, len] : blocks) {
+    d += char(org & 0xFF), d += char(org >> 8), d += char(len & 0xFF), d += char(len >> 8);
+    d += std::string(len, '\xEA');
+  }
+  return d;
+}
+
+static bool hasDiag(const SpaceReport& r, Diagnostic::Severity s, const std::string& part) {
+  for (auto& d : r.diagnostics)
+    if (d.severity == s && d.message.find(part) != std::string::npos) return true;
+  return false;
+}
+
+static void testSpace(const KnowledgeBase& kb) {
+  auto rr = parseRange("$1FF8-$1FF9");
+  CHECK(rr && rr->lo == 0x1FF8 && rr->hi == 0x1FFA);
+  CHECK(parseRange("$1FF0") && parseRange("$1FF0")->size() == 1);
+  CHECK(!parseRange("1FF8"));
+  auto blocks = parseDasmRas(ras({{0x0000, 104}, {0x0FFC, 9}, {0x1FFC, 4}}));
+  CHECK(blocks.size() == 3 && blocks[1].lo == 0x0FFC && blocks[1].hi == 0x1005);
+
+  // Every format with a "space" object is consistent.
+  int withSpace = 0;
+  for (auto& f : kb.formats()) {
+    if (!f.space.known) continue;
+    withSpace++;
+    CHECK(f.space.bankSize > 0);
+    for (long s : f.space.romSizes) CHECK(s % f.space.bankSize == 0);
+    CHECK(f.space.ramWindows.empty() || f.space.ramBytes > 0);
+  }
+  CHECK(withSpace >= 17);
+  const CartFormat* f8 = kb.format("F8");
+  const CartFormat* f8sc = kb.format("F8SC");
+  CHECK(f8 && f8sc && f8sc->space.ramBytes == 128);
+
+  // The listing of a small F8 program with Superchip RAM (DASM 2.20).
+  const std::string lst =
+      "------- FILE f8.asm LEVEL 1 PASS 1\n"
+      "      1  0000\t\t\t\t      processor\t6502\n"
+      "      4 U0080\t\t       00 00 00    Var1       ds\t3\n"
+      "      5 U0083\t\t       00 00 00 00*Var2       ds\tSIZE\n"
+      "      8 U1000\t\t       00 00 00 00*ScW\t      ds\t20\n"
+      "     12  0000\t\t       a9 01\t   B0\t      lda\t#1\n"
+      "     14  0004\t\t       ea ea ea ea*\t      ds\t100, $EA\n"
+      "------- FILE inc.h LEVEL 2 PASS 1\n"
+      "      3  1ff6\t\t       a9 02\t   B1\t      lda\t#2\n";
+  std::vector<std::string> src(14);
+  src[3] = "Var1       ds 3";
+  src[4] = "Var2       ds SIZE";
+  src[7] = "ScW\tds 20";
+  SymbolLookup sym = [](const std::string& s) -> std::optional<int> {
+    if (s == "SIZE") return 10;
+    return std::nullopt;
+  };
+  auto ram = parseDasmListingRam(lst, [&](const std::string& f) { return f == "f8.asm" ? src : std::vector<std::string>{}; }, sym);
+  CHECK(ram.size() == 3);
+  CHECK(ram.size() == 3 && ram[1].label == "Var2" && ram[1].size == 10 && ram[2].addr == 0x1000 && ram[2].size == 20);
+  auto code = parseDasmListingCode(lst);
+  CHECK(code.size() == 3 && code.back().file == "inc.h" && code.back().addr == 0x1FF6);
+
+  SpaceOptions opt;
+  // F8, two banks: bank 0 with 104+4 bytes, bank 1 with the vectors and code at $1FF6 (hotspot $1FF8).
+  auto rep = analyzeSpace(parseDasmRas(ras({{0x0000, 104}, {0x0FFC, 4}, {0x1FF6, 10}})), 8192, ram, code, f8->space, opt);
+  CHECK(rep.banks.size() == 2 && rep.banks[0].used == 108 && rep.banks[1].used == 10);
+  CHECK(rep.ram.measured && rep.ram.used == 13 && rep.stackRoom == 128 - 13);
+  CHECK(!rep.cartRam);
+  CHECK(hasDiag(rep, Diagnostic::Warning, "$1FF8"));
+  bool pointed = false;
+  for (auto& d : rep.diagnostics) pointed |= d.file == "inc.h" && d.line == 3;
+  CHECK(pointed);
+  // F8SC: the 20 bytes declared at $1000 are cartridge RAM.
+  rep = analyzeSpace(parseDasmRas(ras({{0x0100, 50}, {0x1100, 50}})), 8192, ram, code, f8sc->space, opt);
+  CHECK(rep.cartRam && rep.cartRam->measured && rep.cartRam->used == 20 && rep.cartRam->size == 128);
+  CHECK(rep.diagnostics.empty());
+  CHECK(code.size() == 3 && !code[0].fill && code[1].fill);
+  // Padding over the Superchip ports is fine; code there is not.
+  std::vector<CodeLine> pad = {{"m.asm", 5, 0x0000, true}, {"m.asm", 6, 0x0100, false}};
+  rep = analyzeSpace(parseDasmRas(ras({{0x0000, 300}})), 8192, {}, pad, f8sc->space, opt);
+  CHECK(rep.diagnostics.empty());
+  pad[0].fill = false;
+  rep = analyzeSpace(parseDasmRas(ras({{0x0000, 300}})), 8192, {}, pad, f8sc->space, opt);
+  CHECK(hasDiag(rep, Diagnostic::Warning, "$1000") && rep.diagnostics[0].line == 5);
+  // Wrong size: 12K for F8 is an overflow; 4K is a warning.
+  rep = analyzeSpace(parseDasmRas(ras({{0x0000, 12288}})), 12288, {}, {}, f8->space, opt);
+  CHECK(hasDiag(rep, Diagnostic::Error, "12288"));
+  CHECK(!rep.ram.measured);
+  rep = analyzeSpace(parseDasmRas(ras({{0x0000, 100}})), 4096, {}, {}, f8->space, opt);
+  CHECK(hasDiag(rep, Diagnostic::Warning, "4096"));
+  // A full bank and one at 95 %.
+  rep = analyzeSpace(parseDasmRas(ras({{0x0000, 0x0FF8}, {0x0FFA, 6}, {0x1000, 3900}, {0x1FFA, 6}})), 8192, {}, {}, f8->space, opt);
+  CHECK(rep.banks[0].used == 4094 && rep.banks[1].used == 3906);
+  CHECK(hasDiag(rep, Diagnostic::Warning, "Bank 0 is 100 %") && hasDiag(rep, Diagnostic::Warning, "Bank 1 is 96 %"));
+  // 2600 RAM: little room for the stack, and a variable past $FF.
+  std::vector<RamDecl> big = {{"a.asm", 4, 0x80, 124, "Buf"}};
+  rep = analyzeSpace({}, 0, big, {}, f8->space, opt);
+  CHECK(rep.stackRoom == 4 && hasDiag(rep, Diagnostic::Warning, "stack"));
+  big[0].size = 130;
+  rep = analyzeSpace({}, 0, big, {}, f8->space, opt);
+  CHECK(hasDiag(rep, Diagnostic::Error, "Buf") && rep.diagnostics[0].line == 4);
+  // E7's RAM cannot be measured; CV's can.
+  const CartFormat* e7 = kb.format("E7");
+  CHECK(e7 && e7->space.ramBytes == 2048);
+  rep = analyzeSpace({}, 0, {}, {}, e7->space, opt);
+  CHECK(rep.cartRam && !rep.cartRam->measured);
+  CHECK(!rep.summary().empty() || rep.banks.empty());
+}
+
 int main() {
   KnowledgeBase kb;
   std::string err;
@@ -181,6 +291,7 @@ int main() {
   testCycles(kb);
   testParsers();
   testEditor();
+  testSpace(kb);
   std::printf("%d checks, %d failures\n", checks, failures);
   return failures ? 1 : 0;
 }

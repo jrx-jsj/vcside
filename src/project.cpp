@@ -64,6 +64,8 @@ bool Project::load(const std::string& path, std::string* error) {
     illegal = illegalFromId(j.value("illegal_opcodes", "warn"));
     includeDirs = j.value("include_dirs", std::vector<std::string>{});
     buildCommand = j.value("build_command", "");
+    spaceWarnPercent = j.value("space_warn_percent", 90);
+    stackReserve = j.value("stack_reserve", 8);
   } catch (const std::exception& e) {
     if (error) *error = path + ": " + e.what();
     return false;
@@ -78,6 +80,8 @@ bool Project::save(std::string* error) const {
             {"emulator", emulator},   {"illegal_opcodes", illegalId(illegal)},
             {"include_dirs", includeDirs}};
   if (!buildCommand.empty()) j["build_command"] = buildCommand;
+  if (spaceWarnPercent != 90) j["space_warn_percent"] = spaceWarnPercent;
+  if (stackReserve != 8) j["stack_reserve"] = stackReserve;
   std::ofstream f(file);
   if (!f) {
     if (error) *error = F("Cannot write {0}", {file});
@@ -109,6 +113,15 @@ static std::vector<std::string> splitCommand(const std::string& s) {
   }
   if (!cur.empty()) out.push_back(cur);
   return out;
+}
+
+std::vector<std::string> Project::rasArgs(Toolchain& tc) const {
+  if (language != Language::Dasm || !buildCommand.empty()) return {};
+  Tool* t = tc.get("dasm");
+  if (!t || !t->found()) return {};
+  std::vector<std::string> a = {t->path, abs(main), "-f2", "-v0", "-o" + stem() + ".ras", "-I" + dir};
+  for (auto& d : includeDirs) a.push_back("-I" + abs(d));
+  return a;
 }
 
 std::vector<std::string> Project::buildArgs(Toolchain& tc, std::string* error) const {
