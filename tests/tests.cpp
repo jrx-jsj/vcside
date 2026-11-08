@@ -15,6 +15,8 @@
 #include "elf_space.h"
 #include "emulator_launch.h"
 #include "i18n.h"
+#include "gfx.h"
+#include "child_process.h"
 
 #include <algorithm>
 #include <array>
@@ -731,6 +733,179 @@ static void testBasic() {
   CHECK(am.linesAt(0xF000).empty());  // the header has no line of the .bas
 }
 
+static bool hasIssue(const std::vector<gfx::Issue>& v, gfx::Issue::Severity sev, const std::string& part) {
+  for (auto& i : v)
+    if (i.severity == sev && i.text.find(part) != std::string::npos) return true;
+  return false;
+}
+
+static void testGfx() {
+  using namespace gfx;
+  // palette: grey hue 0, SECAM by luminance only
+  CHECK(rgb(Tv::NTSC, 0x00) == 0x0F0F0F || (rgb(Tv::NTSC, 0x00) >> 16) == (rgb(Tv::NTSC, 0x00) & 0xFF));
+  CHECK(rgb(Tv::SECAM, 0x0E) == 0xFFFFFF && rgb(Tv::SECAM, 0x40) == 0x000000 && rgb(Tv::SECAM, 0x42) == rgb(Tv::SECAM, 0x92));
+  CHECK(tvFromProject("PAL60") == Tv::PAL && tvFromProject("PAL-M") == Tv::NTSC && tvFromProject("SECAM60") == Tv::SECAM);
+  CHECK(hexColour(0x1F) == "$1E");
+
+  // playfield bits: PF0 4-7, PF1 7-0, PF2 0-7
+  int reg, bit;
+  pfBit(0, &reg, &bit);
+  CHECK(reg == 0 && bit == 4);
+  pfBit(4, &reg, &bit);
+  CHECK(reg == 1 && bit == 7);
+  pfBit(19, &reg, &bit);
+  CHECK(reg == 2 && bit == 7);
+  Playfield pf;
+  pf.rows.resize(3);
+  pf.setPixel(0, 0, true);
+  pf.rows[0].mode = PfMode::Mirror;
+  CHECK(pf.pixel(0, 39) && !pf.pixel(0, 20) && !pf.rows[0].asymmetric);
+  pf.rows[1].mode = PfMode::Repeat;
+  pf.setPixel(1, 4, true);
+  CHECK(pf.pixel(1, 24));
+  pf.setPixel(1, 30, true);  // the right half: the row becomes asymmetric, the old copy stays
+  CHECK(pf.rows[1].asymmetric && pf.pixel(1, 24) && pf.pixel(1, 30) && !pf.pixel(1, 10));
+  uint8_t L[3], R[3];
+  pf.registers(1, L, R);
+  CHECK(L[1] == 0x80 && R[1] == 0x82 && R[2] == 0);  // column 30 = right index 10 = PF1 bit 1
+  pf.setAsymmetric(1, false);
+  CHECK(!pf.pixel(1, 30) && pf.pixel(1, 24));
+  pf.rows[2].pf = 0x44;
+  CHECK(pf.pfAt(1) == pf.pfColour && pf.pfAt(2) == 0x44);
+
+  // sprites: layers, frames, colours
+  Sprite sp;
+  sp.name = "hero";
+  Layer a;
+  a.obj = Obj::P0;
+  a.resize(1, 3);
+  a.bits[0] = {0x81, 0x3C, 0xFF};
+  a.colours[0] = {0x1E, -1, 0x44};
+  Layer m;
+  m.obj = Obj::M0;
+  m.dx = 9;
+  m.size = 2;
+  m.resize(1, 3);
+  m.bits[0] = {1, 1, 0};
+  m.colours[0] = {0x1E, 0x88, -1};
+  sp.layers = {a, m};
+  CHECK(a.colour(0, 1) == 0x1E && a.colour(0, 2) == 0x44 && a.width() == 8 && m.width() == 2);
+  CHECK(a.pixel(0, 0, 0) && !a.pixel(0, 0, 1) && a.pixel(0, 0, 7));
+  Layer big = a;
+  big.size = 2;
+  big.reflect = true;
+  CHECK(big.width() == 16 && big.pixel(0, 1, 4) && big.pixel(0, 1, 11) && !big.pixel(0, 1, 3));
+  auto iss = check(sp, Target::Dasm);
+  CHECK(hasIssue(iss, Issue::Warning, "COLUP0"));  // M0 row 2 is $88, P0's is $1E
+  CHECK(!hasIssue(iss, Issue::Error, ""));
+  sp.layers.push_back(a);  // a second P0 in the same phase
+  CHECK(hasIssue(check(sp, Target::Dasm), Issue::Error, "P0"));
+  sp.layers.back().phase = 1;
+  iss = check(sp, Target::Dasm);
+  CHECK(!hasIssue(iss, Issue::Error, "") && hasIssue(iss, Issue::Warning, "30 Hz"));
+  CHECK(hasIssue(check(sp, Target::Basic), Issue::Warning, "flicker"));
+  sp.layers.pop_back();
+  sp.insertFrame(1, 0);
+  CHECK(sp.frames == 2 && sp.layers[0].bits[1] == sp.layers[0].bits[0]);
+  sp.layers[0].bits[1][0] = 0x18;
+  sp.removeFrame(0);
+  CHECK(sp.frames == 1 && sp.layers[0].bits[0][0] == 0x18);
+  sp.layers[0].bits[0][0] = 0x81;
+
+  // JSON round trip
+  Asset as;
+  as.sprites = {sp};
+  as.playfields = {pf};
+  Asset back;
+  std::string err;
+  CHECK(fromJson(toJson(as), &back, &err));
+  CHECK(back.sprites.size() == 1 && back.sprites[0].layers.size() == 2 && back.sprites[0].layers[1].dx == 9 &&
+        back.sprites[0].layers[0].bits[0] == sp.layers[0].bits[0] && back.sprites[0].layers[0].colours[0] == sp.layers[0].colours[0]);
+  CHECK(back.playfields.size() == 1 && back.playfields[0].rows[2].pf == 0x44 && back.playfields[0].pixel(0, 39));
+  CHECK(toJson(back) == toJson(as));
+  CHECK(!fromJson("{nope", &back, &err) && !err.empty());
+
+  // DASM export, read back
+  std::string d = exportDasm(sp);
+  CHECK(d.find("hero_P0_Frame0\n        .byte #%11111111;$44\n        .byte #%00111100;$1E\n        .byte #%10000001;$1E\n") != std::string::npos);
+  CHECK(d.find("hero_M0_DX = 9") != std::string::npos && d.find("hero_M0_SIZE = $10") != std::string::npos);
+  Asset imp;
+  std::string what;
+  CHECK(importText(d, &imp, &what) && imp.sprites.size() == 1);
+  if (imp.sprites.size() == 1) {
+    auto& s2 = imp.sprites[0];
+    CHECK(s2.name == "hero" && s2.layers.size() == 2);
+    CHECK(s2.layers.size() == 2 && s2.layers[0].bits[0] == sp.layers[0].bits[0] && s2.layers[0].colour(0, 2) == 0x44);
+    CHECK(s2.layers.size() == 2 && s2.layers[1].obj == Obj::M0 && s2.layers[1].dx == 9 && s2.layers[1].size == 2 && s2.layers[1].bits[0][1] == 1);
+  }
+  // PlayerPal-style tables: Frame/ColorFrame labels, bottom row first, colour comments
+  imp = Asset();
+  CHECK(importText(";---Graphics Data---\nFrame0\n        .byte #%00011000;$46\n        .byte #%00111100;$1A\nFrame1\n        .byte #%00100100;$46\n"
+                   "        .byte #%01111110;$1A\n;---Color Data---\nColorFrame0\n        .byte #$46;\n        .byte #$1A;\n",
+                   &imp, &what));
+  CHECK(imp.sprites.size() == 1 && imp.sprites[0].frames == 2 && imp.sprites[0].layers.size() == 1);
+  if (imp.sprites.size() == 1 && imp.sprites[0].layers.size() == 1) {
+    auto& l = imp.sprites[0].layers[0];
+    CHECK(l.bits[0][0] == 0x3C && l.bits[0][1] == 0x18 && l.colour(0, 0) == 0x1A && l.bits[1][0] == 0x7E && l.colour(1, 1) == 0x46);
+  }
+  // batari Basic export and import
+  std::string b = exportBasic(sp);
+  CHECK(b.find("  player0:\n  %11111111\n  %00111100\n  %10000001\nend\n  player0color:\n  $44\n  $1E\n  $1E\nend\n") != std::string::npos);
+  CHECK(b.find("missile0height = 2") != std::string::npos);
+  imp = Asset();
+  CHECK(importText(b, &imp, &what) && imp.sprites.size() == 1 && imp.sprites[0].layers[0].bits[0] == sp.layers[0].bits[0] &&
+        imp.sprites[0].layers[0].colour(0, 2) == 0x44);
+  // playfields: DASM tables and batari Basic blocks both come back
+  Playfield p2;
+  p2.name = "level";
+  p2.rows.resize(2);
+  p2.rows[0].mode = PfMode::Repeat;
+  p2.setPixel(0, 5, true);
+  p2.setPixel(1, 17, true);
+  p2.setPixel(1, 33, true);
+  p2.rows[1].pf = 0x86;
+  d = exportDasm(p2);
+  CHECK(d.find("level_PF0R") != std::string::npos && d.find("level_COLUPF_ROWS") != std::string::npos);
+  imp = Asset();
+  CHECK(importText(d, &imp, &what) && imp.playfields.size() == 1);
+  if (imp.playfields.size() == 1) {
+    auto& q = imp.playfields[0];
+    bool same = q.rows.size() == 2;
+    for (int r = 0; r < 2 && same; r++)
+      for (int c = 0; c < 40; c++) same &= q.pixel(r, c) == p2.pixel(r, c);
+    CHECK(same && q.name == "level" && q.pfAt(1) == 0x86 && q.rows[1].asymmetric && !q.rows[0].asymmetric);
+  }
+  b = exportBasic(p2);
+  CHECK(b.find("  playfield:\n  .X...................X..........\n") != std::string::npos && b.find("pfcolors:") != std::string::npos);
+  imp = Asset();
+  CHECK(importText(b, &imp, &what) && imp.playfields.size() == 1 && imp.playfields[0].pixel(0, 5) && imp.playfields[0].pixel(1, 33) &&
+        imp.playfields[0].pfAt(1) == 0x86);
+  auto bi = check(p2, Target::Basic);
+  CHECK(hasIssue(bi, Issue::Info, "pfres") && hasIssue(bi, Issue::Info, "pfcolors"));
+  p2.setPixel(0, 1, true);
+  CHECK(hasIssue(check(p2, Target::Basic), Issue::Warning, "columns"));
+  CHECK(hasIssue(check(p2, Target::Dasm), Issue::Info, "CTRLPF"));
+  CHECK(!importText("lda #1\n", &imp, &what) && what.empty());
+
+  // the exported tables assemble (when DASM is installed)
+  namespace fs = std::filesystem;
+  std::string dasm = findInPath("dasm");
+  if (!dasm.empty()) {
+    fs::path dir = fs::temp_directory_path() / "vcside-gfx-test";
+    fs::create_directories(dir);
+    std::ofstream(dir / "g.asm") << "    processor 6502\n    org $F000\n" << exportDasm(sp) << exportDasm(p2) << exportDasm(pf)
+                                 << "    org $FFFC\n    .word $F000\n    .word $F000\n";
+    std::string cmd = "\"" + dasm + "\" \"" + (dir / "g.asm").string() + "\" -f3 -o\"" + (dir / "g.bin").string() + "\" > \"" +
+                      (dir / "g.log").string() + "\" 2>&1";
+    int rc = std::system(cmd.c_str());
+    CHECK(rc == 0);
+    if (rc != 0) {
+      std::ifstream log(dir / "g.log");
+      std::fputs(std::string(std::istreambuf_iterator<char>(log), {}).c_str(), stderr);
+    }
+  }
+}
+
 int main() {
   KnowledgeBase kb;
   std::string err;
@@ -753,6 +928,7 @@ int main() {
   testBasic();
   testBasicSyntax(kb);
   testFormatOrder(kb);
+  testGfx();
   std::printf("%d checks, %d failures\n", checks, failures);
   return failures ? 1 : 0;
 }

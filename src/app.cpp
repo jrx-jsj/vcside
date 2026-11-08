@@ -180,6 +180,19 @@ OpenFile* App::openFile(const std::string& pathIn, int line) {
   if (!fs::exists(path, ec)) return nullptr;
   auto f = std::make_unique<OpenFile>();
   f->path = path;
+  if (lower(fs::path(path).extension().string()) == ".vcsgfx") {
+    f->asmSyntax = false;
+    f->gfx = std::make_unique<GfxEditor>();
+    std::string err;
+    if (!f->gfx->load(path, &err)) {
+      output_ += F("Cannot read {0}: {1}", {path, err}) + "\n";
+      return nullptr;
+    }
+    f->requestFocus = true;
+    files_.push_back(std::move(f));
+    activeFile_ = (int)files_.size() - 1;
+    return files_.back().get();
+  }
   f->asmSyntax = isAsmFile(path);
   f->editor.setText(readFile(path));
   f->editor.setGutterWidthChars(showCycles_ && f->asmSyntax ? 5 : 0);
@@ -202,7 +215,27 @@ OpenFile* App::openFile(const std::string& pathIn, int line) {
   return files_.back().get();
 }
 
+gfx::Target App::gfxTarget() const {
+  return project_ && project_->language == Language::BatariBasic ? gfx::Target::Basic : gfx::Target::Dasm;
+}
+gfx::Tv App::gfxTv() const { return gfx::tvFromProject(project_ ? project_->tv : "NTSC"); }
+
 bool App::saveFile(OpenFile& f) {
+  if (f.gfx) {
+    std::string err, generated;
+    if (!f.gfx->save(f.path, gfxTarget(), &err, &generated)) {
+      output_ += err + "\n";
+      return false;
+    }
+    if (!generated.empty()) {
+      lastStatus_ = F("Saved; the tables are in {0}", {fs::path(generated).filename().string()});
+      // an open copy of the generated file shows the new tables
+      std::string canon = fs::weakly_canonical(generated).string();
+      for (auto& o : files_)
+        if (o->path == canon && !o->gfx && !o->editor.dirty()) o->editor.setText(readFile(canon)), o->editor.markSaved();
+    }
+    return true;
+  }
   std::ofstream out(f.path, std::ios::binary);
   if (!out) {
     output_ += F("Cannot write {0}", {f.path}) + "\n";
@@ -215,7 +248,7 @@ bool App::saveFile(OpenFile& f) {
 
 void App::saveAll() {
   for (auto& f : files_)
-    if (f->editor.dirty()) saveFile(*f);
+    if (f->dirty()) saveFile(*f);
 }
 
 // ---------------------------------------------------------------------------
@@ -1109,7 +1142,7 @@ void App::showDoc(const std::string& word) {
 
 void App::requestQuit() {
   for (auto& f : files_)
-    if (f->editor.dirty()) {
+    if (f->dirty()) {
       quitConfirm_ = true;
       return;
     }
@@ -1126,6 +1159,15 @@ void App::frame() {
       else if (kind == "folder") openPath(path);
       else if (kind == "file") openFile(path);
       else if (kind == "newdir") npDir_ = path;
+      else if (kind == "newgfx") {
+        std::string p = path;
+        if (lower(fs::path(p).extension().string()) != ".vcsgfx") p += ".vcsgfx";
+        GfxEditor g;
+        std::string err;
+        g.asset() = GfxEditor::blank();
+        if (g.save(p, gfxTarget(), &err)) openFile(p);
+        else output_ += err + "\n";
+      }
       else if (kind.rfind("tool:", 0) == 0) {
         if (Tool* t = tools_.get(kind.substr(5))) t->userPath = path;
         tools_.detect();
@@ -1224,6 +1266,11 @@ MenuBar App::buildMenuBar(bool native) {
       }),
       item(T("Open folder..."), "", [this] { SDL_ShowOpenFolderDialog(dialogCallback, new DialogCtx{this, "folder"}, window_, nullptr, false); }),
       sub(T("Recent projects"), recent, !recent.empty()),
+      item(T("New graphics..."), "", [this] {
+        static const SDL_DialogFileFilter filters[] = {{"VCSIDE graphics", "vcsgfx"}};
+        std::string where = (project_ ? fs::path(project_->dir) : fs::path(folder_.empty() ? "." : folder_)) / "graphics.vcsgfx";
+        SDL_ShowSaveFileDialog(dialogCallback, new DialogCtx{this, "newgfx"}, window_, filters, 1, where.c_str());
+      }),
       MenuItem::sep(),
       item(T("Save"), "Ctrl+S", [this] { if (activeFile_ >= 0) saveFile(*files_[activeFile_]); }, hasFile),
       item(T("Save all"), "Ctrl+Shift+S", [this] { saveAll(); }),
@@ -1242,8 +1289,14 @@ MenuBar App::buildMenuBar(bool native) {
   const char* replaceKey = "Ctrl+H";
 #endif
   bar.push_back(sub(T("Edit"), {
-      item(T("Undo"), "Ctrl+Z", onEditor([](TextEditor& e) { e.undo(); })),
-      item(T("Redo"), "Ctrl+Shift+Z", onEditor([](TextEditor& e) { e.redo(); })),
+      item(T("Undo"), "Ctrl+Z", [this, editor] {
+        if (activeFile_ >= 0 && files_[activeFile_]->gfx) files_[activeFile_]->gfx->undo();
+        else if (TextEditor* e = editor()) e->undo();
+      }),
+      item(T("Redo"), "Ctrl+Shift+Z", [this, editor] {
+        if (activeFile_ >= 0 && files_[activeFile_]->gfx) files_[activeFile_]->gfx->redo();
+        else if (TextEditor* e = editor()) e->redo();
+      }),
       MenuItem::sep(),
       item(T("Cut"), "Ctrl+X", onEditor([](TextEditor& e) { e.cut(); })),
       item(T("Copy"), "Ctrl+C", onEditor([](TextEditor& e) { e.copy(); })),
@@ -1547,16 +1600,22 @@ void App::editorsPanel() {
     for (int i = 0; i < (int)files_.size(); i++) {
       auto& f = *files_[i];
       bool keep = true;
-      std::string label = fs::path(f.path).filename().string() + (f.editor.dirty() ? " *" : "") + "###" + f.path;
+      std::string label = fs::path(f.path).filename().string() + (f.dirty() ? " *" : "") + "###" + f.path;
       ImGuiTabItemFlags fl = f.requestFocus ? ImGuiTabItemFlags_SetSelected : 0;
-      if (f.editor.dirty()) fl |= ImGuiTabItemFlags_UnsavedDocument;
+      if (f.dirty()) fl |= ImGuiTabItemFlags_UnsavedDocument;
       if (ImGui::BeginTabItem(label.c_str(), &keep, fl)) {
         activeFile_ = i;
         if (f.requestFocus) {
           ImGui::SetKeyboardFocusHere();
           f.requestFocus = false;
         }
-        if (f.editor.render("##code", editorFont())) lint(f);
+        if (f.gfx) {
+          ImGui::BeginChild("##gfx", ImVec2(0, 0), 0, ImGuiWindowFlags_NoScrollbar);
+          f.gfx->render(gfxTv(), gfxTarget());
+          ImGui::EndChild();
+        } else if (f.editor.render("##code", editorFont())) {
+          lint(f);
+        }
         if (int z = f.editor.takeZoomSteps()) zoomEditor(z);
         if (f.editor.takeBreakpointsChanged()) {
           breakpoints_[f.path] = f.editor.breakpoints();
@@ -1573,7 +1632,7 @@ void App::editorsPanel() {
 
 void App::closeDialogs() {
   if (closeRequest_ >= 0 && closeRequest_ < (int)files_.size()) {
-    if (!files_[closeRequest_]->editor.dirty()) {
+    if (!files_[closeRequest_]->dirty()) {
       files_.erase(files_.begin() + closeRequest_);
       activeFile_ = std::min(activeFile_, (int)files_.size() - 1);
       closeRequest_ = -1;

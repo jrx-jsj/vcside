@@ -37,6 +37,12 @@ A small native IDE for making Atari 2600 games, on macOS, Windows and Linux. It 
   - warnings for full banks, wrong ROM sizes and code on bank-switch hotspots, with the source line when possible;
   - thresholds per project: `space_warn_percent` and `stack_reserve` in the `.vcsproj`;
   - ELF projects: code, code in RAM (`.RamFunc`), constants and variables read from the ROM's sections, and the Chameleon Cart's flash (128 KB) and RAM (36 KB). Exact when the Chameleon image is built, otherwise estimated with the firmware's measured share.
+- **Graphics editor** (`.vcsgfx`, *File → New graphics...*):
+  - Sprites built from the TIA's five movable objects (P0, P1, M0, M1, BL) as layers, each with its position, width, reflection and colour per row and frame, in animation frames. A multicolour sprite is any mix of them.
+  - Flicker phases: layers in different phases are drawn on alternate frames, so an object can be used more than once; the preview shows the flicker.
+  - Playfields of 40 columns whose rows each have their own mode (mirror or repeat), colours and, if drawn, their own right half (asymmetric): changes in the middle of the screen and of the line.
+  - Drawn as the TIA would (object priority, a missile in its player's colour), with warnings for the project's target: DASM with its own kernel or batari Basic's standard kernel.
+  - DASM projects get `<name>.gfx.asm` on save; *Copy as...* gives DASM tables or batari Basic blocks. *Import* reads those, PlayerPal's assembly tables and batari Basic's `player0:`/`playfield:` blocks from the clipboard.
 - **Illegal-opcode policy** per project: allow, stable only, warn or forbid.
 - **Menus** in the system menu bar on macOS (application menu with About, Tools and Language; Window menu), and in the window on Windows and Linux. Ctrl shortcuts are Cmd on macOS; Replace is Cmd+Shift+F there, since Cmd+H hides the app.
 - **About** (*VCSIDE → About* on macOS, *Help → About* elsewhere): the system's About panel on macOS, a window of its own on Windows and Linux. Both show the icon, the version, VCSIDE's licences, the libraries built in, the tools it works with (the versions it was tested with and where each one was found) and the sources of the knowledge base.

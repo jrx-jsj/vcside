@@ -1,0 +1,57 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Juan Sánchez Jurado
+// The editor of a .vcsgfx file: its sprites (layers of TIA objects, frames, flicker
+// phases) and playfields (rows with their own mode and colours).
+#pragma once
+#include <imgui.h>
+
+#include <string>
+#include <vector>
+
+#include "gfx.h"
+
+namespace vcs {
+
+class GfxEditor {
+ public:
+  bool load(const std::string& path, std::string* error);
+  // Writes the .vcsgfx and, for DASM, the tables next to it (<name>.gfx.asm) for the
+  // program to include. *generated: the file written, if any.
+  bool save(const std::string& path, gfx::Target target, std::string* error, std::string* generated = nullptr);
+  void render(gfx::Tv tv, gfx::Target target);
+  bool dirty() const { return dirty_; }
+  void undo();
+  void redo();
+  const std::string& message() const { return message_; }  // what the last import or copy did
+
+  gfx::Asset& asset() { return asset_; }
+  static gfx::Asset blank();  // one 8x8 sprite on P0
+
+ private:
+  void toolbar(gfx::Tv tv, gfx::Target target);
+  void spriteView(gfx::Sprite& s, gfx::Tv tv, gfx::Target target);
+  void playfieldView(gfx::Playfield& p, gfx::Tv tv, gfx::Target target);
+  void issues(const std::vector<gfx::Issue>& list);
+  bool colourButton(const char* id, int colour, gfx::Tv tv, int* out, bool allowInherit, float size);
+  void drawSprite(const gfx::Sprite& s, int frame, int phase, ImVec2 origin, float cw, float ch, gfx::Tv tv, int bk,
+                  int highlightLayer, int bounds[4]);
+  void changed() { changed_ = true; dirty_ = true; }
+  void endFrame();
+
+  gfx::Asset asset_, committed_;
+  std::vector<gfx::Asset> undo_, redo_;
+  bool dirty_ = false, changed_ = false;
+  int item_ = 0;          // sprites first, then playfields
+  int layer_ = 0, frame_ = 0;
+  float zoom_ = 14;
+  bool flicker_ = true, othersDim_ = true;
+  int previewScale_ = 3;
+  int paintValue_ = -1;   // while dragging: 1 set, 0 clear
+  bool moving_ = false;
+  ImVec2 moveFrom_;
+  int moveDx_ = 0, moveDy_ = 0;
+  int previewBk_ = 0x00;
+  std::string message_;
+};
+
+}  // namespace vcs

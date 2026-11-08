@@ -110,6 +110,19 @@ Comprobado con Stella 7.0 y Gopher2600 v0.56.1, en su código fuente y probándo
 - **Editor:** `data/kb/batari-basic.json` (CC BY-SA) con las palabras del compilador (nombres sacados de `keywords.c` y `statements.c`) y resúmenes propios en inglés y español. Las palabras con `N` y un `range` se expanden (`joyNup` → `joy0up` ... `joy3up`). Las etiquetas son lo que empieza en la columna 0.
 - **Plantilla** (`data/templates/bb/main.bas`, CC0): un cuadrado que se mueve con el joystick dentro de un playfield con paredes.
 
+## Editor de gráficos
+
+Un archivo `.vcsgfx` (JSON, con las filas escritas como `X` y `.` para que se lea y se compare como un dibujo) guarda sprites y playfields. Se abre en una pestaña del editor (*Archivo → Gráficos nuevos...*).
+
+- **Sprites como capas de objetos.** Un sprite se compone con los cinco objetos móviles del TIA (P0, P1, M0, M1, BL), cada uno en una capa con su posición en relojes de color y filas, su ancho (NUSIZ en jugadores; 1, 2, 4 u 8 en misiles y bola), su reflejo y sus colores por fila y fotograma. Así un personaje multicolor puede ser, por ejemplo, P0 + P1 superpuestos y un misil como espada.
+- **Fases de parpadeo.** Cada capa tiene una fase (1 a 4): las de una fase se dibujan en los mismos fotogramas. Un objeto puede repetirse en fases distintas, nunca dos veces en la misma. La vista previa alterna las fases a 60 Hz o las muestra a la vez.
+- **Lo que hace el hardware.** El lienzo y la vista previa dibujan como el TIA: prioridad P0/M0 sobre P1/M1 sobre bola y playfield, y cada misil con el color que su jugador pone en esa línea. Las proporciones aproximan las de una tele (un reloj de color es más ancho que alto una línea).
+- **Playfields por filas.** 40 columnas; cada fila tiene su modo (espejo o repetido, el bit 0 de CTRLPF), sus colores de playfield y fondo y, si se dibuja en su mitad derecha, su propia mitad derecha (asimétrica). Con eso se describen cambios a mitad de pantalla (de modo, de color, de dibujo) y a mitad de línea.
+- **Avisos según el destino.** DASM (kernel propio) o batari Basic (kernel estándar), según el proyecto. Avisan de un objeto usado dos veces en una fase, del parpadeo y su frecuencia, del color compartido de misiles y bola, de las escrituras que necesitará cada línea, de las filas asimétricas y su margen de tiempo, y de lo que batari Basic no muestra (columnas exteriores, forma de misiles y bola, parpadeo, opciones de kernel necesarias).
+- **Salida.** En proyectos DASM, al guardar se escribe `<nombre>.gfx.asm` con tablas etiquetadas (`<sprite>_<objeto>[_<capa>]_Frame<n>`, `_Colour<n>`, posiciones y tamaños como constantes; playfields en tablas por registro, con PF0R/PF1R/PF2R para la mitad derecha y tablas de CTRLPF y colores si cambian). Las filas van de abajo arriba, como las leen la mayoría de kernels. *Copiar como...* da el mismo texto o los bloques de batari Basic (`player0:`, `player0color:`, `playfield:`, `pfcolors:`, `bkcolors:`).
+- **Intercambio.** *Importar* lee del portapapeles esas mismas tablas, las de PlayerPal (`.byte #%...;$xx`, con el color de la fila en el comentario) y los bloques de batari Basic, así que los gráficos pueden ir y venir entre VCSIDE y esas herramientas. Hay enlaces a PlayerPal y a Atari Background Builder para quien prefiera dibujar allí.
+- **Colores.** Las paletas NTSC y PAL se calculan con la disposición de tonos y luminancias de cada norma (son aproximadas; el emulador muestra las exactas). SECAM usa sus ocho colores fijos por luminancia.
+
 ## Avisos de espacio
 
 Tras cada compilación con DASM, el IDE mide cuánto espacio queda (`src/space.*`). Los datos de cada formato (tamaños de ROM válidos, tamaño de banco, direcciones reservadas, RAM extra y sus ventanas) están en el objeto `space` de `formats.json`.

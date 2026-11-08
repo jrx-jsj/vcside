@@ -20,6 +20,7 @@
 #include "builder_parse.h"
 #include "debugmap.h"
 #include "editor/text_editor.h"
+#include "gfx_editor.h"
 #include "kb.h"
 #include "menu.h"
 #include "child_process.h"
@@ -36,8 +37,10 @@ namespace vcs {
 struct OpenFile {
   std::string path;
   TextEditor editor;
+  std::unique_ptr<GfxEditor> gfx;  // a .vcsgfx: the graphics editor instead of the text
   bool asmSyntax = true;
   bool requestFocus = false;
+  bool dirty() const { return gfx ? gfx->dirty() : editor.dirty(); }
 };
 
 class App {
@@ -101,6 +104,8 @@ class App {
   void openFolder(const std::string& dir);
   OpenFile* openFile(const std::string& path, int line = 0);
   bool saveFile(OpenFile& f);
+  gfx::Target gfxTarget() const;
+  gfx::Tv gfxTv() const;
   void saveAll();
   void build(int thenRun);  // 0 = no, 1 = run, 2 = debug
   void run(bool debug);
