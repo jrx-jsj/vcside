@@ -57,7 +57,6 @@ class GfxEditor {
   bool moving_ = false;
   ImVec2 moveFrom_;
   int moveDx_ = 0, moveDy_ = 0;
-  int previewBk_ = 0x00;
   std::string message_;
 };
 

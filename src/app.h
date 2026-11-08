@@ -49,10 +49,11 @@ class App {
  public:
   // imguiMenu: draw the menus with ImGui even where the system has a menu bar (tests)
   bool init(SDL_Window* window, ImFont* mono, bool imguiMenu = false);
-  // Editor zoom: the font is rasterised again at each size so it stays sharp. main()
-  // adds the font between frames, when editorFontWanted() gives a size (points).
-  float editorFontWanted() const;
-  void setEditorFont(float points, ImFont* font) { editorFonts_[points] = font; }
+  // Zoom of the whole IDE: the fonts are rasterised again at each size so they stay
+  // sharp. main() rebuilds them between frames when zoomWanted() gives a new zoom.
+  float zoomWanted() const { return zoom_ != builtZoom_ ? zoom_ : 0; }
+  void setFonts(ImFont* mono, float zoom) { mono_ = mono, builtZoom_ = zoom; }
+  float zoom() const { return zoom_; }
   void refreshMenus() { if (nativeMenu_) nativeMenuRefresh(); }
   void frame();  // draws one frame of UI
   bool wantsQuit() const { return quit_; }
@@ -81,6 +82,8 @@ class App {
     ed.setFindQuery(q);
     ed.findNext();
   }
+
+  void zoomEditor(int steps);  // 0 = back to 100 %
 
  private:
   // panels
@@ -153,10 +156,8 @@ class App {
 
   SDL_Window* window_ = nullptr;
   ImFont* mono_ = nullptr;
-  float editorZoom_ = 1.0f;
-  std::map<float, ImFont*> editorFonts_;  // by size in points
+  float zoom_ = 1.0f, builtZoom_ = 1.0f;
   ImFont* editorFont() const;
-  void zoomEditor(int steps);  // 0 = back to 100 %
   bool quit_ = false, quitConfirm_ = false;
   KnowledgeBase kb_;
   std::string kbError_;

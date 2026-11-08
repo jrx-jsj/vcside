@@ -11,6 +11,9 @@
 
 namespace vcs::theme {
 
+// A size in pixels at 100 % zoom, scaled like the current font (the IDE's zoom).
+inline float em(float px) { return px * ImGui::GetFontSize() / 15.0f; }
+
 inline ImU32 u32(Rgba c) { return IM_COL32(c >> 24, (c >> 16) & 255, (c >> 8) & 255, c & 255); }
 inline ImVec4 vec(Rgba c) { return ImVec4((c >> 24) / 255.0f, ((c >> 16) & 255) / 255.0f, ((c >> 8) & 255) / 255.0f, (c & 255) / 255.0f); }
 inline ImU32 col(Role r) { return u32(colour(r)); }

@@ -83,7 +83,7 @@ void App::loadSettings() {
   themes_.load(dataDir() + "/themes", configDir() + "themes");
   useTheme(j.value("theme", std::string("dark")), false);
   showCycles_ = j.value("show_cycles", true);
-  editorZoom_ = std::clamp(j.value("editor_zoom", 1.0f), 0.5f, 3.0f);
+  zoom_ = std::clamp(j.value("zoom", j.value("editor_zoom", 1.0f)), 0.5f, 3.0f);
   tools_.loadSettings(j.value("tools", std::map<std::string, std::string>{}));
   // A new docked panel needs the default layout once (imgui.ini would keep it floating).
   if (j.value("layout_version", 0) < kLayoutVersion) {
@@ -96,7 +96,7 @@ void App::saveSettings() {
   json j = {{"language", currentLanguage()},
             {"recent", recent_},
             {"show_cycles", showCycles_},
-            {"editor_zoom", editorZoom_},
+            {"zoom", zoom_},
             {"theme", themeId_},
             {"tools", tools_.userPaths()},
             {"layout_version", kLayoutVersion}};
@@ -1123,7 +1123,7 @@ bool App::testMenu(const std::string& path) {
   }
 }
 
-// The steps of the editor zoom, as in most editors.
+// The steps of the zoom, as in most editors.
 static const float kZoomSteps[] = {0.5f, 0.67f, 0.75f, 0.8f, 0.9f, 1.0f, 1.1f, 1.25f, 1.5f, 1.75f, 2.0f, 2.5f, 3.0f};
 
 void App::zoomEditor(int steps) {
@@ -1131,26 +1131,16 @@ void App::zoomEditor(int steps) {
   if (steps != 0) {
     int n = (int)(sizeof kZoomSteps / sizeof kZoomSteps[0]), at = 0;
     for (int i = 0; i < n; i++)
-      if (std::fabs(kZoomSteps[i] - editorZoom_) < std::fabs(kZoomSteps[at] - editorZoom_)) at = i;
+      if (std::fabs(kZoomSteps[i] - zoom_) < std::fabs(kZoomSteps[at] - zoom_)) at = i;
     z = kZoomSteps[std::clamp(at + steps, 0, n - 1)];
   }
-  if (z == editorZoom_) return;
-  editorZoom_ = z;
-  lastStatus_ = F("Editor zoom: {0} %", {std::to_string((int)(z * 100 + 0.5f))});
+  if (z == zoom_) return;
+  zoom_ = z;
+  lastStatus_ = F("Zoom: {0} %", {std::to_string((int)(z * 100 + 0.5f))});
   saveSettings();
 }
 
-float App::editorFontWanted() const {
-  if (editorZoom_ == 1.0f) return 0;
-  float pts = 14.0f * editorZoom_;
-  return editorFonts_.count(pts) ? 0 : pts;
-}
-
-ImFont* App::editorFont() const {
-  if (editorZoom_ == 1.0f) return mono_;
-  auto it = editorFonts_.find(14.0f * editorZoom_);
-  return it != editorFonts_.end() ? it->second : mono_;  // until main() has made it
-}
+ImFont* App::editorFont() const { return mono_; }
 
 void App::testSelect(int a, int b) {
   if (activeFile_ < 0) return;
@@ -1296,12 +1286,7 @@ void App::frame() {
     if (e > s) showDoc(l.substr(s, e - s));
   }
   if (io.KeyCtrl && io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_G, false) && !addresses_.empty()) showGoToAddress_ = true;
-  // zoom: Ctrl (Cmd) + "+"/"=", "-" and "0", also on the keypad
-  if (io.KeyCtrl && !io.KeyAlt) {
-    if (ImGui::IsKeyPressed(ImGuiKey_Equal) || ImGui::IsKeyPressed(ImGuiKey_KeypadAdd)) zoomEditor(1);
-    if (ImGui::IsKeyPressed(ImGuiKey_Minus) || ImGui::IsKeyPressed(ImGuiKey_KeypadSubtract)) zoomEditor(-1);
-    if (ImGui::IsKeyPressed(ImGuiKey_0, false) || ImGui::IsKeyPressed(ImGuiKey_Keypad0, false)) zoomEditor(0);
-  }
+  // zoom (Ctrl/Cmd + "+", "-", "0"): main.cpp, from the SDL key events
   if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_S, false)) {
     if (io.KeyShift) saveAll();
     else if (activeFile_ >= 0) saveFile(*files_[activeFile_]);
@@ -1535,10 +1520,10 @@ MenuBar App::buildMenuBar(bool native) {
         saveSettings();
       }, true, showCycles_),
       MenuItem::sep(),
-      item(T("Zoom in"), "Ctrl+=", [this] { zoomEditor(1); }, editorZoom_ < 3.0f),
-      item(T("Zoom out"), "Ctrl+-", [this] { zoomEditor(-1); }, editorZoom_ > 0.5f),
-      item(F("Actual size ({0} %)", {std::to_string((int)(editorZoom_ * 100 + 0.5f))}), "Ctrl+0", [this] { zoomEditor(0); },
-           editorZoom_ != 1.0f),
+      item(T("Zoom in"), "Ctrl++", [this] { zoomEditor(1); }, zoom_ < 3.0f),
+      item(T("Zoom out"), "Ctrl+-", [this] { zoomEditor(-1); }, zoom_ > 0.5f),
+      item(F("Actual size ({0} %)", {std::to_string((int)(zoom_ * 100 + 0.5f))}), "Ctrl+0", [this] { zoomEditor(0); },
+           zoom_ != 1.0f),
       MenuItem::sep(),
       sub(T("Theme"), themeMenu),
       item(T("Reset layout"), "", [this] { resetLayout_ = true; }),

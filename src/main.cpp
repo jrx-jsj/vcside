@@ -114,6 +114,31 @@ struct InputScript {
       io.AddKeyEvent(k, true);
       io.AddKeyEvent(k, false);
       for (size_t i = 1; i < a.size(); i++) io.AddKeyEvent(modNamed(a[i]), false);
+    } else if (op == "scan" && !a.empty()) {  // a physical key, as the keyboard sends it: "scan 56 cmd"
+      SDL_Event e{};
+      e.type = SDL_EVENT_KEY_DOWN;
+      e.key.scancode = (SDL_Scancode)std::stoi(a[0]);
+      for (size_t i = 1; i < a.size(); i++)
+        e.key.mod |= a[i] == "cmd" ? SDL_KMOD_GUI : a[i] == "ctrl" ? SDL_KMOD_CTRL : a[i] == "shift" ? SDL_KMOD_SHIFT : 0;
+      e.key.key = SDL_GetKeyFromScancode(e.key.scancode, SDL_KMOD_NONE, true);
+      int nw = 0;
+      if (SDL_Window** ws = SDL_GetWindows(&nw)) {
+        if (nw > 0) e.key.windowID = SDL_GetWindowID(ws[0]);
+        SDL_free(ws);
+      }
+      e.key.down = true;
+      SDL_PushEvent(&e);
+      SDL_Event up = e;
+      up.type = SDL_EVENT_KEY_UP, up.key.down = false;
+      SDL_PushEvent(&up);
+    } else if (op == "char" && !a.empty()) {  // a key by the character it types, as SDL sends it: "char + cmd"
+      SDL_Event e{};
+      e.type = SDL_EVENT_KEY_DOWN;
+      e.key.key = (SDL_Keycode)(unsigned char)a[0][0];
+      for (size_t i = 1; i < a.size(); i++)
+        e.key.mod |= a[i] == "cmd" ? SDL_KMOD_GUI : a[i] == "ctrl" ? SDL_KMOD_CTRL : a[i] == "shift" ? SDL_KMOD_SHIFT : 0;
+      e.key.down = true;
+      SDL_PushEvent(&e);
     } else if (op == "text") {
       std::string t = lines[next - 1].substr(lines[next - 1].find("text") + 5);
       io.AddInputCharactersUTF8(t.c_str());
@@ -126,6 +151,33 @@ struct InputScript {
     }
   }
 };
+
+// Shortcuts by character, whatever the keyboard layout. ImGui's SDL backend reads
+// punctuation by its place on a US keyboard, so on a Spanish one Cmd+"-" would be
+// Cmd+"/" and "/" (Shift+7) could not be reached. Before the backend sees a digit or
+// punctuation key, the event is rewritten as the US key that types the same character;
+// a character with no such key reaches ImGui as no key at all. Text typing comes in
+// separate events and is not touched.
+static void keyByCharacter(SDL_Event& e) {
+  if (e.type != SDL_EVENT_KEY_DOWN && e.type != SDL_EVENT_KEY_UP) return;
+  SDL_Scancode sc = e.key.scancode;
+  bool digitOrPunct = (sc >= SDL_SCANCODE_1 && sc <= SDL_SCANCODE_0) || (sc >= SDL_SCANCODE_MINUS && sc <= SDL_SCANCODE_SLASH) ||
+                      sc == SDL_SCANCODE_NONUSBACKSLASH;
+  if (!digitOrPunct) return;
+  SDL_Keycode typed = SDL_GetKeyFromScancode(sc, e.key.mod & SDL_KMOD_SHIFT, false);  // false: with Shift applied
+  if (typed >= '0' && typed <= '9') return;  // digits already go by character
+  struct Map { SDL_Keycode ch; SDL_Scancode us; SDL_Keycode key; };
+  static const Map map[] = {{'-', SDL_SCANCODE_MINUS, SDLK_MINUS},     {'=', SDL_SCANCODE_EQUALS, SDLK_EQUALS},
+                            {'+', SDL_SCANCODE_EQUALS, SDLK_EQUALS},   {'[', SDL_SCANCODE_LEFTBRACKET, SDLK_LEFTBRACKET},
+                            {']', SDL_SCANCODE_RIGHTBRACKET, SDLK_RIGHTBRACKET}, {'\\', SDL_SCANCODE_BACKSLASH, SDLK_BACKSLASH},
+                            {';', SDL_SCANCODE_SEMICOLON, SDLK_SEMICOLON}, {'\'', SDL_SCANCODE_APOSTROPHE, SDLK_APOSTROPHE},
+                            {'`', SDL_SCANCODE_GRAVE, SDLK_GRAVE},     {',', SDL_SCANCODE_COMMA, SDLK_COMMA},
+                            {'.', SDL_SCANCODE_PERIOD, SDLK_PERIOD},   {'/', SDL_SCANCODE_SLASH, SDLK_SLASH}};
+  e.key.scancode = SDL_SCANCODE_UNKNOWN;
+  e.key.key = SDLK_UNKNOWN;
+  for (auto& m : map)
+    if (m.ch == typed) e.key.scancode = m.us, e.key.key = m.key;
+}
 
 static void saveShot(ImGuiIO& io, const std::string& file) {
   int w = (int)(io.DisplaySize.x * io.DisplayFramebufferScale.x), h = (int)(io.DisplaySize.y * io.DisplayFramebufferScale.y);
@@ -146,7 +198,7 @@ static ImFont* loadFont(ImGuiIO& io, std::initializer_list<const char*> paths, f
     if (ImFont* f = io.Fonts->AddFontFromFileTTF(p, size * density, &cfg, ranges)) return f;
   }
   ImFontConfig cfg;
-  cfg.SizePixels = 13 * density;
+  cfg.SizePixels = size * 13 / 15 * density;
   return io.Fonts->AddFontDefault(&cfg);
 }
 
@@ -238,11 +290,11 @@ int main(int argc, char** argv) {
   if (density < 1) density = 1;
   float uiScale = SDL_GetWindowDisplayScale(window) / density;
   if (uiScale < 1) uiScale = 1;
-  ImFont* ui = loadFont(io,
-                        {"/System/Library/Fonts/SFNS.ttf", "/System/Library/Fonts/Helvetica.ttc", "C:/Windows/Fonts/segoeui.ttf",
-                         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "/usr/share/fonts/TTF/DejaVuSans.ttf",
-                         "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf"},
-                        15 * uiScale, density);
+  const std::initializer_list<const char*> uiPaths = {
+      "/System/Library/Fonts/SFNS.ttf", "/System/Library/Fonts/Helvetica.ttc", "C:/Windows/Fonts/segoeui.ttf",
+      "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "/usr/share/fonts/TTF/DejaVuSans.ttf",
+      "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf"};
+  ImFont* ui = loadFont(io, uiPaths, 15 * uiScale, density);
   const std::initializer_list<const char*> monoPaths = {
       "/System/Library/Fonts/Menlo.ttc", "/System/Library/Fonts/Monaco.ttf", "C:/Windows/Fonts/consola.ttf",
       "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", "/usr/share/fonts/TTF/DejaVuSansMono.ttf",
@@ -320,6 +372,21 @@ int main(int argc, char** argv) {
     SDL_Event e;
     bool any = SDL_WaitEventTimeout(&e, shot.empty() ? 50 : 10);  // idle when nothing happens (a build polls every 50 ms)
     while (any) {
+      // Zoom by the character of the key: Cmd on macOS, Ctrl elsewhere.
+      if (e.type == SDL_EVENT_KEY_DOWN) {
+#ifdef __APPLE__
+        const SDL_Keymod cmd = SDL_KMOD_GUI;
+#else
+        const SDL_Keymod cmd = SDL_KMOD_CTRL;
+#endif
+        SDL_Keycode k = e.key.key;
+        if ((e.key.mod & cmd) && !(e.key.mod & SDL_KMOD_ALT)) {
+          if (k == SDLK_PLUS || k == SDLK_EQUALS || k == SDLK_KP_PLUS) app.zoomEditor(1);
+          else if (k == SDLK_MINUS || k == SDLK_KP_MINUS) app.zoomEditor(-1);
+          else if ((k == SDLK_0 || k == SDLK_KP_0) && !e.key.repeat) app.zoomEditor(0);
+        }
+      }
+      keyByCharacter(e);
       ImGui_ImplSDL3_ProcessEvent(&e);
       if (e.type == SDL_EVENT_QUIT) app.requestQuit();
       if (e.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED && e.window.windowID == SDL_GetWindowID(window)) app.requestQuit();
@@ -330,13 +397,21 @@ int main(int argc, char** argv) {
     if (shot.empty() && (SDL_GetWindowFlags(window) & (SDL_WINDOW_MINIMIZED | SDL_WINDOW_HIDDEN | SDL_WINDOW_OCCLUDED))) continue;
     Uint64 frameStart = SDL_GetTicksNS();
 
-    // editor zoom: one more size in the font atlas, made between frames
-    if (float pts = app.editorFontWanted()) {
-      ImFont* f = loadFont(io, monoPaths, pts * uiScale, density);
+    // zoom: every font made again at the new size, and the style's sizes scaled
+    if (float z = app.zoomWanted()) {
+      io.Fonts->Clear();
+      io.FontDefault = loadFont(io, uiPaths, 15 * uiScale * z, density);
+      ImFont* m = loadFont(io, monoPaths, 14 * uiScale * z, density);
       io.Fonts->Build();
       ImGui_ImplOpenGL3_DestroyFontsTexture();
       ImGui_ImplOpenGL3_CreateFontsTexture();
-      app.setEditorFont(pts, f);
+      ImGuiStyle& st = ImGui::GetStyle();
+      ImVec4 colours[ImGuiCol_COUNT];
+      std::copy(std::begin(st.Colors), std::end(st.Colors), colours);
+      applyStyle();
+      st.ScaleAllSizes(z);
+      std::copy(std::begin(colours), std::end(colours), st.Colors);
+      app.setFonts(m, z);
     }
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplSDL3_NewFrame();

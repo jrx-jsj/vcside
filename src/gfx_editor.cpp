@@ -17,6 +17,7 @@ namespace fs = std::filesystem;
 namespace vcs {
 
 using namespace gfx;
+using theme::em;
 
 // A colour clock is wider on the screen than a scanline is tall; this keeps the
 // canvas and the preview close to what a TV shows.
@@ -152,7 +153,7 @@ bool GfxEditor::colourButton(const char* id, int colour, Tv tv, int* out, bool a
         ImGui::PushID(value);
         bool selected = value == (colour & 0xFE);
         if (selected) ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 2);
-        if (ImGui::ColorButton(hexColour(value).c_str(), pc, ImGuiColorEditFlags_NoBorder * !selected, ImVec2(22, 16))) {
+        if (ImGui::ColorButton(hexColour(value).c_str(), pc, ImGuiColorEditFlags_NoBorder * !selected, ImVec2(em(22), em(16)))) {
           *out = value;
           result = true;
           ImGui::CloseCurrentPopup();
@@ -209,7 +210,7 @@ void GfxEditor::toolbar(const Profile& project) {
     return F("Playfield: {0}", {asset_.playfields[i - asset_.sprites.size()].name});
   };
   int items = (int)(asset_.sprites.size() + asset_.playfields.size());
-  ImGui::SetNextItemWidth(220);
+  ImGui::SetNextItemWidth(em(220));
   if (ImGui::BeginCombo("##item", items ? itemName(item_).c_str() : "")) {
     for (int i = 0; i < items; i++)
       if (ImGui::Selectable(itemName(i).c_str(), i == item_)) item_ = i, layer_ = frame_ = 0;
@@ -403,19 +404,15 @@ void GfxEditor::spriteView(Sprite& s, Tv tv) {
   frame_ = std::clamp(frame_, 0, s.frames - 1);
   float h = ImGui::GetContentRegionAvail().y;
   // narrow: the preview and the warnings go under the layers instead of a column of their own
-  bool narrow = ImGui::GetContentRegionAvail().x < 780;
-  float side = narrow ? 230 : 250;
+  bool narrow = ImGui::GetContentRegionAvail().x < em(780);
+  float side = em(narrow ? 230 : 250);
   auto preview = [&] {
     ImGui::SeparatorText(T("Preview"));
     ImGui::Checkbox(T("flicker"), &flicker_);
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", T("Off: every phase at once, as if there were no flicker."));
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(70);
+    ImGui::SetNextItemWidth(em(70));
     ImGui::SliderInt("##scale", &previewScale_, 1, 4, "x%d");
-    ImGui::SameLine();
-    int nb;
-    if (colourButton("bk", previewBk_, tv, &nb, false, ImGui::GetFrameHeight())) previewBk_ = nb;
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", T("Background"));
     int tick = (int)(ImGui::GetTime() * 60);
     int pf = (tick / std::max(1, s.frameTicks)) % s.frames;
     if (anim_ >= 0 && anim_ < (int)s.animations.size() && !s.animations[anim_].steps.empty())
@@ -426,7 +423,7 @@ void GfxEditor::spriteView(Sprite& s, Tv tv) {
     float pcw = (float)previewScale_, pch = previewScale_ * kLineAspect * s.lineHeight;
     ImVec2 po = ImGui::GetCursorScreenPos();
     ImGui::Dummy(ImVec2((pb[2] - pb[0]) * pcw, (pb[3] - pb[1]) * pch));
-    drawSprite(s, pf, phase, po, pcw, pch, tv, previewBk_, -1, pb);
+    drawSprite(s, pf, phase, po, pcw, pch, tv, s.background, -1, pb);
     ImGui::SeparatorText(T("Warnings"));
     issues(check(s, k_));
   };
@@ -439,10 +436,10 @@ void GfxEditor::spriteView(Sprite& s, Tv tv) {
     if (!name.empty()) s.name = name, changed();
   }
   int lh = s.lineHeight;
-  ImGui::SetNextItemWidth(110);
+  ImGui::SetNextItemWidth(em(110));
   if (ImGui::SliderInt(T("lines per row"), &lh, 1, 4)) s.lineHeight = lh, changed();
   int ticks = s.frameTicks;
-  ImGui::SetNextItemWidth(110);
+  ImGui::SetNextItemWidth(em(110));
   if (ImGui::SliderInt(T("frames per step"), &ticks, 1, 30)) s.frameTicks = ticks, changed();
   ImGui::SeparatorText(T("Layers"));
   static const theme::Role objRole[] = {theme::Role::GfxP0, theme::Role::GfxP1, theme::Role::GfxM0, theme::Role::GfxM1, theme::Role::GfxBL};
@@ -505,7 +502,7 @@ void GfxEditor::spriteView(Sprite& s, Tv tv) {
     Layer& l = s.layers[layer_];
     ImGui::SeparatorText(T("Layer"));
     Obj chosen = l.obj;
-    ImGui::SetNextItemWidth(120);
+    ImGui::SetNextItemWidth(em(120));
     if (ImGui::BeginCombo(T("object"), objName(l.obj))) {
       for (Obj o : objectList(k_)) {
         std::string why = k_.missing(o);
@@ -525,30 +522,30 @@ void GfxEditor::spriteView(Sprite& s, Tv tv) {
       changed();
     }
     std::string ln = l.name;
-    ImGui::SetNextItemWidth(120);
+    ImGui::SetNextItemWidth(em(120));
     if (ImGui::InputText(T("name"), &ln)) l.name = ln, changed();
     int ph = l.phase;
-    ImGui::SetNextItemWidth(120);
+    ImGui::SetNextItemWidth(em(120));
     if (ImGui::Combo(T("phase"), &ph, "1\0" "2\0" "3\0" "4\0")) l.phase = ph, changed();
     if (ImGui::IsItemHovered())
       ImGui::SetTooltip("%s", T("Layers in different phases are drawn on alternate frames (flicker), so one object can be used more than once."));
     int pos[2] = {l.dx, l.dy};
-    ImGui::SetNextItemWidth(120);
+    ImGui::SetNextItemWidth(em(120));
     if (ImGui::DragInt2(T("position"), pos, 0.2f, -64, 64)) l.dx = pos[0], l.dy = pos[1], changed();
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", T("Colour clocks and rows. Shift+drag on the canvas moves the layer."));
     if (isPlayer(l.obj)) {
       int sz = l.size == 4 ? 2 : l.size == 2 ? 1 : 0;
-      ImGui::SetNextItemWidth(120);
+      ImGui::SetNextItemWidth(em(120));
       if (ImGui::Combo(T("width"), &sz, "1x\0" "2x\0" "4x\0")) l.size = 1 << sz, changed();
       bool rf = l.reflect;
       if (ImGui::Checkbox(T("reflected (REFP)"), &rf)) l.reflect = rf, changed();
     } else {
       int sz = l.size >= 8 ? 3 : l.size >= 4 ? 2 : l.size >= 2 ? 1 : 0;
-      ImGui::SetNextItemWidth(120);
+      ImGui::SetNextItemWidth(em(120));
       if (ImGui::Combo(T("width"), &sz, "1\0" "2\0" "4\0" "8\0")) l.size = 1 << sz, changed();
     }
     int hg = l.height;
-    ImGui::SetNextItemWidth(120);
+    ImGui::SetNextItemWidth(em(120));
     if (ImGui::DragInt(T("rows"), &hg, 0.2f, 1, 128)) l.resize(s.frames, hg), changed();
   }
   if (narrow) preview();
@@ -556,11 +553,17 @@ void GfxEditor::spriteView(Sprite& s, Tv tv) {
   ImGui::SameLine();
 
   // --- centre: the canvas, the row colours of the layer and the frames
-  float rightW = narrow ? 0 : 270;
+  float rightW = narrow ? 0 : em(270);
   float centreW = std::max(160.0f, ImGui::GetContentRegionAvail().x - rightW - (narrow ? 0 : 8));
   ImGui::BeginChild("canvas", ImVec2(centreW, h), ImGuiChildFlags_Borders, ImGuiWindowFlags_HorizontalScrollbar);
-  ImGui::SetNextItemWidth(120);
+  ImGui::SetNextItemWidth(em(120));
   ImGui::SliderFloat(T("zoom"), &zoom_, 6, 32, "%.0f");
+  ImGui::SameLine();
+  int nb;
+  if (colourButton("bk", s.background, tv, &nb, false, ImGui::GetFrameHeight())) s.background = nb, changed();
+  if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", T("Only to see the sprite against it: the program sets its own COLUBK."));
+  ImGui::SameLine();
+  ImGui::TextUnformatted(T("background"));
   ImGui::SameLine();
   ImGui::Checkbox(T("dim the other layers"), &othersDim_);
   int b[4];
@@ -570,7 +573,7 @@ void GfxEditor::spriteView(Sprite& s, Tv tv) {
   ImVec2 size((b[2] - b[0]) * cw, (b[3] - b[1]) * ch);
   ImGui::InvisibleButton("grid", size, ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonRight);
   bool hovered = ImGui::IsItemHovered(), active = ImGui::IsItemActive();
-  drawSprite(s, frame_, -1, o, cw, ch, tv, previewBk_, layer_, b);
+  drawSprite(s, frame_, -1, o, cw, ch, tv, s.background, layer_, b);
   ImDrawList* dl = ImGui::GetWindowDrawList();
   for (int x = b[0]; x <= b[2]; x++)
     dl->AddLine(ImVec2(o.x + (x - b[0]) * cw, o.y), ImVec2(o.x + (x - b[0]) * cw, o.y + size.y), theme::col(x % 8 == 0 ? theme::Role::GfxGridMajor : theme::Role::GfxGrid));
@@ -650,7 +653,7 @@ void GfxEditor::spriteView(Sprite& s, Tv tv) {
     ImVec2 to = ImGui::GetCursorScreenPos();
     ImVec2 ts((tb[2] - tb[0]) * tcw + 6, (tb[3] - tb[1]) * tch + 6);
     if (ImGui::InvisibleButton("f", ts)) frame_ = f;
-    drawSprite(s, f, -1, ImVec2(to.x + 3, to.y + 3), tcw, tch, tv, previewBk_, -1, tb);
+    drawSprite(s, f, -1, ImVec2(to.x + 3, to.y + 3), tcw, tch, tv, s.background, -1, tb);
     dl->AddRect(to, ImVec2(to.x + ts.x, to.y + ts.y), theme::col(f == frame_ ? theme::Role::GfxThumbSelected : theme::Role::GfxThumbFrame), 3, 0,
                 f == frame_ ? 2.0f : 1.0f);
     ImGui::PopID();
@@ -681,7 +684,7 @@ void GfxEditor::animations(Sprite& s, Tv tv, int tb[4], float tcw, float tch) {
   ImGui::SeparatorText(T("Animations"));
   anim_ = std::clamp(anim_, 0, std::max(0, (int)s.animations.size() - 1));
   if (!s.animations.empty()) {
-    ImGui::SetNextItemWidth(150);
+    ImGui::SetNextItemWidth(em(150));
     if (ImGui::BeginCombo("##anim", s.animations[anim_].name.c_str())) {
       for (int i = 0; i < (int)s.animations.size(); i++)
         if (ImGui::Selectable((s.animations[i].name + "##" + std::to_string(i)).c_str(), i == anim_)) anim_ = i, step_ = 0, animStart_ = ImGui::GetTime();
@@ -711,7 +714,7 @@ void GfxEditor::animations(Sprite& s, Tv tv, int tb[4], float tcw, float tch) {
   }
   Animation& an = s.animations[anim_];
   std::string name = an.name;
-  ImGui::SetNextItemWidth(150);
+  ImGui::SetNextItemWidth(em(150));
   if (ImGui::InputText((std::string(T("name")) + "##anim").c_str(), &name) && !name.empty()) an.name = name, changed();
   ImGui::SameLine();
   if (ImGui::Checkbox(T("loops"), &an.loop)) changed(), animStart_ = ImGui::GetTime();
@@ -733,7 +736,7 @@ void GfxEditor::animations(Sprite& s, Tv tv, int tb[4], float tcw, float tch) {
     ImVec2 ts(thumbW, (tb[3] - tb[1]) * tch + 6);
     if (ImGui::InvisibleButton("s", ts)) step_ = i, frame_ = std::clamp(st.frame, 0, s.frames - 1);
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", F("Step {0}: frame {1}", {std::to_string(i + 1), std::to_string(st.frame + 1)}).c_str());
-    drawSprite(s, std::clamp(st.frame, 0, s.frames - 1), -1, ImVec2(to.x + 3, to.y + 3), tcw, tch, tv, previewBk_, -1, tb);
+    drawSprite(s, std::clamp(st.frame, 0, s.frames - 1), -1, ImVec2(to.x + 3, to.y + 3), tcw, tch, tv, s.background, -1, tb);
     dl->AddRect(to, ImVec2(to.x + ts.x, to.y + ts.y), theme::col(i == step_ ? theme::Role::GfxStepSelected : theme::Role::GfxThumbFrame), 3, 0,
                 i == step_ ? 2.0f : 1.0f);
     int t = st.ticks;
@@ -761,11 +764,11 @@ void GfxEditor::animations(Sprite& s, Tv tv, int tb[4], float tcw, float tch) {
   if (k_.basic()) {
     ImGui::TextUnformatted(T("batari Basic variables:"));
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(60);
+    ImGui::SetNextItemWidth(em(60));
     if (ImGui::InputText(T("counter"), &an.basicTimer)) changed();
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", T("Two variables the program does not use for anything else (a-z or ones it has dimmed)."));
     nextTo((std::string("12345678") + T("step")).c_str());
-    ImGui::SetNextItemWidth(60);
+    ImGui::SetNextItemWidth(em(60));
     if (ImGui::InputText(T("step"), &an.basicStep)) changed();
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", T("Two variables the program does not use for anything else (a-z or ones it has dimmed)."));
   }
@@ -808,7 +811,7 @@ void GfxEditor::playfieldView(Playfield& p, Tv tv) {
     ImGui::SetNextItemWidth(-1);
     if (ImGui::InputText("##name", &name) && !name.empty()) p.name = name, changed();
     int rows = (int)p.rows.size();
-    ImGui::SetNextItemWidth(110);
+    ImGui::SetNextItemWidth(em(110));
     if (ImGui::DragInt(T("rows"), &rows, 0.2f, 1, k_.pfRowsMax())) {
       PfRow last = p.rows.back();
       last.pf = last.bk = -1;
@@ -826,7 +829,7 @@ void GfxEditor::playfieldView(Playfield& p, Tv tv) {
       if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", T("The rows the program shows"));
     }
     int lh = p.lineHeight;
-    ImGui::SetNextItemWidth(110);
+    ImGui::SetNextItemWidth(em(110));
     if (ImGui::DragInt(T("lines per row"), &lh, 0.2f, 1, 64)) p.lineHeight = lh, changed();
     int nc;
     if (colourButton("pf", p.pfColour, tv, &nc, false, ImGui::GetFrameHeight())) p.pfColour = nc, changed();
@@ -865,8 +868,14 @@ void GfxEditor::playfieldView(Playfield& p, Tv tv) {
     ImGui::TextWrapped("%s", T("Each row has its own mode (M mirror, R repeat), an A when its right half is drawn on its own, and its colours. Drawing on the right half of a symmetric row makes it asymmetric."));
   };
   auto canvas = [&] {
-    ImGui::SetNextItemWidth(120);
+    ImGui::SetNextItemWidth(em(120));
     ImGui::SliderFloat(T("zoom"), &zoom_, 6, 32, "%.0f");
+    ImGui::SameLine();
+    int nbk;
+    if (colourButton("bkc", p.bkColour, tv, &nbk, false, ImGui::GetFrameHeight())) p.bkColour = nbk, changed();
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", T("COLUBK of the rows that do not set their own"));
+    ImGui::SameLine();
+    ImGui::TextUnformatted(T("background (COLUBK)"));
     // the 40 columns fit the space left by the row numbers and the row buttons; the zoom is the most
     float rowButtons = 4 * (ImGui::GetFrameHeight() + 8) + 16;
     float cw = std::max(9.0f, std::min(zoom_ * 1.2f, (ImGui::GetContentRegionAvail().x - 28 - rowButtons) / 40));
@@ -999,7 +1008,7 @@ void GfxEditor::playfieldView(Playfield& p, Tv tv) {
     ImGui::EndChild();
     return;
   }
-  ImGui::BeginChild("pfprops", ImVec2(250, h), ImGuiChildFlags_Borders);
+  ImGui::BeginChild("pfprops", ImVec2(em(250), h), ImGuiChildFlags_Borders);
   props();
   ImGui::EndChild();
   ImGui::SameLine();
@@ -1007,7 +1016,7 @@ void GfxEditor::playfieldView(Playfield& p, Tv tv) {
   canvas();
   ImGui::EndChild();
   ImGui::SameLine();
-  ImGui::BeginChild("pfpreview", ImVec2(270, h), ImGuiChildFlags_Borders);
+  ImGui::BeginChild("pfpreview", ImVec2(em(270), h), ImGuiChildFlags_Borders);
   preview(270);
   ImGui::EndChild();
 }

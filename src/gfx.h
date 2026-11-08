@@ -73,6 +73,7 @@ struct Sprite {
   int frames = 1;
   int lineHeight = 2;      // scanlines per row in the preview (1 = 1LK, 2 = 2LK...)
   int frameTicks = 8;      // animation speed in the preview: video frames per animation frame
+  int background = 0x00;   // colour behind it while editing (not exported: the program sets COLUBK)
   std::vector<Layer> layers;
   std::vector<Animation> animations;
 

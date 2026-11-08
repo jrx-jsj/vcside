@@ -247,6 +247,7 @@ std::string toJson(const Asset& a) {
   j["sprites"] = json::array();
   for (auto& s : a.sprites) {
     json js = {{"name", s.name}, {"frames", s.frames}, {"line_height", s.lineHeight}, {"frame_ticks", s.frameTicks}};
+    if (s.background) js["background"] = s.background;
     js["layers"] = json::array();
     for (auto& l : s.layers) {
       json jl = {{"object", objName(l.obj)}, {"name", l.name}, {"dx", l.dx},     {"dy", l.dy},
@@ -297,6 +298,7 @@ bool fromJson(const std::string& text, Asset* a, std::string* error) {
       s.frames = std::max(1, js.value("frames", 1));
       s.lineHeight = std::clamp(js.value("line_height", 2), 1, 8);
       s.frameTicks = std::clamp(js.value("frame_ticks", 8), 1, 60);
+      s.background = js.value("background", 0) & 0xFE;
       for (auto& jl : js.value("layers", json::array())) {
         Layer l;
         std::string o = jl.value("object", "P0");

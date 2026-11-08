@@ -112,7 +112,7 @@ static bool swatch(const char* id, Rgba* c) {
 void Editor::draw(Library& lib, const std::string& current, const Hooks& h) {
   if (!open) return;
   if (selected_.empty() || !lib.find(selected_)) selected_ = current;
-  ImGui::SetNextWindowSize(ImVec2(900, 640), ImGuiCond_FirstUseEver);
+  ImGui::SetNextWindowSize(ImVec2(em(900), em(640)), ImGuiCond_FirstUseEver);
   if (!ImGui::Begin((std::string(T("Themes")) + "###themes").c_str(), &open)) {
     ImGui::End();
     return;
@@ -120,7 +120,7 @@ void Editor::draw(Library& lib, const std::string& current, const Hooks& h) {
   bool changed = false;
 
   // the themes
-  ImGui::BeginChild("list", ImVec2(210, 0), ImGuiChildFlags_Borders | ImGuiChildFlags_ResizeX);
+  ImGui::BeginChild("list", ImVec2(em(210), 0), ImGuiChildFlags_Borders | ImGuiChildFlags_ResizeX);
   ImGui::TextDisabled("%s", T("Built in"));
   for (int pass = 0; pass < 2; pass++) {
     if (pass) ImGui::Separator(), ImGui::TextDisabled("%s", T("Yours"));
@@ -177,7 +177,7 @@ void Editor::draw(Library& lib, const std::string& current, const Hooks& h) {
     ImGui::TextUnformatted(duplicate_ ? F("A copy of \"{0}\"", {displayName(*t)}).c_str()
                                       : F("A new theme based on \"{0}\"", {displayName(*t)}).c_str());
     if (focusName_) ImGui::SetKeyboardFocusHere(), focusName_ = false;
-    ImGui::SetNextItemWidth(260);
+    ImGui::SetNextItemWidth(em(260));
     bool enter = ImGui::InputText(T("name"), newName_, sizeof newName_, ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll);
     std::string name = newName_;
     while (!name.empty() && name.back() == ' ') name.pop_back();
@@ -278,7 +278,7 @@ void Editor::draw(Library& lib, const std::string& current, const Hooks& h) {
     changed = true;
   }
   ImGui::SameLine();
-  ImGui::SetNextItemWidth(180);
+  ImGui::SetNextItemWidth(em(180));
   const Theme* base = lib.find(t->base);
   if (ImGui::BeginCombo(T("based on"), base ? displayName(*base).c_str() : T("(none)"))) {
     if (ImGui::Selectable(T("(none)"), t->base.empty())) t->base.clear(), changed = true;
@@ -292,7 +292,7 @@ void Editor::draw(Library& lib, const std::string& current, const Hooks& h) {
     }
     ImGui::EndCombo();
   }
-  ImGui::SetNextItemWidth(260);
+  ImGui::SetNextItemWidth(em(260));
   inputString("##filter", &filter_, 260, T("Search colours"));
 
   auto specHelp = [] {
@@ -327,7 +327,7 @@ void Editor::draw(Library& lib, const std::string& current, const Hooks& h) {
       ImGui::PopID();
     }
     if (!removeKey.empty()) t->palette.erase(removeKey), changed = true;
-    ImGui::SetNextItemWidth(160);
+    ImGui::SetNextItemWidth(em(160));
     ImGui::InputTextWithHint("##newpal", T("new name"), newPalette_, sizeof newPalette_);
     ImGui::SameLine();
     ImGui::BeginDisabled(!newPalette_[0] || all.count(newPalette_));

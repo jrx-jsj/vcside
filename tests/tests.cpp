@@ -851,6 +851,7 @@ static void testGfx() {
 
   // JSON round trip
   Asset as;
+  sp.background = 0x0A;  // the editor's backdrop travels with the sprite
   as.sprites = {sp};
   as.playfields = {pf};
   Asset back;
@@ -859,7 +860,7 @@ static void testGfx() {
   CHECK(back.sprites.size() == 1 && back.sprites[0].layers.size() == 2 && back.sprites[0].layers[1].dx == 9 &&
         back.sprites[0].layers[0].bits[0] == sp.layers[0].bits[0] && back.sprites[0].layers[0].colours[0] == sp.layers[0].colours[0]);
   CHECK(back.playfields.size() == 1 && back.playfields[0].rows[2].pf == 0x44 && back.playfields[0].pixel(0, 39));
-  CHECK(toJson(back) == toJson(as));
+  CHECK(toJson(back) == toJson(as) && back.sprites[0].background == 0x0A);
   CHECK(!fromJson("{nope", &back, &err) && !err.empty());
 
   // DASM export, read back

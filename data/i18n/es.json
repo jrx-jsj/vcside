@@ -61,6 +61,7 @@
     "automatic, on": "automático, encendido",
     "Back to the base theme's colour.": "Vuelve al color del tema base.",
     "Background": "Fondo",
+    "background": "fondo",
     "background (COLUBK)": "fondo (COLUBK)",
     "bad adjust": "mal ajustado",
     "ball": "bola",
@@ -140,6 +141,7 @@
     "colour": "color",
     "Colour clocks and rows. Shift+drag on the canvas moves the layer.": "Relojes de color y filas. Mayúsculas+arrastrar en el lienzo mueve la capa.",
     "Colours of its own": "Colores propios",
+    "COLUBK of the rows that do not set their own": "COLUBK de las filas que no ponen el suyo",
     "column": "columna",
     "Columns the kernel does not show (over the picture)": "Columnas que el kernel no muestra (sobre la imagen)",
     "Comments": "Comentarios",
@@ -192,7 +194,6 @@
     "Each row has its own mode (M mirror, R repeat), an A when its right half is drawn on its own, and its colours. Drawing on the right half of a symmetric row makes it asymmetric.": "Cada fila tiene su modo (M espejo, R repetido), una A cuando su mitad derecha se dibuja aparte, y sus colores. Dibujar en la mitad derecha de una fila simétrica la vuelve asimétrica.",
     "Edit": "Editar",
     "Edit themes...": "Editar temas...",
-    "Editor zoom: {0} %": "Zoom del editor: {0} %",
     "ELF cartridges need a recent build (nightly from 2026-11 or later).": "Los cartuchos ELF necesitan una versión reciente (nightly de 2026-11 o posterior).",
     "ELF projects build with make, which does not take spaces in file names: choose a name without spaces.": "Los proyectos ELF se compilan con make, que no admite espacios en los nombres de archivo: elige un nombre sin espacios.",
     "ELF projects build with their Makefile. macOS: xcode-select --install. Linux: your package manager (build-essential). Windows: MSYS2 (pacman -S make) or another GNU Make build.": "Los proyectos ELF se compilan con su Makefile. macOS: xcode-select --install. Linux: el gestor de paquetes (build-essential). Windows: MSYS2 (pacman -S make) u otra versión de GNU Make.",
@@ -385,6 +386,7 @@
     "On save, every item also goes to <file>.gfx.asm for the program to include.": "Al guardar, todo va también a <archivo>.gfx.asm para que el programa lo incluya.",
     "On save, every item also goes to <file>.gfx.h for the program to include.": "Al guardar, todo va también a <archivo>.gfx.h para que el programa lo incluya.",
     "Once installed, VCSIDE finds it in PATH, in the usual folders, or in {0}. You can also choose the file yourself.": "Una vez instalado, VCSIDE lo encuentra en el PATH, en las carpetas habituales o en {0}. También puedes elegir tú el archivo.",
+    "Only to see the sprite against it: the program sets its own COLUBK.": "Solo para ver el sprite sobre él: el programa pone su propio COLUBK.",
     "Only {0} bytes left for the stack above {1} (reserve: {2}).": "Solo quedan {0} bytes para la pila por encima de {1} (reserva: {2}).",
     "Opcode": "Opcode",
     "Open documentation": "Abrir documentación",
@@ -611,6 +613,7 @@
     "Zoom": "Zoom",
     "Zoom in": "Ampliar",
     "Zoom out": "Reducir",
+    "Zoom: {0} %": "Zoom: {0} %",
     "{0} / {1} bytes ({2} %), {3} free": "{0} / {1} bytes ({2} %), {3} libres",
     "{0} already exists.": "{0} ya existe.",
     "{0} bytes": "{0} bytes",
@@ -659,5 +662,5 @@
     "{0}:{1}: no code at or after this line; breakpoint ignored.": "{0}:{1}: no hay código en esta línea ni después; se ignora el punto de ruptura.",
     "{0}:{1}: no listing to place the breakpoint: build first.": "{0}:{1}: no hay listado para situar el punto de ruptura: compila antes."
   },
-  "total": 656
+  "total": 659
 }
