@@ -32,7 +32,7 @@ bool beginModal(const char* name, bool* open, ImGuiWindowFlags flags) {
   // the stripes, right under the title band, from border to border
   ImGuiWindow* w = ImGui::GetCurrentWindow();
   ImRect bar = w->TitleBarRect();
-  float b = w->WindowBorderSize * 0.5f, h = std::max(2.0f, em(2.5f));
+  float b = w->WindowBorderSize * 0.5f, h = std::max(3.0f, em(4.5f));
   ImDrawList* dl = w->DrawList;
   dl->PushClipRect(w->Rect().Min, w->Rect().Max, false);
   Role stripes[3] = {Role::DlgStripe1, Role::DlgStripe2, Role::DlgStripe3};
