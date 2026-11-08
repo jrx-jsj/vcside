@@ -23,6 +23,7 @@
 #include "kb.h"
 #include "menu.h"
 #include "child_process.h"
+#include "cycles.h"
 #include "project.h"
 #include "elf_space.h"
 #include "space.h"
@@ -63,6 +64,8 @@ class App {
   bool testMenu(const std::string& path);  // "File/Save": the system menu, or the ImGui one
   void testGoToAddress(const std::string& a) { showGoToAddress_ = true, pendingAddress_ = a; }
   void testFocus(const std::string& panel) { ImGui::SetWindowFocus(("###" + panel).c_str()); }
+  // What completion offers for a prefix and the tooltip of a word, in the active file.
+  std::string testComplete(const std::string& prefix);
   void testDefinition(const std::string& w) {
     if (activeFile_ >= 0) gotoDefinition(w, files_[activeFile_]->path, files_[activeFile_]->editor.cursor().line);
   }
@@ -157,6 +160,22 @@ class App {
   bool outputScroll_ = false;
   std::vector<Diagnostic> diagnostics_;
   std::map<std::string, int> symbols_;
+  // What the sources define now, before building: the open files as they are in the
+  // editor and the project's other .asm files on disk (rescanned when they change).
+  struct LiveSymbol {
+    SourceSymbol sym;
+    std::string file;  // absolute path
+  };
+  struct ScannedFile {
+    long long mtime = 0;
+    std::vector<SourceSymbol> syms;
+  };
+  std::map<std::string, LiveSymbol> liveSymbols_;  // global names (not .local)
+  std::map<std::string, int> liveValues_;          // the constants that evaluate
+  std::map<std::string, ScannedFile> diskSymbols_;
+  uint64_t liveTicks_ = 0, diskTicks_ = 0;
+  void refreshLiveSymbols(bool force = false);
+  std::string liveSymbolText(const LiveSymbol& s, bool full) const;
   AddressMap addresses_;
   std::map<std::string, std::set<int>> breakpoints_;
   bool showGoToAddress_ = false;

@@ -111,6 +111,39 @@ static void testCycles(const KnowledgeBase& kb) {
   CHECK(!evalExpr("Nope", look));
 }
 
+static void testSourceSymbols() {
+  auto syms = scanAsmSymbols({
+      "    processor 6502",
+      "PFCOLOR = $1E          ; constant",
+      "SPEED equ 3",
+      "TOP=PFCOLOR+2",
+      "ROWS =12",
+      "  MAC SLEEP2 ; two cycles",
+      "    nop",
+      "  ENDM",
+      "Frame:  lda #0",
+      ".loop   dex",
+      "score   ds 1",
+      "1$      rts",
+      "; Comment: lda",
+  });
+  auto find = [&](const std::string& n) -> const SourceSymbol* {
+    for (auto& x : syms)
+      if (x.name == n) return &x;
+    return nullptr;
+  };
+  CHECK(syms.size() == 8);
+  CHECK(find("PFCOLOR") && find("PFCOLOR")->kind == SourceSymbol::Constant && find("PFCOLOR")->value == "$1E");
+  CHECK(find("SPEED") && find("SPEED")->kind == SourceSymbol::Constant && find("SPEED")->value == "3");
+  CHECK(find("TOP") && find("TOP")->kind == SourceSymbol::Constant && find("TOP")->value == "PFCOLOR+2");
+  CHECK(find("ROWS") && find("ROWS")->value == "12");
+  CHECK(find("SLEEP2") && find("SLEEP2")->kind == SourceSymbol::Macro && find("SLEEP2")->line == 5);
+  CHECK(find("Frame") && find("Frame")->kind == SourceSymbol::Label && find("Frame")->line == 8);
+  CHECK(find(".loop") && find(".loop")->kind == SourceSymbol::Label);
+  CHECK(find("score") && find("score")->kind == SourceSymbol::Label);
+  CHECK(!find("1$") && !find("processor"));
+}
+
 static void testParsers() {
   auto d = parseDasmOutput(
       "--- Unresolved Symbol List\nUnknown                  0000 ????         (R )\n--- 1 Unresolved Symbol \n\n"
@@ -710,6 +743,7 @@ int main() {
   testKb(kb);
   testCycles(kb);
   testParsers();
+  testSourceSymbols();
   testEditor();
   testSpace(kb);
   testDebugMap();

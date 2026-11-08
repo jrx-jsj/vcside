@@ -35,6 +35,17 @@ struct AsmLine {
 };
 AsmLine splitAsmLine(const std::string& line);
 
+// What a DASM source defines on its own, before any build: labels (code and
+// "x ds 1" variables), constants (=, EQU, SET) and macros (MAC name).
+struct SourceSymbol {
+  enum Kind { Label, Constant, Macro };
+  std::string name;
+  Kind kind = Label;
+  std::string value;  // a constant's expression
+  int line = 0;       // 0-based
+};
+std::vector<SourceSymbol> scanAsmSymbols(const std::vector<std::string>& lines);
+
 // Evaluates a simple DASM expression: numbers ($hex, %bin, decimal, 'c'),
 // symbols, + - and the < > byte selectors. Returns nullopt if a symbol is unknown.
 std::optional<int> evalExpr(const std::string& expr, const SymbolLookup& lookup);

@@ -51,6 +51,45 @@ AsmLine splitAsmLine(const std::string& raw) {
   return out;
 }
 
+std::vector<SourceSymbol> scanAsmSymbols(const std::vector<std::string>& lines) {
+  std::vector<SourceSymbol> out;
+  auto upper = [](std::string s) {
+    for (auto& c : s) c = (char)std::toupper((unsigned char)c);
+    return s;
+  };
+  auto valid = [](const std::string& n) {
+    if (n.empty() || std::isdigit((unsigned char)n[0])) return false;  // "1$"-style or a number
+    for (char c : n)
+      if (!std::isalnum((unsigned char)c) && c != '_' && c != '.') return false;
+    return n != ".";
+  };
+  for (int i = 0; i < (int)lines.size(); i++) {
+    AsmLine a = splitAsmLine(lines[i]);
+    // "N=5" and "N =5" have no space after the name or the "="
+    if (size_t eq = a.label.find('='); eq != std::string::npos) {
+      std::string rest = a.label.substr(eq + 1);
+      a.operand = rest + (a.mnemonic.empty() ? "" : " " + a.mnemonic) + (a.operand.empty() ? "" : " " + a.operand);
+      a.label.resize(eq);
+      a.mnemonic = "=";
+    } else if (a.mnemonic.size() > 1 && a.mnemonic[0] == '=') {
+      a.operand = a.mnemonic.substr(1) + (a.operand.empty() ? "" : " " + a.operand);
+      a.mnemonic = "=";
+    }
+    std::string m = upper(a.mnemonic);
+    if (m == "MAC" || m == "MACRO") {
+      std::string n = a.operand.substr(0, a.operand.find_first_of(" \t,"));
+      if (valid(n)) out.push_back({n, SourceSymbol::Macro, "", i});
+      continue;
+    }
+    if (!valid(a.label)) continue;
+    if (m == "=" || m == "EQU" || m == "SET" || m == ".SET" || m == "EQM")
+      out.push_back({a.label, SourceSymbol::Constant, a.operand, i});
+    else
+      out.push_back({a.label, SourceSymbol::Label, "", i});
+  }
+  return out;
+}
+
 static bool isSymChar(char c) { return std::isalnum((unsigned char)c) || c == '_' || c == '.'; }
 
 std::optional<int> evalExpr(const std::string& exprIn, const SymbolLookup& lookup) {

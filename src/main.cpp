@@ -184,6 +184,7 @@ int main(int argc, char** argv) {
   bool menuDump = false;
   bool findReplace = false;
   bool doBuild = false;
+  std::string complete;
   for (int i = 1; i < argc; i++) {
     std::string a = argv[i];
     if (a == "--shot" && i + 1 < argc) shot = argv[++i];
@@ -196,6 +197,7 @@ int main(int argc, char** argv) {
     else if (a == "--lang" && i + 1 < argc) vcs::setLanguage(argv[++i]), app.refreshMenus();
     else if (a == "--menu" && i + 1 < argc) menu = argv[++i];
     else if (a == "--menu-dump") menuDump = true;
+    else if (a == "--complete" && i + 1 < argc) complete = argv[++i];
     else if (a == "--goto-address" && i + 1 < argc) gotoAddr = argv[++i];
     else if (a == "--imgui-menu") continue;
     else app.openPath(a);
@@ -211,6 +213,7 @@ int main(int argc, char** argv) {
       if (frame == 9 && !def.empty()) app.testDefinition(def);
       if (frame == 9 && !gotoAddr.empty()) app.testGoToAddress(gotoAddr);
       if (frame == 9 && !menu.empty() && !app.testMenu(menu)) SDL_Log("menu item not found or disabled: %s", menu.c_str());
+      if (frame == 10 && !complete.empty()) std::fputs(app.testComplete(complete).c_str(), stdout), std::fflush(stdout);
       if (frame == 12 && menuDump) std::fputs(app.testMenuDump().c_str(), stdout), std::fflush(stdout), menuDump = false;
       if (frame > 10 && shotFrame < 0 && !app.testBusy()) shotFrame = frame + 5;
       if (frame == shotFrame - 3 && !focus.empty()) app.testFocus(focus);

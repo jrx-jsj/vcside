@@ -593,6 +593,8 @@ std::vector<std::string> App::debugArgs(const std::string& emulator) {
 
 
 std::optional<int> App::lookupSymbol(const std::string& name) const {
+  // a constant as the source says it now goes before the last build's value
+  if (auto lv = liveValues_.find(name); lv != liveValues_.end()) return lv->second;
   auto it = symbols_.find(name);
   if (it != symbols_.end()) return it->second;
   if (const Register* r = kb_.reg(name)) {
@@ -600,6 +602,103 @@ std::optional<int> App::lookupSymbol(const std::string& name) const {
     if (a >= 0) return r->access == "R" && a < 0x30 ? a + 0x30 : a;
   }
   return std::nullopt;
+}
+
+void App::refreshLiveSymbols(bool force) {
+  if (activeFile_ < 0 || !files_[activeFile_]->asmSyntax) return;
+  uint64_t now = SDL_GetTicks();
+  if (!force && now - liveTicks_ < 400) return;
+  liveTicks_ = now;
+  std::map<std::string, LiveSymbol> live;
+  auto add = [&](const std::string& file, const std::vector<SourceSymbol>& syms) {
+    for (auto& sym : syms)
+      if (sym.name[0] != '.') live.emplace(sym.name, LiveSymbol{sym, file});  // the first definition wins
+  };
+  std::set<std::string> open;
+  for (auto& f : files_)
+    if (f->asmSyntax) {
+      add(f->path, scanAsmSymbols(f->editor.lines()));
+      open.insert(f->path);
+    }
+  // the other sources of the folder, read again only when their date changes
+  if (!folder_.empty() && (force || now - diskTicks_ > 3000)) {
+    diskTicks_ = now;
+    bool cHeaders = project_ && project_->language == Language::ElfC;
+    std::map<std::string, ScannedFile> seen;
+    std::error_code ec;
+    for (auto it = fs::recursive_directory_iterator(folder_, fs::directory_options::skip_permission_denied, ec);
+         it != fs::recursive_directory_iterator(); it.increment(ec)) {
+      if (ec) break;
+      std::string name = it->path().filename().string();
+      if (it->is_directory(ec) && (name == "build" || (!name.empty() && name[0] == '.'))) {
+        it.disable_recursion_pending();
+        continue;
+      }
+      if (!it->is_regular_file(ec) || !isAsmFile(it->path().string()) || it->file_size(ec) > 4 * 1024 * 1024) continue;
+      if (cHeaders && lower(it->path().extension().string()) == ".h") continue;  // C, not assembly
+      std::string path = fs::weakly_canonical(it->path(), ec).string();  // as the open files have it
+      long long mtime = (long long)it->last_write_time(ec).time_since_epoch().count();
+      auto old = diskSymbols_.find(path);
+      if (old != diskSymbols_.end() && old->second.mtime == mtime) {
+        seen[path] = std::move(old->second);
+        continue;
+      }
+      std::vector<std::string> lines;
+      std::istringstream in(readFile(path));
+      for (std::string l; std::getline(in, l);) {
+        if (!l.empty() && l.back() == '\r') l.pop_back();
+        lines.push_back(l);
+      }
+      seen[path] = {mtime, scanAsmSymbols(lines)};
+    }
+    diskSymbols_ = std::move(seen);
+  }
+  for (auto& [path, f] : diskSymbols_)
+    if (!open.count(path)) add(path, f.syms);
+  liveSymbols_ = std::move(live);
+  // constants that refer to other constants: a few passes
+  liveValues_.clear();
+  for (int pass = 0; pass < 6; pass++) {
+    bool more = false;
+    for (auto& [name, l] : liveSymbols_) {
+      if (l.sym.kind != SourceSymbol::Constant || liveValues_.count(name)) continue;
+      const std::string& self = name;
+      auto v = evalExpr(l.sym.value, [this, &self](const std::string& x) -> std::optional<int> {
+        if (x == self) return std::nullopt;
+        return lookupSymbol(x);
+      });
+      if (v) liveValues_[name] = *v, more = true;
+    }
+    if (!more) break;
+  }
+}
+
+// "label (main.asm:12)", "constant = $80 + 2" or "macro (kernel.h:40)"; full = for the tooltip
+std::string App::liveSymbolText(const LiveSymbol& l, bool full) const {
+  std::string where = fs::path(l.file).filename().string() + ":" + std::to_string(l.sym.line + 1);
+  bool here = activeFile_ >= 0 && files_[activeFile_]->path == l.file;
+  if (l.sym.kind == SourceSymbol::Macro) return full ? F("{0}: macro ({1})", {l.sym.name, where}) : T("macro") + (here ? "" : " · " + where);
+  if (l.sym.kind == SourceSymbol::Constant) {
+    std::string s = full ? l.sym.name + " = " + l.sym.value : "= " + l.sym.value;
+    if (auto v = liveValues_.find(l.sym.name); v != liveValues_.end() && full) {
+      char b[40];
+      snprintf(b, sizeof b, "  ($%04X, %d)", v->second & 0xFFFF, v->second);
+      s += b;
+    }
+    if (full) s += "\n" + where;
+    return s;
+  }
+  if (full) return F("{0}: label ({1}). Build to get its address.", {l.sym.name, where});
+  return T("label") + (here ? "" : " · " + where);
+}
+
+std::string App::testComplete(const std::string& word) {
+  if (activeFile_ < 0) return "no file\n";
+  refreshLiveSymbols(true);
+  EditorHooks h = files_[activeFile_]->asmSyntax ? asmHooks() : basicHooks();
+  std::string s;
+  for (auto& c : h.complete(word, "")) s += c.word + "\t" + c.detail + "\n";
+  return s + "hover: " + h.hover(word, "") + "\n";
 }
 
 // A file named by a tool: absolute, relative to the project or an include folder, or
@@ -749,12 +848,22 @@ EditorHooks App::asmHooks() {
       return s;
     }
     if (const Register* r = kb_.reg(word)) return registerHelp(*r);
+    refreshLiveSymbols();
+    auto live = liveSymbols_.find(word);
+    // a macro, or a constant that evaluates now: the source says more than the last build
+    if (live != liveSymbols_.end() && (live->second.sym.kind == SourceSymbol::Macro ||
+                                       (live->second.sym.kind == SourceSymbol::Constant && liveValues_.count(word))))
+      return liveSymbolText(live->second, true);
     auto it = symbols_.find(word);
     if (it != symbols_.end()) {
       char b[48];
       snprintf(b, sizeof b, "%s = $%04X (%d)", word.c_str(), it->second, it->second);
       return b;
     }
+    if (live != liveSymbols_.end()) return liveSymbolText(live->second, true);
+    if (!word.empty() && word[0] == '.' && activeFile_ >= 0)
+      for (auto& sym : scanAsmSymbols(files_[activeFile_]->editor.lines()))
+        if (sym.name == word) return liveSymbolText({sym, files_[activeFile_]->path}, true);
     return {};
   };
   h.complete = [this](const std::string& prefix, const std::string&) {
@@ -774,9 +883,25 @@ EditorHooks App::asmHooks() {
       }
       out.push_back({e.word, e.summary, k});
     }
+    // the sources as they are now (labels, constants and macros not built yet), then the
+    // last build's symbols; the active file's .local labels too
     std::string p = upper(prefix);
+    auto matches = [&](const std::string& name) { return name != prefix && upper(name).compare(0, p.size(), p) == 0; };
+    refreshLiveSymbols();
+    std::set<std::string> seen;
+    for (auto& o : out) seen.insert(o.word);
+    auto push = [&](const std::string& name, const std::string& detail, TokenKind k) {
+      if (out.size() < 60 && seen.insert(name).second) out.push_back({name, detail, k});
+    };
+    if (activeFile_ >= 0 && !prefix.empty() && prefix[0] == '.')
+      for (auto& sym : scanAsmSymbols(files_[activeFile_]->editor.lines()))
+        if (sym.name[0] == '.' && matches(sym.name)) push(sym.name, T("local label"), TokenKind::Label);
+    for (auto& [name, l] : liveSymbols_)
+      if (matches(name))
+        push(name, liveSymbolText(l, false),
+             l.sym.kind == SourceSymbol::Macro ? TokenKind::Directive : l.sym.kind == SourceSymbol::Label ? TokenKind::Label : TokenKind::Symbol);
     for (auto& [name, v] : symbols_)
-      if (upper(name).compare(0, p.size(), p) == 0 && out.size() < 50) out.push_back({name, T("symbol"), TokenKind::Symbol});
+      if (matches(name)) push(name, T("symbol"), TokenKind::Symbol);
     return out;
   };
   return h;
@@ -973,6 +1098,7 @@ void App::frame() {
   }
   pollBuild();
   pollSpace();
+  refreshLiveSymbols();  // the cycle counts use the constants as they are written now
 
   // global shortcuts
   ImGuiIO& io = ImGui::GetIO();

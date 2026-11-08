@@ -27,7 +27,7 @@ A small native IDE for making Atari 2600 games, on macOS, Windows and Linux. It 
   - DASM syntax colouring, with illegal opcodes in their own colours (purple for stable ones, red for unstable ones).
   - A cycle column for every instruction (e.g. `4/5` when crossing a page, `2/4` for a branch). Symbols from the last build are used to tell zero page from absolute.
   - Select lines to see their total cycles, bytes and fraction of a scanline in the status bar.
-  - Hover help for instructions, registers and symbols, plus completion (Ctrl+Space).
+  - Hover help for instructions, registers and symbols, plus completion (Ctrl+Space). Labels, constants and macros count as soon as they are written, in the open files and in the project's other sources, before any build; constants show their value and the cycle counts use it.
 - **Documentation panel** (F1 on a word):
   - all 256 6502 opcodes, grouped as legal, stable illegal and unstable illegal;
   - TIA and RIOT registers with their known issues;
