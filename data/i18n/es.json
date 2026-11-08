@@ -212,8 +212,9 @@
     "Layer": "Capa",
     "Layers": "Capas",
     "Layers in different phases are drawn on alternate frames (flicker), so one object can be used more than once.": "Las capas de fases distintas se dibujan en fotogramas alternos (parpadeo), así que un mismo objeto puede usarse más de una vez.",
-    "Left: draw or erase · Right: erase · M/R: mirror or repeat · A: asymmetric · the two squares: playfield and background colours": "Izquierdo: dibujar o borrar · Derecho: borrar · M/R: espejo o repetido · A: asimétrica · los dos cuadros: colores del playfield y del fondo",
+    "Left: draw or erase · Right: erase · M/R: mirror or repeat · A: asymmetric": "Izquierdo: dibujar o borrar · Derecho: borrar · M/R: espejo o repetido · A: asimétrica",
     "Left: draw or erase · Right: erase · Shift+drag: move the layer · Alt+colour: every frame": "Izquierdo: dibujar o borrar · Derecho: borrar · Mayúsculas+arrastrar: mover la capa · Alt+color: en todos los fotogramas",
+    "Left: draw or erase · Right: erase · the right half follows the left one": "Izquierdo: dibujar o borrar · Derecho: borrar · la mitad derecha sigue a la izquierda",
     "Legal": "Legales",
     "light gun": "pistola de luz",
     "Line": "Línea",
@@ -375,7 +376,10 @@
     "The rows have their own colours, and the program does not set `set kernel_options pfcolors`: only the first row's is kept.": "Las filas tienen sus propios colores, y el programa no pone `set kernel_options pfcolors`: solo se conserva el de la primera.",
     "The rows the program shows": "Las filas que muestra el programa",
     "The space report is only available for DASM projects built by VCSIDE.": "El informe de espacio solo está disponible en proyectos DASM compilados por VCSIDE.",
+    "the square: the row's background colour": "el cuadro: color de fondo de la fila",
+    "the square: the row's playfield colour": "el cuadro: color del playfield en la fila",
     "The system's own": "Las del sistema",
+    "the two squares: playfield and background colours": "los dos cuadros: colores de playfield y fondo",
     "The {0} format has no space data yet: 4 KB banks assumed.": "El formato {0} aún no tiene datos de espacio: se suponen bancos de 4 KB.",
     "Their licences are in the data/licenses folder.": "Sus licencias están en la carpeta data/licenses.",
     "This format's RAM cannot be measured from the DASM output.": "La RAM de este formato no se puede medir con la salida de DASM.",
@@ -467,5 +471,5 @@
     "{0}:{1}: no code at or after this line; breakpoint ignored.": "{0}:{1}: no hay código en esta línea ni después; se ignora el punto de ruptura.",
     "{0}:{1}: no listing to place the breakpoint: build first.": "{0}:{1}: no hay listado para situar el punto de ruptura: compila antes."
   },
-  "total": 464
+  "total": 468
 }

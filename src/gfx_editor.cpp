@@ -708,16 +708,6 @@ void GfxEditor::playfieldView(Playfield& p, Tv tv) {
       p.rows.resize(rows, last);
       changed();
     }
-    int lh = p.lineHeight;
-    ImGui::SetNextItemWidth(110);
-    if (ImGui::DragInt(T("lines per row"), &lh, 0.2f, 1, 64)) p.lineHeight = lh, changed();
-    int nc;
-    if (colourButton("pf", p.pfColour, tv, &nc, false, ImGui::GetFrameHeight())) p.pfColour = nc, changed();
-    ImGui::SameLine();
-    ImGui::TextUnformatted(T("playfield (COLUPF)"));
-    if (colourButton("bk", p.bkColour, tv, &nc, false, ImGui::GetFrameHeight())) p.bkColour = nc, changed();
-    ImGui::SameLine();
-    ImGui::TextUnformatted(T("background (COLUBK)"));
     if (k_.pfRowsDefault()) {
       ImGui::SameLine();
       if (ImGui::SmallButton(std::to_string(k_.pfRowsDefault()).c_str())) {
@@ -728,6 +718,16 @@ void GfxEditor::playfieldView(Playfield& p, Tv tv) {
       }
       if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", T("The rows the program shows"));
     }
+    int lh = p.lineHeight;
+    ImGui::SetNextItemWidth(110);
+    if (ImGui::DragInt(T("lines per row"), &lh, 0.2f, 1, 64)) p.lineHeight = lh, changed();
+    int nc;
+    if (colourButton("pf", p.pfColour, tv, &nc, false, ImGui::GetFrameHeight())) p.pfColour = nc, changed();
+    ImGui::SameLine();
+    ImGui::TextUnformatted(T("playfield (COLUPF)"));
+    if (colourButton("bk", p.bkColour, tv, &nc, false, ImGui::GetFrameHeight())) p.bkColour = nc, changed();
+    ImGui::SameLine();
+    ImGui::TextUnformatted(T("background (COLUBK)"));
     if (mirrorOnly) {
       ImGui::Dummy(ImVec2(0, 8));
       if (ImGui::Button(T("Mirror every row"))) {
@@ -875,7 +875,12 @@ void GfxEditor::playfieldView(Playfield& p, Tv tv) {
     }
     ImGui::SetCursorScreenPos(ImVec2(o.x - 28, o.y + size.y + 8));
     ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
-  ImGui::TextWrapped("%s", T("Left: draw or erase · Right: erase · M/R: mirror or repeat · A: asymmetric · the two squares: playfield and background colours"));
+  std::string help = mirrorOnly ? T("Left: draw or erase · Right: erase · the right half follows the left one")
+                                : T("Left: draw or erase · Right: erase · M/R: mirror or repeat · A: asymmetric");
+  if (pfRows && bkRows) help += std::string(" · ") + T("the two squares: playfield and background colours");
+  else if (pfRows) help += std::string(" · ") + T("the square: the row's playfield colour");
+  else if (bkRows) help += std::string(" · ") + T("the square: the row's background colour");
+  ImGui::TextWrapped("%s", help.c_str());
   ImGui::PopStyleColor();
   };
   if (narrow) {

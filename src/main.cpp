@@ -5,7 +5,10 @@
 #include <SDL3/SDL_opengl.h>
 
 #include <filesystem>
+#include <fstream>
+#include <sstream>
 #include <string>
+#include <vector>
 
 #include "app.h"
 #include "menu.h"
@@ -26,6 +29,108 @@ static void keepTextInput(ImGuiContext*, ImGuiViewport* vp, ImGuiPlatformImeData
   SDL_Rect r = {(int)data->InputPos.x, (int)data->InputPos.y, 1, (int)data->InputLineHeight};
   SDL_SetTextInputArea(w, &r, 0);
   if (!SDL_TextInputActive(w)) SDL_StartTextInput(w);
+}
+
+// --input FILE for test runs: one action per line, played one per frame after the window
+// has settled. Coordinates are window points (what ImGui uses).
+//   move X Y | down [right] | up [right] | click X Y [right] | drag X1 Y1 X2 Y2 [right]
+//   key NAME [shift|ctrl|alt...] (NAME: a-z, z, y, enter, escape, tab, delete...)
+//   hold shift|ctrl|alt | release shift|ctrl|alt | text WORDS | wait N | shot FILE.bmp
+struct InputScript {
+  std::vector<std::string> lines;
+  size_t next = 0;
+  int waitFrames = 0;
+  float x = 0, y = 0;
+  std::vector<std::pair<float, float>> path;  // a drag in progress, one point a frame
+  int dragButton = 0;
+  std::string shot;  // set by "shot": saved after this frame is drawn
+  bool done() const { return next >= lines.size() && path.empty() && waitFrames == 0; }
+
+  static ImGuiKey keyNamed(const std::string& n) {
+    if (n.size() == 1 && n[0] >= 'a' && n[0] <= 'z') return (ImGuiKey)(ImGuiKey_A + (n[0] - 'a'));
+    if (n.size() == 1 && n[0] >= '0' && n[0] <= '9') return (ImGuiKey)(ImGuiKey_0 + (n[0] - '0'));
+    if (n == "enter") return ImGuiKey_Enter;
+    if (n == "escape") return ImGuiKey_Escape;
+    if (n == "tab") return ImGuiKey_Tab;
+    if (n == "delete") return ImGuiKey_Delete;
+    if (n == "backspace") return ImGuiKey_Backspace;
+    if (n == "up") return ImGuiKey_UpArrow;
+    if (n == "down") return ImGuiKey_DownArrow;
+    if (n == "left") return ImGuiKey_LeftArrow;
+    if (n == "right") return ImGuiKey_RightArrow;
+    return ImGuiKey_None;
+  }
+  static ImGuiKey modNamed(const std::string& n) {
+    return n == "shift" ? ImGuiMod_Shift : n == "ctrl" ? ImGuiMod_Ctrl : n == "alt" ? ImGuiMod_Alt : n == "cmd" ? ImGuiMod_Super : ImGuiKey_None;
+  }
+
+  // Queues this frame's input; call between the backend's NewFrame and ImGui::NewFrame,
+  // so it wins over the real mouse.
+  void step(ImGuiIO& io) {
+    if (!path.empty()) {
+      x = path.front().first, y = path.front().second;
+      path.erase(path.begin());
+      io.AddMousePosEvent(x, y);
+      if (path.empty()) io.AddMouseButtonEvent(dragButton, false);
+      return;
+    }
+    io.AddMousePosEvent(x, y);
+    if (waitFrames > 0) {
+      waitFrames--;
+      return;
+    }
+    if (next >= lines.size()) return;
+    std::istringstream in(lines[next++]);
+    std::string op;
+    in >> op;
+    std::vector<std::string> a;
+    for (std::string w; in >> w;) a.push_back(w);
+    auto num = [&](size_t i) { return i < a.size() ? std::stof(a[i]) : 0.0f; };
+    int button = !a.empty() && a.back() == "right" ? 1 : 0;
+    if (op == "move") x = num(0), y = num(1), io.AddMousePosEvent(x, y);
+    else if (op == "down") io.AddMouseButtonEvent(button, true);
+    else if (op == "up") io.AddMouseButtonEvent(button, false);
+    else if (op == "click") {
+      x = num(0), y = num(1);
+      io.AddMousePosEvent(x, y);
+      io.AddMouseButtonEvent(button, true);
+      path = {{x, y}};  // released on the next frame
+      dragButton = button;
+    } else if (op == "drag") {
+      x = num(0), y = num(1);
+      io.AddMousePosEvent(x, y);
+      io.AddMouseButtonEvent(button, true);
+      float x2 = num(2), y2 = num(3);
+      int steps = 12;
+      for (int i = 1; i <= steps; i++) path.push_back({x + (x2 - x) * i / steps, y + (y2 - y) * i / steps});
+      path.push_back({x2, y2});
+      dragButton = button;
+    } else if (op == "hold" || op == "release") {
+      io.AddKeyEvent(modNamed(a.empty() ? "" : a[0]), op == "hold");
+    } else if (op == "key") {
+      ImGuiKey k = keyNamed(a.empty() ? "" : a[0]);
+      for (size_t i = 1; i < a.size(); i++) io.AddKeyEvent(modNamed(a[i]), true);
+      io.AddKeyEvent(k, true);
+      io.AddKeyEvent(k, false);
+      for (size_t i = 1; i < a.size(); i++) io.AddKeyEvent(modNamed(a[i]), false);
+    } else if (op == "text") {
+      std::string t = lines[next - 1].substr(lines[next - 1].find("text") + 5);
+      io.AddInputCharactersUTF8(t.c_str());
+    } else if (op == "wait") {
+      waitFrames = (int)num(0);
+    } else if (op == "shot" && !a.empty()) {
+      shot = a[0];
+    }
+  }
+};
+
+static void saveShot(ImGuiIO& io, const std::string& file) {
+  int w = (int)(io.DisplaySize.x * io.DisplayFramebufferScale.x), h = (int)(io.DisplaySize.y * io.DisplayFramebufferScale.y);
+  SDL_Surface* s = SDL_CreateSurface(w, h, SDL_PIXELFORMAT_ABGR8888);
+  glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, s->pixels);
+  SDL_FlipSurface(s, SDL_FLIP_VERTICAL);
+  SDL_SaveBMP(s, file.c_str());
+  SDL_DestroySurface(s);
 }
 
 static ImFont* loadFont(ImGuiIO& io, std::initializer_list<const char*> paths, float size, float density) {
@@ -179,12 +284,14 @@ int main(int argc, char** argv) {
   // space, docs...) brings a panel to the front before the capture.
   // --imgui-menu draws the menus with ImGui on macOS too; --menu "File/Save" chooses a
   // system menu item; --menu-dump prints the system menu bar; --goto-address TEXT
-  // opens "Go to address" with that text.
+  // opens "Go to address" with that text. --input FILE plays mouse and key actions
+  // (see InputScript) before the capture.
   std::string shot, select, doc, find, def, focus, menu, gotoAddr;
   bool menuDump = false;
   bool findReplace = false;
   bool doBuild = false;
   std::string complete;
+  InputScript input;
   for (int i = 1; i < argc; i++) {
     std::string a = argv[i];
     if (a == "--shot" && i + 1 < argc) shot = argv[++i];
@@ -199,7 +306,11 @@ int main(int argc, char** argv) {
     else if (a == "--menu-dump") menuDump = true;
     else if (a == "--complete" && i + 1 < argc) complete = argv[++i];
     else if (a == "--goto-address" && i + 1 < argc) gotoAddr = argv[++i];
-    else if (a == "--imgui-menu") continue;
+    else if (a == "--input" && i + 1 < argc) {
+      std::ifstream f(argv[++i]);
+      for (std::string l; std::getline(f, l);)
+        if (!l.empty() && l[0] != '#') input.lines.push_back(l);
+    } else if (a == "--imgui-menu") continue;
     else app.openPath(a);
   }
   int frame = 0, shotFrame = -1;
@@ -215,7 +326,7 @@ int main(int argc, char** argv) {
       if (frame == 9 && !menu.empty() && !app.testMenu(menu)) SDL_Log("menu item not found or disabled: %s", menu.c_str());
       if (frame == 10 && !complete.empty()) std::fputs(app.testComplete(complete).c_str(), stdout), std::fflush(stdout);
       if (frame == 12 && menuDump) std::fputs(app.testMenuDump().c_str(), stdout), std::fflush(stdout), menuDump = false;
-      if (frame > 10 && shotFrame < 0 && !app.testBusy()) shotFrame = frame + 5;
+      if (frame > 10 && shotFrame < 0 && !app.testBusy() && (frame > 20 || input.lines.empty()) && input.done()) shotFrame = frame + 5;
       if (frame == shotFrame - 3 && !focus.empty()) app.testFocus(focus);
     }
     SDL_Event e;
@@ -241,6 +352,7 @@ int main(int argc, char** argv) {
     }
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplSDL3_NewFrame();
+    if (!shot.empty() && frame > 20) input.step(io);
     ImGui::NewFrame();
     app.frame();
     ImGui::Render();
@@ -248,13 +360,9 @@ int main(int argc, char** argv) {
     glClearColor(0.1f, 0.1f, 0.11f, 1);
     glClear(GL_COLOR_BUFFER_BIT);
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+    if (!input.shot.empty()) saveShot(io, input.shot), input.shot.clear();
     if (frame++ == shotFrame) {
-      int w = (int)(io.DisplaySize.x * io.DisplayFramebufferScale.x), h = (int)(io.DisplaySize.y * io.DisplayFramebufferScale.y);
-      SDL_Surface* s = SDL_CreateSurface(w, h, SDL_PIXELFORMAT_ABGR8888);
-      glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, s->pixels);
-      SDL_FlipSurface(s, SDL_FLIP_VERTICAL);
-      SDL_SaveBMP(s, shot.c_str());
-      SDL_DestroySurface(s);
+      saveShot(io, shot);
       break;
     }
     SDL_GL_SwapWindow(window);
