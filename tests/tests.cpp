@@ -10,10 +10,13 @@
 #include "kb.h"
 #include "space.h"
 #include "debugmap.h"
+#include "elf_space.h"
 #include "emulator_launch.h"
 #include "i18n.h"
 
+#include <array>
 #include <filesystem>
+#include <tuple>
 #include <fstream>
 #include <set>
 
@@ -115,6 +118,24 @@ static void testParsers() {
 
   auto g = parseGccOutput("src/main.c:12:5: warning: unused variable 'x'\nsrc/a.c:3: error: boom\n");
   CHECK(g.size() == 2 && g[0].line == 12 && g[0].severity == Diagnostic::Warning && g[1].file == "src/a.c");
+  // the ELF template's checks, ld and make
+  g = parseGccOutput(
+      "src/main.c: error: undefined symbol 'foo' (only vcsLib functions may be left undefined)\n"
+      "arm-none-eabi-gcc: error: nothing.c: No such file or directory\n"
+      "/opt/bin/arm-none-eabi-ld: warning: build/x-chameleon.elf has a LOAD segment with RWX permissions\n"
+      "/opt/bin/arm-none-eabi-ld: build/elf/main.o: in function `elf_main':\n"
+      "main.c:(.text+0x1c): undefined reference to `bar'\n"
+      "/opt/bin/arm-none-eabi-ld: region `RAM' overflowed by 120 bytes\n"
+      "make: *** [build/x.bin] Error 1\n"
+      "make: *** No rule to make target 'src/y.c', needed by 'build/elf/y.o'.  Stop.\n");
+  CHECK(g.size() == 5);
+  if (g.size() == 5) {
+    CHECK(g[0].file == "src/main.c" && g[0].line == 0 && g[0].message.find("'foo'") != std::string::npos);
+    CHECK(g[1].file.empty() && g[1].message.rfind("arm-none-eabi-gcc: ", 0) == 0);
+    CHECK(g[2].file == "main.c" && g[2].message == "undefined reference to `bar' (in elf_main)");
+    CHECK(g[3].file.empty() && g[3].message == "region `RAM' overflowed by 120 bytes");
+    CHECK(g[4].message.rfind("make: No rule", 0) == 0);
+  }
 
   auto s = parseDasmSymbols("--- Symbol List (sorted by symbol)\nStart                    f000              (R )\nVAR                      0081              (R )\n--- End of Symbol List.\n");
   CHECK(s.size() == 2 && s["Start"] == 0xF000 && s["VAR"] == 0x81);
@@ -468,6 +489,97 @@ static void testEmulatorOptions(const KnowledgeBase& kb) {
   CHECK(tvIs50Hz("NTSC50") && !tvIs50Hz("PAL60"));
 }
 
+// A minimal 32-bit little-endian ELF: sections (name, type, flags, size) and LOAD segments (vaddr, paddr, filesz, memsz).
+static std::string makeElf(int type, const std::vector<std::tuple<std::string, uint32_t, uint32_t, uint32_t>>& secs,
+                           const std::vector<std::array<uint32_t, 4>>& segs) {
+  auto put = [](std::string& d, size_t at, uint32_t v, int n) {
+    if (d.size() < at + n) d.resize(at + n);
+    for (int i = 0; i < n; i++) d[at + i] = (char)(v >> (8 * i));
+  };
+  std::string names(1, '\0');
+  std::vector<uint32_t> off;
+  for (auto& s : secs) off.push_back((uint32_t)names.size()), names += std::get<0>(s) + '\0';
+  uint32_t shstr = (uint32_t)names.size();
+  names += ".shstrtab";
+  names += '\0';
+  std::string d(52, '\0');
+  d[0] = 0x7f, d[1] = 'E', d[2] = 'L', d[3] = 'F', d[4] = 1, d[5] = 1, d[6] = 1;
+  put(d, 16, type, 2);
+  put(d, 18, 40, 2);  // ARM
+  uint32_t phoff = 52, strAt = phoff + 32 * (uint32_t)segs.size(), shoff = (strAt + (uint32_t)names.size() + 3) & ~3u;
+  put(d, 28, segs.empty() ? 0 : phoff, 4);
+  put(d, 32, shoff, 4);
+  put(d, 42, 32, 2);
+  put(d, 44, (uint32_t)segs.size(), 2);
+  put(d, 46, 40, 2);
+  put(d, 48, (uint32_t)secs.size() + 2, 2);
+  put(d, 50, (uint32_t)secs.size() + 1, 2);
+  for (size_t i = 0; i < segs.size(); i++) {
+    size_t p = phoff + 32 * i;
+    put(d, p, 1, 4);
+    put(d, p + 8, segs[i][0], 4);
+    put(d, p + 12, segs[i][1], 4);
+    put(d, p + 16, segs[i][2], 4);
+    put(d, p + 20, segs[i][3], 4);
+  }
+  d.resize(strAt);
+  d += names;
+  d.resize(shoff + 40);  // section 0: null
+  for (size_t i = 0; i < secs.size(); i++) {
+    size_t p = shoff + 40 * (i + 1);
+    put(d, p, off[i], 4);
+    put(d, p + 4, std::get<1>(secs[i]), 4);
+    put(d, p + 8, std::get<2>(secs[i]), 4);
+    put(d, p + 20, std::get<3>(secs[i]), 4);
+  }
+  size_t p = shoff + 40 * (secs.size() + 1);
+  put(d, p, shstr, 4);
+  put(d, p + 4, 3, 4);
+  put(d, p + 16, strAt, 4);
+  put(d, p + 20, (uint32_t)names.size(), 4);
+  d.resize(p + 40);
+  return d;
+}
+
+static void testElfSpace() {
+  // PROGBITS 1, NOBITS 8; WRITE 1, ALLOC 2, EXEC 4
+  std::string rom = makeElf(1, {{".text", 1, 6, 1000}, {".RamFunc", 1, 6, 300}, {".rodata.tab", 1, 2, 2000},
+                                {".data.x", 1, 3, 40}, {".bss.y", 8, 3, 500}, {".comment", 1, 0, 19}}, {});
+  ElfFile f;
+  std::string err;
+  CHECK(readElf(rom, f, &err) && f.type == 1 && f.machine == 40 && f.sections.size() == 8);
+  CHECK(f.sections.size() == 8 && f.sections[2].name == ".RamFunc");
+  ElfSpace e = analyzeElfSpace(f, (long)rom.size(), nullptr, 90);
+  CHECK(e.code == 1000 && e.ramCode == 300 && e.constants == 2000 && e.data == 40 && e.bss == 500 && !e.exact);
+  CHECK(e.flash.used == 3340 + kChameleonFirmwareFlash && e.ram.used == 840 + kChameleonFirmwareRam);
+  CHECK(e.diagnostics.empty());
+  // the Chameleon image: flash = what is stored at 0x0800_0000, RAM = what lives at 0x2000_0000
+  std::string img = makeElf(2, {}, {{0x08000000, 0x08000000, 120000, 120000}, {0x20000000, 0x0801D4C0, 4000, 34000},
+                                   {0x20008500, 0x0801E460, 0, 1100}});
+  ElfFile c;
+  CHECK(readElf(img, c, &err) && c.type == 2 && c.segments.size() == 3);
+  e = analyzeElfSpace(f, (long)rom.size(), &c, 90);
+  CHECK(e.exact && e.flash.used == 124000 && e.ram.used == 35100);
+  CHECK(e.diagnostics.size() == 2 && e.diagnostics[0].severity == Diagnostic::Warning);  // 94 % and 95 %
+  CHECK(!readElf("not an elf", f, &err) && !err.empty());
+
+  // a new ELF project from the template
+  namespace fs = std::filesystem;
+  fs::path dir = fs::temp_directory_path() / "vcside-test-elf";
+  std::error_code ec;
+  fs::remove_all(dir, ec);
+  Project p;
+  CHECK(Project::create(dir.string(), "rainbow", Language::ElfC, "NTSC", &p, &err));
+  CHECK(p.buildCommand == "make" && p.format == "ELF" && p.output == "build/rainbow.bin" && p.main == "src/main.c");
+  for (auto f : {"Makefile", "include/vcs.h", "src/main.c", "src/trampolines.S", "chameleon/support.c"}) CHECK(fs::exists(dir / f));
+  CHECK(!fs::exists(dir / "LICENSE.md"));
+  std::ifstream mk(dir / "Makefile");
+  std::string mtext((std::istreambuf_iterator<char>(mk)), {});
+  CHECK(mtext.find("NAME  = rainbow") != std::string::npos && mtext.find("{{") == std::string::npos);
+  CHECK(!Project::create((dir / "b").string(), "two words", Language::ElfC, "NTSC", nullptr, &err));
+  fs::remove_all(dir, ec);
+}
+
 int main() {
   KnowledgeBase kb;
   std::string err;
@@ -482,6 +594,7 @@ int main() {
   testDebugMap();
   loadLanguages(VCSIDE_SOURCE_DATA "/i18n");
   testEmulatorOptions(kb);
+  testElfSpace();
   std::printf("%d checks, %d failures\n", checks, failures);
   return failures ? 1 : 0;
 }

@@ -272,6 +272,25 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
       std::ofstream(mainFile) << "  rem " << projName << " - made with VCSIDE\n"
                               << "  COLUBK = $84\nmain\n  drawscreen\n  goto main\n";
   } else if (lang == Language::ElfC) {
+    if (projName.find_first_of(" \t") != std::string::npos) {
+      if (error) *error = T("ELF projects build with make, which does not take spaces in file names: choose a name without spaces.");
+      return false;
+    }
+    // data/templates/elf, copied whole; {{NAME}} in the Makefile and main.c
+    fs::path tpl = fs::path(dataDir()) / "templates" / "elf";
+    if (!fs::exists(tpl / "Makefile")) {
+      if (error) *error = F("Template not found in {0}", {tpl.string()});
+      return false;
+    }
+    for (auto& e : fs::recursive_directory_iterator(tpl, ec)) {
+      if (!e.is_regular_file()) continue;
+      fs::path rel = fs::relative(e.path(), tpl), dst = fs::path(p.dir) / rel;
+      if (rel == "LICENSE.md" || fs::exists(dst)) continue;
+      fs::create_directories(dst.parent_path(), ec);
+      std::string text = readFile(e.path().string());
+      replaceAll(text, "{{NAME}}", projName);
+      std::ofstream(dst, std::ios::binary) << text;
+    }
     p.main = "src/main.c";
     p.buildCommand = "make";
     p.format = "ELF";

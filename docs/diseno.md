@@ -79,7 +79,16 @@ Comprobado con Stella 7.0 y Gopher2600 v0.56.1, en su código fuente y probándo
 - **Gopher2600 y preferencias:** sonido, comprobación de VSYNC, estado al azar, rarezas del TIA… solo se leen del archivo `preferences` (las preferencias por línea de órdenes son solo para la emulación de comparación). Si se cambia alguna, se arranca en modo portátil: carpeta de trabajo con `portable.txt` y `Gopher2600_UserData/` con una copia de los archivos del usuario y esas claves cambiadas.
 - **Normas de TV:** NTSC, PAL, PAL60 y SECAM en los dos; NTSC50 y SECAM60 solo en Stella; PAL-M solo en Gopher2600. Si el emulador no tiene la elegida, no se pasa y lo elige él (con un aviso).
 - **Ir a dirección** (Ctrl+Shift+G): de una dirección (o etiqueta) y, si se quiere, un banco, a su línea. Tiene en cuenta los espejos de la 6507 ($F000 = $1000).
-- **Pendiente:** recibir del emulador la dirección donde se ha parado (no tienen un canal para avisar a otra aplicación); batari Basic y ELF.
+- **Pendiente:** recibir del emulador la dirección donde se ha parado (no tienen un canal para avisar a otra aplicación); batari Basic.
+- **ELF:** los puntos de ruptura no se pasan (ni Stella ni Gopher2600 pueden parar en una línea de C); `-bs ELF` y `-mapping ELF`.
+
+## Proyectos ELF
+
+- **Plantilla** (`data/templates/elf`, CC0): `Makefile`, `include/vcs.h`, `src/main.c`, `src/trampolines.S` y `chameleon/support.c`, escritos para VCSIDE siguiendo las reglas ELF de los juegos de esta carpeta (`reglas-elf.md`): Cortex-M0, `-fdata-sections` sin `-ffunction-sections`, enlace parcial con libgcc, `strip --strip-unneeded`, divisiones de libgcc renombradas, llamadas largas al cargador, trampolines de `memcpy`/`memset` y `RAM_FUNC` para el kernel. El ejemplo es un arcoíris con una barra que se mueve con el joystick; vuelve al menú con RESET en un multicart.
+- **Comprobaciones tras enlazar:** cada símbolo sin definir que no sea del cargador sale como `src/<archivo>.c: error: undefined symbol '...'` (con `-r`, el enlazador no lo da por error, y Stella lo enlazaría a 0); y ninguna llamada corta al cargador.
+- **Chameleon Cart:** `make chameleon CHAMELEON_FW=<carpeta chameleon_cart de su plantilla>`. La plantilla de Zack no se incluye porque no tiene licencia.
+- **Errores:** además de `archivo:línea:`, los mensajes sin línea (las comprobaciones, `arm-none-eabi-gcc: error:`), los de ld (`main.c:(.text+0x1c): undefined reference`, con la función; región desbordada) y los de make que no repiten otro error. Los archivos que ld da sin carpeta se buscan en el proyecto.
+- **Espacio:** VCSIDE lee el ELF directamente. De la ROM (reubicable): código, `.RamFunc`, constantes, variables con valor y a cero. Si hay `build/<rom>-chameleon.elf` más nuevo que la ROM, sus cabeceras de programa dan la flash (lo guardado desde `0x0800_0000`) y la RAM (lo que vive en `0x2000_0000`) exactas; si no, se estima con lo que ocupa el firmware de la plantilla del 2025-10-23, medido: unos 10 100 bytes de flash y 6 000 de RAM (la estimación de la Abadía queda a 41 bytes de la real). Límites del STM32G070RB: 128 KB y 36 KB.
 
 ## Avisos de espacio
 
@@ -100,7 +109,6 @@ Tras cada compilación con DASM, el IDE mide cuánto espacio queda (`src/space.*
 - **Dónde se ve:** el panel *Espacio* (una barra por banco y por RAM), el resumen en la barra de estado y los avisos en *Problemas*, con su línea cuando se puede.
 - **Pendiente:**
   - formatos sin datos de espacio (3E, DPC, DPC+, CDFJ…), que se miden como bancos de 4 KB;
-  - proyectos ELF, con el mapa de enlace;
   - batari Basic;
   - avisar de las lecturas del puerto de escritura del Superchip.
 

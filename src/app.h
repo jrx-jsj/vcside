@@ -21,6 +21,7 @@
 #include "menu.h"
 #include "process.h"
 #include "project.h"
+#include "elf_space.h"
 #include "space.h"
 #include "toolchain.h"
 
@@ -102,6 +103,7 @@ class App {
   std::vector<std::string> debugArgs(const std::string& emulator);  // writes the scripts, returns extra arguments
   void goToAddressDialog();
   void emulatorOptionsDialog();
+  std::string findProjectFile(const std::string& name) const;
   void lint(OpenFile& f);
   void showDoc(const std::string& word);
   bool gotoDefinition(const std::string& word, const std::string& fromFile, int fromLine);
@@ -152,6 +154,8 @@ class App {
   bool spaceRunning_ = false;
   unsigned bottomDock_ = 0;    // dock node of the output panel (the space panel joins it)
   std::optional<SpaceReport> space_;
+  std::optional<ElfSpace> elfSpace_;  // ELF projects
+  void measureElf();
   std::string spaceNote_;      // why there is no report (ELF, custom build...)
 
   // docs

@@ -230,6 +230,7 @@ void App::build(int thenRun) {
   output_.clear();
   diagnostics_.clear();
   space_.reset();
+  elfSpace_.reset();
   spaceNote_.clear();
   building_ = true;
   runAfterBuild_ = thenRun;
@@ -259,7 +260,8 @@ void App::pollBuild() {
     auto size = fs::file_size(project_->outputPath(), ec);
     if (!ec) output_ += F("{0}: {1} bytes", {project_->outputPath(), std::to_string(size)}) + "\n";
     loadSymbols();
-    startSpace();
+    if (project_->language == Language::ElfC) measureElf();
+    else startSpace();
   }
   for (auto& f : files_) lint(*f);
   if (ok && runAfterBuild_) run(runAfterBuild_ == 2);
@@ -274,6 +276,26 @@ void App::startSpace() {
     return;
   }
   spaceRunning_ = spaceJob_.start(args, project_->dir);
+}
+
+// ELF: the ROM's sections and, if it is up to date, the Chameleon image linked with the firmware.
+void App::measureElf() {
+  std::string rom = project_->outputPath(), cc = project_->stem() + "-chameleon.elf";
+  ElfFile r, c;
+  std::string err;
+  if (!readElf(readFile(rom), r, &err) || r.type != 1) {
+    spaceNote_ = F("Cannot measure {0}: {1}", {rom, err.empty() ? T("it is not a relocatable ELF object") : err});
+    return;
+  }
+  std::error_code ec;
+  bool useCc = fs::exists(cc, ec) && fs::last_write_time(cc, ec) >= fs::last_write_time(rom, ec) &&
+               readElf(readFile(cc), c, &err) && c.type == 2;
+  elfSpace_ = analyzeElfSpace(r, (long)fs::file_size(rom, ec), useCc ? &c : nullptr, project_->spaceWarnPercent);
+  for (auto d : elfSpace_->diagnostics) {
+    d.message = T("Space") + std::string(": ") + d.message;
+    diagnostics_.push_back(d);
+  }
+  output_ += elfSpace_->summary() + "\n";
 }
 
 void App::pollSpace() {
@@ -420,6 +442,12 @@ void App::saveUserState() {
 std::vector<std::string> App::debugArgs(const std::string& emulator) {
   for (auto& f : files_)
     if (!f->editor.breakpoints().empty() || breakpoints_.count(f->path)) breakpoints_[f->path] = f->editor.breakpoints();
+  if (project_->language != Language::Dasm) {
+    // C on the ARM: the emulators have no breakpoints by source line for it
+    bool any = std::any_of(breakpoints_.begin(), breakpoints_.end(), [](auto& b) { return !b.second.empty(); });
+    if (any) output_ += std::string(T("Breakpoints are only passed for DASM projects: the emulators cannot stop on a line of C.")) + "\n";
+    return {};
+  }
   std::vector<Breakpoint> bps;
   for (auto& [file, lines] : breakpoints_)
     for (int l : lines) {
@@ -496,6 +524,29 @@ std::optional<int> App::lookupSymbol(const std::string& name) const {
     if (a >= 0) return r->access == "R" && a < 0x30 ? a + 0x30 : a;
   }
   return std::nullopt;
+}
+
+// A file named by a tool: absolute, relative to the project or an include folder, or
+// (ld gives just "main.c") the only file with that name in the project.
+std::string App::findProjectFile(const std::string& name) const {
+  std::error_code ec;
+  fs::path p(name);
+  if (p.is_absolute()) return fs::exists(p, ec) ? p.string() : "";
+  if (!project_) return "";
+  std::vector<std::string> dirs = {project_->dir};
+  for (auto& d : project_->includeDirs) dirs.push_back(project_->abs(d));
+  for (auto& d : dirs)
+    if (fs::exists(fs::path(d) / p, ec)) return fs::weakly_canonical(fs::path(d) / p, ec).string();
+  if (p.has_parent_path()) return "";
+  for (auto it = fs::recursive_directory_iterator(project_->dir, fs::directory_options::skip_permission_denied, ec);
+       it != fs::recursive_directory_iterator(); it.increment(ec)) {
+    if (it->is_directory(ec) && (it->path().filename() == "build" || it->path().filename().string()[0] == '.')) {
+      it.disable_recursion_pending();
+      continue;
+    }
+    if (it->path().filename() == p) return it->path().string();
+  }
+  return "";
 }
 
 // Build diagnostics for this file plus the illegal-opcode policy of the project.
@@ -1049,10 +1100,11 @@ void App::statusBar() {
       ImGui::TextDisabled("%s", extra.c_str());
     }
   }
-  if (space_) {
-    std::string sum = space_->summary();
+  if (space_ || elfSpace_) {
+    std::string sum = space_ ? space_->summary() : elfSpace_->summary();
     bool err = false, warn = false;
-    for (auto& d : space_->diagnostics) err |= d.severity == Diagnostic::Error, warn |= d.severity == Diagnostic::Warning;
+    for (auto& d : space_ ? space_->diagnostics : elfSpace_->diagnostics)
+      err |= d.severity == Diagnostic::Error, warn |= d.severity == Diagnostic::Warning;
     float w = ImGui::CalcTextSize(sum.c_str()).x;
     ImGui::SameLine(std::max(ImGui::GetCursorPosX() + 20, ImGui::GetWindowWidth() - w - 12));
     ImVec4 col = err ? ImVec4(1, 0.45f, 0.45f, 1) : warn ? ImVec4(1, 0.8f, 0.3f, 1) : ImVec4(0.7f, 0.7f, 0.7f, 1);
@@ -1241,21 +1293,21 @@ void App::problemsPanel() {
         ImGui::PopStyleColor();
         ImGui::PopID();
         ImGui::TableNextColumn();
-        if (d.line) {
+        if (!d.file.empty()) {
           std::string shown = d.file;
           std::error_code ec;
           if (project_ && fs::path(d.file).is_absolute()) {
             auto rel = fs::relative(d.file, project_->dir, ec);
             if (!ec && !rel.empty() && rel.native()[0] != '.') shown = rel.string();
           }
-          ImGui::Text("%s:%d", shown.c_str(), d.line);
+          if (d.line) ImGui::Text("%s:%d", shown.c_str(), d.line);
+          else ImGui::TextUnformatted(shown.c_str());
         }
         ImGui::TableNextColumn();
         ImGui::TextUnformatted(d.message.c_str());
-        if (clicked && d.line && project_) {
-          fs::path p(d.file);
-          if (!p.is_absolute()) p = fs::path(project_->dir) / p;
-          openFile(p.string(), d.line);
+        if (clicked && !d.file.empty() && project_) {
+          std::string p = findProjectFile(d.file);
+          if (!p.empty()) openFile(p, std::max(1, d.line));
         }
       }
       ImGui::EndTable();
@@ -1484,7 +1536,37 @@ void App::spacePanel() {
   if (ImGui::Begin(title)) {
     if (spaceRunning_) ImGui::TextDisabled("%s", T("Measuring..."));
     if (!spaceNote_.empty()) ImGui::TextWrapped("%s", spaceNote_.c_str());
-    if (!space_) {
+    if (elfSpace_) {
+      int warn = project_ ? project_->spaceWarnPercent : 90;
+      auto& e = *elfSpace_;
+      ImGui::SeparatorText(F("ROM ({0} bytes)", {std::to_string(e.fileSize)}).c_str());
+      const std::pair<const char*, long> parts[] = {{N_("Code"), e.code}, {N_("Code in RAM (.RamFunc)"), e.ramCode},
+                                                    {N_("Constants"), e.constants}, {N_("Variables with a value"), e.data},
+                                                    {N_("Zeroed variables"), e.bss}};
+      if (ImGui::BeginTable("elfparts", 2, ImGuiTableFlags_SizingFixedFit)) {
+        for (auto& [name, n] : parts) {
+          ImGui::TableNextRow();
+          ImGui::TableNextColumn();
+          ImGui::TextUnformatted(T(name));
+          ImGui::TableNextColumn();
+          ImGui::Text("%s", F("{0} bytes", {std::to_string(n)}).c_str());
+        }
+        ImGui::EndTable();
+      }
+      ImGui::SeparatorText(T("Chameleon Cart (STM32G070RB)"));
+      SpaceReport::Area fl{e.flash.name, e.flash.used, e.flash.size, true, ""}, ra{e.ram.name, e.ram.used, e.ram.size, true, ""};
+      spaceBar(fl, warn);
+      spaceBar(ra, warn);
+      ImGui::PushTextWrapPos(0);
+      if (e.exact)
+        ImGui::TextDisabled("%s", T("Measured on the Chameleon image (make chameleon), firmware included."));
+      else
+        ImGui::TextDisabled("%s", F("Estimate: the game plus about {0} bytes of flash and {1} of RAM for the firmware. Build the Chameleon image (make chameleon) for the exact figures.",
+                                    {std::to_string(kChameleonFirmwareFlash), std::to_string(kChameleonFirmwareRam)})
+                                      .c_str());
+      ImGui::TextDisabled("%s", T("The 512 KB Chameleon Cart (STM32G0B0RE) has 144 KB of RAM. Stella, Gopher2600 and the PlusCart load the whole ROM into RAM."));
+      ImGui::PopTextWrapPos();
+    } else if (!space_) {
       if (!spaceRunning_ && spaceNote_.empty()) ImGui::TextDisabled("%s", T("Build the project (F7) to see the space used."));
     } else {
       int warn = project_ ? project_->spaceWarnPercent : 90;

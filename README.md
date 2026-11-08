@@ -8,6 +8,7 @@ A small native IDE for making Atari 2600 games, on macOS, Windows and Linux. It 
 
 - **Projects**: `.vcsproj` files (JSON) with language, main file, ROM, cartridge format, TV standard, emulator and illegal-opcode policy. New projects come from a template for DASM, batari Basic or C for ELF.
 - **Build** with DASM (F7). Errors and unresolved symbols go to *Problems*, and clicking one opens the line. ELF projects use their own `build_command` (e.g. `make`).
+- **ELF cartridges** (C on the cartridge's ARM, with arm-none-eabi-gcc): the new-project template has a Makefile, its own `vcs.h`, the long calls to the loader and the checks of the ELF rules. `make` gives the ROM (`build/<name>.bin`, a relocatable object for Stella, Gopher2600, PlusCart and UnoCart); `make chameleon CHAMELEON_FW=<folder>` links it with the Chameleon Cart firmware (its template is not included). gcc and ld errors, undefined symbols with the file that uses them and make's own errors go to *Problems*.
 - **Run** in Stella or Gopher2600 (F5 build and run, F6 debug). The cartridge format and TV standard are passed on the command line, and both emulators load the `.sym` symbols of the build.
 - **Breakpoints**: click in the left margin or press F9. F6 places each one on its instruction's address and bank (from the listing, following `RORG`) and passes them to the emulator:
   - Gopher2600 gets them all in a script (`-script`);
@@ -29,7 +30,8 @@ A small native IDE for making Atari 2600 games, on macOS, Windows and Linux. It 
 - **Space report** after each DASM build:
   - bytes used and free per ROM bank, in the 2600's RAM (with room left for the stack) and in the cartridge's RAM (Superchip, FA, CV);
   - warnings for full banks, wrong ROM sizes and code on bank-switch hotspots, with the source line when possible;
-  - thresholds per project: `space_warn_percent` and `stack_reserve` in the `.vcsproj`.
+  - thresholds per project: `space_warn_percent` and `stack_reserve` in the `.vcsproj`;
+  - ELF projects: code, code in RAM (`.RamFunc`), constants and variables read from the ROM's sections, and the Chameleon Cart's flash (128 KB) and RAM (36 KB). Exact when the Chameleon image is built, otherwise estimated with the firmware's measured share.
 - **Illegal-opcode policy** per project: allow, stable only, warn or forbid.
 - **Menus** in the system menu bar on macOS (application menu with About, Tools and Language; Window menu), and in the window on Windows and Linux. Ctrl shortcuts are Cmd on macOS; Replace is Cmd+Shift+F there, since Cmd+H hides the app.
 - **Interface languages**: English, plus catalogs in `data/i18n/` (Spanish included). Catalogs can be partial, and anything missing falls back to English.
