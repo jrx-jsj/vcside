@@ -94,6 +94,7 @@ class App {
   void dockspace();
   void projectPanel();
   void welcome();
+  void welcomeScreen();
   unsigned iconTexture();
   void editorsPanel();
   void outputPanel();

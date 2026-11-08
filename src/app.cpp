@@ -1307,13 +1307,17 @@ void App::frame() {
   }
 
   menuBar();
-  dockspace();
-  projectPanel();
-  editorsPanel();
-  outputPanel();
-  problemsPanel();
-  spacePanel();
-  docsPanel();
+  if (folder_.empty() && files_.empty()) {
+    welcomeScreen();  // nothing open: only the welcome page, no panels
+  } else {
+    dockspace();
+    projectPanel();
+    editorsPanel();
+    outputPanel();
+    problemsPanel();
+    spacePanel();
+    docsPanel();
+  }
   newProjectDialog();
   toolsDialog();
   themeEditor_.draw(themes_, themeId_,
@@ -1747,6 +1751,23 @@ void App::projectPanel() {
   if (row(folder_, 0, rootName, files::Kind::Folder, true, rootOpen, false, false)) toggle(folder_), rootOpen = !rootOpen;
   if (rootOpen) tree(folder_, 1, false);
   ImGui::PopStyleVar();
+  ImGui::End();
+}
+
+// The whole window, with no title or panels, for the welcome page.
+void App::welcomeScreen() {
+  ImGuiViewport* vp = ImGui::GetMainViewport();
+  ImGui::SetNextWindowPos(vp->WorkPos);
+  ImGui::SetNextWindowSize(vp->WorkSize);
+  ImGui::SetNextWindowViewport(vp->ID);
+  ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0);
+  ImGui::PushStyleColor(ImGuiCol_WindowBg, theme::colv(theme::Role::UiBackground));
+  ImGui::Begin("##welcome", nullptr,
+               ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoSavedSettings |
+                   ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoMove);
+  ImGui::PopStyleColor();
+  ImGui::PopStyleVar();
+  welcome();
   ImGui::End();
 }
 
