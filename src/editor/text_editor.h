@@ -33,7 +33,19 @@ struct EditorHooks {
   std::function<std::string(const std::string& word, const std::string& line)> hover;
   // Completion candidates for a prefix.
   std::function<std::vector<Completion>(const std::string& prefix, const std::string& line)> complete;
+  // Jumps to where a symbol is defined (F12 / Ctrl+click); false if not found.
+  std::function<bool(const std::string& word)> gotoDefinition;
 };
+
+struct Match {
+  int line, start, end;  // byte offsets
+};
+
+// Search options and the matches of a query in some lines (exposed for tests).
+struct FindOptions {
+  bool matchCase = false, wholeWord = false;
+};
+std::vector<Match> findMatches(const std::vector<std::string>& lines, const std::string& query, FindOptions opt);
 
 struct Coord {
   int line = 0, col = 0;  // col = byte offset
@@ -72,6 +84,25 @@ class TextEditor {
   void selectAll();
   void selectLines(int first, int last);  // 0-based, inclusive
 
+  // Line editing
+  void setCommentPrefix(const std::string& p) { commentPrefix_ = p; }
+  void toggleComment();
+  void duplicateLines();
+  void moveLines(int delta);  // -1 up, +1 down
+  void deleteLines();
+
+  // Find / replace / go to line (bar at the top of the editor)
+  void openFind(bool replace);
+  void openGoto();
+  void findNext(bool backwards = false);
+  int replaceAll();
+  bool replaceCurrent();
+  void setFindQuery(const std::string& q) { findText_ = q; }
+  void setReplaceText(const std::string& r) { replaceText_ = r; }
+  const std::vector<Match>& matches() const { return matches_; }
+  // Word under the cursor (for F12 / F1).
+  std::string wordAtCursor() const;
+
  private:
   struct Snapshot {
     std::vector<std::string> lines;
@@ -90,6 +121,9 @@ class TextEditor {
   int byteCol(int line, int visCol) const;
   std::string wordAt(Coord c, int* start = nullptr, int* end = nullptr) const;
   void handleKeyboard();
+  void renderFindBar();
+  void refreshMatches();
+  void setSelection(Coord a, Coord b);
   void updateCompletion();
   void acceptCompletion();
 
@@ -98,7 +132,7 @@ class TextEditor {
   std::vector<Snapshot> undo_, redo_;
   bool lastWasTyping_ = false;
   bool dirty_ = false, changed_ = false;
-  bool scrollToCursor_ = false;
+  bool scrollToCursor_ = false, centerOnCursor_ = false;
   int tabSize_ = 8;
   int gutterChars_ = 0;
   EditorHooks hooks_;
@@ -107,6 +141,17 @@ class TextEditor {
   int completionSel_ = 0;
   bool completionOpen_ = false;
   float charW_ = 7, lineH_ = 14;
+  std::string commentPrefix_ = ";";
+
+  enum class Bar { None, Find, Replace, Goto } bar_ = Bar::None;
+  bool focusBar_ = false, focusEditor_ = false;
+  std::string findText_, replaceText_, gotoText_;
+  FindOptions findOpt_;
+  std::vector<Match> matches_;
+  size_t matchesVersion_ = 0, textVersion_ = 1;
+  std::string matchesQuery_;
+  FindOptions matchesOpt_;
+  int currentMatch_ = -1;
 };
 
 }  // namespace vcs

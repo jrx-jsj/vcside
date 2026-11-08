@@ -162,7 +162,16 @@ OpenFile* App::openFile(const std::string& pathIn, int line) {
   f->asmSyntax = isAsmFile(path);
   f->editor.setText(readFile(path));
   f->editor.setGutterWidthChars(showCycles_ && f->asmSyntax ? 5 : 0);
-  if (f->asmSyntax) f->editor.setHooks(asmHooks());
+  std::string ext = lower(fs::path(path).extension().string());
+  bool cLike = ext == ".c" || ext == ".cpp" || ext == ".hpp" || (ext == ".h" && project_ && project_->language == Language::ElfC);
+  if (cLike) f->asmSyntax = false;
+  f->editor.setCommentPrefix(cLike ? "//" : ext == ".bas" ? "rem" : ";");
+  if (f->asmSyntax) {
+    EditorHooks h = asmHooks();
+    OpenFile* self = f.get();
+    h.gotoDefinition = [this, self](const std::string& w) { return gotoDefinition(w, self->path, self->editor.cursor().line); };
+    f->editor.setHooks(h);
+  }
   f->requestFocus = true;
   if (line > 0) f->editor.goTo(line - 1);
   lint(*f);
@@ -440,6 +449,58 @@ void App::testSelect(int a, int b) {
   ed.selectLines(a - 1, b - 1);
 }
 
+// Is `line` the definition of `word`? (label at column 0, "word = x", "word equ x", "mac word")
+static bool definesWord(const std::string& line, const std::string& word) {
+  AsmLine a = splitAsmLine(line);
+  if (!a.label.empty()) return a.label == word;
+  if (upper(a.mnemonic) == "MAC" || upper(a.mnemonic) == "MACRO") {
+    std::string n = a.operand.substr(0, a.operand.find_first_of(" \t,"));
+    return n == word;
+  }
+  return false;
+}
+
+bool App::gotoDefinition(const std::string& word, const std::string& fromFile, int fromLine) {
+  if (word.empty()) return false;
+  // 1. The open file: the closest definition above the cursor (local .labels repeat
+  //    per SUBROUTINE), otherwise the first one below.
+  for (auto& f : files_) {
+    if (f->path != fromFile) continue;
+    const auto& lines = f->editor.lines();
+    int best = -1;
+    for (int i = 0; i < (int)lines.size(); i++)
+      if (definesWord(lines[i], word) && (best < 0 || i <= fromLine)) best = i;
+    if (best >= 0) {
+      openFile(f->path, best + 1);
+      return true;
+    }
+  }
+  // 2. Other source files of the project (not build output).
+  if (folder_.empty()) return false;
+  std::error_code ec;
+  for (auto it = fs::recursive_directory_iterator(folder_, fs::directory_options::skip_permission_denied, ec);
+       it != fs::recursive_directory_iterator(); it.increment(ec)) {
+    if (ec) break;
+    std::string name = it->path().filename().string();
+    if (it->is_directory() && (name == "build" || (!name.empty() && name[0] == '.'))) {
+      it.disable_recursion_pending();
+      continue;
+    }
+    if (!it->is_regular_file() || !isAsmFile(it->path().string()) || it->path().string() == fromFile) continue;
+    std::ifstream in(it->path());
+    std::string line;
+    for (int n = 1; std::getline(in, line); n++) {
+      if (!line.empty() && line.back() == '\r') line.pop_back();
+      if (definesWord(line, word)) {
+        openFile(it->path().string(), n);
+        return true;
+      }
+    }
+  }
+  lastStatus_ = F("No definition found for {0}", {word});
+  return false;
+}
+
 void App::showDoc(const std::string& word) {
   docTopic_ = word;
   focusDocs_ = true;
@@ -538,6 +599,20 @@ void App::menuBar() {
     if (ImGui::MenuItem(T("Copy"), "Ctrl+C")) ed.copy();
     if (ImGui::MenuItem(T("Paste"), "Ctrl+V")) ed.paste();
     if (ImGui::MenuItem(T("Select all"), "Ctrl+A")) ed.selectAll();
+    ImGui::Separator();
+    if (ImGui::MenuItem(T("Find..."), "Ctrl+F")) ed.openFind(false);
+    if (ImGui::MenuItem(T("Replace..."), "Ctrl+H")) ed.openFind(true);
+    if (ImGui::MenuItem(T("Find next"), "F3")) ed.findNext(false);
+    if (ImGui::MenuItem(T("Find previous"), "Shift+F3")) ed.findNext(true);
+    if (ImGui::MenuItem(T("Go to line..."), "Ctrl+G")) ed.openGoto();
+    if (ImGui::MenuItem(T("Go to definition"), "F12", false, files_[activeFile_]->asmSyntax))
+      gotoDefinition(ed.wordAtCursor(), files_[activeFile_]->path, ed.cursor().line);
+    ImGui::Separator();
+    if (ImGui::MenuItem(T("Toggle comment"), "Ctrl+/")) ed.toggleComment();
+    if (ImGui::MenuItem(T("Duplicate lines"), "Ctrl+D")) ed.duplicateLines();
+    if (ImGui::MenuItem(T("Move lines up"), "Alt+Up")) ed.moveLines(-1);
+    if (ImGui::MenuItem(T("Move lines down"), "Alt+Down")) ed.moveLines(1);
+    if (ImGui::MenuItem(T("Delete lines"), "Ctrl+Shift+K")) ed.deleteLines();
     ImGui::EndMenu();
   }
   if (ImGui::BeginMenu(T("Build"))) {

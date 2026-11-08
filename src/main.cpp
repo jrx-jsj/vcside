@@ -137,14 +137,18 @@ int main(int argc, char** argv) {
   app.init(window, mono);
   // Options for automatic tests: --shot file.bmp saves the window and quits;
   // --build builds first, --select A-B selects lines, --doc WORD shows its documentation,
-  // --lang CODE switches the interface language for this run.
-  std::string shot, select, doc;
+  // --find/--replace TEXT opens the find bar, --definition WORD jumps to it,
+  // --lang CODE switches the interface language.
+  std::string shot, select, doc, find, def;
+  bool findReplace = false;
   bool doBuild = false;
   for (int i = 1; i < argc; i++) {
     std::string a = argv[i];
     if (a == "--shot" && i + 1 < argc) shot = argv[++i];
     else if (a == "--select" && i + 1 < argc) select = argv[++i];
     else if (a == "--doc" && i + 1 < argc) doc = argv[++i];
+    else if (a == "--definition" && i + 1 < argc) def = argv[++i];
+    else if ((a == "--find" || a == "--replace") && i + 1 < argc) findReplace = a == "--replace", find = argv[++i];
     else if (a == "--build") doBuild = true;
     else if (a == "--lang" && i + 1 < argc) vcs::setLanguage(argv[++i]);
     else app.openPath(a);
@@ -156,6 +160,8 @@ int main(int argc, char** argv) {
       if (frame == 5 && doBuild) app.testBuild();
       if (frame == 8 && !select.empty()) app.testSelect(std::stoi(select), std::stoi(select.substr(select.find('-') + 1)));
       if (frame == 8 && !doc.empty()) app.testDoc(doc);
+      if (frame == 9 && !find.empty()) app.testFind(find, findReplace);
+      if (frame == 9 && !def.empty()) app.testDefinition(def);
       if (frame > 10 && shotFrame < 0 && !app.testBusy()) shotFrame = frame + 5;
     }
     SDL_Event e;

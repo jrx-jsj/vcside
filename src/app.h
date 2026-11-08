@@ -44,6 +44,16 @@ class App {
   bool testBusy() const { return building_; }
   void testSelect(int firstLine, int lastLine);
   void testDoc(const std::string& word) { showDoc(word); }
+  void testDefinition(const std::string& w) {
+    if (activeFile_ >= 0) gotoDefinition(w, files_[activeFile_]->path, files_[activeFile_]->editor.cursor().line);
+  }
+  void testFind(const std::string& q, bool replace) {
+    if (activeFile_ < 0) return;
+    auto& ed = files_[activeFile_]->editor;
+    ed.openFind(replace);
+    ed.setFindQuery(q);
+    ed.findNext();
+  }
 
  private:
   // panels
@@ -72,6 +82,7 @@ class App {
   void loadSymbols();
   void lint(OpenFile& f);
   void showDoc(const std::string& word);
+  bool gotoDefinition(const std::string& word, const std::string& fromFile, int fromLine);
 
   // editor hooks
   EditorHooks asmHooks();

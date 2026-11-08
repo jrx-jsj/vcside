@@ -2,6 +2,9 @@
 // Copyright (C) 2026 VCSIDE contributors
 #include "text_editor.h"
 
+#include "imgui_stdlib.h"
+#include "i18n.h"
+
 #include <algorithm>
 #include <cctype>
 #include <cmath>
@@ -108,6 +111,7 @@ void TextEditor::pushUndo(bool mergeTyping) {
   redo_.clear();
   lastWasTyping_ = mergeTyping;
   dirty_ = changed_ = true;
+  textVersion_++;
 }
 
 void TextEditor::undo() {
@@ -119,6 +123,7 @@ void TextEditor::undo() {
   selStart_ = selEnd_ = anchor_ = cursor_;
   lastWasTyping_ = false;
   dirty_ = changed_ = true;
+  textVersion_++;
 }
 
 void TextEditor::redo() {
@@ -130,6 +135,7 @@ void TextEditor::redo() {
   selStart_ = selEnd_ = anchor_ = cursor_;
   lastWasTyping_ = false;
   dirty_ = changed_ = true;
+  textVersion_++;
 }
 
 std::string TextEditor::selectedText() const {
@@ -331,7 +337,19 @@ void TextEditor::handleKeyboard() {
     if (pressed(ImGuiKey_Enter) || pressed(ImGuiKey_Tab) || pressed(ImGuiKey_KeypadEnter)) { acceptCompletion(); return; }
   }
 
+  if (pressed(ImGuiKey_F12) && hooks_.gotoDefinition) {
+    std::string w = wordAt(cursor_);
+    if (!w.empty()) hooks_.gotoDefinition(w);
+    return;
+  }
+  if (alt && !ctrl && (pressed(ImGuiKey_UpArrow) || pressed(ImGuiKey_DownArrow))) {
+    moveLines(pressed(ImGuiKey_UpArrow) ? -1 : 1);
+    return;
+  }
   if (ctrl && !alt) {
+    if (pressed(ImGuiKey_Slash) || pressed(ImGuiKey_KeypadDivide)) { toggleComment(); return; }
+    if (pressed(ImGuiKey_D)) { duplicateLines(); return; }
+    if (shift && pressed(ImGuiKey_K)) { deleteLines(); return; }
     if (pressed(ImGuiKey_Z)) { shift ? redo() : undo(); return; }
     if (pressed(ImGuiKey_Y)) { redo(); return; }
     if (pressed(ImGuiKey_C)) { copy(); return; }
@@ -428,6 +446,261 @@ void TextEditor::handleKeyboard() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Search
+
+static char lowerAscii(char c) { return (c >= 'A' && c <= 'Z') ? (char)(c + 32) : c; }
+
+std::vector<Match> findMatches(const std::vector<std::string>& lines, const std::string& query, FindOptions opt) {
+  std::vector<Match> out;
+  if (query.empty()) return out;
+  std::string q = query;
+  if (!opt.matchCase) for (auto& c : q) c = lowerAscii(c);
+  for (int i = 0; i < (int)lines.size(); i++) {
+    std::string l = lines[i];
+    if (!opt.matchCase) for (auto& c : l) c = lowerAscii(c);
+    for (size_t pos = l.find(q); pos != std::string::npos; pos = l.find(q, pos + 1)) {
+      size_t end = pos + q.size();
+      if (opt.wholeWord && ((pos > 0 && isWordChar(l[pos - 1])) || (end < l.size() && isWordChar(l[end])))) continue;
+      out.push_back({i, (int)pos, (int)end});
+      pos = end - 1;  // no overlapping matches
+    }
+  }
+  return out;
+}
+
+void TextEditor::refreshMatches() {
+  if (bar_ == Bar::None || bar_ == Bar::Goto || findText_.empty()) {
+    matches_.clear();
+    currentMatch_ = -1;
+    return;
+  }
+  if (matchesVersion_ == textVersion_ && matchesQuery_ == findText_ && matchesOpt_.matchCase == findOpt_.matchCase &&
+      matchesOpt_.wholeWord == findOpt_.wholeWord)
+    return;
+  matches_ = findMatches(lines_, findText_, findOpt_);
+  matchesVersion_ = textVersion_;
+  matchesQuery_ = findText_;
+  matchesOpt_ = findOpt_;
+  currentMatch_ = -1;
+  for (int i = 0; i < (int)matches_.size(); i++)
+    if (hasSelection() && matches_[i].line == selStart_.line && matches_[i].start == selStart_.col) currentMatch_ = i;
+}
+
+void TextEditor::setSelection(Coord a, Coord b) {
+  anchor_ = selStart_ = clamp(a);
+  cursor_ = selEnd_ = clamp(b);
+  scrollToCursor_ = true;
+  lastWasTyping_ = false;
+}
+
+std::string TextEditor::wordAtCursor() const { return wordAt(cursor_); }
+
+void TextEditor::openFind(bool replace) {
+  bar_ = replace ? Bar::Replace : Bar::Find;
+  focusBar_ = true;
+  if (hasSelection() && selStart_.line == selEnd_.line) findText_ = selectedText();
+  else if (findText_.empty()) findText_ = wordAt(cursor_);
+  matchesVersion_ = 0;
+}
+
+void TextEditor::openGoto() {
+  bar_ = Bar::Goto;
+  focusBar_ = true;
+  gotoText_ = std::to_string(cursor_.line + 1);
+}
+
+void TextEditor::findNext(bool backwards) {
+  refreshMatches();
+  if (matches_.empty()) return;
+  Coord from = backwards ? selStart_ : (hasSelection() ? selEnd_ : cursor_);
+  int pick = -1;
+  if (!backwards) {
+    for (int i = 0; i < (int)matches_.size(); i++)
+      if (Coord{matches_[i].line, matches_[i].start} != selStart_ || !hasSelection())
+        if (!(Coord{matches_[i].line, matches_[i].start} < from)) { pick = i; break; }
+    if (pick < 0) pick = 0;  // wrap around
+  } else {
+    for (int i = (int)matches_.size() - 1; i >= 0; i--)
+      if (Coord{matches_[i].line, matches_[i].start} < from) { pick = i; break; }
+    if (pick < 0) pick = (int)matches_.size() - 1;
+  }
+  currentMatch_ = pick;
+  setSelection({matches_[pick].line, matches_[pick].start}, {matches_[pick].line, matches_[pick].end});
+  centerOnCursor_ = true;
+}
+
+bool TextEditor::replaceCurrent() {
+  refreshMatches();
+  for (auto& m : matches_)
+    if (hasSelection() && selStart_ == Coord{m.line, m.start} && selEnd_ == Coord{m.line, m.end}) {
+      pushUndo(false);
+      lines_[m.line].replace(m.start, m.end - m.start, replaceText_);
+      setSelection({m.line, m.start}, {m.line, m.start + (int)replaceText_.size()});
+      refreshMatches();
+      findNext();
+      return true;
+    }
+  findNext();
+  return false;
+}
+
+int TextEditor::replaceAll() {
+  refreshMatches();
+  if (matches_.empty()) return 0;
+  pushUndo(false);
+  int n = (int)matches_.size();
+  for (int i = n - 1; i >= 0; i--) {
+    auto& m = matches_[i];
+    lines_[m.line].replace(m.start, m.end - m.start, replaceText_);
+  }
+  cursor_ = clamp(cursor_);
+  selStart_ = selEnd_ = anchor_ = cursor_;
+  refreshMatches();
+  return n;
+}
+
+// ---------------------------------------------------------------------------
+// Line editing
+
+void TextEditor::toggleComment() {
+  auto [a, b] = selectedLines();
+  const std::string& p = commentPrefix_;
+  bool all = true, any = false;
+  for (int i = a; i <= b; i++) {
+    size_t f = lines_[i].find_first_not_of(" \t");
+    if (f == std::string::npos) continue;
+    any = true;
+    if (lines_[i].compare(f, p.size(), p) != 0) all = false;
+  }
+  if (!any) return;
+  pushUndo(false);
+  for (int i = a; i <= b; i++) {
+    std::string& l = lines_[i];
+    size_t f = l.find_first_not_of(" \t");
+    if (f == std::string::npos) continue;
+    if (all) {
+      size_t len = p.size() + (l.compare(f + p.size(), 1, " ") == 0 && p != ";" ? 1 : 0);
+      l.erase(f, len);
+    } else {
+      // DASM comments go at column 0; "rem" and "//" after the indentation
+      // (in batari Basic a word at column 0 would be a label).
+      if (p == ";") l.insert(0, p);
+      else l.insert(f, p + " ");
+    }
+  }
+  if (hasSelection()) setSelection({a, 0}, {b, (int)lines_[b].size()});
+  else cursor_ = clamp(cursor_), selStart_ = selEnd_ = anchor_ = cursor_;
+}
+
+void TextEditor::duplicateLines() {
+  auto [a, b] = selectedLines();
+  pushUndo(false);
+  std::vector<std::string> block(lines_.begin() + a, lines_.begin() + b + 1);
+  lines_.insert(lines_.begin() + b + 1, block.begin(), block.end());
+  int n = b - a + 1;
+  if (hasSelection()) setSelection({selStart_.line + n, selStart_.col}, {selEnd_.line + n, selEnd_.col});
+  else moveCursor({cursor_.line + n, cursor_.col}, false);
+}
+
+void TextEditor::moveLines(int delta) {
+  auto [a, b] = selectedLines();
+  if ((delta < 0 && a == 0) || (delta > 0 && b + 1 >= (int)lines_.size())) return;
+  pushUndo(false);
+  if (delta < 0) {
+    std::string above = lines_[a - 1];
+    lines_.erase(lines_.begin() + a - 1);
+    lines_.insert(lines_.begin() + b, above);
+  } else {
+    std::string below = lines_[b + 1];
+    lines_.erase(lines_.begin() + b + 1);
+    lines_.insert(lines_.begin() + a, below);
+  }
+  Coord s = selStart_, e = selEnd_, c = cursor_;
+  s.line += delta, e.line += delta, c.line += delta;
+  if (hasSelection()) setSelection(s, e);
+  else moveCursor(c, false);
+}
+
+void TextEditor::deleteLines() {
+  auto [a, b] = selectedLines();
+  pushUndo(false);
+  lines_.erase(lines_.begin() + a, lines_.begin() + b + 1);
+  if (lines_.empty()) lines_.push_back("");
+  moveCursor({std::min(a, (int)lines_.size() - 1), 0}, false);
+}
+
+void TextEditor::renderFindBar() {
+  ImGuiIO& io = ImGui::GetIO();
+  if (bar_ == Bar::None) return;
+  ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(6, 3));
+  ImGui::PushID("findbar");
+  bool close = false;
+  if (bar_ == Bar::Goto) {
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted(T("Go to line"));
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(120);
+    if (focusBar_) ImGui::SetKeyboardFocusHere(), focusBar_ = false;
+    if (ImGui::InputText("##goto", &gotoText_, ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_CharsDecimal)) {
+      int n = std::atoi(gotoText_.c_str());
+      if (n > 0) goTo(n - 1), centerOnCursor_ = true;
+      close = true;
+    }
+    ImGui::SameLine();
+    ImGui::TextDisabled("1-%d", (int)lines_.size());
+  } else {
+    ImGui::SetNextItemWidth(280);
+    if (focusBar_) ImGui::SetKeyboardFocusHere(), focusBar_ = false;
+    bool enter = ImGui::InputTextWithHint("##find", T("Find"), &findText_, ImGuiInputTextFlags_EnterReturnsTrue);
+    bool findActive = ImGui::IsItemActive() || enter;
+    if (enter) {
+      findNext(io.KeyShift);
+      ImGui::SetKeyboardFocusHere(-1);  // keep typing in the box after Enter
+    }
+    ImGui::SameLine();
+    if (ImGui::Checkbox(T("Aa"), &findOpt_.matchCase)) matchesVersion_ = 0;
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", T("Match case"));
+    ImGui::SameLine();
+    if (ImGui::Checkbox(T("Word"), &findOpt_.wholeWord)) matchesVersion_ = 0;
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", T("Whole word"));
+    ImGui::SameLine();
+    refreshMatches();
+    if (findText_.empty()) ImGui::TextDisabled(" ");
+    else if (matches_.empty()) ImGui::TextColored(ImVec4(1, 0.5f, 0.4f, 1), "%s", T("No results"));
+    else ImGui::TextDisabled("%s", F("{0} of {1}", {currentMatch_ < 0 ? "?" : std::to_string(currentMatch_ + 1),
+                                                       std::to_string(matches_.size())}).c_str());
+    ImGui::SameLine();
+    if (ImGui::ArrowButton("##prev", ImGuiDir_Up)) findNext(true);
+    ImGui::SameLine();
+    if (ImGui::ArrowButton("##next", ImGuiDir_Down)) findNext(false);
+    if (bar_ == Bar::Replace) {
+      ImGui::SetNextItemWidth(280);
+      bool rep = ImGui::InputTextWithHint("##replace", T("Replace"), &replaceText_, ImGuiInputTextFlags_EnterReturnsTrue);
+      if (rep) {
+        replaceCurrent();
+        ImGui::SetKeyboardFocusHere(-1);
+      }
+      ImGui::SameLine();
+      if (ImGui::Button(T("Replace"))) replaceCurrent();
+      ImGui::SameLine();
+      if (ImGui::Button(T("Replace all"))) replaceAll();
+    }
+    (void)findActive;
+  }
+  ImGui::SameLine(ImGui::GetContentRegionAvail().x + ImGui::GetCursorPosX() - ImGui::GetFrameHeight());
+  if (ImGui::Button("x", ImVec2(ImGui::GetFrameHeight(), 0))) close = true;
+  if (ImGui::IsKeyPressed(ImGuiKey_Escape) && ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows)) close = true;
+  if (close) {
+    bar_ = Bar::None;
+    matches_.clear();
+    focusEditor_ = true;
+  }
+  ImGui::PopID();
+  ImGui::PopStyleVar();
+  ImGui::Separator();
+}
+
 bool TextEditor::render(const char* id, ImFont* font) {
   changed_ = false;
   ImGui::PushFont(font);
@@ -441,8 +714,27 @@ bool TextEditor::render(const char* id, ImFont* font) {
   int maxCols = 0;
   for (int i = 0; i < (int)lines_.size(); i++) maxCols = std::max(maxCols, visualCol(i, (int)lines_[i].size()));
 
+  // Editor-wide shortcuts (work from the text and from the find bar).
+  {
+    ImGuiIO& kio = ImGui::GetIO();
+    bool here = ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows);
+    if (here && kio.KeyCtrl && !kio.KeyAlt) {
+      if (ImGui::IsKeyPressed(ImGuiKey_F, false)) openFind(false);
+      if (ImGui::IsKeyPressed(ImGuiKey_H, false) || (kio.KeyShift && ImGui::IsKeyPressed(ImGuiKey_F, false))) openFind(true);
+      if (ImGui::IsKeyPressed(ImGuiKey_G, false)) openGoto();
+    }
+    if (here && ImGui::IsKeyPressed(ImGuiKey_F3)) {
+      if (bar_ == Bar::None) openFind(false), focusBar_ = false;
+      findNext(kio.KeyShift);
+    }
+  }
+  renderFindBar();
   ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(30, 30, 30, 255));
   ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+  if (focusEditor_) {
+    ImGui::SetNextWindowFocus();
+    focusEditor_ = false;
+  }
   ImGui::BeginChild(id, ImVec2(0, 0), ImGuiChildFlags_None,
                     ImGuiWindowFlags_HorizontalScrollbar | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoNavInputs);
   ImGui::PopStyleVar();
@@ -468,7 +760,12 @@ bool TextEditor::render(const char* id, ImFont* font) {
   };
 
   // mouse
-  if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+  if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && io.KeyCtrl && hooks_.gotoDefinition) {
+    Coord c = mouseCoord();
+    moveCursor(c, false);
+    std::string w = wordAt(c);
+    if (!w.empty()) hooks_.gotoDefinition(w);
+  } else if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
     Coord c = mouseCoord();
     if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
       int s, e;
@@ -506,6 +803,13 @@ bool TextEditor::render(const char* id, ImFont* font) {
     if (mk != markers_.end())
       dl->AddRectFilled(ImVec2(textX, y), ImVec2(textX + contentSize.x, y + lineH_),
                         mk->second.first ? IM_COL32(110, 30, 30, 120) : IM_COL32(110, 90, 20, 110));
+    // search matches
+    for (int k = 0; k < (int)matches_.size(); k++) {
+      const Match& m = matches_[k];
+      if (m.line != i) continue;
+      float x0 = textX + visualCol(i, m.start) * charW_, x1 = textX + visualCol(i, m.end) * charW_;
+      dl->AddRectFilled(ImVec2(x0, y), ImVec2(x1, y + lineH_), k == currentMatch_ ? IM_COL32(200, 140, 30, 150) : IM_COL32(120, 100, 40, 110));
+    }
     // selection
     if (hasSelection() && i >= selStart_.line && i <= selEnd_.line) {
       int a = i == selStart_.line ? visualCol(i, selStart_.col) : 0;
@@ -602,13 +906,16 @@ bool TextEditor::render(const char* id, ImFont* font) {
 
   if (scrollToCursor_) {
     float cy = cursor_.line * lineH_;
-    if (cy < scrollY) ImGui::SetScrollY(cy);
+    if (centerOnCursor_ && (cy < scrollY + lineH_ * 2 || cy > scrollY + viewH - lineH_ * 3))
+      ImGui::SetScrollY(std::max(0.0f, cy - viewH * 0.4f));
+    else if (cy < scrollY) ImGui::SetScrollY(cy);
     else if (cy + lineH_ * 2 > scrollY + viewH) ImGui::SetScrollY(cy + lineH_ * 2 - viewH);
     float cx = gutterW + visualCol(cursor_.line, cursor_.col) * charW_;
     float vw = ImGui::GetWindowWidth();
     if (cx - gutterW < scrollX) ImGui::SetScrollX(std::max(0.0f, cx - gutterW - charW_ * 4));
     else if (cx > scrollX + vw - charW_ * 2) ImGui::SetScrollX(cx - vw + charW_ * 4);
     scrollToCursor_ = false;
+    centerOnCursor_ = false;
   }
 
   ImGui::EndChild();

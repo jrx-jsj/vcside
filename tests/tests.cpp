@@ -5,6 +5,7 @@
 #include <string>
 
 #include "builder_parse.h"
+#include "editor/text_editor.h"
 #include "cycles.h"
 #include "kb.h"
 
@@ -111,6 +112,65 @@ static void testParsers() {
   CHECK(s.size() == 2 && s["Start"] == 0xF000 && s["VAR"] == 0x81);
 }
 
+static void testEditor() {
+  // search
+  std::vector<std::string> lines = {"\tlda Frame", "\tsta frame+1 ; frame", "FrameLoop dex"};
+  CHECK(findMatches(lines, "frame", {}).size() == 4);
+  CHECK(findMatches(lines, "frame", {true, false}).size() == 2);
+  CHECK(findMatches(lines, "Frame", {false, true}).size() == 3);  // not FrameLoop
+  CHECK(findMatches(lines, "", {}).empty());
+
+  TextEditor ed;
+  ed.setText("\tlda #1\n\tsta COLUBK\n\tdex");
+  ed.selectLines(0, 1);
+  ed.toggleComment();
+  CHECK(ed.lines()[0] == ";\tlda #1" && ed.lines()[1] == ";\tsta COLUBK" && ed.lines()[2] == "\tdex");
+  ed.toggleComment();
+  CHECK(ed.lines()[0] == "\tlda #1" && ed.lines()[1] == "\tsta COLUBK");
+  ed.undo();
+  CHECK(ed.lines()[0] == ";\tlda #1");
+  ed.undo();
+  CHECK(ed.lines()[0] == "\tlda #1");
+
+  ed.goTo(2);
+  ed.moveLines(-1);
+  CHECK(ed.lines()[1] == "\tdex" && ed.lines()[2] == "\tsta COLUBK" && ed.cursor().line == 1);
+  ed.duplicateLines();
+  CHECK(ed.lines().size() == 4 && ed.lines()[2] == "\tdex" && ed.cursor().line == 2);
+  ed.deleteLines();
+  CHECK(ed.lines().size() == 3);
+
+  TextEditor bas;
+  bas.setCommentPrefix("rem");
+  bas.setText("  COLUBK = $84");
+  bas.toggleComment();
+  CHECK(bas.lines()[0] == "  rem COLUBK = $84");
+  bas.toggleComment();
+  CHECK(bas.lines()[0] == "  COLUBK = $84");
+
+  TextEditor fn;
+  fn.setText("a\n\tsta WSYNC\nb\n\tsta WSYNC");
+  fn.openFind(false);
+  fn.setFindQuery("WSYNC");
+  fn.findNext();
+  CHECK(fn.hasSelection() && fn.cursor().line == 1);
+  fn.findNext();
+  CHECK(fn.cursor().line == 3);
+  fn.findNext();
+  CHECK(fn.cursor().line == 1);  // wraps
+  fn.findNext(true);
+  CHECK(fn.cursor().line == 3);  // backwards wraps
+
+  TextEditor r;
+  r.setText("lda Frame\nsta Frame");
+  r.openFind(true);
+  r.setFindQuery("Frame");
+  r.setReplaceText("Tick");
+  CHECK(r.replaceAll() == 2 && r.text() == "lda Tick\nsta Tick");
+  r.undo();
+  CHECK(r.text() == "lda Frame\nsta Frame");
+}
+
 int main() {
   KnowledgeBase kb;
   std::string err;
@@ -120,6 +180,7 @@ int main() {
   testKb(kb);
   testCycles(kb);
   testParsers();
+  testEditor();
   std::printf("%d checks, %d failures\n", checks, failures);
   return failures ? 1 : 0;
 }
