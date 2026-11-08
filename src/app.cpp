@@ -1664,15 +1664,8 @@ void App::projectPanel() {
     ImGui::End();
     return;
   }
-  if (folder_.empty()) {
-    ImGui::TextWrapped("%s", T("No project open."));
-    if (ImGui::Button(T("New project..."))) showNewProject_ = true;
-    if (ImGui::Button(T("Open project..."))) {
-      static const SDL_DialogFileFilter filters[] = {{"VCSIDE project", "vcsproj"}};
-      SDL_ShowOpenFileDialog(dialogCallback, new DialogCtx{this, "project"}, window_, filters, 1, nullptr, false);
-    }
-    for (auto& r : recent_)
-      if (ImGui::Selectable(fs::path(r).filename().string().c_str())) openPath(r);
+  if (folder_.empty()) {  // the welcome page, in the editor's place, has the ways in
+    ImGui::TextDisabled("%s", T("No project open."));
     ImGui::End();
     return;
   }
@@ -1757,11 +1750,103 @@ void App::projectPanel() {
   ImGui::End();
 }
 
+// No project and no file: the icon, the ways to start and the recent projects.
+void App::welcome() {
+  using theme::em;
+  ImVec2 avail = ImGui::GetContentRegionAvail();
+  float w = std::min(avail.x - em(48), em(420));
+  float x0 = std::max(em(24), (avail.x - w) * 0.5f);
+  int shown = std::min((int)recent_.size(), 8);
+  float rowH = ImGui::GetTextLineHeight() * 2.6f;
+  float blockH = em(96) + em(150) + (shown ? em(44) + shown * rowH : 0);
+  ImGui::SetCursorPos(ImVec2(x0, std::max(em(24), (avail.y - blockH) * 0.4f)));
+  ImGui::BeginGroup();
+  if (unsigned tex = iconTexture()) {
+    ImGui::Image((ImTextureID)(intptr_t)tex, ImVec2(em(72), em(72)));
+    ImGui::SameLine(0, em(16));
+  }
+  ImGui::BeginGroup();
+  ImGui::Dummy(ImVec2(0, em(10)));
+  ImGui::SetWindowFontScale(1.7f);
+  ImGui::TextUnformatted("VCSIDE");
+  ImGui::SetWindowFontScale(1.0f);
+  ImGui::TextDisabled("%s %s", T("Version"), VCSIDE_VERSION);
+  ImGui::EndGroup();
+  ImGui::Dummy(ImVec2(0, em(18)));
+
+  // the ways in: links, one per line
+  auto link = [&](const char* label) {
+    ImGui::PushStyleColor(ImGuiCol_Text, theme::colv(theme::Role::UiLink));
+    bool c = ImGui::Selectable(label, false, 0, ImVec2(w, 0));
+    ImGui::PopStyleColor();
+    if (ImGui::IsItemHovered()) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+    return c;
+  };
+  if (link(T("New project..."))) showNewProject_ = true;
+  if (link(T("Open project..."))) {
+    static const SDL_DialogFileFilter filters[] = {{"VCSIDE project", "vcsproj"}};
+    SDL_ShowOpenFileDialog(dialogCallback, new DialogCtx{this, "project"}, window_, filters, 1, nullptr, false);
+  }
+  if (link(T("Open folder...")))
+    SDL_ShowOpenFolderDialog(dialogCallback, new DialogCtx{this, "folder"}, window_, nullptr, false);
+
+  if (shown) {
+    ImGui::Dummy(ImVec2(0, em(18)));
+    ImGui::TextDisabled("%s", T("Recent"));
+    ImGui::Dummy(ImVec2(0, em(4)));
+    const char* home = std::getenv("HOME");
+    std::string homeDir = home ? home : "";
+    for (int i = 0; i < shown; i++) {
+      const std::string& r = recent_[i];
+      fs::path p(r);
+      bool isProject = lower(p.extension().string()) == ".vcsproj";
+      std::string name = isProject ? p.stem().string() : p.filename().string();
+      std::string where = (isProject ? p.parent_path() : p).string();
+      if (!homeDir.empty() && where.rfind(homeDir, 0) == 0) where = "~" + where.substr(homeDir.size());
+      std::error_code ec;
+      bool exists = fs::exists(p, ec);
+      ImVec2 at = ImGui::GetCursorScreenPos();
+      ImGui::PushID(i);
+      ImGui::BeginDisabled(!exists);
+      bool clicked = ImGui::Selectable("##recent", false, 0, ImVec2(w, rowH));
+      ImGui::EndDisabled();
+      ImGui::PopID();
+      if (ImGui::IsItemHovered()) {
+        ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+        ImGui::SetTooltip("%s", r.c_str());
+      }
+      ImDrawList* dl = ImGui::GetWindowDrawList();
+      float lh = ImGui::GetTextLineHeight(), iconS = std::round(lh * 1.1f);
+      files::drawIcon(dl, ImVec2(at.x + em(4), at.y + (rowH - iconS) * 0.5f), iconS,
+                      isProject ? files::Kind::Project : files::Kind::Folder);
+      float tx = at.x + em(4) + iconS + em(10), ty = at.y + (rowH - 2 * lh) * 0.5f;
+      dl->AddText(ImVec2(tx, ty), theme::col(exists ? theme::Role::UiText : theme::Role::UiTextDim), name.c_str());
+      std::string sub = exists ? where : where + "  " + T("(not found)");
+      // too long: keep its end, the part that tells projects apart
+      float room = at.x + w - tx - em(4);
+      while (sub.size() > 4 && ImGui::CalcTextSize(sub.c_str()).x > room) {
+        size_t cut = sub.rfind("\xE2\x80\xA6", 0) == 0 ? 3 : 0;
+        size_t next = cut + 1;
+        while (next < sub.size() && ((unsigned char)sub[next] & 0xC0) == 0x80) next++;
+        sub = "\xE2\x80\xA6" + sub.substr(next);
+      }
+      dl->AddText(ImVec2(tx, ty + lh), theme::col(theme::Role::UiTextDim), sub.c_str());
+      if (clicked && exists) openPath(r);
+    }
+  }
+  ImGui::EndGroup();
+}
+
 void App::editorsPanel() {
   ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
   bool open = ImGui::Begin("Editor###editors", nullptr, ImGuiWindowFlags_NoScrollbar);
   ImGui::PopStyleVar();
   if (!open) {
+    ImGui::End();
+    return;
+  }
+  if (files_.empty() && folder_.empty()) {
+    welcome();
     ImGui::End();
     return;
   }
@@ -2577,15 +2662,9 @@ void App::missingToolDialog() {
   ImGui::EndPopup();
 }
 
-void App::aboutDialog() {
-  if (showAbout_) {
-    showAbout_ = false;
-    // macOS: the system's panel; elsewhere the window below
-    if (nativeMenuAvailable() && nativeShowAbout(aboutInfo(kb_, tools_))) return;
-    about_ = aboutInfo(kb_, tools_);
-    ImGui::OpenPopup("###about");
-  }
-  if (!aboutTexture_ && about_) {
+// The icon as an OpenGL texture, made the first time it is needed (0 if missing).
+unsigned App::iconTexture() {
+  if (!aboutTexture_) {
     if (SDL_Surface* icon = loadIconSurface()) {
       GLuint tex = 0;
       glGenTextures(1, &tex);
@@ -2599,6 +2678,18 @@ void App::aboutDialog() {
       SDL_DestroySurface(icon);
     }
   }
+  return aboutTexture_;
+}
+
+void App::aboutDialog() {
+  if (showAbout_) {
+    showAbout_ = false;
+    // macOS: the system's panel; elsewhere the window below
+    if (nativeMenuAvailable() && nativeShowAbout(aboutInfo(kb_, tools_))) return;
+    about_ = aboutInfo(kb_, tools_);
+    ImGui::OpenPopup("###about");
+  }
+  if (about_) iconTexture();
   char title[64];
   snprintf(title, sizeof title, "%s###about", T("About VCSIDE"));
   float em = ImGui::GetFontSize();

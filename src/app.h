@@ -93,6 +93,8 @@ class App {
   MenuBar buildMenuBar(bool native);
   void dockspace();
   void projectPanel();
+  void welcome();
+  unsigned iconTexture();
   void editorsPanel();
   void outputPanel();
   void problemsPanel();
