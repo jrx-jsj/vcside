@@ -161,7 +161,7 @@ El panel *Proyecto* dibuja el árbol fila a fila: flecha, icono y nombre, con gu
 
 ## Temas
 
-Todos los colores de VCSIDE tienen un papel con nombre, agrupados: `ui.*` (interfaz), `editor.*` (editor de código), `syntax.*` (colores de la sintaxis), `messages.*` (errores, avisos, notas), `space.*` (informe de espacio), `graphics.*` (editor de gráficos) y `files.*` (árbol del proyecto: filas, guías y un color por tipo de archivo). La lista está en `src/theme.h`; el código nunca usa un color fijo, salvo los de la propia 2600 (la paleta NTSC/PAL/SECAM del editor de gráficos). A partir de los papeles `ui.*` se calculan todos los colores de ImGui, y un tema puede corregir cualquiera de ellos por su nombre en `imgui`.
+Todos los colores de VCSIDE tienen un papel con nombre, agrupados: `ui.*` (interfaz), `editor.*` (editor de código), `syntax.*` (colores de la sintaxis), `messages.*` (errores, avisos, notas), `space.*` (informe de espacio), `graphics.*` (editor de gráficos), `dialog.*` (diálogos) y `files.*` (árbol del proyecto: filas, guías y un color por tipo de archivo). La lista está en `src/theme.h`; el código nunca usa un color fijo, salvo los de la propia 2600 (la paleta NTSC/PAL/SECAM del editor de gráficos). A partir de los papeles `ui.*` se calculan todos los colores de ImGui, y un tema puede corregir cualquiera de ellos por su nombre en `imgui`.
 
 Un tema es un archivo `.vcstheme` (JSON):
 
@@ -172,6 +172,8 @@ Un tema es un archivo `.vcstheme` (JSON):
 Vienen cuatro (`data/themes`): Oscuro (los colores de siempre), Claro, Solarized Light y Solarized Dark. Los dos Solarized usan la paleta publicada de Solarized con nombres por función (`bg`, `bgHi`, `fg`, `fgEm`, `dim`); el oscuro es el claro con esas cinco entradas cambiadas, como hace la propia paleta. Un problema (un papel sin color, una referencia que no existe, un bucle de referencias o de bases) se ve en magenta y se lista en el editor de temas.
 
 *Ver → Tema* cambia de tema. *Editar temas...* abre una ventana con los temas (incluidos y tuyos), la paleta, los papeles por grupo con buscador, los niveles de sangría y los problemas. Los cambios se ven al momento y se guardan solos en la carpeta de temas del usuario (`<carpeta de ajustes>/themes`). Los temas incluidos no se cambian: «Nuevo, basado en este» crea uno vacío que lo sigue y «Duplicar», una copia. Para compartir: exportar a un archivo o copiar como texto, e importar un archivo o pegar un tema. Lo exportado lleva dentro las bases que no son de VCSIDE, así que solo necesita un tema incluido. Al importar nunca se pisa un tema: si el nombre existe, se le da otro.
+
+Los diálogos (proyecto nuevo, herramientas, cambios sin guardar...) tienen su propio aspecto, el de la web y la caja del cartucho: una banda de título oscura con tres franjas debajo (amarilla, naranja y roja), un borde grueso, más aire alrededor, las etiquetas a la izquierda y el botón principal en naranja, que se vuelve amarillo bajo el ratón. Todo sale de los papeles `dialog.*`, así que cada tema lo adapta (en Solarized, con sus propios amarillo, naranja y rojo). En el código: `theme::beginModal()` en lugar de `ImGui::BeginPopupModal()` y `theme::primaryButton()` para el botón principal.
 
 ## Avisos de espacio
 

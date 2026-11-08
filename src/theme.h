@@ -64,6 +64,16 @@ namespace vcs::theme {
   X(UiSelection, "ui.selection", N_("Interface"), N_("Selected text in fields"))                \
   X(UiDockPreview, "ui.dockPreview", N_("Interface"), N_("Where a dragged panel will dock"))     \
   X(UiModalDim, "ui.modalDim", N_("Interface"), N_("Shade behind dialogs"))                     \
+  X(DlgTitle, "dialog.title", N_("Dialogs"), N_("Title band"))                                 \
+  X(DlgTitleText, "dialog.titleText", N_("Dialogs"), N_("Title text"))                          \
+  X(DlgBackground, "dialog.background", N_("Dialogs"), N_("Background"))                       \
+  X(DlgBorder, "dialog.border", N_("Dialogs"), N_("Border"))                                    \
+  X(DlgStripe1, "dialog.stripe1", N_("Dialogs"), N_("Stripe under the title, top"))             \
+  X(DlgStripe2, "dialog.stripe2", N_("Dialogs"), N_("Stripe under the title, middle"))          \
+  X(DlgStripe3, "dialog.stripe3", N_("Dialogs"), N_("Stripe under the title, bottom"))          \
+  X(DlgPrimary, "dialog.primary", N_("Dialogs"), N_("Main button (Create, Save...)"))           \
+  X(DlgPrimaryHover, "dialog.primaryHover", N_("Dialogs"), N_("Main button under the mouse"))   \
+  X(DlgPrimaryText, "dialog.primaryText", N_("Dialogs"), N_("Main button text"))                \
   X(EdBackground, "editor.background", N_("Code editor"), N_("Background"))                   \
   X(EdText, "editor.text", N_("Code editor"), N_("Plain text"))                                 \
   X(EdCurrentLine, "editor.currentLine", N_("Code editor"), N_("Line of the cursor"))           \

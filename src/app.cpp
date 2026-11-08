@@ -2109,11 +2109,11 @@ void App::closeDialogs() {
   }
   char title[96];
   snprintf(title, sizeof title, "%s###unsaved", T("Unsaved changes"));
-  if (ImGui::BeginPopupModal(title, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+  if (theme::beginModal(title, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
     ImGui::TextUnformatted(T("Save changes before closing?"));
     if (closeRequest_ >= 0) ImGui::TextDisabled("%s", files_[closeRequest_]->path.c_str());
     int action = 0;
-    if (ImGui::Button(T("Save"))) action = 1;
+    if (theme::primaryButton(T("Save"))) action = 1;
     ImGui::SameLine();
     if (ImGui::Button(T("Don't save"))) action = 2;
     ImGui::SameLine();
@@ -2133,7 +2133,7 @@ void App::closeDialogs() {
   }
   if (quitConfirm_) ImGui::OpenPopup("###quit");
   snprintf(title, sizeof title, "%s###quit", T("Unsaved changes"));
-  if (ImGui::BeginPopupModal(title, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+  if (theme::beginModal(title, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
     quitConfirm_ = false;
     ImGui::TextUnformatted(T("Save changes before closing?"));
     auto done = [&] {
@@ -2142,7 +2142,7 @@ void App::closeDialogs() {
       closeProjectAfterConfirm_ = false;
       ImGui::CloseCurrentPopup();
     };
-    if (ImGui::Button(T("Save all"))) saveAll(), done();
+    if (theme::primaryButton(T("Save all"))) saveAll(), done();
     ImGui::SameLine();
     if (ImGui::Button(T("Don't save"))) done();
     ImGui::SameLine();
@@ -2242,7 +2242,7 @@ void App::emulatorOptionsDialog() {
   float fs = ImGui::GetFontSize();
   ImGui::SetNextWindowSize(ImVec2(fs * 50, fs * 42), ImGuiCond_Appearing);
   bool open = true;
-  if (!ImGui::BeginPopupModal(title, &open)) return;
+  if (!theme::beginModal(title, &open)) return;
   if (!project_) {
     ImGui::CloseCurrentPopup();
     ImGui::EndPopup();
@@ -2369,7 +2369,7 @@ void App::goToAddressDialog() {
     pendingAddress_.clear();
   }
   ImGui::SetNextWindowSize(ImVec2(ImGui::GetFontSize() * 26, 0), ImGuiCond_Appearing);
-  if (!ImGui::BeginPopupModal(T("Go to address"), nullptr, ImGuiWindowFlags_AlwaysAutoResize)) return;
+  if (!theme::beginModal(T("Go to address"), nullptr, ImGuiWindowFlags_AlwaysAutoResize)) return;
   ImGui::TextWrapped("%s", T("Address the CPU sees ($F1A0, F1A0 or a label), optionally followed by the bank: $F1A0 1"));
   if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
   bool enter = ImGui::InputText("##addr", goToAddress_, sizeof goToAddress_, ImGuiInputTextFlags_EnterReturnsTrue);
@@ -2734,46 +2734,67 @@ void App::newProjectDialog() {
   char title[64];
   snprintf(title, sizeof title, "%s###newproject", T("New project..."));
   ImGui::SetNextWindowSize(ImVec2(520, 0), ImGuiCond_Appearing);
-  if (!ImGui::BeginPopupModal(title, nullptr)) return;
-  ImGui::InputText(T("Name"), npName_, sizeof npName_);
-  ImGui::InputText(T("Folder"), &npDir_);
-  ImGui::SameLine();
-  if (ImGui::Button(T("Choose...")))
-    SDL_ShowOpenFolderDialog(dialogCallback, new DialogCtx{this, "newdir"}, window_, npDir_.c_str(), false);
-  const char* langNames[3] = {T(kLangNames[0]), T(kLangNames[1]), T(kLangNames[2])};
-  ImGui::Combo(T("Language of the project"), &npLang_, langNames, 3);
-  {
-    // only the standards this language can build for; the choice stays if the new list has it
-    auto ids = tvStandardsFor(languageFromId(kLangIds[npLang_]));
-    ids.push_back("AUTO");
-    if (std::find(ids.begin(), ids.end(), npTvId_) == ids.end()) npTvId_ = ids[0];
-    if (ImGui::BeginCombo(T("TV standard"), tvLabel(npTvId_).c_str())) {
-      for (auto& tv : ids) {
-        if (tv == "AUTO") ImGui::Separator();
-        bool sel = tv == npTvId_;
-        std::string label = tvLabel(tv);
-        if (tv != "AUTO" && !tvSupported("stella", tv)) label += "  " + F("(not in {0})", {"Stella"});
-        if (ImGui::Selectable(label.c_str(), sel)) npTvId_ = tv;
-        if (ImGui::IsItemHovered()) {
-          if (tv == "AUTO") ImGui::SetTooltip("%s", T(kTvMultipleHelp));
-          else if (const TvStandard* t = kb_.tv(tv)) ImGui::SetTooltip("%s", F("{0} lines, {1} Hz", {std::to_string(t->linesTotal), t->fps}).c_str());
-        }
-      }
-      ImGui::EndCombo();
-    }
-  }
+  if (!theme::beginModal(title, nullptr)) return;
+  float em = ImGui::GetFontSize() / 15.0f;
+  auto row = [&](const char* label) {
+    ImGui::TableNextRow();
+    ImGui::TableNextColumn();
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted(label);
+    ImGui::TableNextColumn();
+    ImGui::SetNextItemWidth(-FLT_MIN);
+  };
   auto examples = Project::examples(languageFromId(kLangIds[npLang_]));
-  npExample_ = std::clamp(npExample_, 0, (int)examples.size());
-  if (!examples.empty()) {
-    std::vector<const char*> names = {T("Empty project")};
-    for (auto& e : examples) names.push_back(T(e.second));
-    ImGui::Combo(T("Start from"), &npExample_, names.data(), (int)names.size());
+  if (ImGui::BeginTable("##np", 2, ImGuiTableFlags_SizingFixedFit)) {
+    ImGui::TableSetupColumn("label", ImGuiTableColumnFlags_WidthFixed);
+    ImGui::TableSetupColumn("field", ImGuiTableColumnFlags_WidthStretch);
+    row(T("Name"));
+    ImGui::InputText("##name", npName_, sizeof npName_);
+    row(T("Folder"));
+    ImGui::SetNextItemWidth(-(ImGui::CalcTextSize(T("Choose...")).x + ImGui::GetStyle().FramePadding.x * 2 + ImGui::GetStyle().ItemSpacing.x));
+    ImGui::InputText("##folder", &npDir_);
+    ImGui::SameLine();
+    if (ImGui::Button(T("Choose...")))
+      SDL_ShowOpenFolderDialog(dialogCallback, new DialogCtx{this, "newdir"}, window_, npDir_.c_str(), false);
+    const char* langNames[3] = {T(kLangNames[0]), T(kLangNames[1]), T(kLangNames[2])};
+    row(T("Programming language"));
+    ImGui::Combo("##lang", &npLang_, langNames, 3);
+    {
+      // only the standards this language can build for; the choice stays if the new list has it
+      auto ids = tvStandardsFor(languageFromId(kLangIds[npLang_]));
+      ids.push_back("AUTO");
+      if (std::find(ids.begin(), ids.end(), npTvId_) == ids.end()) npTvId_ = ids[0];
+      row(T("TV standard"));
+      if (ImGui::BeginCombo("##tv", tvLabel(npTvId_).c_str())) {
+        for (auto& tv : ids) {
+          if (tv == "AUTO") ImGui::Separator();
+          bool sel = tv == npTvId_;
+          std::string label = tvLabel(tv);
+          if (tv != "AUTO" && !tvSupported("stella", tv)) label += "  " + F("(not in {0})", {"Stella"});
+          if (ImGui::Selectable(label.c_str(), sel)) npTvId_ = tv;
+          if (ImGui::IsItemHovered()) {
+            if (tv == "AUTO") ImGui::SetTooltip("%s", T(kTvMultipleHelp));
+            else if (const TvStandard* t = kb_.tv(tv)) ImGui::SetTooltip("%s", F("{0} lines, {1} Hz", {std::to_string(t->linesTotal), t->fps}).c_str());
+          }
+        }
+        ImGui::EndCombo();
+      }
+    }
+    npExample_ = std::clamp(npExample_, 0, (int)examples.size());
+    if (!examples.empty()) {
+      std::vector<const char*> names = {T("Empty project")};
+      for (auto& e : examples) names.push_back(T(e.second));
+      row(T("Start from"));
+      ImGui::Combo("##example", &npExample_, names.data(), (int)names.size());
+    }
+    ImGui::EndTable();
   }
   fs::path target = fs::path(npDir_) / npName_;
   ImGui::TextDisabled("%s", target.string().c_str());
   static std::string error;
   if (!error.empty()) ImGui::TextColored(theme::colv(theme::Role::MsgError), "%s", error.c_str());
-  if (ImGui::Button(T("Create"))) {
+  ImGui::Dummy(ImVec2(0, 6 * em));
+  if (theme::primaryButton(T("Create"))) {
     Project p;
     error.clear();
     std::string example = npExample_ > 0 && npExample_ <= (int)examples.size() ? examples[npExample_ - 1].first : "";
@@ -2799,7 +2820,7 @@ void App::toolsDialog() {
   snprintf(title, sizeof title, "%s###tools", T("Tools"));
   ImGui::SetNextWindowSize(ImVec2(760, 0), ImGuiCond_Appearing);
   bool open = true;
-  if (!ImGui::BeginPopupModal(title, &open)) return;
+  if (!theme::beginModal(title, &open)) return;
   if (ImGui::BeginTable("tools", 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp)) {
     ImGui::TableSetupColumn(T("Name"), ImGuiTableColumnFlags_WidthFixed, 180);
     ImGui::TableSetupColumn(T("Path"));
@@ -2862,7 +2883,7 @@ void App::missingToolDialog() {
   snprintf(title, sizeof title, "%s###missingtool", (t->found() ? F("{0} found", {t->name}) : F("{0} not found", {t->name})).c_str());
   float em = ImGui::GetFontSize();
   ImGui::SetNextWindowSize(ImVec2(em * 36, 0), ImGuiCond_Appearing);
-  if (!ImGui::BeginPopupModal(title, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) return;
+  if (!theme::beginModal(title, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) return;
   ImGui::PushTextWrapPos(em * 34);
   if (!t->found()) {
     ImGui::TextUnformatted(F("VCSIDE needs {0} ({1}) to {2}, and did not find it on this computer.", {t->name, T(t->role.c_str()), missingWhy_}).c_str());
@@ -2878,7 +2899,7 @@ void App::missingToolDialog() {
   ImGui::Spacing();
   bool close = false;
   if (t->found()) {
-    if (ImGui::Button(T("Continue"))) {
+    if (theme::primaryButton(T("Continue"))) {
       close = true;
       if (missingThen_) missingThen_();
     }
@@ -2931,7 +2952,7 @@ void App::aboutDialog() {
   snprintf(title, sizeof title, "%s###about", T("About VCSIDE"));
   float em = ImGui::GetFontSize();
   ImGui::SetNextWindowSize(ImVec2(em * 44, em * 38), ImGuiCond_Appearing);
-  if (!ImGui::BeginPopupModal(title, nullptr, ImGuiWindowFlags_NoSavedSettings)) return;
+  if (!theme::beginModal(title, nullptr, ImGuiWindowFlags_NoSavedSettings)) return;
   if (!about_) about_ = aboutInfo(kb_, tools_);
   const AboutInfo& a = *about_;
   if (aboutTexture_) {

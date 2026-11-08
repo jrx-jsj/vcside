@@ -11,6 +11,8 @@
   },
   "colours": {
     "ui.modalDim": "#00000060",
+    "dialog.title": "#001F27",
+    "dialog.border": "#001F27",
     "files.rowHover": "$base1/14",
     "files.rowSelected": "$base1/26",
     "files.project": "$base1",

@@ -6,11 +6,54 @@
 #include <cstring>
 
 #include "i18n.h"
+#include "imgui_internal.h"
 
 namespace vcs::theme {
 
 // ---------------------------------------------------------------------------
 // ImGui style
+
+bool beginModal(const char* name, bool* open, ImGuiWindowFlags flags) {
+  ImU32 title = col(Role::DlgTitle);
+  ImGui::PushStyleColor(ImGuiCol_TitleBg, title);
+  ImGui::PushStyleColor(ImGuiCol_TitleBgActive, title);
+  ImGui::PushStyleColor(ImGuiCol_TitleBgCollapsed, title);
+  ImGui::PushStyleColor(ImGuiCol_Text, col(Role::DlgTitleText));  // the title and its close button
+  ImGui::PushStyleColor(ImGuiCol_PopupBg, col(Role::DlgBackground));
+  ImGui::PushStyleColor(ImGuiCol_Border, col(Role::DlgBorder));
+  ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, std::max(1.0f, em(3)));
+  ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, em(4));
+  ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(em(16), em(14)));
+  ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(em(12), em(8)));  // a taller title band
+  bool shown = ImGui::BeginPopupModal(name, open, flags);
+  ImGui::PopStyleVar(4);
+  ImGui::PopStyleColor(6);
+  if (!shown) return false;
+  // the stripes, right under the title band, from border to border
+  ImGuiWindow* w = ImGui::GetCurrentWindow();
+  ImRect bar = w->TitleBarRect();
+  float b = w->WindowBorderSize * 0.5f, h = std::max(2.0f, em(2.5f));
+  ImDrawList* dl = w->DrawList;
+  dl->PushClipRect(w->Rect().Min, w->Rect().Max, false);
+  Role stripes[3] = {Role::DlgStripe1, Role::DlgStripe2, Role::DlgStripe3};
+  for (int i = 0; i < 3; i++)
+    dl->AddRectFilled(ImVec2(bar.Min.x + b, bar.Max.y + h * i), ImVec2(bar.Max.x - b, bar.Max.y + h * (i + 1)), col(stripes[i]));
+  dl->PopClipRect();
+  ImGui::Dummy(ImVec2(0, h * 3 - em(6)));  // the content starts under them
+  return true;
+}
+
+bool primaryButton(const char* label, const ImVec2& size) {
+  ImGui::PushStyleColor(ImGuiCol_Button, col(Role::DlgPrimary));
+  ImGui::PushStyleColor(ImGuiCol_ButtonHovered, col(Role::DlgPrimaryHover));
+  ImGui::PushStyleColor(ImGuiCol_ButtonActive, col(Role::DlgPrimaryHover));
+  ImGui::PushStyleColor(ImGuiCol_Text, col(Role::DlgPrimaryText));
+  ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(em(14), ImGui::GetStyle().FramePadding.y));  // as tall as the others
+  bool r = ImGui::Button(label, size);
+  ImGui::PopStyleVar();
+  ImGui::PopStyleColor(4);
+  return r;
+}
 
 void applyImGui(const Resolved& r) {
   ImVec4* c = ImGui::GetStyle().Colors;
