@@ -61,28 +61,31 @@ AboutInfo aboutInfo(const KnowledgeBase& kb, Toolchain& tools) {
       {"bb", {"1.9", "GPL-2.0; generated assembly CC0"}},
       {"wasmtime", {"41.0.0", "Apache-2.0 WITH LLVM-exception"}},
       {"arm-gcc", {"GCC 16.2.0", "GPL-3.0 with the GCC runtime exception"}},
-      {"cc65", {"", "zlib"}},
   };
-  AboutSection ext{T("Tools it works with"), T("Not included: VCSIDE runs the ones installed on this computer."), {}};
-  for (auto& t : tools.tools()) {
-    auto it = tested.find(t.id);
-    std::string detail;
-    if (it != tested.end()) {
-      detail = it->second.first.empty() ? T("Not tested yet.") : F("Tested with {0}.", {it->second.first});
-      detail += " " + it->second.second + ".";
+  // grouped like the Tools window; none is included, so the first says so
+  for (auto& g : Toolchain::groups()) {
+    AboutSection ext{T(g.title), "", {}};
+    if (a.sections.size() == 2) ext.note = T("Not included: VCSIDE runs the ones installed on this computer.");
+    for (Tool* t : tools.inGroup(g)) {
+      auto it = tested.find(t->id);
+      std::string detail;
+      if (it != tested.end()) detail = F("Tested with {0}.", {it->second.first}) + " " + it->second.second + ".";
+      ext.lines.push_back({t->name, detail, t->homepage});
     }
-    detail += " " + (t.found() ? F("Found: {0}", {t.path}) : std::string(T("Not found.")));
-    ext.lines.push_back({t.name, detail, t.homepage});
+    a.sections.push_back(ext);
   }
-  a.sections.push_back(ext);
 
   AboutSection src{T("Sources of the knowledge base"),
-                   T("Facts are cited, not copied: the texts are VCSIDE's own. Details in docs/fuentes.md."), {}};
+                   T("Facts are cited, not copied: the texts are VCSIDE's own. Details in docs/sources.md."), {}};
   std::vector<const Source*> list;
   for (auto& [id, s] : kb.sources()) list.push_back(&s);
   std::sort(list.begin(), list.end(), [](auto* x, auto* y) { return naturalLess(x->title, y->title); });
   for (auto* s : list) src.lines.push_back({s->title, s->author, s->url});
   a.sections.push_back(src);
+
+  AboutSection themes{T("Themes"), "", {}};
+  themes.lines.push_back({"Solarized", T("The palette of the Solarized themes. MIT licence. Ethan Schoonover."), "https://ethanschoonover.com/solarized/"});
+  a.sections.push_back(themes);
 
   AboutSection fonts{T("Fonts"), "", {}};
   fonts.lines.push_back({T("The system's own"), T("SF and Menlo (macOS), Segoe UI and Consolas (Windows), DejaVu (Linux). Not included."), ""});

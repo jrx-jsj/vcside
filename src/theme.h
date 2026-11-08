@@ -74,6 +74,9 @@ namespace vcs::theme {
   X(DlgPrimary, "dialog.primary", N_("Dialogs"), N_("Main button (Create, Save...)"))           \
   X(DlgPrimaryHover, "dialog.primaryHover", N_("Dialogs"), N_("Main button under the mouse"))   \
   X(DlgPrimaryText, "dialog.primaryText", N_("Dialogs"), N_("Main button text"))                \
+  X(DlgButton, "dialog.button", N_("Dialogs"), N_("Other buttons"))                            \
+  X(DlgButtonHover, "dialog.buttonHover", N_("Dialogs"), N_("Other buttons under the mouse"))    \
+  X(DlgButtonText, "dialog.buttonText", N_("Dialogs"), N_("Other buttons' text"))               \
   X(EdBackground, "editor.background", N_("Code editor"), N_("Background"))                   \
   X(EdText, "editor.text", N_("Code editor"), N_("Plain text"))                                 \
   X(EdCurrentLine, "editor.currentLine", N_("Code editor"), N_("Line of the cursor"))           \

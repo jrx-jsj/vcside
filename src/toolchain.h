@@ -9,14 +9,20 @@
 namespace vcs {
 
 struct Tool {
-  std::string id;           // "dasm", "stella", "gopher2600", "bb", "arm-gcc", "cc65"
+  std::string id;           // "dasm", "stella", "gopher2600", "bb", "wasmtime", "arm-gcc", "make"
   std::string name;         // shown to the user
-  std::string role;         // "assembler", "compiler", "emulator"
+  std::string role;         // "assembler", "compiler", "emulator", "runtime", "build tool"
   std::string path;         // resolved executable (empty = not found)
   std::string userPath;     // fixed by the user in settings (has priority)
   std::string homepage;     // where to download it
   std::string note;         // install hint
   bool found() const { return !path.empty(); }
+};
+
+// How the tools are listed (Tools window, About): by what they do.
+struct ToolGroup {
+  const char* title;               // English; translated where shown
+  std::vector<std::string> roles;  // Tool::role values
 };
 
 class Toolchain {
@@ -25,6 +31,8 @@ class Toolchain {
   void detect();  // re-resolves every tool
   Tool* get(const std::string& id);
   std::vector<Tool>& tools() { return tools_; }
+  static const std::vector<ToolGroup>& groups();
+  std::vector<Tool*> inGroup(const ToolGroup& g);
 
   // ~/.vcside-like folder from SDL_GetPrefPath, where tools can be dropped.
   static std::string toolsDir();

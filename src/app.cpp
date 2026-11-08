@@ -2124,9 +2124,9 @@ void App::closeDialogs() {
     int action = 0;
     if (theme::primaryButton(T("Save"))) action = 1;
     ImGui::SameLine();
-    if (ImGui::Button(T("Don't save"))) action = 2;
+    if (theme::dialogButton(T("Don't save"))) action = 2;
     ImGui::SameLine();
-    if (ImGui::Button(T("Cancel"))) action = 3;
+    if (theme::dialogButton(T("Cancel"))) action = 3;
     if (action) {
       if (closeRequest_ >= 0) {
         if (action == 1) saveFile(*files_[closeRequest_]);
@@ -2153,9 +2153,9 @@ void App::closeDialogs() {
     };
     if (theme::primaryButton(T("Save all"))) saveAll(), done();
     ImGui::SameLine();
-    if (ImGui::Button(T("Don't save"))) done();
+    if (theme::dialogButton(T("Don't save"))) done();
     ImGui::SameLine();
-    if (ImGui::Button(T("Cancel"))) ImGui::CloseCurrentPopup();
+    if (theme::dialogButton(T("Cancel"))) ImGui::CloseCurrentPopup();
     ImGui::EndPopup();
   }
 }
@@ -2349,7 +2349,7 @@ void App::emulatorOptionsDialog() {
         ImGui::SameLine();
         ImGui::TextWrapped("%s", p.c_str());
       }
-      if (ImGui::Button(T("Reset to defaults"))) {
+      if (theme::dialogButton(T("Reset to defaults"))) {
         set.clear();
         extra.clear();
         changed = true;
@@ -2362,7 +2362,7 @@ void App::emulatorOptionsDialog() {
   ImGui::PushTextWrapPos(0);
   ImGui::TextDisabled("%s", T("The emulators start with a copy of your own settings, so these options never change them; what you change in an emulator started from VCSIDE is not kept."));
   ImGui::PopTextWrapPos();
-  if (ImGui::Button(T("Close")) || ImGui::IsKeyPressed(ImGuiKey_Escape)) ImGui::CloseCurrentPopup();
+  if (theme::primaryButton(T("Close")) || ImGui::IsKeyPressed(ImGuiKey_Escape)) ImGui::CloseCurrentPopup();
   if (changed) {
     std::string err;
     if (!project_->save(&err)) lastStatus_ = err;
@@ -2410,7 +2410,7 @@ void App::goToAddressDialog() {
     openFile(target->file, target->line);
     ImGui::CloseCurrentPopup();
   }
-  if (ImGui::IsKeyPressed(ImGuiKey_Escape) || ImGui::Button(T("Cancel"))) ImGui::CloseCurrentPopup();
+  if (ImGui::IsKeyPressed(ImGuiKey_Escape) || theme::dialogButton(T("Cancel"))) ImGui::CloseCurrentPopup();
   ImGui::EndPopup();
 }
 
@@ -2763,7 +2763,7 @@ void App::newProjectDialog() {
     ImGui::SetNextItemWidth(-(ImGui::CalcTextSize(T("Choose...")).x + ImGui::GetStyle().FramePadding.x * 2 + ImGui::GetStyle().ItemSpacing.x));
     ImGui::InputText("##folder", &npDir_);
     ImGui::SameLine();
-    if (ImGui::Button(T("Choose...")))
+    if (theme::dialogButton(T("Choose...")))
       SDL_ShowOpenFolderDialog(dialogCallback, new DialogCtx{this, "newdir"}, window_, npDir_.c_str(), false);
     const char* langNames[3] = {T(kLangNames[0]), T(kLangNames[1]), T(kLangNames[2])};
     row(T("Programming language"));
@@ -2813,7 +2813,7 @@ void App::newProjectDialog() {
     }
   }
   ImGui::SameLine();
-  if (ImGui::Button(T("Cancel"))) {
+  if (theme::dialogButton(T("Cancel"))) {
     error.clear();
     ImGui::CloseCurrentPopup();
   }
@@ -2827,42 +2827,54 @@ void App::toolsDialog() {
   }
   char title[64];
   snprintf(title, sizeof title, "%s###tools", T("Tools"));
-  ImGui::SetNextWindowSize(ImVec2(760, 0), ImGuiCond_Appearing);
+  ImGui::SetNextWindowSize(ImVec2(std::min(ImGui::GetFontSize() * 58, ImGui::GetMainViewport()->WorkSize.x - 40), 0), ImGuiCond_Appearing);
   bool open = true;
   if (!theme::beginModal(title, &open)) return;
-  if (ImGui::BeginTable("tools", 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp)) {
-    ImGui::TableSetupColumn(T("Name"), ImGuiTableColumnFlags_WidthFixed, 180);
-    ImGui::TableSetupColumn(T("Path"));
-    ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 200);
-    for (auto& t : tools_.tools()) {
+  float em = ImGui::GetFontSize() / 15.0f;
+  for (auto& g : Toolchain::groups()) {
+    auto list = tools_.inGroup(g);
+    if (list.empty()) continue;
+    theme::dialogHeading(T(g.title));
+    if (!ImGui::BeginTable(g.title, 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp)) continue;
+    ImGui::TableSetupColumn("name", ImGuiTableColumnFlags_WidthFixed, 180 * em);
+    ImGui::TableSetupColumn("path");
+    ImGui::TableSetupColumn("buttons", ImGuiTableColumnFlags_WidthFixed, 230 * em);
+    for (Tool* tp : list) {
+      Tool& t = *tp;
       ImGui::PushID(t.id.c_str());
       ImGui::TableNextRow();
       ImGui::TableNextColumn();
       ImGui::TextUnformatted(t.name.c_str());
       ImGui::TextDisabled("%s", T(t.role.c_str()));
       ImGui::TableNextColumn();
-      if (t.found()) ImGui::TextColored(theme::colv(theme::Role::MsgOk), "%s", t.path.c_str());
+      if (t.found()) {
+        ImGui::TextColored(theme::colv(theme::Role::MsgOk), "%s", t.path.c_str());
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", t.path.c_str());  // in full, when the column cuts it
+      }
       else {
         ImGui::TextColored(theme::colv(theme::Role::MsgError), "%s", T("not found"));
         ImGui::TextWrapped("%s", T(t.note.c_str()));
       }
       ImGui::TableNextColumn();
-      if (ImGui::SmallButton(T("Choose...")))
+      if (theme::dialogButton(T("Choose..."), ImVec2(0, 0), true))
         SDL_ShowOpenFileDialog(dialogCallback, new DialogCtx{this, "tool:" + t.id}, window_, nullptr, 0, nullptr, false);
       ImGui::SameLine();
-      if (ImGui::SmallButton(T("Download page"))) SDL_OpenURL(t.homepage.c_str());
+      if (theme::dialogButton(T("Download page"), ImVec2(0, 0), true)) SDL_OpenURL(t.homepage.c_str());
       if (!t.userPath.empty()) {
         ImGui::SameLine();
-        if (ImGui::SmallButton("x")) t.userPath.clear(), tools_.detect(), saveSettings();
+        if (theme::dialogButton("x", ImVec2(0, 0), true)) t.userPath.clear(), tools_.detect(), saveSettings();
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", T("Forget the chosen file and detect it again"));
       }
       ImGui::PopID();
     }
     ImGui::EndTable();
+    ImGui::Dummy(ImVec2(0, 6 * em));
   }
   ImGui::TextDisabled("%s", Toolchain::toolsDir().c_str());
-  if (ImGui::Button(T("Detect again"))) tools_.detect();
+  ImGui::Dummy(ImVec2(0, 4 * em));
+  if (theme::primaryButton(T("Close"))) ImGui::CloseCurrentPopup();
   ImGui::SameLine();
-  if (ImGui::Button(T("Close"))) ImGui::CloseCurrentPopup();
+  if (theme::dialogButton(T("Detect again"))) tools_.detect();
   ImGui::EndPopup();
 }
 
@@ -2913,15 +2925,15 @@ void App::missingToolDialog() {
       if (missingThen_) missingThen_();
     }
   } else {
-    if (ImGui::Button(T("Open download page"))) SDL_OpenURL(t->homepage.c_str());
+    if (theme::dialogButton(T("Open download page"))) SDL_OpenURL(t->homepage.c_str());
     ImGui::SameLine();
-    if (ImGui::Button(T("Choose the file...")))
+    if (theme::dialogButton(T("Choose the file...")))
       SDL_ShowOpenFileDialog(dialogCallback, new DialogCtx{this, "tool:" + t->id}, window_, nullptr, 0, nullptr, false);
     ImGui::SameLine();
-    if (ImGui::Button(T("Search again"))) tools_.detect();
+    if (theme::dialogButton(T("Search again"))) tools_.detect();
   }
   ImGui::SameLine();
-  if (ImGui::Button(T("Close")) || ImGui::IsKeyPressed(ImGuiKey_Escape)) close = true;
+  if (theme::dialogButton(T("Close")) || ImGui::IsKeyPressed(ImGuiKey_Escape)) close = true;
   if (close) {
     ImGui::CloseCurrentPopup();
     missingThen_ = nullptr;
@@ -2999,7 +3011,7 @@ void App::aboutDialog() {
   ImGui::PopTextWrapPos();
   ImGui::EndChild();
   ImGui::TextDisabled("%s", F("Data: {0}", {a.dataDir}).c_str());
-  if (ImGui::Button(T("Close")) || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+  if (theme::primaryButton(T("Close")) || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
     ImGui::CloseCurrentPopup();
     about_.reset();
   }

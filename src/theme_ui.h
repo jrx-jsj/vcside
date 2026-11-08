@@ -32,8 +32,11 @@ bool beginModal(const char* name, bool* open = nullptr, ImGuiWindowFlags flags =
 // they take at the top of the window.
 void drawStripes(ImDrawList* dl, const ImVec2& min, const ImVec2& max);
 float stripesHeight();
-// The dialog's main button (Create, Save, OK...).
+// The dialog's main button (Create, Save, OK...), and the others (small: SmallButton's size).
 bool primaryButton(const char* label, const ImVec2& size = ImVec2(0, 0));
+bool dialogButton(const char* label, const ImVec2& size = ImVec2(0, 0), bool small = false);
+// A heading inside a dialog: a dark band as wide as the content, with a line under it.
+void dialogHeading(const char* text);
 
 class Editor {
  public:

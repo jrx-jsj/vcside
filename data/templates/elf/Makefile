@@ -19,16 +19,16 @@ CFLAGS = -mcpu=cortex-m0 -mthumb -O2 -std=c11 -Wall -Wextra -ffreestanding -fno-
          -fno-common -fdata-sections -Iinclude
 
 SOURCES = $(wildcard src/*.c)
-OBJS    = $(SOURCES:src/%.c=$(OUT)/%.o) $(OUT)/trampolines.o
+OBJS    = $(SOURCES:src/%.c=$(OUT)/%.o) $(OUT)/memcpy_long.o
 
 all: $(GAME)
 
-# memcpy/memset that the compiler calls by itself go through the long jumps of trampolines.S.
+# memcpy/memset that the compiler calls by itself go through the long jumps of memcpy_long.S.
 $(OUT)/%.o: src/%.c $(wildcard include/*.h src/*.h) | $(OUT)
 	$(CC) $(CFLAGS) -c $< -o $@
 	arm-none-eabi-objcopy --redefine-sym memcpy=memcpy_long --redefine-sym memset=memset_long $@
 
-$(OUT)/trampolines.o: src/trampolines.S | $(OUT)
+$(OUT)/memcpy_long.o: src/memcpy_long.S | $(OUT)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 # Partial link with libgcc (the M0 has no divide instruction), then only what relocation

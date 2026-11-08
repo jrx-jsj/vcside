@@ -75,7 +75,7 @@ struct EmulatorInfo {
   const EmuOption* option(const std::string& id) const;
 };
 
-// Where a fact comes from (data/kb/*.json "sources" arrays; docs/fuentes.md).
+// Where a fact comes from (data/kb/*.json "sources" arrays; docs/sources.md).
 struct Source {
   std::string id, title, author, url;
 };

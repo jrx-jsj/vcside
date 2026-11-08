@@ -6,4 +6,4 @@ SPDX-License-Identifier: CC-BY-SA-4.0
 
 You may copy and adapt them, also commercially, as long as you credit "VCSIDE knowledge base" with a link to the project and share your adaptations under the same licence. CC BY-SA 4.0 is one-way compatible with the GPL-3.0, so this data can also be used inside GPL-3.0 programs.
 
-Technical facts (addresses, cycle counts, bit layouts) are not copyrightable. The sources they were checked against are listed in [`docs/fuentes.md`](../../docs/fuentes.md). No text was copied from those sources.
+Technical facts (addresses, cycle counts, bit layouts) are not copyrightable. The sources they were checked against are listed in [`docs/sources.md`](../../docs/sources.md). No text was copied from those sources.

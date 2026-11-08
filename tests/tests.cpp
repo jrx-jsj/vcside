@@ -614,7 +614,7 @@ static void testElfSpace() {
   Project p;
   CHECK(Project::create(dir.string(), "rainbow", Language::ElfC, "NTSC", &p, &err));
   CHECK(p.buildCommand == "make" && p.format == "ELF" && p.output == "build/rainbow.bin" && p.main == "src/main.c");
-  for (auto f : {"Makefile", "include/vcs.h", "src/main.c", "src/trampolines.S", "chameleon/support.c"}) CHECK(fs::exists(dir / f));
+  for (auto f : {"Makefile", "include/vcs.h", "src/main.c", "src/memcpy_long.S", "chameleon/support.c"}) CHECK(fs::exists(dir / f));
   CHECK(!fs::exists(dir / "LICENSE.md"));
   std::ifstream mk(dir / "Makefile");
   std::string mtext((std::istreambuf_iterator<char>(mk)), {});
@@ -708,7 +708,7 @@ static void testElfSpace() {
   CHECK(Project::examples(Language::ElfC).size() == 1);
   fs::path ed = dir / "anim-elf";
   CHECK(Project::create(ed.string(), "walker", Language::ElfC, "NTSC", &p, &err, "animation"));
-  for (auto f : {"Makefile", "include/vcs.h", "src/main.c", "src/trampolines.S", "src/hero.vcsgfx", "src/hero.gfx.h"})
+  for (auto f : {"Makefile", "include/vcs.h", "src/main.c", "src/memcpy_long.S", "src/hero.vcsgfx", "src/hero.gfx.h"})
     CHECK(fs::exists(ed / f));
   std::ifstream emain(ed / "src" / "main.c"), einc(ed / "src" / "hero.gfx.h");
   std::string emtext((std::istreambuf_iterator<char>(emain)), {}), eitext((std::istreambuf_iterator<char>(einc)), {});

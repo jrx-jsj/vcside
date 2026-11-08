@@ -33,8 +33,24 @@ Toolchain::Toolchain() {
        N_("arm-none-eabi-gcc, for C games on ELF cartridges with vcsLib.")},
       {"make", "GNU Make", N_("build tool"), "", "", "https://www.gnu.org/software/make/",
        N_("ELF projects build with their Makefile. macOS: xcode-select --install. Linux: your package manager (build-essential). Windows: MSYS2 (pacman -S make) or another GNU Make build.")},
-      {"cc65", "cc65 / ca65", N_("assembler"), "", "", "https://cc65.github.io/", N_("Optional alternative to DASM.")},
   };
+}
+
+const std::vector<ToolGroup>& Toolchain::groups() {
+  static const std::vector<ToolGroup> g = {
+      {N_("Compilers and assemblers"), {"assembler", "compiler"}},
+      {N_("Emulators"), {"emulator"}},
+      {N_("Build helpers"), {"runtime", "build tool"}},
+  };
+  return g;
+}
+
+std::vector<Tool*> Toolchain::inGroup(const ToolGroup& g) {
+  std::vector<Tool*> out;
+  for (auto& t : tools_)
+    for (auto& r : g.roles)
+      if (t.role == r) out.push_back(&t);
+  return out;
 }
 
 std::string Toolchain::toolsDir() {
@@ -141,9 +157,6 @@ std::vector<std::string> Toolchain::candidates(const Tool& t) const {
     add(findInPath("mingw32-make"));
     add("C:\\msys64\\usr\\bin\\make.exe");
 #endif
-  } else if (t.id == "cc65") {
-    add(findInPath("cl65"));
-    add("/opt/homebrew/bin/cl65");
   }
   return c;
 }

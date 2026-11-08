@@ -7,7 +7,7 @@ Cycle counts: "cycles" is the base count; "page" = +1 when an indexed access
 crosses a page; branches take +1 when taken and +1 more when the target is on
 another page. Illegal mnemonics use DASM's names where DASM has one.
 
-Verification (see docs/fuentes.md): all 256 opcodes were cross-checked for
+Verification (see docs/sources.md): all 256 opcodes were cross-checked for
 size and cycles against masswerk.at, "No More Secrets" (groepaz) and the
 opcode table shipped with Gopher2600; the DASM names were checked by
 assembling each opcode with /opt/homebrew/bin/dasm 2.20.14.1.

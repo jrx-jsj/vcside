@@ -63,6 +63,29 @@ bool primaryButton(const char* label, const ImVec2& size) {
   return r;
 }
 
+bool dialogButton(const char* label, const ImVec2& size, bool small) {
+  ImGui::PushStyleColor(ImGuiCol_Button, col(Role::DlgButton));
+  ImGui::PushStyleColor(ImGuiCol_ButtonHovered, col(Role::DlgButtonHover));
+  ImGui::PushStyleColor(ImGuiCol_ButtonActive, col(Role::DlgButtonHover));
+  ImGui::PushStyleColor(ImGuiCol_Text, col(Role::DlgButtonText));
+  ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(em(small ? 8 : 14), small ? 0.0f : ImGui::GetStyle().FramePadding.y));
+  bool r = small ? ImGui::SmallButton(label) : ImGui::Button(label, size);
+  ImGui::PopStyleVar();
+  ImGui::PopStyleColor(4);
+  return r;
+}
+
+void dialogHeading(const char* text) {
+  ImVec2 p = ImGui::GetCursorScreenPos();
+  float w = ImGui::GetContentRegionAvail().x, pad = em(5), line = std::max(2.0f, em(3));
+  float h = ImGui::GetTextLineHeight() + pad * 2;
+  ImDrawList* dl = ImGui::GetWindowDrawList();
+  dl->AddRectFilled(p, ImVec2(p.x + w, p.y + h), col(Role::DlgTitle));
+  dl->AddRectFilled(ImVec2(p.x, p.y + h), ImVec2(p.x + w, p.y + h + line), col(Role::DlgStripe2));
+  dl->AddText(ImVec2(p.x + em(8), p.y + pad), col(Role::DlgTitleText), text);
+  ImGui::Dummy(ImVec2(w, h + line));
+}
+
 void applyImGui(const Resolved& r) {
   ImVec4* c = ImGui::GetStyle().Colors;
   auto v = [&](Role role) { return vec(r.colour[(int)role]); };

@@ -1,40 +1,40 @@
-# Licencias
+# Licences
 
 ## VCSIDE
 
-| Parte | Licencia | Texto |
+| Part | Licence | Text |
 |---|---|---|
-| Código (`src/`, `tests/`, `tools/`, catálogos `data/i18n/`) | GPL-3.0-or-later | [`LICENSE`](../LICENSE) |
-| Icono (`assets/icon/`, `data/vcside.png`) | GPL-3.0-or-later | [`LICENSE`](../LICENSE) |
-| Base de conocimiento (`data/kb/`) | CC BY-SA 4.0 | `CC-BY-SA-4.0.txt` |
-| Plantillas de proyecto (`data/templates/`) | CC0 1.0 (dominio público) | `CC0-1.0.txt` |
-| Temas (`data/themes/`) | CC0 1.0 (dominio público), salvo la paleta de los dos Solarized | `CC0-1.0.txt`; paleta Solarized: MIT, `solarized.txt` |
+| Code (`src/`, `tests/`, `tools/`, `data/i18n/` catalogues) | GPL-3.0-or-later | [`LICENSE`](../LICENSE) |
+| Icon (`assets/icon/`, `data/vcside.png`) | GPL-3.0-or-later | [`LICENSE`](../LICENSE) |
+| Knowledge base (`data/kb/`) | CC BY-SA 4.0 | `CC-BY-SA-4.0.txt` |
+| Project templates (`data/templates/`) | CC0 1.0 (public domain) | `CC0-1.0.txt` |
+| Themes (`data/themes/`) | CC0 1.0 (public domain), except the palette of the two Solarized themes | `CC0-1.0.txt`; Solarized palette: MIT, `solarized.txt` |
 
-Los juegos hechos con VCSIDE no heredan ninguna de estas licencias.
+Games made with VCSIDE do not inherit any of these licences.
 
-Textos descargados de las fuentes oficiales (gnu.org, creativecommons.org) el 2026-11-08; el de la GPL-3 coincide byte a byte con el `COPYING` de Gopher2600.
+Texts downloaded from the official sources (gnu.org, creativecommons.org) on 2026-11-08; the GPL-3 text matches Gopher2600's `COPYING` byte for byte.
 
-## Terceros
+## Third parties
 
-VCSIDE se enlaza con estas bibliotecas. Sus licencias acompañan al ejecutable: CMake las copia en `data/licenses` (en macOS, dentro de `VCSIDE.app/Contents/Resources/data/licenses`).
+VCSIDE links against these libraries. Their licences ship with the executable: CMake copies them into `data/licenses` (on macOS, inside `VCSIDE.app/Contents/Resources/data/licenses`).
 
-| Biblioteca | Versión | Licencia | Archivo |
+| Library | Version | Licence | File |
 |---|---|---|---|
 | [SDL 3](https://libsdl.org) | 3.2+ | zlib | `sdl3.txt` |
 | [Dear ImGui](https://github.com/ocornut/imgui) | 1.91.9b (docking) | MIT | `imgui.txt` |
 | [nlohmann/json](https://github.com/nlohmann/json) | 3.11.3 | MIT | `nlohmann-json.txt` |
-| [stb_image](https://github.com/nothings/stb) | 2.30 (commit `4e9b368`) | MIT o dominio público (a elegir) | `stb.txt` |
+| [stb_image](https://github.com/nothings/stb) | 2.30 (commit `4e9b368`) | MIT or public domain (your choice) | `stb.txt` |
 
-Herramientas externas (DASM, Stella, Gopher2600, batari Basic, Arm GNU toolchain, cc65) **no se incluyen ni se redistribuyen**: VCSIDE usa las que ya estén instaladas y enlaza a sus páginas oficiales. Cada una mantiene su licencia (DASM, Stella y Gopher2600 son GPL).
+External tools (DASM, Stella, Gopher2600, batari Basic, wasmtime, Arm GNU toolchain, GNU Make) are **not included or redistributed**: VCSIDE uses the ones already installed and links to their official pages. Each keeps its own licence (DASM, Stella and Gopher2600 are GPL).
 
-stb_image solo se descarga y se usa cuando la SDL 3 es anterior a la 3.4 (la 3.4 ya trae `SDL_LoadPNG`): sirve para leer el icono de la ventana.
+stb_image is only downloaded and used when SDL 3 is older than 3.4 (3.4 already ships `SDL_LoadPNG`): it is used to read the window icon.
 
-El icono es un dibujo original de VCSIDE: una consola de seis interruptores y un cartucho estilizados, sin logotipos ni marcas. El rótulo «VCS» usa una tipografía de bloques hecha para el icono.
+The icon is an original VCSIDE drawing: a stylised console with six switches and a cartridge, with no logos or trademarks. The "VCS" lettering uses a block typeface made for the icon.
 
-Los temas Solarized Light y Solarized Dark toman los 16 valores de la paleta [Solarized](https://ethanschoonover.com/solarized/) de Ethan Schoonover (MIT, `solarized.txt`); cómo se reparten entre los colores de VCSIDE es propio.
+The Solarized Light and Solarized Dark themes take the 16 palette values from [Solarized](https://ethanschoonover.com/solarized/) by Ethan Schoonover (MIT, `solarized.txt`); how they are distributed among VCSIDE's colours is our own.
 
-Las tipografías son las del sistema (Menlo, SF, Segoe UI, Consolas, DejaVu): se cargan en tiempo de ejecución y no se redistribuyen.
+The typefaces are the system ones (Menlo, SF, Segoe UI, Consolas, DejaVu): they are loaded at run time and are not redistributed.
 
-`vcs.h` y `macro.h` de DASM no se incluyen (el primero pide expresamente no redistribuirlo); la plantilla trae `2600.h`, escrito para VCSIDE con los nombres de registro de la *Stella Programmer's Guide* de Atari (1979), que son los mismos que usan los programas escritos con `vcs.h`.
+DASM's `vcs.h` and `macro.h` are not included (the former expressly asks not to be redistributed); the template ships `2600.h`, written for VCSIDE with the register names from Atari's *Stella Programmer's Guide* (1979), which are the same ones used by programs written with `vcs.h`.
 
-Las fuentes de la base de conocimiento están en [`docs/fuentes.md`](../docs/fuentes.md).
+The sources of the knowledge base are in [`docs/sources.md`](../docs/sources.md).
