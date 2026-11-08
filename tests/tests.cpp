@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 VCSIDE contributors
 // Tests without GUI: knowledge base, cycle counter, output parsers.
 #include <cstdio>
 #include <string>

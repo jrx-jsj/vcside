@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 VCSIDE contributors
 // Interface translations.
 //
 // Catalogs live in data/i18n/<code>.json:

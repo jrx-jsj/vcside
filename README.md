@@ -51,4 +51,8 @@ UI strings go through `T("...")`, or `F("... {0} ...", {...})` when they have va
 
 ## Licences
 
+- Code: **GPL-3.0-or-later** ([`LICENSE`](LICENSE)).
+- Knowledge base (`data/kb/`): **CC BY-SA 4.0**.
+- Project templates (`data/templates/`): **CC0** (public domain), so the games you make are yours to license as you like.
+
 Third-party licences are in [`licenses/`](licenses/README.md). External tools (DASM, Stella, Gopher2600…) are not bundled.

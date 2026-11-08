@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 cmake_minimum_required(VERSION 3.24)
 project(vcside VERSION 0.1.0 LANGUAGES C CXX)
 
@@ -74,7 +75,8 @@ else()
 endif()
 add_custom_command(TARGET vcside POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/data ${VCSIDE_DATA_DIR}
-  COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/licenses ${VCSIDE_DATA_DIR}/licenses)
+  COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/licenses ${VCSIDE_DATA_DIR}/licenses
+  COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/LICENSE ${VCSIDE_DATA_DIR}/licenses/VCSIDE-GPL-3.0.txt)
 
 # --- Tests (no GUI) ---------------------------------------------------------
 enable_testing()

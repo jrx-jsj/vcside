@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 VCSIDE contributors
 #include "i18n.h"
 
 #include <SDL3/SDL.h>

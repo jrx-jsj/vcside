@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 VCSIDE contributors
 """Checks the interface catalogs in data/i18n against the strings in src/.
 
 Strings are collected from T("..."), Ts("..."), F("...") and N_("...") calls,

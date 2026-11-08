@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 VCSIDE contributors
 // Cycle counting for DASM-syntax 6502 source.
 #pragma once
 #include <functional>

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 VCSIDE contributors
 // Code editor widget drawn with Dear ImGui: syntax colouring, cycle gutter,
 // diagnostics, hover help and completion.
 #pragma once

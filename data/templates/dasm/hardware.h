@@ -1,4 +1,5 @@
-; hardware.h - Atari 2600 TIA and RIOT registers for DASM (VCSIDE template, public domain).
+; hardware.h - Atari 2600 TIA and RIOT registers for DASM (VCSIDE template).
+; SPDX-License-Identifier: CC0-1.0  (public domain: use it in any game)
 ; Same names as the classic vcs.h. Reads use the $30-$3D mirror of the TIA.
 
         IFNCONST TIA_BASE_ADDRESS

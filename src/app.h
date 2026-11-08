@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 VCSIDE contributors
 // VCSIDE main window: menus, docked panels and the build/run cycle.
 #pragma once
 #include <SDL3/SDL.h>

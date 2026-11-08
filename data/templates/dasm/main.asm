@@ -1,4 +1,5 @@
 ; {{NAME}} - made with VCSIDE
+; Template: SPDX-License-Identifier: CC0-1.0 (public domain; your game, your licence)
 ; 4K cartridge, {{TV}} timing. Build: F7 (or Build > Build). Run: F5.
 
         processor 6502

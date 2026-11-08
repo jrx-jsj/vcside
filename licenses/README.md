@@ -1,4 +1,18 @@
-# Licencias de terceros
+# Licencias
+
+## VCSIDE
+
+| Parte | Licencia | Texto |
+|---|---|---|
+| Código (`src/`, `tests/`, `tools/`, catálogos `data/i18n/`) | GPL-3.0-or-later | [`LICENSE`](../LICENSE) |
+| Base de conocimiento (`data/kb/`) | CC BY-SA 4.0 | `CC-BY-SA-4.0.txt` |
+| Plantillas de proyecto (`data/templates/`) | CC0 1.0 (dominio público) | `CC0-1.0.txt` |
+
+Los juegos hechos con VCSIDE no heredan ninguna de estas licencias.
+
+Textos descargados de las fuentes oficiales (gnu.org, creativecommons.org) el 2026-11-08; el de la GPL-3 coincide byte a byte con el `COPYING` de Gopher2600.
+
+## Terceros
 
 VCSIDE se enlaza con estas bibliotecas. Sus licencias acompañan al ejecutable: CMake las copia en `data/licenses` (en macOS, dentro de `VCSIDE.app/Contents/Resources/data/licenses`).
 
