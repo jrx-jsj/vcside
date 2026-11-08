@@ -1733,6 +1733,34 @@ void App::projectPanel() {
     ImGui::End();
     return;
   }
+  // A folder that builds by itself (Makefile, build script) and has no project yet
+  if (!project_) {
+    if (detectedFor_ != folder_) {
+      detectedFor_ = folder_;
+      detected_.reset();
+      if (Project d; Project::detect(folder_, &d)) detected_ = d;
+    }
+    if (detected_) {
+      ImGui::PushTextWrapPos(0);
+      ImGui::TextUnformatted(F("This folder builds with \"{0}\".", {detected_->buildCommand}).c_str());
+      ImGui::TextDisabled("%s", F("A project lets F7 run it, and F5 open {0} in the emulator.", {detected_->output}).c_str());
+      ImGui::PopTextWrapPos();
+      if (ImGui::Button(T("Create a project for it"))) {
+        std::string err;
+        if (detected_->save(&err)) {
+          std::string file = detected_->file;
+          detectedFor_.clear(), detected_.reset();
+          openProject(file);
+        } else {
+          output_ += err + "\n";
+        }
+      }
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s", F("Writes {0}. Its settings (main source, ROM, format...) can be changed afterwards in Build > Project settings...",
+                                  {fs::path(detected_->file).filename().string()}).c_str());
+      ImGui::Separator();
+    }
+  }
   // The tree, drawn row by row: chevron, icon, name; guides for each level.
   ImDrawList* dl = ImGui::GetWindowDrawList();
   float fontH = ImGui::GetTextLineHeight(), rowH = std::round(fontH * 1.45f), indentW = std::round(fontH * 0.9f);

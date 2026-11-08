@@ -192,6 +192,8 @@ class App {
   Toolchain tools_;
   std::optional<Project> project_;
   std::string folder_;  // folder shown in the project panel
+  std::string detectedFor_;          // the folder detected_ was looked for in
+  std::optional<Project> detected_;  // how that folder builds, when it has no project
   std::vector<std::unique_ptr<OpenFile>> files_;
   int activeFile_ = -1;
   int closeRequest_ = -1;

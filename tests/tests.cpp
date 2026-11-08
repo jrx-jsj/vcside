@@ -624,6 +624,49 @@ static void testElfSpace() {
   std::ifstream bas(dir / "bb" / "main.bas");
   std::string btext((std::istreambuf_iterator<char>(bas)), {});
   CHECK(btext.find("rem Square Run - batari Basic") != std::string::npos && btext.find("drawscreen") != std::string::npos);
+  // a folder that builds with its own Makefile becomes a project; tools and flags of its own
+  {
+    fs::path md = dir / "made";
+    fs::create_directories(md / "tools", ec);
+    std::ofstream(md / "Makefile") << "ROM = $(NAME).bin\nall:\n\tdasm game.asm -f3 -oout/game.bin\n";
+    std::ofstream(md / "game.asm") << "\tprocessor 6502\n";
+    std::ofstream(md / "notes.asm") << "; nothing\n";
+    Project m;
+    CHECK(Project::detect(md.string(), &m));
+    CHECK(m.buildCommand == "make" && m.main == "game.asm" && m.output == "out/game.bin" && m.language == Language::Dasm && m.name == "made");
+    CHECK(!Project::detect((dir / "bb").string(), &m));
+    fs::path sd = dir / "scripted";
+    fs::create_directories(sd, ec);
+    std::ofstream(sd / "build.sh") << "bb main.bas\n";
+    std::ofstream(sd / "main.bas") << "  drawscreen\n";
+    CHECK(Project::detect(sd.string(), &m) && m.buildCommand == "sh build.sh" && m.language == Language::BatariBasic && m.output == "main.bin");
+
+    Toolchain tc;
+    Project own;
+    own.dir = md.string(), own.main = "game.asm";
+    own.toolPaths["dasm"] = "tools/dasm";
+    own.buildFlags = "-DPAL=1 -T1";
+    std::string why;
+    CHECK(own.buildArgs(tc, &why).empty() && why.find("tools/dasm") != std::string::npos);  // not there yet
+    std::ofstream(md / "tools" / "dasm") << "";
+    auto a = own.buildArgs(tc, &why);
+    CHECK(!a.empty() && a[0] == (md / "tools" / "dasm").lexically_normal().string() && a.back() == "-T1" && a[a.size() - 2] == "-DPAL=1");
+    CHECK(own.buildTools(tc).empty());  // its own DASM: nothing to look for
+    auto r = own.rasArgs(tc);
+    CHECK(!r.empty() && r.back() == "-DPAL=1");
+    own.file = (md / "own.vcsproj").string();
+    CHECK(own.save(&why));
+    Project back;
+    CHECK(back.load(own.file, &why) && back.toolPaths.at("dasm") == "tools/dasm" && back.buildFlags == "-DPAL=1 -T1");
+    own.buildCommand = "make clean && make";
+    a = own.buildArgs(tc, &why);
+#ifdef _WIN32
+    CHECK(a.size() == 3 && a[0] == "cmd.exe" && a[2] == "make clean && make");
+#else
+    CHECK(a.size() == 3 && a[0] == "/bin/sh" && a[1] == "-c" && a[2] == "make clean && make");
+#endif
+  }
+
   // the DASM example: its graphics, the tables they give, and a program that assembles
   CHECK(Project::examples(Language::Dasm).size() == 1 && Project::examples(Language::BatariBasic).empty());
   for (const char* tv : {"NTSC", "PAL"}) {

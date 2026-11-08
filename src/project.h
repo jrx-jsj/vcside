@@ -26,7 +26,13 @@ struct Project {
   std::string emulator = "stella";
   IllegalOpcodes illegal = IllegalOpcodes::Warn;
   std::vector<std::string> includeDirs;
-  std::string buildCommand;     // optional: custom command (e.g. "make"), overrides the tool
+  // optional: a command of the project's own (e.g. "make" or "sh build.sh") instead of the
+  // tool; with &&, |, ; or > it runs through the shell
+  std::string buildCommand;
+  // The tools this project builds with, when not the ones in Settings > Tools: tool id
+  // ("dasm", "bb") -> path, relative to the project or absolute.
+  std::map<std::string, std::string> toolPaths;
+  std::string buildFlags;       // more arguments for DASM (e.g. "-DPAL=1 -T1")
   int spaceWarnPercent = 90;    // warn when a bank or RAM area is fuller than this
   int stackReserve = 8;         // bytes of 2600 RAM to keep free for the stack
   // Launch options per emulator: option id (emulators.json) -> value. Unset = not passed.
@@ -52,6 +58,14 @@ struct Project {
   // next to the source; these are the paths.
   std::string basicOutput(const std::string& suffix) const { return abs(main) + suffix; }
   std::vector<std::string> runArgs(Toolchain& tc, bool debug, std::string* error) const;
+
+  // The tool this project uses: its own path if it has one and it exists, else the one
+  // VCSIDE found; "" if neither.
+  std::string toolPath(Toolchain& tc, const std::string& id) const;
+
+  // A folder that builds by itself (Makefile, build.sh, build.bat, make.bat): a project for
+  // it, with that command, the main source and the ROM it seems to write. False if none.
+  static bool detect(const std::string& dir, Project* out);
 
   // Creates a new project folder with a template for the language.
   // example: "" for the empty template, or one of exampleIds(lang).

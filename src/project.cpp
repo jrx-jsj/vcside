@@ -3,6 +3,8 @@
 #include "project.h"
 
 #include <filesystem>
+#include <algorithm>
+#include <regex>
 #include <cstdlib>
 #include <fstream>
 #include <nlohmann/json.hpp>
@@ -66,6 +68,11 @@ bool Project::load(const std::string& path, std::string* error) {
     illegal = illegalFromId(j.value("illegal_opcodes", "warn"));
     includeDirs = j.value("include_dirs", std::vector<std::string>{});
     buildCommand = j.value("build_command", "");
+    toolPaths.clear();
+    if (j.contains("tool_paths") && j["tool_paths"].is_object())
+      for (auto& [k, v] : j["tool_paths"].items())
+        if (v.is_string() && !v.get<std::string>().empty()) toolPaths[k] = v.get<std::string>();
+    buildFlags = j.value("build_flags", "");
     spaceWarnPercent = j.value("space_warn_percent", 90);
     stackReserve = j.value("stack_reserve", 8);
     emulatorOptions.clear();
@@ -91,6 +98,11 @@ bool Project::save(std::string* error) const {
             {"emulator", emulator},   {"illegal_opcodes", illegalId(illegal)},
             {"include_dirs", includeDirs}};
   if (!buildCommand.empty()) j["build_command"] = buildCommand;
+  json tp = json::object();
+  for (auto& [k, v] : toolPaths)
+    if (!v.empty()) tp[k] = v;
+  if (!tp.empty()) j["tool_paths"] = tp;
+  if (!buildFlags.empty()) j["build_flags"] = buildFlags;
   if (spaceWarnPercent != 90) j["space_warn_percent"] = spaceWarnPercent;
   if (stackReserve != 8) j["stack_reserve"] = stackReserve;
   json eo = json::object(), ea = json::object();
@@ -136,10 +148,12 @@ std::vector<std::string> splitCommand(const std::string& s) {
 
 std::vector<std::string> Project::rasArgs(Toolchain& tc) const {
   if (language != Language::Dasm || !buildCommand.empty()) return {};
-  Tool* t = tc.get("dasm");
-  if (!t || !t->found()) return {};
-  std::vector<std::string> a = {t->path, abs(main), "-f2", "-v0", "-o" + stem() + ".ras", "-I" + dir};
+  std::string dasm = toolPath(tc, "dasm");
+  if (dasm.empty()) return {};
+  std::vector<std::string> a = {dasm, abs(main), "-f2", "-v0", "-o" + stem() + ".ras", "-I" + dir};
   for (auto& d : includeDirs) a.push_back("-I" + abs(d));
+  for (auto& f : splitCommand(buildFlags))
+    if (f.rfind("-D", 0) == 0 || f.rfind("-M", 0) == 0 || f.rfind("-I", 0) == 0) a.push_back(f);  // what changes the code
   return a;
 }
 
@@ -152,13 +166,16 @@ std::vector<std::string> Project::buildTools(Toolchain& tc) const {
     return out;
   }
   switch (language) {
-    case Language::Dasm: return {"dasm"};
+    case Language::Dasm: return toolPaths.count("dasm") && !toolPath(tc, "dasm").empty() ? std::vector<std::string>{} : std::vector<std::string>{"dasm"};
     case Language::BatariBasic: {
       // 1.9 is WebAssembly (2600basic.wasm next to its script) and runs on wasmtime
-      Tool* bb = tc.get("bb");
+      std::string bb = toolPath(tc, "bb");
+      bool own = toolPaths.count("bb") && !bb.empty();
       std::error_code ec;
-      if (bb && bb->found() && fs::exists(fs::path(bb->path).parent_path() / "2600basic.wasm", ec)) return {"bb", "wasmtime"};
-      return {"bb"};
+      std::vector<std::string> out;
+      if (!own) out.push_back("bb");
+      if (!bb.empty() && fs::exists(fs::path(bb).parent_path() / "2600basic.wasm", ec)) out.push_back("wasmtime");
+      return out;
     }
     default: return {};
   }
@@ -188,6 +205,14 @@ std::vector<std::string> Project::buildArgs(Toolchain& tc, std::string* error, s
       }
       if (!extra.empty()) env->push_back({"PATH", extra + sep + path});
     }
+    // several commands, pipes or redirections: the system's shell runs the line
+    if (buildCommand.find_first_of("&|;><") != std::string::npos) {
+#ifdef _WIN32
+      return {"cmd.exe", "/c", buildCommand};
+#else
+      return {"/bin/sh", "-c", buildCommand};
+#endif
+    }
     auto args = splitCommand(buildCommand);
     // a bare "make" is started from where VCSIDE found it (the PATH above is only the child's)
     if (Tool* m = tc.get("make"); !args.empty() && args[0] == "make" && m && m->found()) args[0] = m->path;
@@ -195,20 +220,23 @@ std::vector<std::string> Project::buildArgs(Toolchain& tc, std::string* error, s
   }
   switch (language) {
     case Language::Dasm: {
-      Tool* t = tc.get("dasm");
-      if (!t || !t->found()) {
-        if (error) *error = T("DASM not found. Install it or set its path in Settings > Tools.");
+      std::string dasm = toolPath(tc, "dasm");
+      if (dasm.empty()) {
+        if (error) *error = toolPaths.count("dasm") ? F("The project's DASM ({0}) does not exist.", {toolPaths.at("dasm")})
+                                                    : std::string(T("DASM not found. Install it or set its path in Settings > Tools."));
         return {};
       }
-      std::vector<std::string> a = {t->path, abs(main), "-f3", "-v0", "-o" + outputPath(),
+      std::vector<std::string> a = {dasm, abs(main), "-f3", "-v0", "-o" + outputPath(),
                                     "-l" + stem() + ".lst", "-s" + stem() + ".sym", "-I" + dir};
       for (auto& d : includeDirs) a.push_back("-I" + abs(d));
+      for (auto& f : splitCommand(buildFlags)) a.push_back(f);
       return a;
     }
     case Language::BatariBasic: {
-      Tool* t = tc.get("bb");
-      if (!t || !t->found()) {
-        if (error) *error = T("batari Basic not found. Set the path to 2600basic.sh / 2600bas.bat in Settings > Tools.");
+      std::string bbPath = toolPath(tc, "bb");
+      if (bbPath.empty()) {
+        if (error) *error = toolPaths.count("bb") ? F("The project's batari Basic ({0}) does not exist.", {toolPaths.at("bb")})
+                                                  : std::string(T("batari Basic not found. Set the path to 2600basic.sh / 2600bas.bat in Settings > Tools."));
         return {};
       }
       // Its script runs in the source's folder (1.9 only lets wasmtime see "."), takes the
@@ -217,15 +245,15 @@ std::vector<std::string> Project::buildArgs(Toolchain& tc, std::string* error, s
       fs::path src = abs(main);
       if (workDir) *workDir = src.parent_path().string();
       if (env) {
-        env->push_back({"bB", fs::path(t->path).parent_path().string()});
+        env->push_back({"bB", fs::path(bbPath).parent_path().string()});
         std::string path = std::getenv("PATH") ? std::getenv("PATH") : "";
         if (Tool* w = tc.get("wasmtime"); w && w->found()) path = fs::path(w->path).parent_path().string() + sep + path;
         env->push_back({"PATH", path});
       }
 #ifdef _WIN32
-      return {"cmd.exe", "/c", t->path, src.filename().string()};
+      return {"cmd.exe", "/c", bbPath, src.filename().string()};
 #else
-      return {"/bin/sh", t->path, src.filename().string()};
+      return {"/bin/sh", bbPath, src.filename().string()};
 #endif
     }
     case Language::ElfC:
@@ -235,6 +263,89 @@ std::vector<std::string> Project::buildArgs(Toolchain& tc, std::string* error, s
       if (error) *error = T("Unknown project language.");
       return {};
   }
+}
+
+std::string Project::toolPath(Toolchain& tc, const std::string& id) const {
+  std::error_code ec;
+  if (auto it = toolPaths.find(id); it != toolPaths.end() && !it->second.empty()) {
+    std::string p = abs(it->second);
+    return fs::is_regular_file(p, ec) ? p : std::string();
+  }
+  Tool* t = tc.get(id);
+  return t && t->found() ? t->path : std::string();
+}
+
+static std::string readAll(const fs::path& p) {
+  std::ifstream f(p, std::ios::binary);
+  std::ostringstream s;
+  s << f.rdbuf();
+  return s.str();
+}
+
+bool Project::detect(const std::string& dirIn, Project* out) {
+  std::error_code ec;
+  fs::path d = fs::absolute(dirIn);
+  std::string command, script;
+  for (auto n : {"Makefile", "makefile", "GNUmakefile"})
+    if (fs::is_regular_file(d / n, ec)) {
+      command = "make", script = n;
+      break;
+    }
+#ifdef _WIN32
+  const char* scripts[] = {"build.bat", "make.bat", "build.cmd", "build.sh"};
+#else
+  const char* scripts[] = {"build.sh", "make.sh", "build.bat", "make.bat"};
+#endif
+  if (command.empty())
+    for (auto n : scripts)
+      if (fs::is_regular_file(d / n, ec)) {
+        std::string ext = fs::path(n).extension().string();
+        command = ext == ".sh" ? std::string("sh ") + n : std::string(n);
+        script = n;
+        break;
+      }
+  if (command.empty()) return false;
+  Project p;
+  p.dir = d.string();
+  p.name = d.filename().string();
+  p.file = (d / (p.name + ".vcsproj")).string();
+  p.buildCommand = command;
+  // the main source: main.* first, else a file with the 6502's processor line, else any
+  std::string asmMain, basMain, cMain;
+  std::vector<fs::path> files;
+  for (auto& e : fs::directory_iterator(d, ec))
+    if (e.is_regular_file(ec)) files.push_back(e.path());
+  std::sort(files.begin(), files.end());
+  for (auto& f : files) {
+    std::string ext = f.extension().string(), stem = f.stem().string();
+    for (auto& c : ext) c = (char)std::tolower((unsigned char)c);
+    bool isMain = stem == "main";
+    if (ext == ".asm" || ext == ".s" || ext == ".a") {
+      if (isMain || (asmMain.empty() && readAll(f).find("processor") != std::string::npos)) asmMain = f.filename().string();
+    } else if (ext == ".bas" && (isMain || basMain.empty())) {
+      basMain = f.filename().string();
+    } else if (ext == ".c" && (isMain || cMain.empty())) {
+      cMain = f.filename().string();
+    }
+  }
+  if (!cMain.empty() && asmMain.empty() && basMain.empty()) p.language = Language::ElfC, p.main = cMain;
+  else if (!basMain.empty() && asmMain.empty()) p.language = Language::BatariBasic, p.main = basMain;
+  else p.language = Language::Dasm, p.main = asmMain.empty() ? (basMain.empty() ? cMain : basMain) : asmMain;
+  // the ROM: the first word of the build file that names a .bin, .a26 or .elf
+  std::string text = readAll(d / script);
+  static const std::regex rom(R"(([A-Za-z0-9_./\-]+)\.(bin|a26|elf)\b)");
+  for (std::sregex_iterator it(text.begin(), text.end(), rom), end; it != end; ++it) {
+    std::string m = (*it)[0];
+    size_t at = (size_t)it->position(0);
+    if (at > 0 && (text[at - 1] == ')' || text[at - 1] == '}' || text[at - 1] == '%')) continue;  // $(NAME).bin, %.bin
+    if (m.rfind("-o", 0) == 0) m.erase(0, 2);  // dasm -oout/game.bin
+    if (m.empty() || m[0] == '-') continue;
+    p.output = m;
+    break;
+  }
+  if (p.output == Project().output) p.output = fs::path(p.main).stem().string() + ".bin";
+  *out = p;
+  return true;
 }
 
 const std::vector<std::string>& tvStandardIds() {

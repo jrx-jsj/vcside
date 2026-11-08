@@ -21,6 +21,7 @@
     "A copy of \"{0}\"": "Una copia de «{0}»",
     "A new theme based on \"{0}\"": "Un tema nuevo basado en «{0}»",
     "a playfield of {0} rows": "un playfield de {0} filas",
+    "A project lets F7 run it, and F5 open {0} in the emulator.": "Con un proyecto, F7 lo ejecuta y F5 abre {0} en el emulador.",
     "A small native IDE for creating Atari 2600 games.": "Un IDE nativo y pequeño para crear juegos de Atari 2600.",
     "A step with the frame being edited, after the selected step": "Un paso con el fotograma que se está editando, detrás del paso elegido",
     "Aa": "Aa",
@@ -166,6 +167,7 @@
     "Could not measure the space: DASM failed writing the block file.": "No se pudo medir el espacio: DASM falló al escribir el archivo de bloques.",
     "counter": "contador",
     "Create": "Crear",
+    "Create a project for it": "Crear un proyecto para ella",
     "Current search result": "Resultado actual de la búsqueda",
     "Cursor": "Cursor",
     "Custom": "Personalizado",
@@ -560,6 +562,8 @@
     "The multisprite kernel draws {0} one line high: only its position is kept.": "El kernel multisprite dibuja {0} de una línea de alto: solo se conserva su posición.",
     "The multisprite kernel's playfield is mirrored (the right half is the left one reversed); these rows are not: {0}.": "El playfield del kernel multisprite va reflejado (la mitad derecha es la izquierda invertida); estas filas no lo están: {0}.",
     "The project's ({0})": "El del proyecto ({0})",
+    "The project's batari Basic ({0}) does not exist.": "No existe el batari Basic del proyecto ({0}).",
+    "The project's DASM ({0}) does not exist.": "No existe el DASM del proyecto ({0}).",
     "The ROM does not exist yet: build first ({0}).": "La ROM aún no existe: compila primero ({0}).",
     "The ROM is {0} bytes, more than the format allows ({1}): the code overflows.": "La ROM tiene {0} bytes, más de los que admite el formato ({1}): el código se desborda.",
     "The ROM is {0} bytes; this format expects {1}. Emulators may not detect it.": "La ROM tiene {0} bytes y este formato espera {1}. Puede que los emuladores no lo detecten.",
@@ -577,6 +581,7 @@
     "Themes": "Temas",
     "Themes are .vcstheme files. Exported or copied themes carry everything they need, except a built-in base.": "Los temas son archivos .vcstheme. Los exportados o copiados llevan todo lo que necesitan, salvo una base incluida.",
     "There is no theme called {0}.": "No hay ningún tema llamado {0}.",
+    "This folder builds with \"{0}\".": "Esta carpeta se compila con «{0}».",
     "This format's RAM cannot be measured from the DASM output.": "La RAM de este formato no se puede medir con la salida de DASM.",
     "This is not a VCSIDE theme (it has no \"vcstheme\" key).": "No es un tema de VCSIDE (no tiene la clave «vcstheme»).",
     "This kernel does not change the background per row: only the first row's is kept.": "Este kernel no cambia el fondo por fila: solo se conserva el de la primera.",
@@ -632,6 +637,7 @@
     "With the kernel option background the table of colours goes to the background: the playfield keeps one colour.": "Con la opción de kernel background, la tabla de colores va al fondo: el playfield se queda con un solo color.",
     "Word": "Palabra",
     "write": "escritura",
+    "Writes {0}. Its settings (main source, ROM, format...) can be changed afterwards in Build > Project settings...": "Escribe {0}. Sus ajustes (fuente principal, ROM, formato...) se pueden cambiar después en Compilar > Ajustes del proyecto...",
     "yes": "sí",
     "Yours": "Tuyos",
     "Zeroed variables": "Variables a cero",
@@ -690,5 +696,5 @@
     "{0}:{1}: no code at or after this line; breakpoint ignored.": "{0}:{1}: no hay código en esta línea ni después; se ignora el punto de ruptura.",
     "{0}:{1}: no listing to place the breakpoint: build first.": "{0}:{1}: no hay listado para situar el punto de ruptura: compila antes."
   },
-  "total": 687
+  "total": 693
 }
