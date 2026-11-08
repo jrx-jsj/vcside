@@ -1,6 +1,7 @@
 <!-- VCSIDE icon. SPDX-License-Identifier: GPL-3.0-or-later
      Original stylised drawing of a 1977-style six-switch console with a cartridge.
-     The «VCS» lettering is regenerated per size by tools/make_icons.py. -->
+     The «VCS» lettering and the grip bands (with «IDE» cut out of them)
+     are regenerated per size by tools/make_icons.py. -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
 <defs><linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e7d9bd"/><stop offset="1" stop-color="#bfa77e"/></linearGradient></defs>
 <rect x="100" y="100" width="824" height="824" rx="184" fill="url(#bg)"/>
@@ -39,14 +40,10 @@
 <defs><filter id="cblur" x="-0.2" y="-0.2" width="1.4" height="1.4"><feGaussianBlur stdDeviation="12"/></filter></defs>
 <g id="cartridge">
 <rect x="286" y="182" width="472" height="704" rx="26" fill="#000" opacity="0.35" filter="url(#cblur)"/>
-<path d="M304 160 H720 L748 188 V840 a24 24 0 0 1 -24 24 H300 a24 24 0 0 1 -24 -24 V188 Z" fill="#2f3036" stroke="#0b0b0d" stroke-width="12" stroke-linejoin="round"/>
-<path d="M304 160 H720 L748 188 H276 Z" fill="#45464d" stroke="#0b0b0d" stroke-width="12" stroke-linejoin="round"/>
+<path d="M304 160 H720 L748 188 V840 a24 24 0 0 1 -24 24 H300 a24 24 0 0 1 -24 -24 V188 Z" fill="#43454d" stroke="#0b0b0d" stroke-width="12" stroke-linejoin="round"/>
+<path d="M304 160 H720 L748 188 H276 Z" fill="#5a5c65" stroke="#0b0b0d" stroke-width="12" stroke-linejoin="round"/>
 <rect x="308" y="216" width="408" height="368" rx="12" fill="#f6a623"/>
+<g id="grip" data-grip="312 604 400 36 28 7" fill="#0e0f11" shape-rendering="crispEdges"><rect x="312" y="604" width="400" height="28"/><rect x="312" y="640" width="31" height="28"/><rect x="421" y="640" width="26" height="28"/><rect x="525" y="640" width="52" height="28"/><rect x="681" y="640" width="31" height="28"/><rect x="312" y="676" width="57" height="28"/><rect x="395" y="676" width="52" height="28"/><rect x="473" y="676" width="52" height="28"/><rect x="551" y="676" width="26" height="28"/><rect x="603" y="676" width="109" height="28"/><rect x="312" y="712" width="57" height="28"/><rect x="395" y="712" width="52" height="28"/><rect x="473" y="712" width="52" height="28"/><rect x="551" y="712" width="26" height="28"/><rect x="655" y="712" width="57" height="28"/><rect x="312" y="748" width="57" height="28"/><rect x="395" y="748" width="52" height="28"/><rect x="473" y="748" width="52" height="28"/><rect x="551" y="748" width="26" height="28"/><rect x="603" y="748" width="109" height="28"/><rect x="312" y="784" width="31" height="28"/><rect x="421" y="784" width="26" height="28"/><rect x="525" y="784" width="52" height="28"/><rect x="681" y="784" width="31" height="28"/><rect x="312" y="820" width="400" height="28"/></g>
 <g id="label-text" data-label="308 216 408 368" fill="#2a1606" shape-rendering="crispEdges"><rect x="334" y="340" width="21" height="17"/><rect x="418" y="340" width="21" height="17"/><rect x="334" y="357" width="21" height="17"/><rect x="418" y="357" width="21" height="17"/><rect x="334" y="374" width="21" height="17"/><rect x="418" y="374" width="21" height="17"/><rect x="334" y="391" width="21" height="17"/><rect x="418" y="391" width="21" height="17"/><rect x="355" y="408" width="21" height="17"/><rect x="397" y="408" width="21" height="17"/><rect x="355" y="425" width="21" height="17"/><rect x="397" y="425" width="21" height="17"/><rect x="376" y="442" width="21" height="17"/><rect x="481" y="340" width="63" height="17"/><rect x="460" y="357" width="21" height="17"/><rect x="544" y="357" width="21" height="17"/><rect x="460" y="374" width="21" height="17"/><rect x="460" y="391" width="21" height="17"/><rect x="460" y="408" width="21" height="17"/><rect x="460" y="425" width="21" height="17"/><rect x="544" y="425" width="21" height="17"/><rect x="481" y="442" width="63" height="17"/><rect x="607" y="340" width="84" height="17"/><rect x="586" y="357" width="21" height="17"/><rect x="586" y="374" width="21" height="17"/><rect x="607" y="391" width="63" height="17"/><rect x="670" y="408" width="21" height="17"/><rect x="670" y="425" width="21" height="17"/><rect x="586" y="442" width="84" height="17"/></g>
-<rect x="352" y="624" width="320" height="20" rx="10" fill="#1b1c20"/>
-<rect x="352" y="672" width="320" height="20" rx="10" fill="#1b1c20"/>
-<rect x="352" y="720" width="320" height="20" rx="10" fill="#1b1c20"/>
-<rect x="352" y="768" width="320" height="20" rx="10" fill="#1b1c20"/>
-<rect x="352" y="816" width="320" height="20" rx="10" fill="#1b1c20"/>
 </g>
 </svg>
