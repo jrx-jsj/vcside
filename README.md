@@ -35,6 +35,8 @@ A small native IDE for making Atari 2600 games, on macOS, Windows and Linux. It 
   - ELF projects: code, code in RAM (`.RamFunc`), constants and variables read from the ROM's sections, and the Chameleon Cart's flash (128 KB) and RAM (36 KB). Exact when the Chameleon image is built, otherwise estimated with the firmware's measured share.
 - **Illegal-opcode policy** per project: allow, stable only, warn or forbid.
 - **Menus** in the system menu bar on macOS (application menu with About, Tools and Language; Window menu), and in the window on Windows and Linux. Ctrl shortcuts are Cmd on macOS; Replace is Cmd+Shift+F there, since Cmd+H hides the app.
+- **About** (*VCSIDE → About* on macOS, *Help → About* elsewhere): the system's About panel on macOS, a window of its own on Windows and Linux. Both show the icon, the version, VCSIDE's licences, the libraries built in, the tools it works with (the versions it was tested with and where each one was found) and the sources of the knowledge base.
+- **Editor zoom**: Ctrl+`+`/`-`/`0` (Cmd on macOS), Ctrl + mouse wheel, or *View*. The font is drawn again at each size, so it stays sharp; the zoom is remembered.
 - **Interface languages**: English, plus catalogs in `data/i18n/` (Spanish included). Catalogs can be partial, and anything missing falls back to English.
 
 ## Building
@@ -47,7 +49,7 @@ cmake --build build
 ctest --test-dir build
 ```
 
-- macOS: `build/vcside.app`
+- macOS: `build/VCSIDE.app`
 - Windows / Linux: `build/vcside[.exe]`, with `data/` next to it.
 
 Linux and Windows builds can also be made from any machine with Docker (`tools/docker/`):

@@ -787,8 +787,12 @@ bool TextEditor::render(const char* id, ImFont* font) {
     ImGui::SetNextWindowFocus();
     focusEditor_ = false;
   }
+  ImGuiIO& zio = ImGui::GetIO();
+  bool zoomWheel = zio.KeyCtrl && zio.MouseWheel != 0;  // the wheel zooms instead of scrolling
   ImGui::BeginChild(id, ImVec2(0, 0), ImGuiChildFlags_None,
-                    ImGuiWindowFlags_HorizontalScrollbar | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoNavInputs);
+                    ImGuiWindowFlags_HorizontalScrollbar | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoNavInputs |
+                        (zoomWheel ? ImGuiWindowFlags_NoScrollWithMouse : 0));
+  if (zoomWheel && ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows)) zoomSteps_ += zio.MouseWheel > 0 ? 1 : -1;
   ImGui::PopStyleVar();
 
   ImVec2 origin = ImGui::GetCursorScreenPos();

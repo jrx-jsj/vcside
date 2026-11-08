@@ -7,5 +7,7 @@
 namespace vcs {
 
 void setWindowIcon(SDL_Window* window);
+// The icon (data/vcside.png) as RGBA32 pixels, for the About window. Null if missing.
+SDL_Surface* loadIconSurface();
 
 }  // namespace vcs

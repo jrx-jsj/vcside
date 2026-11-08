@@ -117,6 +117,7 @@ class KnowledgeBase {
   const std::vector<CartFormat>& formats() const { return formats_; }
   const std::vector<TvStandard>& tvStandards() const { return tv_; }
   const std::vector<std::string>& cpuNotes() const { return cpuNotes_; }
+  const std::map<std::string, Source>& sources() const { return sources_; }
   const std::vector<std::string>& tiaNotes() const { return tiaNotes_; }
 
   // Completion candidates whose word starts with prefix (case-insensitive).

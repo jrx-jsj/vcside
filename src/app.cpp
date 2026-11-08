@@ -4,12 +4,17 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <nlohmann/json.hpp>
 #include <sstream>
 
+#include <SDL3/SDL_opengl.h>
+
+#include "about.h"
 #include "cycles.h"
+#include "window_icon.h"
 #include "emulator_launch.h"
 #include "i18n.h"
 #include "imgui.h"
@@ -74,6 +79,7 @@ void App::loadSettings() {
   setLanguage(code.empty() ? systemLanguage() : code);
   recent_ = j.value("recent", std::vector<std::string>{});
   showCycles_ = j.value("show_cycles", true);
+  editorZoom_ = std::clamp(j.value("editor_zoom", 1.0f), 0.5f, 3.0f);
   tools_.loadSettings(j.value("tools", std::map<std::string, std::string>{}));
   // A new docked panel needs the default layout once (imgui.ini would keep it floating).
   if (j.value("layout_version", 0) < kLayoutVersion) {
@@ -86,6 +92,7 @@ void App::saveSettings() {
   json j = {{"language", currentLanguage()},
             {"recent", recent_},
             {"show_cycles", showCycles_},
+            {"editor_zoom", editorZoom_},
             {"tools", tools_.userPaths()},
             {"layout_version", kLayoutVersion}};
   std::ofstream(configDir() + "settings.json") << j.dump(2) << "\n";
@@ -810,6 +817,55 @@ EditorHooks App::basicHooks() {
   return h;
 }
 
+bool App::testMenu(const std::string& path) {
+  if (nativeMenu_) return nativeMenuPerform(path);
+  MenuBar bar = buildMenuBar(false);
+  const std::vector<MenuItem>* level = &bar;
+  size_t start = 0;
+  for (;;) {
+    size_t slash = path.find('/', start);
+    std::string name = path.substr(start, slash == std::string::npos ? std::string::npos : slash - start);
+    auto it = std::find_if(level->begin(), level->end(), [&](const MenuItem& m) { return !m.separator && m.label == name; });
+    if (it == level->end() || !it->enabled) return false;
+    if (slash == std::string::npos) {
+      if (!it->action) return false;
+      it->action();
+      return true;
+    }
+    level = &it->children;
+    start = slash + 1;
+  }
+}
+
+// The steps of the editor zoom, as in most editors.
+static const float kZoomSteps[] = {0.5f, 0.67f, 0.75f, 0.8f, 0.9f, 1.0f, 1.1f, 1.25f, 1.5f, 1.75f, 2.0f, 2.5f, 3.0f};
+
+void App::zoomEditor(int steps) {
+  float z = 1.0f;
+  if (steps != 0) {
+    int n = (int)(sizeof kZoomSteps / sizeof kZoomSteps[0]), at = 0;
+    for (int i = 0; i < n; i++)
+      if (std::fabs(kZoomSteps[i] - editorZoom_) < std::fabs(kZoomSteps[at] - editorZoom_)) at = i;
+    z = kZoomSteps[std::clamp(at + steps, 0, n - 1)];
+  }
+  if (z == editorZoom_) return;
+  editorZoom_ = z;
+  lastStatus_ = F("Editor zoom: {0} %", {std::to_string((int)(z * 100 + 0.5f))});
+  saveSettings();
+}
+
+float App::editorFontWanted() const {
+  if (editorZoom_ == 1.0f) return 0;
+  float pts = 14.0f * editorZoom_;
+  return editorFonts_.count(pts) ? 0 : pts;
+}
+
+ImFont* App::editorFont() const {
+  if (editorZoom_ == 1.0f) return mono_;
+  auto it = editorFonts_.find(14.0f * editorZoom_);
+  return it != editorFonts_.end() ? it->second : mono_;  // until main() has made it
+}
+
 void App::testSelect(int a, int b) {
   if (activeFile_ < 0) return;
   auto& ed = files_[activeFile_]->editor;
@@ -923,6 +979,12 @@ void App::frame() {
     if (e > s) showDoc(l.substr(s, e - s));
   }
   if (io.KeyCtrl && io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_G, false) && !addresses_.empty()) showGoToAddress_ = true;
+  // zoom: Ctrl (Cmd) + "+"/"=", "-" and "0", also on the keypad
+  if (io.KeyCtrl && !io.KeyAlt) {
+    if (ImGui::IsKeyPressed(ImGuiKey_Equal) || ImGui::IsKeyPressed(ImGuiKey_KeypadAdd)) zoomEditor(1);
+    if (ImGui::IsKeyPressed(ImGuiKey_Minus) || ImGui::IsKeyPressed(ImGuiKey_KeypadSubtract)) zoomEditor(-1);
+    if (ImGui::IsKeyPressed(ImGuiKey_0, false) || ImGui::IsKeyPressed(ImGuiKey_Keypad0, false)) zoomEditor(0);
+  }
   if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_S, false)) {
     if (io.KeyShift) saveAll();
     else if (activeFile_ >= 0) saveFile(*files_[activeFile_]);
@@ -1115,6 +1177,12 @@ MenuBar App::buildMenuBar(bool native) {
         for (auto& f : files_) f->editor.setGutterWidthChars(showCycles_ && f->asmSyntax ? 5 : 0);
         saveSettings();
       }, true, showCycles_),
+      MenuItem::sep(),
+      item(T("Zoom in"), "Ctrl+=", [this] { zoomEditor(1); }, editorZoom_ < 3.0f),
+      item(T("Zoom out"), "Ctrl+-", [this] { zoomEditor(-1); }, editorZoom_ > 0.5f),
+      item(F("Actual size ({0} %)", {std::to_string((int)(editorZoom_ * 100 + 0.5f))}), "Ctrl+0", [this] { zoomEditor(0); },
+           editorZoom_ != 1.0f),
+      MenuItem::sep(),
       item(T("Reset layout"), "", [this] { resetLayout_ = true; }),
   }));
   if (!native) bar.push_back(sub(T("Settings"), settings));
@@ -1315,7 +1383,8 @@ void App::editorsPanel() {
           ImGui::SetKeyboardFocusHere();
           f.requestFocus = false;
         }
-        if (f.editor.render("##code", mono_)) lint(f);
+        if (f.editor.render("##code", editorFont())) lint(f);
+        if (int z = f.editor.takeZoomSteps()) zoomEditor(z);
         if (f.editor.takeBreakpointsChanged()) {
           breakpoints_[f.path] = f.editor.breakpoints();
           saveUserState();
@@ -2025,19 +2094,71 @@ void App::toolsDialog() {
 
 void App::aboutDialog() {
   if (showAbout_) {
-    ImGui::OpenPopup("###about");
     showAbout_ = false;
+    // macOS: the system's panel; elsewhere the window below
+    if (nativeMenuAvailable() && nativeShowAbout(aboutInfo(kb_, tools_))) return;
+    about_ = aboutInfo(kb_, tools_);
+    ImGui::OpenPopup("###about");
+  }
+  if (!aboutTexture_ && about_) {
+    if (SDL_Surface* icon = loadIconSurface()) {
+      GLuint tex = 0;
+      glGenTextures(1, &tex);
+      glBindTexture(GL_TEXTURE_2D, tex);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+      glPixelStorei(GL_UNPACK_ROW_LENGTH, icon->pitch / 4);
+      glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, icon->w, icon->h, 0, GL_RGBA, GL_UNSIGNED_BYTE, icon->pixels);
+      glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+      aboutTexture_ = tex;
+      SDL_DestroySurface(icon);
+    }
   }
   char title[64];
   snprintf(title, sizeof title, "%s###about", T("About VCSIDE"));
-  if (!ImGui::BeginPopupModal(title, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) return;
-  ImGui::Text("VCSIDE %s", VCSIDE_VERSION);
-  ImGui::TextUnformatted(T("A small native IDE for Atari 2600 games."));
-  ImGui::TextDisabled("Dear ImGui %s, SDL %d.%d.%d", IMGUI_VERSION, SDL_VERSIONNUM_MAJOR(SDL_GetVersion()),
-                      SDL_VERSIONNUM_MINOR(SDL_GetVersion()), SDL_VERSIONNUM_MICRO(SDL_GetVersion()));
-  ImGui::TextDisabled("%s", F("Data: {0}", {dataDir()}).c_str());
+  float em = ImGui::GetFontSize();
+  ImGui::SetNextWindowSize(ImVec2(em * 44, em * 38), ImGuiCond_Appearing);
+  if (!ImGui::BeginPopupModal(title, nullptr, ImGuiWindowFlags_NoSavedSettings)) return;
+  if (!about_) about_ = aboutInfo(kb_, tools_);
+  const AboutInfo& a = *about_;
+  if (aboutTexture_) {
+    ImGui::Image((ImTextureID)(intptr_t)aboutTexture_, ImVec2(em * 6, em * 6));
+    ImGui::SameLine(0, em);
+  }
+  ImGui::BeginGroup();
+  ImGui::SetWindowFontScale(1.6f);
+  ImGui::TextUnformatted("VCSIDE");
+  ImGui::SetWindowFontScale(1.0f);
+  ImGui::TextUnformatted(F("Version {0}", {a.version}).c_str());
+  ImGui::TextUnformatted(a.tagline.c_str());
+  ImGui::TextDisabled("%s", a.copyright.c_str());
+  ImGui::EndGroup();
   if (!kbError_.empty()) ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "%s", kbError_.c_str());
-  if (ImGui::Button(T("Close"))) ImGui::CloseCurrentPopup();
+  ImGui::Spacing();
+  ImGui::BeginChild("credits", ImVec2(0, -ImGui::GetFrameHeightWithSpacing() * 2.2f), ImGuiChildFlags_Borders);
+  ImGui::PushTextWrapPos(0);
+  for (auto& sec : a.sections) {
+    ImGui::SeparatorText(sec.title.c_str());
+    if (!sec.note.empty()) ImGui::TextDisabled("%s", sec.note.c_str());
+    for (auto& l : sec.lines) {
+      ImGui::PushID(&l);
+      if (!l.url.empty()) ImGui::TextLinkOpenURL(l.name.c_str(), l.url.c_str());
+      else ImGui::TextUnformatted(l.name.c_str());
+      if (!l.detail.empty()) {
+        ImGui::Indent(em);
+        ImGui::TextDisabled("%s", l.detail.c_str());
+        ImGui::Unindent(em);
+      }
+      ImGui::PopID();
+    }
+  }
+  ImGui::PopTextWrapPos();
+  ImGui::EndChild();
+  ImGui::TextDisabled("%s", F("Data: {0}", {a.dataDir}).c_str());
+  if (ImGui::Button(T("Close")) || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+    ImGui::CloseCurrentPopup();
+    about_.reset();
+  }
   ImGui::EndPopup();
 }
 

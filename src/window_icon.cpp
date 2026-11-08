@@ -16,7 +16,7 @@
 
 namespace vcs {
 
-void setWindowIcon(SDL_Window* window) {
+SDL_Surface* loadIconSurface() {
   const std::string path = dataDir() + "/vcside.png";
 #if SDL_VERSION_ATLEAST(3, 4, 0)
   SDL_Surface* icon = SDL_LoadPNG(path.c_str());
@@ -32,11 +32,22 @@ void setWindowIcon(SDL_Window* window) {
   }
 #endif
   if (!icon) {
-    SDL_Log("Window icon %s: %s", path.c_str(), SDL_GetError());
-    return;
+    SDL_Log("Icon %s: %s", path.c_str(), SDL_GetError());
+    return nullptr;
   }
-  SDL_SetWindowIcon(window, icon);
-  SDL_DestroySurface(icon);
+  if (icon->format != SDL_PIXELFORMAT_RGBA32) {
+    SDL_Surface* rgba = SDL_ConvertSurface(icon, SDL_PIXELFORMAT_RGBA32);
+    SDL_DestroySurface(icon);
+    icon = rgba;
+  }
+  return icon;
+}
+
+void setWindowIcon(SDL_Window* window) {
+  if (SDL_Surface* icon = loadIconSurface()) {
+    SDL_SetWindowIcon(window, icon);
+    SDL_DestroySurface(icon);
+  }
 }
 
 }  // namespace vcs

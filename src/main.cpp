@@ -150,11 +150,11 @@ int main(int argc, char** argv) {
                          "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "/usr/share/fonts/TTF/DejaVuSans.ttf",
                          "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf"},
                         15 * uiScale, density);
-  ImFont* mono = loadFont(io,
-                          {"/System/Library/Fonts/Menlo.ttc", "/System/Library/Fonts/Monaco.ttf", "C:/Windows/Fonts/consola.ttf",
-                           "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", "/usr/share/fonts/TTF/DejaVuSansMono.ttf",
-                           "/usr/share/fonts/dejavu-sans-mono-fonts/DejaVuSansMono.ttf"},
-                          14 * uiScale, density);
+  const std::initializer_list<const char*> monoPaths = {
+      "/System/Library/Fonts/Menlo.ttc", "/System/Library/Fonts/Monaco.ttf", "C:/Windows/Fonts/consola.ttf",
+      "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", "/usr/share/fonts/TTF/DejaVuSansMono.ttf",
+      "/usr/share/fonts/dejavu-sans-mono-fonts/DejaVuSansMono.ttf"};
+  ImFont* mono = loadFont(io, monoPaths, 14 * uiScale, density);
   io.FontDefault = ui;
   io.FontGlobalScale = 1.0f / density;
 
@@ -228,6 +228,14 @@ int main(int argc, char** argv) {
     if (shot.empty() && (SDL_GetWindowFlags(window) & (SDL_WINDOW_MINIMIZED | SDL_WINDOW_HIDDEN | SDL_WINDOW_OCCLUDED))) continue;
     Uint64 frameStart = SDL_GetTicksNS();
 
+    // editor zoom: one more size in the font atlas, made between frames
+    if (float pts = app.editorFontWanted()) {
+      ImFont* f = loadFont(io, monoPaths, pts * uiScale, density);
+      io.Fonts->Build();
+      ImGui_ImplOpenGL3_DestroyFontsTexture();
+      ImGui_ImplOpenGL3_CreateFontsTexture();
+      app.setEditorFont(pts, f);
+    }
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();

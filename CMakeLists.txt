@@ -79,6 +79,10 @@ if(MSVC)
 else()
   target_compile_options(vcside PRIVATE -Wall -Wextra)
 endif()
+# macOS shows the bundle's file name in the Dock and Finder: VCSIDE.app
+if(APPLE)
+  set_target_properties(vcside PROPERTIES OUTPUT_NAME VCSIDE)
+endif()
 set_target_properties(vcside PROPERTIES
   MACOSX_BUNDLE_BUNDLE_NAME VCSIDE
   MACOSX_BUNDLE_GUI_IDENTIFIER org.vcside.VCSIDE
@@ -107,7 +111,7 @@ add_custom_command(TARGET vcside POST_BUILD
 
 # --- Tests (no GUI) ---------------------------------------------------------
 enable_testing()
-add_executable(vcside_tests tests/tests.cpp src/kb.cpp src/cycles.cpp src/builder_parse.cpp src/editor/text_editor.cpp src/i18n.cpp src/space.cpp src/debugmap.cpp src/emulator_launch.cpp src/elf_space.cpp src/basic_syntax.cpp src/project.cpp src/toolchain.cpp src/paths.cpp src/child_process.cpp)
+add_executable(vcside_tests tests/tests.cpp src/kb.cpp src/cycles.cpp src/builder_parse.cpp src/editor/text_editor.cpp src/i18n.cpp src/space.cpp src/debugmap.cpp src/emulator_launch.cpp src/elf_space.cpp src/basic_syntax.cpp src/about.cpp src/project.cpp src/toolchain.cpp src/paths.cpp src/child_process.cpp)
 target_include_directories(vcside_tests PRIVATE src)
 target_link_libraries(vcside_tests PRIVATE imgui nlohmann_json::nlohmann_json)
 target_compile_definitions(vcside_tests PRIVATE VCSIDE_SOURCE_DATA="${CMAKE_SOURCE_DIR}/data")

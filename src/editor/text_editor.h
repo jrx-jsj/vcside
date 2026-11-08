@@ -112,6 +112,8 @@ class TextEditor {
   const std::set<int>& breakpoints();
   // True once after the breakpoints changed (toggled, or moved by an edit).
   bool takeBreakpointsChanged() { bool c = bpChanged_; bpChanged_ = false; return c; }
+  // Ctrl (Cmd) + mouse wheel over the editor: zoom steps asked for since the last call.
+  int takeZoomSteps() { int z = zoomSteps_; zoomSteps_ = 0; return z; }
 
  private:
   struct Snapshot {
@@ -157,6 +159,7 @@ class TextEditor {
   bool completionOpen_ = false;
   float charW_ = 7, lineH_ = 14;
   std::string commentPrefix_ = ";";
+  int zoomSteps_ = 0;
 
   enum class Bar { None, Find, Replace, Goto } bar_ = Bar::None;
   bool focusBar_ = false, focusEditor_ = false;

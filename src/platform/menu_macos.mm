@@ -10,6 +10,7 @@
 
 #include <map>
 
+#include "../about.h"
 #include "../i18n.h"
 #include "../menu.h"
 
@@ -297,3 +298,51 @@ bool nativeMenuPerform(const std::string& path) {
 }
 
 }  // namespace vcs
+
+// The system's About panel: application icon, name, version and copyright, and the
+// credits (scrollable) built from the same sections as the ImGui window.
+bool vcs::nativeShowAbout(const vcs::AboutInfo& info) {
+  @autoreleasepool {
+    NSMutableAttributedString* credits = [[NSMutableAttributedString alloc] init];
+    NSMutableParagraphStyle* para = [[NSMutableParagraphStyle alloc] init];
+    para.paragraphSpacing = 2;
+    NSDictionary* body = @{NSFontAttributeName : [NSFont systemFontOfSize:11],
+                           NSForegroundColorAttributeName : NSColor.labelColor,
+                           NSParagraphStyleAttributeName : para};
+    NSDictionary* dim = @{NSFontAttributeName : [NSFont systemFontOfSize:10],
+                          NSForegroundColorAttributeName : NSColor.secondaryLabelColor,
+                          NSParagraphStyleAttributeName : para};
+    NSDictionary* head = @{NSFontAttributeName : [NSFont boldSystemFontOfSize:12],
+                           NSForegroundColorAttributeName : NSColor.labelColor};
+    auto add = [&](const std::string& text, NSDictionary* attrs) {
+      [credits appendAttributedString:[[NSAttributedString alloc] initWithString:ns(text) attributes:attrs]];
+    };
+    add(info.tagline + "\n", body);
+    for (auto& sec : info.sections) {
+      add("\n" + sec.title + "\n", head);
+      if (!sec.note.empty()) add(sec.note + "\n", dim);
+      for (auto& l : sec.lines) {
+        if (!l.url.empty()) {
+          NSMutableDictionary* link = [body mutableCopy];
+          link[NSLinkAttributeName] = [NSURL URLWithString:ns(l.url)];
+          [credits appendAttributedString:[[NSAttributedString alloc] initWithString:ns(l.name) attributes:link]];
+        } else {
+          add(l.name, body);
+        }
+        add(l.detail.empty() ? "\n" : " — " + l.detail + "\n", l.detail.empty() ? body : dim);
+      }
+    }
+    add("\n" + vcs::F("Data: {0}", {info.dataDir}) + "\n", dim);
+    NSDictionary* opts = @{
+      NSAboutPanelOptionApplicationName : @"VCSIDE",
+      NSAboutPanelOptionApplicationVersion : ns(info.version),
+      NSAboutPanelOptionVersion : @"",
+      NSAboutPanelOptionCredits : credits,
+      @"Copyright" : ns(info.copyright),
+    };
+    [NSApp orderFrontStandardAboutPanelWithOptions:opts];
+    [NSApp activateIgnoringOtherApps:YES];
+  }
+  return true;
+}
+

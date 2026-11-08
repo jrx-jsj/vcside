@@ -14,6 +14,7 @@
 #include <string>
 #include <vector>
 
+#include "about.h"
 #include "basic_syntax.h"
 #include "builder_parse.h"
 #include "debugmap.h"
@@ -41,6 +42,10 @@ class App {
  public:
   // imguiMenu: draw the menus with ImGui even where the system has a menu bar (tests)
   bool init(SDL_Window* window, ImFont* mono, bool imguiMenu = false);
+  // Editor zoom: the font is rasterised again at each size so it stays sharp. main()
+  // adds the font between frames, when editorFontWanted() gives a size (points).
+  float editorFontWanted() const;
+  void setEditorFont(float points, ImFont* font) { editorFonts_[points] = font; }
   void refreshMenus() { if (nativeMenu_) nativeMenuRefresh(); }
   void frame();  // draws one frame of UI
   bool wantsQuit() const { return quit_; }
@@ -54,7 +59,7 @@ class App {
   void testSelect(int firstLine, int lastLine);
   void testDoc(const std::string& word) { showDoc(word); }
   std::string testMenuDump() { return nativeMenu_ ? nativeMenuDump() : std::string(); }
-  bool testMenu(const std::string& path) { return nativeMenu_ && nativeMenuPerform(path); }
+  bool testMenu(const std::string& path);  // "File/Save": the system menu, or the ImGui one
   void testGoToAddress(const std::string& a) { showGoToAddress_ = true, pendingAddress_ = a; }
   void testFocus(const std::string& panel) { ImGui::SetWindowFocus(("###" + panel).c_str()); }
   void testDefinition(const std::string& w) {
@@ -127,6 +132,10 @@ class App {
 
   SDL_Window* window_ = nullptr;
   ImFont* mono_ = nullptr;
+  float editorZoom_ = 1.0f;
+  std::map<float, ImFont*> editorFonts_;  // by size in points
+  ImFont* editorFont() const;
+  void zoomEditor(int steps);  // 0 = back to 100 %
   bool quit_ = false, quitConfirm_ = false;
   KnowledgeBase kb_;
   std::string kbError_;
@@ -170,6 +179,8 @@ class App {
 
   // dialogs
   bool showNewProject_ = false, showTools_ = false, showAbout_ = false;
+  std::optional<AboutInfo> about_;  // while the About window is open (not on macOS)
+  unsigned aboutTexture_ = 0;       // the icon, as an OpenGL texture
   char npName_[64] = "mygame";
   std::string npDir_;
   int npLang_ = 0, npTv_ = 0;
