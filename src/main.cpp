@@ -4,7 +4,9 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_opengl.h>
 
+#include <algorithm>
 #include <filesystem>
+#include <memory>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -216,23 +218,57 @@ static void applyStyle() {
   // the colours come from the theme (App::useTheme)
 }
 
-int main(int argc, char** argv) {
-  vcs::nativeEarlyInit();
-  if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
-    SDL_Log("SDL_Init: %s", SDL_GetError());
-    return 1;
+static const std::initializer_list<const char*> kUiFonts = {
+    "/System/Library/Fonts/SFNS.ttf", "/System/Library/Fonts/Helvetica.ttc", "C:/Windows/Fonts/segoeui.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "/usr/share/fonts/TTF/DejaVuSans.ttf",
+    "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf"};
+static const std::initializer_list<const char*> kMonoFonts = {
+    "/System/Library/Fonts/Menlo.ttc", "/System/Library/Fonts/Monaco.ttf", "C:/Windows/Fonts/consola.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", "/usr/share/fonts/TTF/DejaVuSansMono.ttf",
+    "/usr/share/fonts/dejavu-sans-mono-fonts/DejaVuSansMono.ttf"};
+
+// One window of the IDE: its SDL window, its own ImGui context (fonts, layout, style)
+// and its own App (project, files, panels). All of them draw with one OpenGL context.
+struct IdeWindow {
+  SDL_Window* sdl = nullptr;
+  ImGuiContext* ctx = nullptr;
+  std::unique_ptr<vcs::App> app;
+  float density = 1, uiScale = 1;
+  bool alive = true;
+
+  // Fonts at the zoom, rasterised at the real pixel density so they stay sharp.
+  ImFont* buildFonts(float zoom) {
+    ImGuiIO& io = ImGui::GetIO();
+    io.Fonts->Clear();
+    io.FontDefault = loadFont(io, kUiFonts, 15 * uiScale * zoom, density);
+    ImFont* mono = loadFont(io, kMonoFonts, 14 * uiScale * zoom, density);
+    io.Fonts->Build();
+    io.FontGlobalScale = 1.0f / density;
+    return mono;
   }
-  SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-  SDL_Window* window = SDL_CreateWindow("VCSIDE", 1400, 860,
-                                        SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY | SDL_WINDOW_HIDDEN);
-  if (!window) {
-    SDL_Log("SDL_CreateWindow: %s", SDL_GetError());
-    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "VCSIDE", (std::string("Cannot open the window: ") + SDL_GetError()).c_str(), nullptr);
-    return 1;
+};
+
+static SDL_GLContext gGl = nullptr;
+static const char* gGlsl = nullptr;
+static bool gImguiMenu = false;
+
+static SDL_Window* newSdlWindow(SDL_Window* after) {
+  SDL_Window* w = SDL_CreateWindow("VCSIDE", 1400, 860,
+                                   SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY | SDL_WINDOW_HIDDEN);
+  if (!w) return nullptr;
+  vcs::setWindowIcon(w);
+  if (after) {  // a little below and to the right of the window it came from
+    int x = 0, y = 0;
+    SDL_GetWindowPosition(after, &x, &y);
+    SDL_SetWindowPosition(w, x + 28, y + 28);
   }
-  vcs::setWindowIcon(window);
-  // OpenGL: 3.0 (3.2 core on macOS, the only modern one it has), then the others for
-  // drivers and layers that only give one of them (Wine on macOS: 3.2 core or 2.1).
+  return w;
+}
+
+// The OpenGL context, made once with the first window: 3.0 (3.2 core on macOS, the
+// only modern one it has), then the others for drivers and layers that only give one
+// of them (Wine on macOS: 3.2 core or 2.1).
+static bool makeGl(SDL_Window* window) {
   struct GlTry {
     int profile, major, minor, flags;
     const char* glsl;
@@ -246,86 +282,136 @@ int main(int argc, char** argv) {
 #endif
       {SDL_GL_CONTEXT_PROFILE_COMPATIBILITY, 2, 1, 0, "#version 120"},
   };
-  SDL_GLContext gl = nullptr;
-  const char* glsl = nullptr;
   std::string glErrors;
   for (auto& t : tries) {
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, t.profile);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, t.major);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, t.minor);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, t.flags);
-    gl = SDL_GL_CreateContext(window);
-    if (gl) {
-      glsl = t.glsl;
+    gGl = SDL_GL_CreateContext(window);
+    if (gGl) {
+      gGlsl = t.glsl;
       break;
     }
     glErrors += "\nOpenGL " + std::to_string(t.major) + "." + std::to_string(t.minor) + ": " + SDL_GetError();
   }
-  if (!gl) {
+  if (!gGl) {
     SDL_Log("No OpenGL context:%s", glErrors.c_str());
     SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "VCSIDE",
                              ("VCSIDE needs OpenGL 2.1 or later, and this system did not give it any:" + glErrors +
                               "\n\nUpdate the graphics driver (on Windows, the one from the card's maker).")
                                  .c_str(),
                              window);
-    return 1;
+    return false;
   }
-  SDL_GL_MakeCurrent(window, gl);
+  SDL_GL_MakeCurrent(window, gGl);
   // No vsync: on macOS a swap with vsync blocks while the window is not visible
   // (another Space, behind other windows, launched in the background), which froze
   // the whole program. The loop below paces itself instead.
   SDL_GL_SetSwapInterval(0);
-  SDL_ShowWindow(window);
+  return true;
+}
 
-  IMGUI_CHECKVERSION();
-  ImGui::CreateContext();
+// Sets up ImGui and the App of a window already made.
+static std::unique_ptr<IdeWindow> openIdeWindow(SDL_Window* sdl) {
+  auto w = std::make_unique<IdeWindow>();
+  w->sdl = sdl;
+  SDL_GL_MakeCurrent(sdl, gGl);
+  SDL_ShowWindow(sdl);
+  w->ctx = ImGui::CreateContext();
+  ImGui::SetCurrentContext(w->ctx);
   ImGuiIO& io = ImGui::GetIO();
   io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
   static std::string iniPath = vcs::configDir() + "layout.ini";
   io.IniFilename = iniPath.c_str();
   applyStyle();
-
-  // Fonts are rasterised at the real pixel density so they stay sharp on HiDPI screens.
-  float density = SDL_GetWindowPixelDensity(window);
-  if (density < 1) density = 1;
-  float uiScale = SDL_GetWindowDisplayScale(window) / density;
-  if (uiScale < 1) uiScale = 1;
-  const std::initializer_list<const char*> uiPaths = {
-      "/System/Library/Fonts/SFNS.ttf", "/System/Library/Fonts/Helvetica.ttc", "C:/Windows/Fonts/segoeui.ttf",
-      "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "/usr/share/fonts/TTF/DejaVuSans.ttf",
-      "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf"};
-  ImFont* ui = loadFont(io, uiPaths, 15 * uiScale, density);
-  const std::initializer_list<const char*> monoPaths = {
-      "/System/Library/Fonts/Menlo.ttc", "/System/Library/Fonts/Monaco.ttf", "C:/Windows/Fonts/consola.ttf",
-      "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", "/usr/share/fonts/TTF/DejaVuSansMono.ttf",
-      "/usr/share/fonts/dejavu-sans-mono-fonts/DejaVuSansMono.ttf"};
-  ImFont* mono = loadFont(io, monoPaths, 14 * uiScale, density);
-  io.FontDefault = ui;
-  io.FontGlobalScale = 1.0f / density;
-
-  ImGui_ImplSDL3_InitForOpenGL(window, gl);
-  if (!ImGui_ImplOpenGL3_Init(glsl)) {
+  w->density = std::max(1.0f, SDL_GetWindowPixelDensity(sdl));
+  w->uiScale = std::max(1.0f, SDL_GetWindowDisplayScale(sdl) / w->density);
+  ImFont* mono = w->buildFonts(1.0f);
+  ImGui_ImplSDL3_InitForOpenGL(sdl, gGl);
+  if (!ImGui_ImplOpenGL3_Init(gGlsl)) {
     SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "VCSIDE",
-                             "The OpenGL driver does not give the functions VCSIDE needs. Update the graphics driver.", window);
-    return 1;
+                             "The OpenGL driver does not give the functions VCSIDE needs. Update the graphics driver.", sdl);
+    return nullptr;
   }
   ImGui::GetPlatformIO().Platform_SetImeDataFn = keepTextInput;
   ImGui::GetPlatformIO().Platform_OpenInShellFn = [](ImGuiContext*, const char* url) { return SDL_OpenURL(url); };
-  SDL_StartTextInput(window);
+  SDL_StartTextInput(sdl);
+  w->app = std::make_unique<vcs::App>();
+  w->app->init(sdl, mono, gImguiMenu);
+  return w;
+}
 
-  bool imguiMenu = false;
-  for (int i = 1; i < argc; i++) imguiMenu |= std::string(argv[i]) == "--imgui-menu";
-  vcs::App app;
-  app.init(window, mono, imguiMenu);
-  // Options for automatic tests: --shot file.bmp saves the window and quits;
-  // --build builds first, --select A-B selects lines, --doc WORD shows its documentation,
-  // --find/--replace TEXT opens the find bar, --definition WORD jumps to it,
-  // --lang CODE switches the interface language, --focus PANEL (output, problems,
+static void closeIdeWindow(IdeWindow& w) {
+  ImGui::SetCurrentContext(w.ctx);
+  SDL_GL_MakeCurrent(w.sdl, gGl);
+  w.app->shutdown();
+  w.app.reset();
+  ImGui_ImplOpenGL3_Shutdown();
+  ImGui_ImplSDL3_Shutdown();
+  ImGui::DestroyContext(w.ctx);
+  SDL_DestroyWindow(w.sdl);
+}
+
+int main(int argc, char** argv) {
+  vcs::nativeEarlyInit();
+  if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
+    SDL_Log("SDL_Init: %s", SDL_GetError());
+    return 1;
+  }
+  SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+  SDL_Window* first = newSdlWindow(nullptr);
+  if (!first) {
+    SDL_Log("SDL_CreateWindow: %s", SDL_GetError());
+    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "VCSIDE", (std::string("Cannot open the window: ") + SDL_GetError()).c_str(), nullptr);
+    return 1;
+  }
+  if (!makeGl(first)) return 1;
+  IMGUI_CHECKVERSION();
+  for (int i = 1; i < argc; i++) gImguiMenu |= std::string(argv[i]) == "--imgui-menu";
+
+  std::vector<std::unique_ptr<IdeWindow>> windows;
+  {
+    auto w = openIdeWindow(first);
+    if (!w) return 1;
+    windows.push_back(std::move(w));
+  }
+  IdeWindow* active = windows[0].get();  // the focused one: the system menu acts on it
+  bool newWindowWanted = false, quitting = false;
+  auto activeApp = [&]() -> vcs::App* { return active ? active->app.get() : windows[0]->app.get(); };
+  vcs::App::hooks.newWindow = [&] { newWindowWanted = true; };
+  vcs::App::hooks.quitAll = [&] {
+    quitting = true;
+    for (auto& w : windows) {
+      ImGui::SetCurrentContext(w->ctx);
+      w->app->requestQuit();
+    }
+    if (active) ImGui::SetCurrentContext(active->ctx);
+  };
+  vcs::App::hooks.raiseIfOpen = [&](const std::string& folder, vcs::App* from) {
+    std::error_code ec;
+    for (auto& w : windows)
+      if (w->app.get() != from && !w->app->folder().empty() && fs::equivalent(w->app->folder(), folder, ec)) {
+        SDL_RaiseWindow(w->sdl);
+        return true;
+      }
+    return false;
+  };
+  if (vcs::nativeMenuAvailable() && !gImguiMenu)
+    vcs::nativeMenuInstall({[&] { return activeApp()->menuBarForSystem(); }, [&] { vcs::App::hooks.quitAll(); },
+                            [&] { activeApp()->showAbout(); }});
+
+  // Options for automatic tests (the first window): --shot file.bmp saves the window and
+  // quits; --build builds first, --select A-B selects lines, --doc WORD shows its
+  // documentation, --find/--replace TEXT opens the find bar, --definition WORD jumps to
+  // it, --lang CODE switches the interface language, --focus PANEL (output, problems,
   // space, docs...) brings a panel to the front before the capture.
   // --imgui-menu draws the menus with ImGui on macOS too; --menu "File/Save" chooses a
   // system menu item; --menu-dump prints the system menu bar; --goto-address TEXT
   // opens "Go to address" with that text. --input FILE plays mouse and key actions
   // (see InputScript) before the capture.
+  vcs::App& app = *windows[0]->app;
+  ImGui::SetCurrentContext(windows[0]->ctx);
   std::string shot, select, doc, find, def, focus, menu, gotoAddr;
   bool menuDump = false;
   bool findReplace = false;
@@ -354,9 +440,11 @@ int main(int argc, char** argv) {
     else app.openPath(a);
   }
   int frame = 0, shotFrame = -1;
+  bool done = false;
 
-  while (!app.wantsQuit()) {
+  while (!done) {
     if (!shot.empty()) {
+      ImGui::SetCurrentContext(windows[0]->ctx);
       if (frame == 5 && doBuild) app.testBuild();
       if (frame == 8 && !select.empty()) app.testSelect(std::stoi(select), std::stoi(select.substr(select.find('-') + 1)));
       if (frame == 8 && !doc.empty()) app.testDoc(doc);
@@ -372,75 +460,122 @@ int main(int argc, char** argv) {
     SDL_Event e;
     bool any = SDL_WaitEventTimeout(&e, shot.empty() ? 50 : 10);  // idle when nothing happens (a build polls every 50 ms)
     while (any) {
-      // Zoom by the character of the key: Cmd on macOS, Ctrl elsewhere.
-      if (e.type == SDL_EVENT_KEY_DOWN) {
+      // the window the event belongs to; none (quit, displays): every window
+      SDL_Window* target = SDL_GetWindowFromEvent(&e);
+      for (auto& w : windows) {
+        if (target && target != w->sdl) continue;
+        ImGui::SetCurrentContext(w->ctx);
+        vcs::App& a = *w->app;
+        // Zoom by the character of the key: Cmd on macOS, Ctrl elsewhere.
+        if (e.type == SDL_EVENT_KEY_DOWN) {
 #ifdef __APPLE__
-        const SDL_Keymod cmd = SDL_KMOD_GUI;
+          const SDL_Keymod cmd = SDL_KMOD_GUI;
 #else
-        const SDL_Keymod cmd = SDL_KMOD_CTRL;
+          const SDL_Keymod cmd = SDL_KMOD_CTRL;
 #endif
-        SDL_Keycode k = e.key.key;
-        if ((e.key.mod & cmd) && !(e.key.mod & SDL_KMOD_ALT)) {
-          if (k == SDLK_PLUS || k == SDLK_EQUALS || k == SDLK_KP_PLUS) app.zoomEditor(1);
-          else if (k == SDLK_MINUS || k == SDLK_KP_MINUS) app.zoomEditor(-1);
-          else if ((k == SDLK_0 || k == SDLK_KP_0) && !e.key.repeat) app.zoomEditor(0);
+          SDL_Keycode k = e.key.key;
+          if ((e.key.mod & cmd) && !(e.key.mod & SDL_KMOD_ALT)) {
+            if (k == SDLK_PLUS || k == SDLK_EQUALS || k == SDLK_KP_PLUS) a.zoomEditor(1);
+            else if (k == SDLK_MINUS || k == SDLK_KP_MINUS) a.zoomEditor(-1);
+            else if ((k == SDLK_0 || k == SDLK_KP_0) && !e.key.repeat) a.zoomEditor(0);
+          }
         }
+        SDL_Event copy = e;
+        keyByCharacter(copy);
+        ImGui_ImplSDL3_ProcessEvent(&copy);
+        if (e.type == SDL_EVENT_WINDOW_FOCUS_GAINED) active = w.get();
+        if (e.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) a.requestQuit();
+        if (e.type == SDL_EVENT_DROP_FILE && e.drop.data) a.openPath(e.drop.data);
       }
-      keyByCharacter(e);
-      ImGui_ImplSDL3_ProcessEvent(&e);
-      if (e.type == SDL_EVENT_QUIT) app.requestQuit();
-      if (e.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED && e.window.windowID == SDL_GetWindowID(window)) app.requestQuit();
-      if (e.type == SDL_EVENT_DROP_FILE && e.drop.data) app.openPath(e.drop.data);
+      if (e.type == SDL_EVENT_QUIT) vcs::App::hooks.quitAll();
       any = SDL_PollEvent(&e);
     }
-    // Nothing to draw while the window cannot be seen (a test shot still renders).
-    if (shot.empty() && (SDL_GetWindowFlags(window) & (SDL_WINDOW_MINIMIZED | SDL_WINDOW_HIDDEN | SDL_WINDOW_OCCLUDED))) continue;
-    Uint64 frameStart = SDL_GetTicksNS();
+    Uint64 loopStart = SDL_GetTicksNS();
+    if (newWindowWanted) {
+      newWindowWanted = false;
+      if (SDL_Window* sdl = newSdlWindow(active ? active->sdl : nullptr))
+        if (auto w = openIdeWindow(sdl)) active = w.get(), windows.push_back(std::move(w));
+    }
 
-    // zoom: every font made again at the new size, and the style's sizes scaled
-    if (float z = app.zoomWanted()) {
-      io.Fonts->Clear();
-      io.FontDefault = loadFont(io, uiPaths, 15 * uiScale * z, density);
-      ImFont* m = loadFont(io, monoPaths, 14 * uiScale * z, density);
-      io.Fonts->Build();
-      ImGui_ImplOpenGL3_DestroyFontsTexture();
-      ImGui_ImplOpenGL3_CreateFontsTexture();
-      ImGuiStyle& st = ImGui::GetStyle();
-      ImVec4 colours[ImGuiCol_COUNT];
-      std::copy(std::begin(st.Colors), std::end(st.Colors), colours);
-      applyStyle();
-      st.ScaleAllSizes(z);
-      std::copy(std::begin(colours), std::end(colours), st.Colors);
-      app.setFonts(m, z);
+    for (auto& wp : windows) {
+      IdeWindow& w = *wp;
+      ImGui::SetCurrentContext(w.ctx);
+      w.app->setActive(&w == active);
+      // Nothing to draw while the window cannot be seen (a test shot still renders).
+      if (shot.empty() && (SDL_GetWindowFlags(w.sdl) & (SDL_WINDOW_MINIMIZED | SDL_WINDOW_HIDDEN | SDL_WINDOW_OCCLUDED))) continue;
+      SDL_GL_MakeCurrent(w.sdl, gGl);
+      ImGuiIO& io = ImGui::GetIO();
+      // zoom: every font made again at the new size, and the style's sizes scaled
+      if (float z = w.app->zoomWanted()) {
+        ImFont* m = w.buildFonts(z);
+        ImGui_ImplOpenGL3_DestroyFontsTexture();
+        ImGui_ImplOpenGL3_CreateFontsTexture();
+        ImGuiStyle& st = ImGui::GetStyle();
+        ImVec4 colours[ImGuiCol_COUNT];
+        std::copy(std::begin(st.Colors), std::end(st.Colors), colours);
+        applyStyle();
+        st.ScaleAllSizes(z);
+        std::copy(std::begin(colours), std::end(colours), st.Colors);
+        w.app->setFonts(m, z);
+      }
+      ImGui_ImplOpenGL3_NewFrame();
+      ImGui_ImplSDL3_NewFrame();
+      bool first = &w == windows[0].get();
+      if (first && !shot.empty() && frame > 20) input.step(io);
+      ImGui::NewFrame();
+      w.app->frame();
+      ImGui::Render();
+      glViewport(0, 0, (int)(io.DisplaySize.x * io.DisplayFramebufferScale.x), (int)(io.DisplaySize.y * io.DisplayFramebufferScale.y));
+      glClearColor(0.1f, 0.1f, 0.11f, 1);
+      glClear(GL_COLOR_BUFFER_BIT);
+      ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+      if (first && !input.shot.empty()) saveShot(io, input.shot), input.shot.clear();
+      if (first && frame == shotFrame) {
+        saveShot(io, shot);
+        if (std::getenv("VCSIDE_TEST_WINDOWS"))  // what each window holds, for tests
+          for (auto& o : windows) SDL_Log("window: %s", o->app->folder().empty() ? "(welcome)" : o->app->folder().c_str());
+        done = true;
+      }
+      SDL_GL_SwapWindow(w.sdl);
     }
-    ImGui_ImplOpenGL3_NewFrame();
-    ImGui_ImplSDL3_NewFrame();
-    if (!shot.empty() && frame > 20) input.step(io);
-    ImGui::NewFrame();
-    app.frame();
-    ImGui::Render();
-    glViewport(0, 0, (int)io.DisplaySize.x * io.DisplayFramebufferScale.x, (int)io.DisplaySize.y * io.DisplayFramebufferScale.y);
-    glClearColor(0.1f, 0.1f, 0.11f, 1);
-    glClear(GL_COLOR_BUFFER_BIT);
-    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-    if (!input.shot.empty()) saveShot(io, input.shot), input.shot.clear();
-    if (frame++ == shotFrame) {
-      saveShot(io, shot);
-      break;
+    frame++;
+
+    // Windows that are done: closed, unless it is the last one with a project open,
+    // which goes back to the welcome page; the last one on the welcome page quits.
+    for (auto& wp : windows) {
+      IdeWindow& w = *wp;
+      if (!w.app->wantsQuit()) continue;
+      ImGui::SetCurrentContext(w.ctx);
+      bool last = windows.size() == 1;
+      if (last && !quitting && w.app->hasProject()) {
+        w.app->closeProject();
+        w.app->cancelQuit();
+      } else {
+        w.alive = false;
+      }
     }
-    SDL_GL_SwapWindow(window);
+    for (size_t i = 0; i < windows.size();) {
+      if (windows[i]->alive) {
+        i++;
+        continue;
+      }
+      if (active == windows[i].get()) active = nullptr;
+      closeIdeWindow(*windows[i]);
+      windows.erase(windows.begin() + i);
+    }
+    if (windows.empty()) break;
+    if (!active) active = windows.back().get(), SDL_RaiseWindow(active->sdl);
     // At most ~60 frames per second while events keep coming (typing, dragging).
     const Uint64 frameNs = 1000000000ull / 60;
-    Uint64 spent = SDL_GetTicksNS() - frameStart;
+    Uint64 spent = SDL_GetTicksNS() - loopStart;
     if (spent < frameNs) SDL_DelayNS(frameNs - spent);
   }
 
-  app.shutdown();
-  ImGui_ImplOpenGL3_Shutdown();
-  ImGui_ImplSDL3_Shutdown();
-  ImGui::DestroyContext();
-  SDL_GL_DestroyContext(gl);
-  SDL_DestroyWindow(window);
+  while (!windows.empty()) {
+    closeIdeWindow(*windows.back());
+    windows.pop_back();
+  }
+  SDL_GL_DestroyContext(gGl);
   SDL_Quit();
   return 0;
 }

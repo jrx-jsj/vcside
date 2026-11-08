@@ -135,6 +135,8 @@
     "Click: zoom in · Alt+click or right button: zoom out · drag: move": "Clic: acercar · Alt+clic o botón derecho: alejar · arrastrar: mover",
     "Close": "Cerrar",
     "Close file": "Cerrar archivo",
+    "Close project": "Cerrar proyecto",
+    "Close window": "Cerrar ventana",
     "Code": "Código",
     "Code and icon": "Código e icono",
     "Code editor": "Editor de código",
@@ -360,6 +362,7 @@
     "New playfield": "Playfield nuevo",
     "New project...": "Proyecto nuevo...",
     "New sprite": "Sprite nuevo",
+    "New window": "Ventana nueva",
     "New, based on this one": "Nuevo, basado en este",
     "no": "no",
     "No animations: the preview shows the frames in order.": "Sin animaciones: la vista previa muestra los fotogramas en orden.",
@@ -668,5 +671,5 @@
     "{0}:{1}: no code at or after this line; breakpoint ignored.": "{0}:{1}: no hay código en esta línea ni después; se ignora el punto de ruptura.",
     "{0}:{1}: no listing to place the breakpoint: build first.": "{0}:{1}: no hay listado para situar el punto de ruptura: compila antes."
   },
-  "total": 665
+  "total": 668
 }

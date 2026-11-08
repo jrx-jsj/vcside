@@ -53,16 +53,17 @@ static std::string lower(std::string s) {
 // ---------------------------------------------------------------------------
 // Setup
 
+WindowHooks App::hooks;
+static int gSettingsSaved = 0;  // bumped on every save, so the other windows reload
+
 bool App::init(SDL_Window* window, ImFont* mono, bool imguiMenu) {
   window_ = window;
   mono_ = mono;
   if (!kb_.load(dataDir() + "/kb", &kbError_)) SDL_Log("Knowledge base: %s", kbError_.c_str());
   loadSettings();
   tools_.detect();
-  if (nativeMenuAvailable() && !imguiMenu) {
-    nativeMenu_ = true;
-    nativeMenuInstall({[this] { return buildMenuBar(true); }, [this] { requestQuit(); }, [this] { showAbout_ = true; }});
-  }
+  nativeMenu_ = nativeMenuAvailable() && !imguiMenu;  // main() installs it, for whichever window is focused
+  settingsSeen_ = gSettingsSaved;
   return true;
 }
 
@@ -101,6 +102,26 @@ void App::saveSettings() {
             {"tools", tools_.userPaths()},
             {"layout_version", kLayoutVersion}};
   std::ofstream(configDir() + "settings.json") << j.dump(2) << "\n";
+  settingsSeen_ = ++gSettingsSaved;
+}
+
+void App::syncSettings() {
+  if (settingsSeen_ == gSettingsSaved) return;
+  settingsSeen_ = gSettingsSaved;
+  json j;
+  try {
+    std::ifstream f(configDir() + "settings.json");
+    if (f) j = json::parse(f);
+  } catch (...) {
+  }
+  if (!j.is_object()) return;
+  recent_ = j.value("recent", recent_);
+  showCycles_ = j.value("show_cycles", showCycles_);
+  zoom_ = std::clamp(j.value("zoom", zoom_), 0.5f, 3.0f);
+  themes_.load(dataDir() + "/themes", configDir() + "themes");
+  useTheme(j.value("theme", themeId_), false);  // this window's ImGui style
+  tools_.loadSettings(j.value("tools", std::map<std::string, std::string>{}));
+  for (auto& f : files_) f->editor.setGutterWidthChars(showCycles_ && f->asmSyntax ? 5 : 0);
 }
 
 void App::useTheme(const std::string& id, bool save) {
@@ -155,6 +176,7 @@ void App::openPath(const std::string& path) {
 }
 
 void App::openProject(const std::string& file) {
+  if (hooks.raiseIfOpen && hooks.raiseIfOpen(fs::path(file).parent_path().string(), this)) return;
   Project p;
   std::string err;
   if (!p.load(file, &err)) {
@@ -175,6 +197,7 @@ void App::openProject(const std::string& file) {
 }
 
 void App::openFolder(const std::string& dir) {
+  if (hooks.raiseIfOpen && hooks.raiseIfOpen(fs::absolute(dir).string(), this)) return;
   project_.reset();
   folder_ = fs::absolute(dir).string();
   addRecent(folder_);
@@ -1236,7 +1259,31 @@ void App::showDoc(const std::string& word) {
 // ---------------------------------------------------------------------------
 // UI
 
+void App::closeProject() {
+  for (auto& f : files_)
+    if (f->dirty()) {
+      quitConfirm_ = true, closeProjectAfterConfirm_ = true;
+      return;
+    }
+  doCloseProject();
+}
+
+void App::doCloseProject() {
+  files_.clear();
+  activeFile_ = -1;
+  closeRequest_ = -1;
+  project_.reset();
+  folder_.clear();
+  symbols_.clear();
+  builtFiles_.clear();
+  diskSymbols_.clear();
+  diagnostics_.clear();
+  treeToggled_.clear();
+  SDL_SetWindowTitle(window_, "VCSIDE");
+}
+
 void App::requestQuit() {
+  closeProjectAfterConfirm_ = false;
   for (auto& f : files_)
     if (f->dirty()) {
       quitConfirm_ = true;
@@ -1246,6 +1293,7 @@ void App::requestQuit() {
 }
 
 void App::frame() {
+  syncSettings();
   {
     std::lock_guard<std::mutex> lock(dialogMutex_);
     while (!dialogResults_.empty()) {
@@ -1300,6 +1348,8 @@ void App::frame() {
     if (e > s) showDoc(l.substr(s, e - s));
   }
   if (io.KeyCtrl && io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_G, false) && !addresses_.empty()) showGoToAddress_ = true;
+  if (io.KeyCtrl && io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_N, false) && hooks.newWindow) hooks.newWindow();
+  if (io.KeyCtrl && io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_W, false)) requestQuit();
   // zoom (Ctrl/Cmd + "+", "-", "0"): main.cpp, from the SDL key events
   if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_S, false)) {
     if (io.KeyShift) saveAll();
@@ -1388,6 +1438,7 @@ MenuBar App::buildMenuBar(bool native) {
       }),
       item(T("Open folder..."), "", [this] { SDL_ShowOpenFolderDialog(dialogCallback, new DialogCtx{this, "folder"}, window_, nullptr, false); }),
       sub(T("Recent projects"), recent, !recent.empty()),
+      item(T("New window"), "Ctrl+Shift+N", [] { if (hooks.newWindow) hooks.newWindow(); }),
       item(T("New graphics..."), "", [this] {
         static const SDL_DialogFileFilter filters[] = {{"VCSIDE graphics", "vcsgfx"}};
         std::string where = (project_ ? fs::path(project_->dir) : fs::path(folder_.empty() ? "." : folder_)) / "graphics.vcsgfx";
@@ -1396,10 +1447,12 @@ MenuBar App::buildMenuBar(bool native) {
       MenuItem::sep(),
       item(T("Save"), "Ctrl+S", [this] { if (activeFile_ >= 0) saveFile(*files_[activeFile_]); }, hasFile),
       item(T("Save all"), "Ctrl+Shift+S", [this] { saveAll(); }),
-      item(T("Close file"), "", [this] { if (activeFile_ >= 0) closeRequest_ = activeFile_; }, hasFile)};
+      item(T("Close file"), "", [this] { if (activeFile_ >= 0) closeRequest_ = activeFile_; }, hasFile),
+      item(T("Close project"), "", [this] { closeProject(); }, hasProject()),
+      item(T("Close window"), "Ctrl+Shift+W", [this] { requestQuit(); })};
   if (!native) {
     file.push_back(MenuItem::sep());
-    file.push_back(item(T("Quit"), "", [this] { requestQuit(); }));
+    file.push_back(item(T("Quit"), "", [] { if (hooks.quitAll) hooks.quitAll(); }));
   }
   bar.push_back(sub(T("File"), file));
 
@@ -1557,7 +1610,8 @@ MenuBar App::buildMenuBar(bool native) {
 
 void App::menuBar() {
   if (nativeMenu_) {
-    for (auto& a : nativeMenuTakeActions()) a();
+    if (active_)
+      for (auto& a : nativeMenuTakeActions()) a();
     return;
   }
   if (!ImGui::BeginMainMenuBar()) return;
@@ -1956,9 +2010,15 @@ void App::closeDialogs() {
   if (ImGui::BeginPopupModal(title, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
     quitConfirm_ = false;
     ImGui::TextUnformatted(T("Save changes before closing?"));
-    if (ImGui::Button(T("Save all"))) saveAll(), quit_ = true, ImGui::CloseCurrentPopup();
+    auto done = [&] {
+      if (closeProjectAfterConfirm_) doCloseProject();
+      else quit_ = true;
+      closeProjectAfterConfirm_ = false;
+      ImGui::CloseCurrentPopup();
+    };
+    if (ImGui::Button(T("Save all"))) saveAll(), done();
     ImGui::SameLine();
-    if (ImGui::Button(T("Don't save"))) quit_ = true, ImGui::CloseCurrentPopup();
+    if (ImGui::Button(T("Don't save"))) done();
     ImGui::SameLine();
     if (ImGui::Button(T("Cancel"))) ImGui::CloseCurrentPopup();
     ImGui::EndPopup();

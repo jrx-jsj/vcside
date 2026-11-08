@@ -47,8 +47,18 @@ struct OpenFile {
   bool dirty() const { return gfx ? gfx->dirty() : editor.dirty(); }
 };
 
+class App;
+
+// What an App asks of the program that holds its windows (main.cpp).
+struct WindowHooks {
+  std::function<void()> newWindow;                         // an empty window, on the welcome page
+  std::function<bool(const std::string& folder, App* from)> raiseIfOpen;  // already in another window: bring it up
+  std::function<void()> quitAll;                           // File → Quit: every window
+};
+
 class App {
  public:
+  static WindowHooks hooks;
   // imguiMenu: draw the menus with ImGui even where the system has a menu bar (tests)
   bool init(SDL_Window* window, ImFont* mono, bool imguiMenu = false);
   // Zoom of the whole IDE: the fonts are rasterised again at each size so they stay
@@ -59,7 +69,16 @@ class App {
   void refreshMenus() { if (nativeMenu_) nativeMenuRefresh(); }
   void frame();  // draws one frame of UI
   bool wantsQuit() const { return quit_; }
-  void requestQuit();
+  void requestQuit();       // this window: asks about unsaved files, then wantsQuit()
+  void cancelQuit() { quit_ = false; }
+  void closeProject();      // back to the welcome page (asks about unsaved files)
+  bool hasProject() const { return !folder_.empty() || !files_.empty(); }
+  const std::string& folder() const { return folder_; }
+  SDL_Window* window() const { return window_; }
+  void setActive(bool a) { active_ = a; }  // the focused window: the system menu acts on it
+  void syncSettings();      // another window saved the settings: take the shared ones
+  MenuBar menuBarForSystem() { return buildMenuBar(true); }
+  void showAbout() { showAbout_ = true; }
   void shutdown();
   void openPath(const std::string& path);  // project file, folder or source file
 
@@ -164,6 +183,10 @@ class App {
   float zoom_ = 1.0f, builtZoom_ = 1.0f;
   ImFont* editorFont() const;
   bool quit_ = false, quitConfirm_ = false;
+  bool closeProjectAfterConfirm_ = false;  // the "unsaved changes" dialog closes the project, not the window
+  bool active_ = true;
+  int settingsSeen_ = 0;
+  void doCloseProject();
   KnowledgeBase kb_;
   std::string kbError_;
   Toolchain tools_;
