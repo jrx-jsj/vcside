@@ -48,6 +48,18 @@ void TextEditor::setText(const std::string& text) {
   dirty_ = false;
 }
 
+void TextEditor::replaceText(const std::string& text) {
+  if (text == this->text()) return;
+  pushUndo(false);
+  auto undo = std::move(undo_);
+  Coord keep = cursor_;
+  setText(text);  // clears the history: it is put back
+  undo_ = std::move(undo);
+  cursor_ = selStart_ = selEnd_ = anchor_ = clamp(keep);
+  dirty_ = changed_ = true;
+  textVersion_++;
+}
+
 std::string TextEditor::text() const {
   std::string s;
   for (size_t i = 0; i < lines_.size(); i++) {

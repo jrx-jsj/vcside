@@ -52,6 +52,7 @@ Asset GfxEditor::blank() {
 }
 
 bool GfxEditor::load(const std::string& path, std::string* error) {
+  path_ = path;
   std::error_code ec;
   if (!fs::exists(path, ec) || fs::file_size(path, ec) == 0) {
     asset_ = blank();
@@ -83,6 +84,7 @@ bool GfxEditor::save(const std::string& path, const Profile& project, std::strin
   }
   out << toJson(asset_);
   out.close();
+  path_ = path;
   if (!profile(project).basic()) {
     // the tables for the program, next to the .vcsgfx
     fs::path p(path);
@@ -297,6 +299,12 @@ void GfxEditor::toolbar(const Profile& project) {
     if (ImGui::MenuItem(T("batari Basic"))) {
       copy(sprite ? exportBasic(asset_.sprites[item_], k_) : exportBasic(asset_.playfields[item_ - asset_.sprites.size()], k_), "batari Basic");
     }
+    if (ImGui::MenuItem(T("batari Basic, kept up to date"))) {
+      ImGui::SetClipboardText(basicRegion(fs::path(path_).filename().string(), asset_, item_, k_).c_str());
+      message_ = T("Copied: paste it in the program; every save of this file rewrites it.");
+    }
+    if (ImGui::IsItemHovered())
+      ImGui::SetTooltip("%s", T("The blocks between `rem vcsgfx` lines. Saving this file rewrites them in the project's programs (one region per animation frame)."));
     ImGui::Separator();
     ImGui::TextDisabled("%s", !k_.basic() ? T("On save, every item also goes to <file>.gfx.asm for the program to include.")
                                                      : T("batari Basic: paste the blocks where the program sets its graphics."));

@@ -958,6 +958,39 @@ static void testGfx() {
         imp.playfields[0].pixel(1, 20) && !imp.playfields[0].rows[0].asymmetric);
   mp.rows[0].mode = PfMode::Repeat;
   CHECK(hasIssue(check(mp, ms), Issue::Warning, "mirrored"));
+
+  // regions of a batari Basic program kept up to date
+  {
+    Asset art;
+    Sprite walk = sp;
+    walk.name = "walk";
+    walk.layers = {a};
+    walk.insertFrame(1, 0);
+    walk.layers[0].bits[1][0] = 0x18;
+    art.sprites = {walk};
+    mp.name = "level";
+    art.playfields = {mp};
+    std::string reg = basicRegion("art.vcsgfx", art, 0, std);
+    CHECK(reg.find("  rem vcsgfx art.vcsgfx walk frame 1\n") == 0 && reg.find("  rem vcsgfx art.vcsgfx walk frame 2\n") != std::string::npos);
+    CHECK(reg.find("%00011000") != std::string::npos);
+    std::string prog = " set kernel_options pfcolors\r\nmain\r\n  if a then goto two\r\n  rem vcsgfx art.vcsgfx walk frame 1\r\n  player0:\r\nold\r\nend\r\n"
+                       "  rem vcsgfx end\r\n  goto draw\r\ntwo\r\n REM VCSGFX Art.vcsgfx walk frame 2\r\n rem vcsgfx end\r\n"
+                       "  rem vcsgfx art.vcsgfx level\r\n  rem vcsgfx end\r\n  rem vcsgfx other.vcsgfx walk\r\nkeep\r\n  rem vcsgfx end\r\ndraw\r\n drawscreen\r\n";
+    int n = 0;
+    std::vector<std::string> probs;
+    std::string up = updateBasicRegions(prog, "art.vcsgfx", art, std, &n, &probs);
+    CHECK(n == 3 && probs.empty());
+    CHECK(up.find("old") == std::string::npos && up.find("keep\r\n") != std::string::npos && up.find("drawscreen\r\n") != std::string::npos);
+    CHECK(up.find("  rem vcsgfx art.vcsgfx walk frame 1\r\n  rem walk:") != std::string::npos);
+    CHECK(up.find("  %00011000\r\nend\r\n") != std::string::npos);  // frame 2's top row, bottom first: last
+    CHECK(up.find("  playfield:\r\n") != std::string::npos && up.find("\n\n") == std::string::npos);
+    // a second pass changes nothing
+    CHECK(updateBasicRegions(up, "art.vcsgfx", art, std, &n, &probs) == up && n == 3);
+    // problems: an unknown item, a frame too many, no end
+    probs.clear();
+    std::string bad = "  rem vcsgfx art.vcsgfx nobody\n  rem vcsgfx end\n  rem vcsgfx art.vcsgfx walk frame 3\n  rem vcsgfx end\n  rem vcsgfx art.vcsgfx walk\nx\n";
+    CHECK(updateBasicRegions(bad, "art.vcsgfx", art, std, &n, &probs) == bad && n == 0 && probs.size() == 3);
+  }
   CHECK(!importText("lda #1\n", &imp, &what) && what.empty());
 
   // the exported tables assemble (when DASM is installed)

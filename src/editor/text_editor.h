@@ -61,6 +61,8 @@ class TextEditor {
   TextEditor();
   void setText(const std::string& text);
   std::string text() const;
+  // Replaces the whole text as one edit that can be undone (the cursor stays where it was).
+  void replaceText(const std::string& text);
   const std::vector<std::string>& lines() const { return lines_; }
 
   void setHooks(EditorHooks h) { hooks_ = std::move(h); }

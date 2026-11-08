@@ -60,6 +60,7 @@
     "batari Basic not found. Set the path to 2600basic.sh / 2600bas.bat in Settings > Tools.": "No se encuentra batari Basic. Indica la ruta de 2600basic.sh / 2600bas.bat en Ajustes > Herramientas.",
     "batari Basic sets the height of the rows itself; the line height here is only for the preview.": "batari Basic decide el alto de las filas; las líneas por fila de aquí son solo para la vista previa.",
     "batari Basic, DPC+ kernel": "batari Basic, kernel DPC+",
+    "batari Basic, kept up to date": "batari Basic, siempre al día",
     "batari Basic, multisprite kernel": "batari Basic, kernel multisprite",
     "batari Basic, PXE kernel": "batari Basic, kernel PXE",
     "batari Basic, standard kernel": "batari Basic, kernel estándar",
@@ -115,6 +116,7 @@
     "Continue": "Continuar",
     "Controllers": "Mandos",
     "Copied as {0}.": "Copiado como {0}.",
+    "Copied: paste it in the program; every save of this file rewrites it.": "Copiado: pégalo en el programa; cada vez que guardes este archivo se reescribe.",
     "Copy": "Copiar",
     "Copy as...": "Copiar como...",
     "Could not measure the space: DASM failed writing the block file.": "No se pudo medir el espacio: DASM falló al escribir el archivo de bloques.",
@@ -218,6 +220,9 @@
     "Legal": "Legales",
     "light gun": "pistola de luz",
     "Line": "Línea",
+    "Line {0}: `rem vcsgfx {1}` has no `rem vcsgfx end`.": "Línea {0}: `rem vcsgfx {1}` no tiene `rem vcsgfx end`.",
+    "Line {0}: {1} has no sprite or playfield called {2}.": "Línea {0}: {1} no tiene ningún sprite ni playfield llamado {2}.",
+    "Line {0}: {1} has {2} frames.": "Línea {0}: {1} tiene {2} fotogramas.",
     "lines per row": "líneas por fila",
     "local label": "etiqueta local",
     "macOS: brew install dasm. Linux: your package manager or the release binaries. Windows: dasm.exe from the releases page.": "macOS: brew install dasm. Linux: el gestor de paquetes o los binarios publicados. Windows: dasm.exe de la página de versiones.",
@@ -331,6 +336,7 @@
     "Save": "Guardar",
     "Save all": "Guardar todo",
     "Save changes before closing?": "¿Guardar los cambios antes de cerrar?",
+    "Saved; graphics updated in {0}": "Guardado; gráficos actualizados en {0}",
     "Saved; the tables are in {0}": "Guardado; las tablas están en {0}",
     "Search": "Buscar",
     "Search again": "Buscar otra vez",
@@ -360,6 +366,7 @@
     "The background changes per row: the kernel options would have to be pfcolors and background, and then the playfield keeps one colour.": "El fondo cambia por fila: las opciones de kernel tendrían que ser pfcolors y background, y entonces el playfield se queda con un solo color.",
     "The ball's colour is the playfield's (COLUPF).": "El color de la bola es el del playfield (COLUPF).",
     "The ball's colour is the playfield's (COLUPF): changing it per row recolours the playfield on those lines.": "El color de la bola es el del playfield (COLUPF): cambiarlo por fila cambia también el del playfield en esas líneas.",
+    "The blocks between `rem vcsgfx` lines. Saving this file rewrites them in the project's programs (one region per animation frame).": "Los bloques entre líneas `rem vcsgfx`. Al guardar este archivo se reescriben en los programas del proyecto (una zona por fotograma de la animación).",
     "The clipboard holds no tables or blocks of graphics.": "El portapapeles no tiene tablas ni bloques de gráficos.",
     "The emulators start with a copy of your own settings, so these options never change them; what you change in an emulator started from VCSIDE is not kept.": "Los emuladores arrancan con una copia de tus propios ajustes, así que estas opciones nunca los cambian; lo que cambies en un emulador lanzado desde VCSIDE no se guarda.",
     "The kernel option player1colors (or playercolors) uses missile 1's time.": "La opción de kernel player1colors (o playercolors) usa el tiempo del misil 1.",
@@ -471,5 +478,5 @@
     "{0}:{1}: no code at or after this line; breakpoint ignored.": "{0}:{1}: no hay código en esta línea ni después; se ignora el punto de ruptura.",
     "{0}:{1}: no listing to place the breakpoint: build first.": "{0}:{1}: no hay listado para situar el punto de ruptura: compila antes."
   },
-  "total": 468
+  "total": 475
 }

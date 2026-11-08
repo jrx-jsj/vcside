@@ -244,6 +244,7 @@ bool App::saveFile(OpenFile& f) {
       for (auto& o : files_)
         if (o->path == canon && !o->gfx && !o->editor.dirty()) o->editor.setText(readFile(canon)), o->editor.markSaved();
     }
+    updateBasicRegions(f);
     return true;
   }
   std::ofstream out(f.path, std::ios::binary);
@@ -254,6 +255,54 @@ bool App::saveFile(OpenFile& f) {
   out << f.editor.text() << "\n";
   f.editor.markSaved();
   return true;
+}
+
+// The batari Basic programs of the project that hold regions of this graphics file
+// (`rem vcsgfx <file> <item>` ... `rem vcsgfx end`) get the new blocks: in the editor if
+// the program is open (saved too, unless it had changes of its own), on disk if not.
+void App::updateBasicRegions(OpenFile& g) {
+  std::string name = fs::path(g.path).filename().string();
+  gfx::Profile k = g.gfx->profile(gfxProfile());
+  fs::path root = project_ ? fs::path(project_->dir) : fs::path(g.path).parent_path();
+  std::error_code ec;
+  std::vector<std::string> programs;
+  for (auto it = fs::recursive_directory_iterator(root, fs::directory_options::skip_permission_denied, ec);
+       !ec && it != fs::recursive_directory_iterator(); it.increment(ec)) {
+    std::string fn = it->path().filename().string();
+    if (it->is_directory(ec) && (fn.empty() || fn[0] == '.' || fn == "build" || it.depth() >= 3)) {
+      it.disable_recursion_pending();
+      continue;
+    }
+    if (lower(it->path().extension().string()) == ".bas") programs.push_back(fs::weakly_canonical(it->path(), ec).string());
+  }
+  std::vector<std::string> touched;
+  for (auto& path : programs) {
+    OpenFile* open = nullptr;
+    for (auto& o : files_)
+      if (o->path == path && !o->gfx) open = o.get();
+    std::string text = open ? open->editor.text() : readFile(path);
+    if (text.find("vcsgfx") == std::string::npos) continue;
+    int n = 0;
+    std::vector<std::string> problems;
+    std::string updated = gfx::updateBasicRegions(text, name, g.gfx->asset(), k, &n, &problems);
+    for (auto& p : problems) output_ += fs::path(path).filename().string() + ": " + p + "\n";
+    if (updated == text) continue;
+    touched.push_back(fs::path(path).filename().string());
+    if (open) {
+      bool hadChanges = open->editor.dirty();
+      open->editor.replaceText(updated);
+      if (!hadChanges) saveFile(*open);
+    } else {
+      std::ofstream out(path, std::ios::binary);
+      if (out) out << updated;
+      else output_ += F("Cannot write {0}", {path}) + "\n";
+    }
+  }
+  if (!touched.empty()) {
+    std::string list;
+    for (auto& t : touched) list += (list.empty() ? "" : ", ") + t;
+    lastStatus_ = F("Saved; graphics updated in {0}", {list});
+  }
 }
 
 void App::saveAll() {

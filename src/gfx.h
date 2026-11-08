@@ -167,9 +167,21 @@ std::string exportDasm(const Sprite& s, const ExportOptions& o = {});
 std::string exportDasm(const Playfield& p, const ExportOptions& o = {});
 // batari Basic: playerN: blocks with their colours, playfield:, pfcolors:, bkcolors:, as the
 // kernel of the profile reads them (row order, width, which blocks exist).
-std::string exportBasic(const Sprite& s, const Profile& k);
+std::string exportBasic(const Sprite& s, const Profile& k, int frame = -1);  // frame -1: all of them
 std::string exportBasic(const Playfield& p, const Profile& k);
 std::string identifier(const std::string& name);  // "my hero" -> "my_hero"
+
+// A batari Basic program can hold graphics that VCSIDE keeps up to date: the lines between
+//   rem vcsgfx <file>.vcsgfx <item name> [frame N]
+//   rem vcsgfx end
+// are the item's export (one animation frame, if given) for the asset's kernel.
+// basicRegion: the region for an item (sprites first, then playfields), ready to paste;
+// a sprite of several frames gives one region per frame.
+std::string basicRegion(const std::string& file, const Asset& a, int item, const Profile& k);
+// Rewrites the regions of `file` in a program. *updated counts them; *problems gets a
+// line for each region that names an item the asset does not have or has no end.
+std::string updateBasicRegions(const std::string& source, const std::string& file, const Asset& a, const Profile& k,
+                               int* updated, std::vector<std::string>* problems);
 
 // ---------------------------------------------------------------------------
 // Import from text (assembly tables, batari Basic blocks). What was recognised goes

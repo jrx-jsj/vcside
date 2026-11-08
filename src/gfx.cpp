@@ -808,7 +808,16 @@ static std::string playerVar(const char* reg, int n, const Profile& k) {
   return reg + std::to_string(n);
 }
 
-std::string exportBasic(const Sprite& s, const Profile& in) {
+std::string exportBasic(const Sprite& whole, const Profile& in, int frame) {
+  Sprite s = whole;
+  if (frame >= 0 && frame < whole.frames) {
+    // just that frame
+    for (auto& l : s.layers) {
+      l.bits = {l.bits[frame]};
+      l.colours = {l.colours[frame]};
+    }
+    s.frames = 1;
+  }
   Profile k = basicFor(s, in);
   std::ostringstream out;
   out << "  rem " << s.name << ": " << s.frames << " frame(s), " << s.phases() << " phase(s); " << k.describe() << "\n";
@@ -895,6 +904,114 @@ std::string exportBasic(const Playfield& p, const Profile& in) {
         << " : DF2FRACINC = " << n << " : DF3FRACINC = " << n << " : DF4FRACINC = " << n << " : DF6FRACINC = " << n << "\n";
   }
   return out.str();
+}
+
+// ---------------------------------------------------------------------------
+// Regions of a batari Basic program kept up to date
+
+static std::string trimmed(const std::string& s) {
+  size_t a = s.find_first_not_of(" \t\r"), b = s.find_last_not_of(" \t\r");
+  return a == std::string::npos ? "" : s.substr(a, b - a + 1);
+}
+static std::string lowered(std::string s) {
+  for (auto& c : s) c = (char)std::tolower((unsigned char)c);
+  return s;
+}
+
+// "rem vcsgfx art.vcsgfx hero frame 2" -> file, item, frame (-1); "rem vcsgfx end" -> end
+struct Marker {
+  bool is = false, end = false;
+  std::string file, item;
+  int frame = -1;
+};
+static Marker marker(const std::string& line) {
+  Marker m;
+  std::istringstream in(trimmed(line));
+  std::string rem, tag;
+  in >> rem >> tag;
+  if (lowered(rem) != "rem" || lowered(tag) != "vcsgfx") return m;
+  m.is = true;
+  std::vector<std::string> w;
+  for (std::string t; in >> t;) w.push_back(t);
+  if (w.size() == 1 && lowered(w[0]) == "end") return m.end = true, m;
+  if (w.empty()) return m;
+  m.file = w[0];
+  size_t n = w.size();
+  if (n >= 3 && lowered(w[n - 2]) == "frame") m.frame = std::atoi(w[n - 1].c_str()) - 1, n -= 2;
+  for (size_t i = 1; i < n; i++) m.item += (i > 1 ? " " : "") + w[i];
+  return m;
+}
+
+static std::string regionBody(const Asset& a, const std::string& item, int frame, const Profile& k, bool* found) {
+  *found = true;
+  for (auto& s : a.sprites)
+    if (s.name == item) return exportBasic(s, k, frame);
+  for (auto& p : a.playfields)
+    if (p.name == item) return exportBasic(p, k);
+  *found = false;
+  return "";
+}
+
+std::string basicRegion(const std::string& file, const Asset& a, int item, const Profile& k) {
+  std::string out;
+  bool found;
+  if (item < (int)a.sprites.size()) {
+    const Sprite& s = a.sprites[item];
+    for (int f = 0; f < s.frames; f++) {
+      if (f) out += "\n";
+      std::string frame = s.frames > 1 ? " frame " + std::to_string(f + 1) : "";
+      out += "  rem vcsgfx " + file + " " + s.name + frame + "\n" + regionBody(a, s.name, s.frames > 1 ? f : -1, k, &found) + "  rem vcsgfx end\n";
+    }
+  } else if (item - a.sprites.size() < a.playfields.size()) {
+    const Playfield& p = a.playfields[item - a.sprites.size()];
+    out = "  rem vcsgfx " + file + " " + p.name + "\n" + regionBody(a, p.name, -1, k, &found) + "  rem vcsgfx end\n";
+  }
+  return out;
+}
+
+std::string updateBasicRegions(const std::string& source, const std::string& file, const Asset& a, const Profile& k,
+                               int* updated, std::vector<std::string>* problems) {
+  if (updated) *updated = 0;
+  bool crlf = source.find("\r\n") != std::string::npos;
+  std::vector<std::string> lines;
+  {
+    std::string cur;
+    for (char c : source) {
+      if (c == '\n') lines.push_back(cur), cur.clear();
+      else cur += c;
+    }
+    lines.push_back(cur);  // what follows the last newline ("" if the text ends with one)
+  }
+  std::vector<std::string> out;
+  for (size_t i = 0; i < lines.size(); i++) {
+    out.push_back(lines[i]);
+    Marker m = marker(lines[i]);
+    if (!m.is || m.end || lowered(m.file) != lowered(file)) continue;
+    size_t end = i + 1;
+    while (end < lines.size() && !marker(lines[end]).end) end++;
+    if (end >= lines.size()) {
+      if (problems) problems->push_back(F("Line {0}: `rem vcsgfx {1}` has no `rem vcsgfx end`.", {std::to_string(i + 1), m.file + " " + m.item}));
+      continue;
+    }
+    auto sp = std::find_if(a.sprites.begin(), a.sprites.end(), [&](const Sprite& s) { return s.name == m.item; });
+    if (sp != a.sprites.end() && m.frame >= sp->frames) {
+      if (problems) problems->push_back(F("Line {0}: {1} has {2} frames.", {std::to_string(i + 1), m.item, std::to_string(sp->frames)}));
+      continue;
+    }
+    bool found;
+    std::string body = regionBody(a, m.item, m.frame, k, &found);
+    if (!found) {
+      if (problems) problems->push_back(F("Line {0}: {1} has no sprite or playfield called {2}.", {std::to_string(i + 1), file, m.item}));
+      continue;
+    }
+    std::istringstream b(body);
+    for (std::string l; std::getline(b, l);) out.push_back(crlf ? l + "\r" : l);
+    i = end - 1;  // the end marker is copied on the next turn
+    if (updated) ++*updated;
+  }
+  std::string text;
+  for (size_t i = 0; i < out.size(); i++) text += out[i] + (i + 1 < out.size() ? "\n" : "");
+  return text;
 }
 
 // ---------------------------------------------------------------------------

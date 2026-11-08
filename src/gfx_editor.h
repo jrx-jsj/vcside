@@ -41,6 +41,7 @@ class GfxEditor {
   void endFrame();
 
   gfx::Profile k_;        // the kernel of this frame
+  std::string path_;      // the file, for the regions of batari Basic programs
   gfx::Asset asset_, committed_;
   std::vector<gfx::Asset> undo_, redo_;
   bool dirty_ = false, changed_ = false;

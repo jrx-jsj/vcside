@@ -108,6 +108,7 @@ class App {
   // What the graphics editor checks against: a kernel of one's own for assembly, or the
   // kernel and options the main .bas sets (read again when the file changes).
   gfx::Profile gfxProfile();
+  void updateBasicRegions(OpenFile& gfxFile);
   std::string gfxProfileFile_;
   std::filesystem::file_time_type gfxProfileTime_{};
   gfx::Profile gfxProfile_;
