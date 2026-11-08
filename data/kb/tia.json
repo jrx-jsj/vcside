@@ -1,0 +1,890 @@
+{
+ "chip": "TIA",
+ "notes": [
+  "A scanline is 228 colour clocks (TIA clock = 3.579545 MHz NTSC / 3.546894 MHz PAL). The first 68 clocks are horizontal blank (HBLANK), the remaining 160 are visible pixels (x = 0..159). The 6507 CPU runs at colour clock / 3, so a scanline is 76 CPU cycles (1 cycle = 3 colour clocks). A frame is 262 lines NTSC (19912 cycles) or 312 lines PAL (23712 cycles).",
+  "Address decoding: TIA writes are decoded on A0-A5 (so the 64 write registers repeat every $40, e.g. $00-$3F and $40-$7F), and reads on A0-A3. The TIA is selected when A12=0 and A7=0, which means $0000-$007F and its mirrors ($0100-$017F, $0200-$027F ...). Programs normally use $00-$2C for writes and the DASM vcs.h read addresses $30-$3D.",
+  "Writes only reach the TIA once per CPU write cycle: STA absolute writes on its last (4th) cycle; STA zero-page writes on its 3rd cycle. Use the write cycle number when computing beam position.",
+  "Horizontal positioning: the position of players, missiles and the ball is set by the moment of the RESxx strobe relative to the beam: screen x is about 3*N - 68 + 5 (player) or +4 (missile/ball), where N is the CPU cycle of the line in which the write occurs. Coarse position is therefore in steps of 3 pixels and in practice the program waits in 5-cycle (15-pixel) loop steps, then uses HMxx fine motion of -8..+7 pixels with HMOVE to hit the exact pixel.",
+  "Typical positioning routine (from the Atari community): A = target x. sta WSYNC; sec; .div sbc #15; bcs .div (loop count = coarse step); eor #7; asl x4 (to get the HM nibble); sta HMPx; sta RESPx (timing inside the loop gives coarse position); then sta WSYNC; sta HMOVE on the next line. The details (loop timing and +/- 1 offsets) depend on the exact loop code; verify empirically.",
+  "HMOVE comb ('HMOVE bars'): whenever HMOVE is strobed at the start of HBLANK, the TIA extends the horizontal blank by 8 colour clocks, so the first 8 visible pixels of that line are black. If HMOVE is used on every kernel line, this becomes a black column of 8 pixels on the left. Games hide it with a black border, with PF colour matching the background, or by only moving objects in lines outside the visible kernel.",
+  "Object priority (CTRLPF PFP=0): P0/M0, P1/M1, ball/playfield, background. With PFP=1: playfield/ball over P0/M0 over P1/M1 over background. Score mode only changes the playfield colour for each half.",
+  "Collision latches are set every pixel that two objects overlap, regardless of colour or priority, and are cleared only by CXCLR.",
+  "Strobe registers (WSYNC, RSYNC, RESP0/1, RESM0/1, RESBL, HMOVE, HMCLR, CXCLR) act on any write; the data is ignored. A read of the same low address does not trigger them (reads are a different register set).",
+  "Because TIA read registers only drive bits 7 and 6 (collisions) or bit 7 (inputs), the remaining bits are open bus. On real hardware they usually echo the last value placed on the data bus (frequently the high byte of the address in LDA $xxxx forms). Use BIT to read, or mask.",
+  "TIA revisions: there are several TIA chips (CO10444 / CO11903 and 2600 Jr. variants, plus a PAL/SECAM version). Behaviours that differ and are hard to emulate: the exact latency of RESxx/HMOVE late strobes, the 'late HMOVE' motion amounts, the fine details of NUSIZ mid-line changes, colour palettes. I am not certain about specific model-by-model differences; use hardware tests.",
+  "Audio: two channels, clocked at colour clock / 114 (about 31.4 kHz NTSC). AUDCx selects the waveform (4-bit/5-bit/9-bit polynomial counters and dividers), AUDFx divides the clock by 1-32, AUDVx sets volume 0-15.",
+  "Typical frame structure: VSYNC (3 lines), VBLANK (37 NTSC / 45 PAL lines) with D1 set, visible area (192 NTSC / 228 PAL) with VBLANK D1 clear, overscan (30 NTSC / 36 PAL) with D1 set again. See tv.json for details.",
+  "Playfield: 20 bits per half, each 4 pixels wide; PF0 high nibble, PF1, PF2 in that order, with different bit orders. The right half repeats or mirrors the left (CTRLPF bit 0). There is no 'playfield enable'; set all PF registers to 0 to hide it.",
+  "TIA mirrors: because TIA addresses repeat, assembly programs sometimes use $40-$7F (write mirrors) to avoid confusion when zero-page indexed addressing wraps around."
+ ],
+ "registers": [
+  {
+   "name": "VSYNC",
+   "address": "$00",
+   "access": "W",
+   "bits": "------1-",
+   "summary": "Vertical sync control.",
+   "description": "Bit 1 = 1 turns the vertical sync signal on, 0 turns it off. The TV needs VSYNC held for at least 3 scanlines (NTSC; PAL commonly also 3) to start a new frame. The TIA does not count lines: it is entirely the program's job to keep the frame at 262 (NTSC) or 312 (PAL) lines. Standard sequence: set bit 1 on the first line of the frame, WSYNC 3 times, then clear it. Other bits are ignored.",
+   "timing": "Takes effect immediately (next colour clock). The sync pulse is normally started right after a WSYNC so it begins at the start of a line.",
+   "issues": [
+    "Not a 'vertical blank' register; VBLANK ($01) blanks the picture, VSYNC only generates the sync pulse. Many TVs tolerate a 2-line or 4-line VSYNC, but 3 lines is the safe value.",
+    "A frame with the wrong number of lines (not 262/312, or inconsistent between frames) makes the TV roll or lose lock; Stella reports the detected scanline count in its TV info.",
+    "VSYNC is also affected by the 'write-anywhere' nature of the TIA: a STA with an indexed address that wraps into TIA space can accidentally touch it (see the TIA notes about mirrors)."
+   ],
+   "example": "  lda #2\n  sta VSYNC\n  sta WSYNC\n  sta WSYNC\n  sta WSYNC\n  lda #0\n  sta VSYNC"
+  },
+  {
+   "name": "VBLANK",
+   "address": "$01",
+   "access": "W",
+   "bits": "76----1-",
+   "summary": "Vertical blank, paddle dump and input latch control.",
+   "description": "Bit 1 (D1) = 1 blanks the video output (black), 0 shows it; the program turns it on for the vertical blank / overscan lines and off before the visible area. Bit 6 (D6) = 1 enables the latches on the joystick fire inputs INPT4/INPT5 (once the fire button pulls the line low the bit stays 0 until D6 is cleared); D6 = 0 makes them follow the pin. Bit 7 (D7) = 1 'dumps' the paddle input capacitors to ground, forcing INPT0-INPT3 to read 0; clearing D7 lets the capacitors charge so the paddle position can be measured by counting scanlines until the INPT bit goes to 1.",
+   "timing": "Blanking applies immediately to the colour clock where the write lands, so writing it mid-scanline blanks only the rest of the line.",
+   "issues": [
+    "Clearing D7 starts the paddle charge: a paddle reading routine must dump (D7=1) for a few lines first, then clear D7 and count lines until INPTn bit 7 = 1.",
+    "The latch (D6) is cleared by writing D6=0, and the latch state affects only INPT4/INPT5, not SWCHA or SWCHB.",
+    "With D6 set, INPT4/5 return the latch AND the pin: a pressed button reads 0 and stays 0 even after release, until D6 is cleared and set again.",
+    "Writing VBLANK with D1 set during the visible area still lets the TIA run collision/object counters; only the video output is forced black. Whether collisions are registered while D1 is set is not something I could confirm; test in the target emulator/hardware.",
+    "Some programs leave the latch on (D6) for 'press fire to start' detection, forgetting that INPT4 then needs a reset between presses."
+   ],
+   "example": "  lda #%11000010   ; dump paddles, latch fire buttons, blank screen\n  sta VBLANK\n  ...\n  lda #%01000000   ; un-dump, keep latch, picture on\n  sta VBLANK"
+  },
+  {
+   "name": "WSYNC",
+   "address": "$02",
+   "access": "W",
+   "bits": "--------",
+   "summary": "Wait for horizontal sync (strobe).",
+   "description": "Any write halts the 6507 (via RDY) until the TIA reaches the start of the next scanline's horizontal blank. The instruction after the STA WSYNC begins at CPU cycle 0 of the next line. The value written is ignored. This is the basic way to line the program up with the beam: STA WSYNC then work on the 76 cycles of that line.",
+   "timing": "Wait ends when the colour clock counter wraps to 0 (start of HBLANK); the CPU resumes with the first cycle of the next instruction at line cycle 0. A STA WSYNC executed at line cycle 0 (immediately after another WSYNC) waits a full line.",
+   "issues": [
+    "Cycle count surprises: because the stall consumes whatever is left of the line, code between two WSYNCs must fit in 76 cycles, else the second WSYNC waits a whole additional line.",
+    "WSYNC is write-only; a read of address $02 returns collision data (CXP0FB mirror) and does not stall the CPU, so use STA, not LDA/BIT, on it.",
+    "WSYNC held during the last cycle: if the write cycle is cycle 75 (last of the line) the wait is very short, effectively aligning to the next line; this is used for cycle-exact synchronisation but is fragile if the instruction before changes length.",
+    "Using NOP/DEY loops instead of WSYNC is required in kernels that need more than one write per line (2-line kernels, 'racing the beam')."
+   ],
+   "example": "  sta WSYNC     ; cycle 0 of next line after this"
+  },
+  {
+   "name": "RSYNC",
+   "address": "$03",
+   "access": "W",
+   "bits": "--------",
+   "summary": "Reset horizontal sync counter (strobe).",
+   "description": "Writing resets the TIA's horizontal sync counter to the start of a line (the next colour clock after a short delay) without waiting for the end of the line. It is rarely used. It can shorten a scanline to arbitrary length for timing tricks and fine adjustment of object start positions.",
+   "timing": "The reset occurs a few colour clocks after the write (exact delay is hardware dependent and not something I can cite precisely).",
+   "issues": [
+    "Shortening a line makes that line a non-standard length; most TVs cope for isolated lines, but the sync generator in some TIA/TV combos may glitch.",
+    "Because the TIA counter used for positioning is the same horizontal counter, RSYNC changes where subsequent RESxx strobes land; it is occasionally used to reach positions otherwise unreachable.",
+    "Not all emulators emulate RSYNC with full accuracy; test on hardware."
+   ],
+   "example": ""
+  },
+  {
+   "name": "NUSIZ0",
+   "address": "$04",
+   "access": "W",
+   "bits": "--54-210",
+   "summary": "Player 0 / Missile 0 number-size and missile size.",
+   "description": "Bits 5-4 = missile 0 width: 00=1 clock, 01=2, 10=4, 11=8 colour clocks. Bits 2-0 = player 0 copies/size: 000 one copy; 001 two copies close (copies 16 clocks apart); 010 two copies medium (32 apart); 011 three copies close (16 apart); 100 two copies wide (64 apart); 101 one copy, double-size (16 clocks wide); 110 three copies medium (32 apart); 111 one copy, quad-size (32 clocks wide). Bits 7-6 and 3 are unused. The missile's width is independent of the player copies; the missile is NOT replicated with player copies.",
+   "timing": "Changes apply as the object counters are evaluated; the player's copy decodes happen at fixed counter values (see issues).",
+   "issues": [
+    "Changing NUSIZ mid-scanline (after the first copy has started) is a well-known trick: the player graphics can be 'repositioned' by changing number/size so the position counter hits a different decode. Details depend on TIA revision; unverified for all.",
+    "NUSIZ changes while a player is in the middle of being drawn can cut the copy short or add partial copies; the 'late NUSIZ' technique places multiple players cheaply.",
+    "Double and quad sized players are 'stretched' versions of the 8-bit graphics but start later: a player of normal size starting at x appears 1 clock earlier than a stretched one relative to RESPx, so positioning math shifts by a few pixels for size changes. Exact offsets are best verified in an emulator.",
+    "Missile reset to the player (RESMP0) positions it at the centre of the player copy; with double/quad sizes the centre offset differs."
+   ],
+   "example": "  lda #%00110011   ; 8-clock missile, three close copies\n  sta NUSIZ0"
+  },
+  {
+   "name": "NUSIZ1",
+   "address": "$05",
+   "access": "W",
+   "bits": "--54-210",
+   "summary": "Player 1 / Missile 1 number-size and missile size.",
+   "description": "Identical to NUSIZ0 for player 1 / missile 1: bits 5-4 select missile width 1/2/4/8 clocks; bits 2-0 select number/size of player copies (000 one, 001 two close, 010 two medium, 011 three close, 100 two wide, 101 double size, 110 three medium, 111 quad size).",
+   "timing": "",
+   "issues": [
+    "See NUSIZ0."
+   ],
+   "example": ""
+  },
+  {
+   "name": "COLUP0",
+   "address": "$06",
+   "access": "W",
+   "bits": "7654321-",
+   "summary": "Colour-luminance for player 0 and missile 0.",
+   "description": "Bits 7-4 = hue (0-15), bits 3-1 = luminance (0-7), bit 0 is ignored (so effective brightness is 8 levels). Also colours the left half of the playfield when CTRLPF SCORE mode is on. The hue number mapping is different for NTSC, PAL and SECAM (see tv.json); in SECAM only bits 3-1 matter (they select one of 8 colours).",
+   "timing": "",
+   "issues": [
+    "Hue 0 is grey/black-white scale in NTSC and PAL; PAL hues 0, 1, 14 and 15 are also greyscale.",
+    "On B/W TV mode (SWCHB bit 3 = 0) the console removes colour; luminance is what remains.",
+    "Changing colour mid-scanline takes effect at the next pixel, which allows 'colour per sprite row' effects."
+   ],
+   "example": "  lda #$1E\n  sta COLUP0"
+  },
+  {
+   "name": "COLUP1",
+   "address": "$07",
+   "access": "W",
+   "bits": "7654321-",
+   "summary": "Colour-luminance for player 1 and missile 1.",
+   "description": "Same format as COLUP0. Also colours the right half of the playfield when CTRLPF SCORE mode is on.",
+   "timing": "",
+   "issues": [
+    "See COLUP0."
+   ],
+   "example": ""
+  },
+  {
+   "name": "COLUPF",
+   "address": "$08",
+   "access": "W",
+   "bits": "7654321-",
+   "summary": "Colour-luminance for playfield and ball.",
+   "description": "Same format as COLUP0. Colours playfield (when not in score mode) and ball.",
+   "timing": "",
+   "issues": [
+    "See COLUP0."
+   ],
+   "example": ""
+  },
+  {
+   "name": "COLUBK",
+   "address": "$09",
+   "access": "W",
+   "bits": "7654321-",
+   "summary": "Colour-luminance for background.",
+   "description": "Same format as COLUP0. The background colour is what is shown where no other object is.",
+   "timing": "",
+   "issues": [
+    "Rewriting COLUBK on every line gives raster bars (the cheapest kernel effect)."
+   ],
+   "example": "  sta WSYNC\n  sta COLUBK"
+  },
+  {
+   "name": "CTRLPF",
+   "address": "$0A",
+   "access": "W",
+   "bits": "--54-210",
+   "summary": "Playfield control and ball size.",
+   "description": "Bit 0 REF: playfield reflection - the right half mirrors the left half (pixel order reversed) instead of repeating it. Bit 1 SCORE: left half of the playfield takes COLUP0, right half takes COLUP1. Bit 2 PFP: playfield priority - when set, playfield and ball are drawn on top of players and missiles; when clear, players/missiles are above the playfield. Bits 5-4: ball size (00=1, 01=2, 10=4, 11=8 colour clocks).",
+   "timing": "",
+   "issues": [
+    "Normal priority (PFP=0): P0/M0 > P1/M1 > BL/PF > BK. With PFP=1: PF/BL > P0/M0 > P1/M1 > BK.",
+    "SCORE mode colours the playfield with the player colours (so a score display can be coloured per player), and the colour switches mid-line at the half way point (clock 80).",
+    "In SCORE mode, the PF priority behaviour is the same as normal; combine with PFP carefully if the score digits overlap sprites.",
+    "Changing REF mid-line affects only the half not yet drawn; asymmetric playfields use rewriting PFx between the two halves (see PF0/PF1/PF2)."
+   ],
+   "example": "  lda #%00000101   ; reflect + playfield on top\n  sta CTRLPF"
+  },
+  {
+   "name": "REFP0",
+   "address": "$0B",
+   "access": "W",
+   "bits": "----3---",
+   "summary": "Reflect player 0.",
+   "description": "Bit 3 = 1 reverses the horizontal order of the player 0 graphics (bit 0 drawn leftmost instead of bit 7). Other bits are ignored. Applies to every copy of the player.",
+   "timing": "",
+   "issues": [
+    "Reflection happens at drawing time, so it can be toggled between scanlines. Writing REFPx mid-line while the player is being drawn is possible but timing-sensitive; test on hardware."
+   ],
+   "example": "  lda #8\n  sta REFP0"
+  },
+  {
+   "name": "REFP1",
+   "address": "$0C",
+   "access": "W",
+   "bits": "----3---",
+   "summary": "Reflect player 1.",
+   "description": "Same as REFP0 for player 1.",
+   "timing": "",
+   "issues": [
+    "See REFP0."
+   ],
+   "example": ""
+  },
+  {
+   "name": "PF0",
+   "address": "$0D",
+   "access": "W",
+   "bits": "7654----",
+   "summary": "Playfield pixels 0-3 (4 bits), left to right.",
+   "description": "Only bits 7-4 are used. PF0 bit 4 is the leftmost playfield block on screen, bit 5 the next, bit 6, then bit 7 (so the order is bit 4 -> bit 7). Each playfield bit is 4 colour clocks (pixels) wide; the left half of the screen is 20 bits (PF0 high nibble + PF1 + PF2) covering 80 pixels, and the right half repeats or mirrors it according to CTRLPF bit 0.",
+   "timing": "Left half: PF0 is drawn at pixels 0-15, PF1 at 16-47, PF2 at 48-79 (colour clocks 68-83, 84-115, 116-147). Right half: PF0 at pixels 80-95 (clocks 148-163), PF1 at 96-127 (clocks 164-195), PF2 at 128-159 (clocks 196-227). A write must land before the colour clock where its pixels start; practical windows for asymmetric playfields are approximate and depend on write latency (about 2-3 clocks), so always verify in an emulator or on hardware.",
+   "issues": [
+    "Bit order differs per register: PF0 uses bits 4-7 in ascending order, PF1 uses bits 7-0 (MSB first, descending), PF2 uses bits 0-7 (LSB first, ascending). This is the most common source of playfield bugs.",
+    "Mid-line rewrites of PF0/1/2 give asymmetric playfields: for the right half, write the new PF0 between its left-half draw end (~CPU cycle 28) and right-half start (~CPU cycle 49), PF1 between ~cycle 39 and ~54, PF2 between ~cycle 49 and ~65 (approximate numbers, derived from colour-clock positions above, not verified by me).",
+    "Writes that land during the pixel being drawn can create a 'late-write' glitch where the old and new values are both partially shown; TIA revision and write latency dependent.",
+    "PF0's low nibble is ignored and reads as nothing; always mask in the code that builds the byte."
+   ],
+   "example": "  lda #%11110000\n  sta PF0     ; four blocks at the left edge"
+  },
+  {
+   "name": "PF1",
+   "address": "$0E",
+   "access": "W",
+   "bits": "76543210",
+   "summary": "Playfield pixels 4-11 (8 bits), MSB first.",
+   "description": "All 8 bits used. Bit 7 is the leftmost of the 8 blocks, bit 0 the rightmost (reverse of PF2's order).",
+   "timing": "Left half pixels 16-47 (clocks 84-115); right half pixels 96-127 (clocks 164-195).",
+   "issues": [
+    "See PF0 for bit order and mid-line rewrite windows."
+   ],
+   "example": ""
+  },
+  {
+   "name": "PF2",
+   "address": "$0F",
+   "access": "W",
+   "bits": "76543210",
+   "summary": "Playfield pixels 12-19 (8 bits), LSB first.",
+   "description": "All 8 bits used. Bit 0 is the leftmost of the 8 blocks, bit 7 the rightmost (same direction as PF0).",
+   "timing": "Left half pixels 48-79 (clocks 116-147); right half pixels 128-159 (clocks 196-227).",
+   "issues": [
+    "See PF0 for bit order and mid-line rewrite windows."
+   ],
+   "example": ""
+  },
+  {
+   "name": "RESP0",
+   "address": "$10",
+   "access": "W",
+   "bits": "--------",
+   "summary": "Reset position of player 0 (strobe).",
+   "description": "Any write sets the horizontal position of player 0 to the current colour clock of the beam (plus a small fixed delay); the value written is ignored. Horizontal position cannot be written directly: it is the moment of the strobe. The strobe is typically issued right after a WSYNC and a delay loop that burns cycles in 15-pixel steps (5 CPU cycles = 15 colour clocks), then the HMxx / HMOVE mechanism does the remaining fine adjustment (-8..+7 pixels).",
+   "timing": "Position (screen x, 0-159) from the CPU cycle of the write (cycle counted from 0 at the start of the line, the cycle in which the STA writes, i.e. the instruction's last cycle): x is about 3*cycle - 68 + 5 for players (about +4 for missiles/ball). The same formula gives positions inside HBLANK: strobing while still in HBLANK (colour clock < ~68) leaves the object at a fixed column near the left edge (commonly cited: pixel 3 for players, pixel 2 for missiles/ball), not x=0. The offsets (+5 / +4) are the commonly published values; I am not 100% sure of them in every TIA revision.",
+   "issues": [
+    "RESPx during HBLANK always lands at the same fixed column near the left (player at about x=3), so the leftmost positions are only reachable using HMOVE after a coarse placement.",
+    "Coarse positions only exist in steps of 3 colour clocks per CPU cycle; the usual divide-by-15 loop gives positions in 15-pixel steps with fine adjustment applied through HMxx and a following HMOVE.",
+    "The HMOVE after RESxx must happen on a later line or at the start of a line (it is customary to place object in line N, HMOVE right after the WSYNC of line N+1).",
+    "The reset takes effect even if the object's GRP/ENAx are disabled; a position can be set while hidden and enabled later."
+   ],
+   "example": "  sta WSYNC\n  SLEEP 20\n  sta RESP0   ; position depends on cycle count"
+  },
+  {
+   "name": "RESP1",
+   "address": "$11",
+   "access": "W",
+   "bits": "--------",
+   "summary": "Reset position of player 1 (strobe).",
+   "description": "Any write sets the horizontal position of player 1 to the current colour clock of the beam (plus a small fixed delay); the value written is ignored. Horizontal position cannot be written directly: it is the moment of the strobe. The strobe is typically issued right after a WSYNC and a delay loop that burns cycles in 15-pixel steps (5 CPU cycles = 15 colour clocks), then the HMxx / HMOVE mechanism does the remaining fine adjustment (-8..+7 pixels).",
+   "timing": "Position (screen x, 0-159) from the CPU cycle of the write (cycle counted from 0 at the start of the line, the cycle in which the STA writes, i.e. the instruction's last cycle): x is about 3*cycle - 68 + 5 for players (about +4 for missiles/ball). The same formula gives positions inside HBLANK: strobing while still in HBLANK (colour clock < ~68) leaves the object at a fixed column near the left edge (commonly cited: pixel 3 for players, pixel 2 for missiles/ball), not x=0. The offsets (+5 / +4) are the commonly published values; I am not 100% sure of them in every TIA revision.",
+   "issues": [
+    "RESPx during HBLANK always lands at the same fixed column near the left (player at about x=3), so the leftmost positions are only reachable using HMOVE after a coarse placement.",
+    "Coarse positions only exist in steps of 3 colour clocks per CPU cycle; the usual divide-by-15 loop gives positions in 15-pixel steps with fine adjustment applied through HMxx and a following HMOVE.",
+    "The HMOVE after RESxx must happen on a later line or at the start of a line (it is customary to place object in line N, HMOVE right after the WSYNC of line N+1).",
+    "The reset takes effect even if the object's GRP/ENAx are disabled; a position can be set while hidden and enabled later."
+   ],
+   "example": "  sta WSYNC\n  SLEEP 20\n  sta RESP1   ; position depends on cycle count"
+  },
+  {
+   "name": "RESM0",
+   "address": "$12",
+   "access": "W",
+   "bits": "--------",
+   "summary": "Reset position of missile 0 (strobe).",
+   "description": "Any write sets the horizontal position of missile 0 to the current colour clock of the beam (plus a small fixed delay); the value written is ignored. Horizontal position cannot be written directly: it is the moment of the strobe. The strobe is typically issued right after a WSYNC and a delay loop that burns cycles in 15-pixel steps (5 CPU cycles = 15 colour clocks), then the HMxx / HMOVE mechanism does the remaining fine adjustment (-8..+7 pixels).",
+   "timing": "Position (screen x, 0-159) from the CPU cycle of the write (cycle counted from 0 at the start of the line, the cycle in which the STA writes, i.e. the instruction's last cycle): x is about 3*cycle - 68 + 5 for players (about +4 for missiles/ball). The same formula gives positions inside HBLANK: strobing while still in HBLANK (colour clock < ~68) leaves the object at a fixed column near the left edge (commonly cited: pixel 3 for players, pixel 2 for missiles/ball), not x=0. The offsets (+5 / +4) are the commonly published values; I am not 100% sure of them in every TIA revision.",
+   "issues": [
+    "RESPx during HBLANK always lands at the same fixed column near the left (player at about x=3), so the leftmost positions are only reachable using HMOVE after a coarse placement.",
+    "Coarse positions only exist in steps of 3 colour clocks per CPU cycle; the usual divide-by-15 loop gives positions in 15-pixel steps with fine adjustment applied through HMxx and a following HMOVE.",
+    "The HMOVE after RESxx must happen on a later line or at the start of a line (it is customary to place object in line N, HMOVE right after the WSYNC of line N+1).",
+    "The reset takes effect even if the object's GRP/ENAx are disabled; a position can be set while hidden and enabled later.",
+    "RESMPx locks the missile to the player and overrides RESMx for as long as it is set (see RESMP0)."
+   ],
+   "example": "  sta WSYNC\n  SLEEP 20\n  sta RESM0   ; position depends on cycle count"
+  },
+  {
+   "name": "RESM1",
+   "address": "$13",
+   "access": "W",
+   "bits": "--------",
+   "summary": "Reset position of missile 1 (strobe).",
+   "description": "Any write sets the horizontal position of missile 1 to the current colour clock of the beam (plus a small fixed delay); the value written is ignored. Horizontal position cannot be written directly: it is the moment of the strobe. The strobe is typically issued right after a WSYNC and a delay loop that burns cycles in 15-pixel steps (5 CPU cycles = 15 colour clocks), then the HMxx / HMOVE mechanism does the remaining fine adjustment (-8..+7 pixels).",
+   "timing": "Position (screen x, 0-159) from the CPU cycle of the write (cycle counted from 0 at the start of the line, the cycle in which the STA writes, i.e. the instruction's last cycle): x is about 3*cycle - 68 + 5 for players (about +4 for missiles/ball). The same formula gives positions inside HBLANK: strobing while still in HBLANK (colour clock < ~68) leaves the object at a fixed column near the left edge (commonly cited: pixel 3 for players, pixel 2 for missiles/ball), not x=0. The offsets (+5 / +4) are the commonly published values; I am not 100% sure of them in every TIA revision.",
+   "issues": [
+    "RESPx during HBLANK always lands at the same fixed column near the left (player at about x=3), so the leftmost positions are only reachable using HMOVE after a coarse placement.",
+    "Coarse positions only exist in steps of 3 colour clocks per CPU cycle; the usual divide-by-15 loop gives positions in 15-pixel steps with fine adjustment applied through HMxx and a following HMOVE.",
+    "The HMOVE after RESxx must happen on a later line or at the start of a line (it is customary to place object in line N, HMOVE right after the WSYNC of line N+1).",
+    "The reset takes effect even if the object's GRP/ENAx are disabled; a position can be set while hidden and enabled later.",
+    "RESMPx locks the missile to the player and overrides RESMx for as long as it is set (see RESMP0)."
+   ],
+   "example": "  sta WSYNC\n  SLEEP 20\n  sta RESM1   ; position depends on cycle count"
+  },
+  {
+   "name": "RESBL",
+   "address": "$14",
+   "access": "W",
+   "bits": "--------",
+   "summary": "Reset position of the ball (strobe).",
+   "description": "Any write sets the horizontal position of the ball to the current colour clock of the beam (plus a small fixed delay); the value written is ignored. Horizontal position cannot be written directly: it is the moment of the strobe. The strobe is typically issued right after a WSYNC and a delay loop that burns cycles in 15-pixel steps (5 CPU cycles = 15 colour clocks), then the HMxx / HMOVE mechanism does the remaining fine adjustment (-8..+7 pixels).",
+   "timing": "Position (screen x, 0-159) from the CPU cycle of the write (cycle counted from 0 at the start of the line, the cycle in which the STA writes, i.e. the instruction's last cycle): x is about 3*cycle - 68 + 5 for players (about +4 for missiles/ball). The same formula gives positions inside HBLANK: strobing while still in HBLANK (colour clock < ~68) leaves the object at a fixed column near the left edge (commonly cited: pixel 3 for players, pixel 2 for missiles/ball), not x=0. The offsets (+5 / +4) are the commonly published values; I am not 100% sure of them in every TIA revision.",
+   "issues": [
+    "RESPx during HBLANK always lands at the same fixed column near the left (player at about x=3), so the leftmost positions are only reachable using HMOVE after a coarse placement.",
+    "Coarse positions only exist in steps of 3 colour clocks per CPU cycle; the usual divide-by-15 loop gives positions in 15-pixel steps with fine adjustment applied through HMxx and a following HMOVE.",
+    "The HMOVE after RESxx must happen on a later line or at the start of a line (it is customary to place object in line N, HMOVE right after the WSYNC of line N+1).",
+    "The reset takes effect even if the object's GRP/ENAx are disabled; a position can be set while hidden and enabled later.",
+    "The ball position register is shared with the VDELBL delay logic but is positioned independently of the players."
+   ],
+   "example": "  sta WSYNC\n  SLEEP 20\n  sta RESBL   ; position depends on cycle count"
+  },
+  {
+   "name": "AUDC0",
+   "address": "$15",
+   "access": "W",
+   "bits": "----3210",
+   "summary": "Audio control (waveform) channel 0.",
+   "description": "Bits 3-0 select the sound type (shift-register/divider configuration): 0 = silence (set to 1), 1 = 4-bit poly, 2 = div 15 -> 4-bit poly, 3 = 5-bit poly -> 4-bit poly, 4 = pure tone (div 2), 5 = pure tone (div 2), 6 = pure tone (div 31), 7 = 5-bit poly -> div 2, 8 = white noise (9-bit poly), 9 = 5-bit poly, 10 = pure tone (div 31), 11 = set last 4 bits to 1 (silence/constant), 12 = pure tone (div 6), 13 = pure tone (div 6), 14 = pure tone (div 93), 15 = 5-bit poly div 6. Bits 7-4 are unused.",
+   "timing": "The audio clock is the TIA colour clock divided by 114 (about 31.4 kHz NTSC, 31.1 kHz PAL), twice per scanline.",
+   "issues": [
+    "Tone frequency (Hz) = 31400 / ((AUDFx+1) * divider) for pure tones, with the divider shown above (NTSC: 31400 -> PAL about 31112). Exact note tables should be generated from the waveform divider; many tuners are out of tune on 2600.",
+    "Pure tone types with divider 31 (types 6/10) produce a lower tone than types 4/5.",
+    "Both channels share the same clock; writing a register mid-line changes the sound at the next audio clock."
+   ],
+   "example": "  lda #12\n  sta AUDC0     ; div 6 pure tone"
+  },
+  {
+   "name": "AUDC1",
+   "address": "$16",
+   "access": "W",
+   "bits": "----3210",
+   "summary": "Audio control (waveform) channel 1.",
+   "description": "Same as AUDC0 for channel 1.",
+   "timing": "",
+   "issues": [
+    "See AUDC0."
+   ],
+   "example": ""
+  },
+  {
+   "name": "AUDF0",
+   "address": "$17",
+   "access": "W",
+   "bits": "---43210",
+   "summary": "Audio frequency divider channel 0.",
+   "description": "Bits 4-0 = divide-by (AUDF0+1) of the 31.4 kHz audio clock (0 = fastest, 31 = slowest). Combined with the AUDC waveform divider.",
+   "timing": "",
+   "issues": [
+    "Frequency step between consecutive AUDF values is large at the high end; for melody work use a note table built per waveform type."
+   ],
+   "example": ""
+  },
+  {
+   "name": "AUDF1",
+   "address": "$18",
+   "access": "W",
+   "bits": "---43210",
+   "summary": "Audio frequency divider channel 1.",
+   "description": "Same as AUDF0 for channel 1.",
+   "timing": "",
+   "issues": [
+    "See AUDF0."
+   ],
+   "example": ""
+  },
+  {
+   "name": "AUDV0",
+   "address": "$19",
+   "access": "W",
+   "bits": "----3210",
+   "summary": "Audio volume channel 0.",
+   "description": "Bits 3-0 = volume 0-15. Volume 0 is silence. Writing volume rapidly (a PCM-like technique, 'sample playback') produces digital audio at the cost of CPU time.",
+   "timing": "",
+   "issues": [
+    "Volume steps are not strictly linear; PCM playback at line rate (15.7 kHz) is possible with careful timing.",
+    "Volume register changes take effect immediately, not on audio clock boundaries (this is what makes volume-register PCM possible)."
+   ],
+   "example": ""
+  },
+  {
+   "name": "AUDV1",
+   "address": "$1A",
+   "access": "W",
+   "bits": "----3210",
+   "summary": "Audio volume channel 1.",
+   "description": "Same as AUDV0 for channel 1.",
+   "timing": "",
+   "issues": [],
+   "example": ""
+  },
+  {
+   "name": "GRP0",
+   "address": "$1B",
+   "access": "W",
+   "bits": "76543210",
+   "summary": "Graphics bitmap for player 0.",
+   "description": "8 bits of pixel data for player 0; bit 7 is the leftmost pixel (unless REFP0 is set). With VDELP0 set, a write to GRP0 only updates the 'new' value; the 'old' value is displayed until GRP1 is written (writing GRP1 copies the new GRP0 into the delayed register). Each pixel is one colour clock wide (more with NUSIZ stretch).",
+   "timing": "",
+   "issues": [
+    "Writing GRP0 while the player is being drawn changes the remaining pixels, which is how some kernels build wide sprites.",
+    "VDELP0 delay copies happen when GRP1 is written, not when GRP0 is written: a classic source of off-by-one-line artefacts when writing GRP0 and GRP1 in the wrong order (see 48-pixel sprite routine)."
+   ],
+   "example": "  lda #%00111100\n  sta GRP0"
+  },
+  {
+   "name": "GRP1",
+   "address": "$1C",
+   "access": "W",
+   "bits": "76543210",
+   "summary": "Graphics bitmap for player 1.",
+   "description": "Same as GRP0 for player 1. Writing GRP1 also copies the current GRP0 into the delayed GRP0 register, and ENABL into the delayed ENABL register (used with VDELP0/VDELBL).",
+   "timing": "",
+   "issues": [
+    "The side effect on GRP0 and ENABL happens regardless of whether VDELP0/VDELBL are set."
+   ],
+   "example": ""
+  },
+  {
+   "name": "ENAM0",
+   "address": "$1D",
+   "access": "W",
+   "bits": "------1-",
+   "summary": "Enable missile 0.",
+   "description": "Bit 1 = 1 enables missile 0 (drawn with COLUP0, width set by NUSIZ0). Other bits ignored. If RESMP0 bit 1 is set, the missile is hidden regardless of ENAM0.",
+   "timing": "",
+   "issues": [
+    "The missile has no vertical-delay register on the real hardware."
+   ],
+   "example": ""
+  },
+  {
+   "name": "ENAM1",
+   "address": "$1E",
+   "access": "W",
+   "bits": "------1-",
+   "summary": "Enable missile 1.",
+   "description": "Same as ENAM0 for missile 1.",
+   "timing": "",
+   "issues": [],
+   "example": ""
+  },
+  {
+   "name": "ENABL",
+   "address": "$1F",
+   "access": "W",
+   "bits": "------1-",
+   "summary": "Enable ball.",
+   "description": "Bit 1 = 1 enables the ball (drawn with COLUPF, size from CTRLPF). With VDELBL set, the ball displays the delayed value, which is updated when GRP1 is written.",
+   "timing": "",
+   "issues": [
+    "The delayed ENABL copy is made on every GRP1 write."
+   ],
+   "example": ""
+  },
+  {
+   "name": "HMP0",
+   "address": "$20",
+   "access": "W",
+   "bits": "7654----",
+   "summary": "Horizontal motion value for player 0.",
+   "description": "Bits 7-4 hold a signed 4-bit value (two's complement) of the fine motion applied on the next HMOVE strobe: $70 = move 7 pixels LEFT, $00 = no move, $80 = move 8 pixels RIGHT (positive values move left, negative right). Range is -8..+7 pixels: values $80..$F0 move right 8..1 pixels, $10..$70 move left 1..7 pixels. Bits 3-0 are ignored.",
+   "timing": "",
+   "issues": [
+    "A write to an HMxx register must not be followed by changes for about 24 CPU cycles after an HMOVE (the Stella guide recommendation); the internal motion ripple takes time to finish.",
+    "The usual positioning trick: after dividing the distance by 15, eor/asl to convert the remainder to the signed HM nibble.",
+    "HMxx values are only used at the moment of HMOVE; HMCLR ($2B) zeroes all five."
+   ],
+   "example": "  lda #$70   ; 7 pixels left\n  sta HMP0"
+  },
+  {
+   "name": "HMP1",
+   "address": "$21",
+   "access": "W",
+   "bits": "7654----",
+   "summary": "Horizontal motion value for player 1.",
+   "description": "Bits 7-4 hold a signed 4-bit value (two's complement) of the fine motion applied on the next HMOVE strobe: $70 = move 7 pixels LEFT, $00 = no move, $80 = move 8 pixels RIGHT (positive values move left, negative right). Range is -8..+7 pixels: values $80..$F0 move right 8..1 pixels, $10..$70 move left 1..7 pixels. Bits 3-0 are ignored.",
+   "timing": "",
+   "issues": [
+    "A write to an HMxx register must not be followed by changes for about 24 CPU cycles after an HMOVE (the Stella guide recommendation); the internal motion ripple takes time to finish.",
+    "The usual positioning trick: after dividing the distance by 15, eor/asl to convert the remainder to the signed HM nibble.",
+    "HMxx values are only used at the moment of HMOVE; HMCLR ($2B) zeroes all five."
+   ],
+   "example": "  lda #$70   ; 7 pixels left\n  sta HMP1"
+  },
+  {
+   "name": "HMM0",
+   "address": "$22",
+   "access": "W",
+   "bits": "7654----",
+   "summary": "Horizontal motion value for missile 0.",
+   "description": "Bits 7-4 hold a signed 4-bit value (two's complement) of the fine motion applied on the next HMOVE strobe: $70 = move 7 pixels LEFT, $00 = no move, $80 = move 8 pixels RIGHT (positive values move left, negative right). Range is -8..+7 pixels: values $80..$F0 move right 8..1 pixels, $10..$70 move left 1..7 pixels. Bits 3-0 are ignored.",
+   "timing": "",
+   "issues": [
+    "A write to an HMxx register must not be followed by changes for about 24 CPU cycles after an HMOVE (the Stella guide recommendation); the internal motion ripple takes time to finish.",
+    "The usual positioning trick: after dividing the distance by 15, eor/asl to convert the remainder to the signed HM nibble.",
+    "HMxx values are only used at the moment of HMOVE; HMCLR ($2B) zeroes all five."
+   ],
+   "example": "  lda #$70   ; 7 pixels left\n  sta HMM0"
+  },
+  {
+   "name": "HMM1",
+   "address": "$23",
+   "access": "W",
+   "bits": "7654----",
+   "summary": "Horizontal motion value for missile 1.",
+   "description": "Bits 7-4 hold a signed 4-bit value (two's complement) of the fine motion applied on the next HMOVE strobe: $70 = move 7 pixels LEFT, $00 = no move, $80 = move 8 pixels RIGHT (positive values move left, negative right). Range is -8..+7 pixels: values $80..$F0 move right 8..1 pixels, $10..$70 move left 1..7 pixels. Bits 3-0 are ignored.",
+   "timing": "",
+   "issues": [
+    "A write to an HMxx register must not be followed by changes for about 24 CPU cycles after an HMOVE (the Stella guide recommendation); the internal motion ripple takes time to finish.",
+    "The usual positioning trick: after dividing the distance by 15, eor/asl to convert the remainder to the signed HM nibble.",
+    "HMxx values are only used at the moment of HMOVE; HMCLR ($2B) zeroes all five."
+   ],
+   "example": "  lda #$70   ; 7 pixels left\n  sta HMM1"
+  },
+  {
+   "name": "HMBL",
+   "address": "$24",
+   "access": "W",
+   "bits": "7654----",
+   "summary": "Horizontal motion value for the ball.",
+   "description": "Bits 7-4 hold a signed 4-bit value (two's complement) of the fine motion applied on the next HMOVE strobe: $70 = move 7 pixels LEFT, $00 = no move, $80 = move 8 pixels RIGHT (positive values move left, negative right). Range is -8..+7 pixels: values $80..$F0 move right 8..1 pixels, $10..$70 move left 1..7 pixels. Bits 3-0 are ignored.",
+   "timing": "",
+   "issues": [
+    "A write to an HMxx register must not be followed by changes for about 24 CPU cycles after an HMOVE (the Stella guide recommendation); the internal motion ripple takes time to finish.",
+    "The usual positioning trick: after dividing the distance by 15, eor/asl to convert the remainder to the signed HM nibble.",
+    "HMxx values are only used at the moment of HMOVE; HMCLR ($2B) zeroes all five."
+   ],
+   "example": "  lda #$70   ; 7 pixels left\n  sta HMBL"
+  },
+  {
+   "name": "VDELP0",
+   "address": "$25",
+   "access": "W",
+   "bits": "-------0",
+   "summary": "Vertical delay player 0.",
+   "description": "Bit 0 = 1: player 0 is drawn from the 'old' GRP0 register instead of the new one. The old register is loaded with the current GRP0 value whenever GRP1 is written. This lets the program prepare GRP0 and GRP1 in an interleaved way and have both appear on the same line (the 48-pixel / 6-digit sprite technique).",
+   "timing": "",
+   "issues": [
+    "VDEL mechanism: GRP1 write -> old GRP0 = GRP0 (new). GRP0 write -> old GRP1 = GRP1 (new). So VDELP1 delays GRP1 until GRP0 is written, and VDELP0 delays GRP0 until GRP1 is written.",
+    "In a 48-pixel sprite kernel both VDELP0 and VDELP1 are set; the order in which GRP0/GRP1/GRP0/GRP1/GRP0 are written decides what shows."
+   ],
+   "example": "  lda #1\n  sta VDELP0\n  sta VDELP1"
+  },
+  {
+   "name": "VDELP1",
+   "address": "$26",
+   "access": "W",
+   "bits": "-------0",
+   "summary": "Vertical delay player 1.",
+   "description": "Bit 0 = 1: player 1 is drawn from the 'old' GRP1 register, loaded when GRP0 is written.",
+   "timing": "",
+   "issues": [
+    "See VDELP0."
+   ],
+   "example": ""
+  },
+  {
+   "name": "VDELBL",
+   "address": "$27",
+   "access": "W",
+   "bits": "-------0",
+   "summary": "Vertical delay ball.",
+   "description": "Bit 0 = 1: the ball enable comes from the delayed ENABL register, which is loaded when GRP1 is written.",
+   "timing": "",
+   "issues": [
+    "Writing ENABL has no effect on the displayed ball while VDELBL=1 until a GRP1 write copies it."
+   ],
+   "example": ""
+  },
+  {
+   "name": "RESMP0",
+   "address": "$28",
+   "access": "W",
+   "bits": "------1-",
+   "summary": "Reset missile 0 to player 0 position.",
+   "description": "Bit 1 = 1 locks missile 0 to the centre of player 0: the missile is hidden and tracks player 0 horizontally. Clearing the bit releases the missile, which then appears at the current player position (plus any offset caused by NUSIZ/size). The missile's own position (RESM0) is overridden while the lock is set.",
+   "timing": "",
+   "issues": [
+    "The centring offset depends on the player's NUSIZ size: for a normal-size player the missile appears near the 4th pixel of the 8; for double/quad sizes the offset is different. I can't give exact figures from memory; check with an emulator.",
+    "RESMP0 and RESM0 are separate paths: RESM0 sets the position counter; RESMP0 forces it to the player counter. After release, the missile continues from the player's position.",
+    "This is how an object like a bullet 'leaves' the player: lock, then release at the right moment."
+   ],
+   "example": ""
+  },
+  {
+   "name": "RESMP1",
+   "address": "$29",
+   "access": "W",
+   "bits": "------1-",
+   "summary": "Reset missile 1 to player 1 position.",
+   "description": "Same as RESMP0 for missile 1 / player 1.",
+   "timing": "",
+   "issues": [
+    "See RESMP0."
+   ],
+   "example": ""
+  },
+  {
+   "name": "HMOVE",
+   "address": "$2A",
+   "access": "W",
+   "bits": "--------",
+   "summary": "Apply horizontal motion (strobe).",
+   "description": "Any write applies the motion values in HMP0/HMP1/HMM0/HMM1/HMBL to the object positions, moving each by its signed -8..+7 pixel amount. For the usual behaviour, HMOVE must be strobed immediately after WSYNC, i.e. at the start of HBLANK: the TIA then also extends the horizontal blank by 8 colour clocks, which hides the first 8 pixels of the line and makes up the 'HMOVE comb' (black bars at the left of any line that used HMOVE).",
+   "timing": "Valid timing: at CPU cycle 0-2 of a line (just after WSYNC), up to a limit when the HBLANK extension would be too late. Strobing HMOVE later in HBLANK or in the visible line does not give the normal result; the TIA applies motion pulses only during HBLANK.",
+   "issues": [
+    "HMOVE comb ('HMOVE bars'): every line on which HMOVE is strobed in the normal window has the leftmost 8 pixels blanked. Games typically strobe HMOVE on every line of the kernel (so the black bar is a constant column) or hide it with a black playfield border.",
+    "HMOVE at cycle 73-75 (the end of the previous line) is a known trick: the TIA applies motion in a shifted way, and games like Cosmic Ark use this late-HMOVE effect to move objects by amounts not otherwise possible (the starfield effect with the missile). The exact amounts depend on the HMxx value and on the TIA revision and I can't provide the table here; consult the Stella programmer guide and emulator test ROMs.",
+    "HMOVE in the middle of the visible portion does weird/unreliable things (not an extra 8 blank, but unpredictable motion).",
+    "HMxx registers must not be changed for ~24 CPU cycles after HMOVE.",
+    "RESPx strobes during the 24-cycle ripple after HMOVE behave unusually (the object's counter is still moving)."
+   ],
+   "example": "  sta WSYNC\n  sta HMOVE\n  ; motion applied; leftmost 8 pixels blank on this line"
+  },
+  {
+   "name": "HMCLR",
+   "address": "$2B",
+   "access": "W",
+   "bits": "--------",
+   "summary": "Clear all horizontal motion registers (strobe).",
+   "description": "Any write sets HMP0, HMP1, HMM0, HMM1 and HMBL to 0. Use after positioning so later HMOVE strobes do not keep moving objects.",
+   "timing": "",
+   "issues": [
+    "If HMOVE is strobed every line for the blank-column effect, HMCLR (or explicit zeroing) is required between frames, else objects drift."
+   ],
+   "example": "  sta HMCLR"
+  },
+  {
+   "name": "CXCLR",
+   "address": "$2C",
+   "access": "W",
+   "bits": "--------",
+   "summary": "Clear collision latches (strobe).",
+   "description": "Any write resets all 15 collision latches (CXM0P ... CXPPMM) to 0. Collisions latch on and stay on until CXCLR.",
+   "timing": "",
+   "issues": [
+    "Clear once per frame, normally at the end of the visible area or VBLANK, then read after drawing. Reading collision registers mid-frame sees only collisions so far.",
+    "Collisions are detected between objects regardless of their colour, even if the colours are black or equal to the background; e.g. an enabled but invisible missile still registers."
+   ],
+   "example": "  sta CXCLR"
+  },
+  {
+   "name": "CXM0P",
+   "address": "$00",
+   "access": "R",
+   "bits": "76------",
+   "summary": "Collision: missile 0 and player 1 (bit 7), missile 0 and player 0 (bit 6).",
+   "description": "Bit 7 = 1 if missile 0 and player 1 have collided (any pixel overlap) since the last CXCLR; bit 6 = 1 if missile 0 and player 0 have. Latched until CXCLR. Bits 5-0 are not driven by the TIA; real hardware returns residue from the data bus (often the high byte of the operand address, e.g. $00 for $30-$3D mirrors reads with LDA zeropage), which is why direct comparison like 'cmp #$80' is fragile. Use BIT to put bit 7 in N and bit 6 in V.",
+   "timing": "",
+   "issues": [
+    "Collisions are latched, not live: they persist until CXCLR ($2C) is written.",
+    "Collisions are based on pixel overlap, not colour; objects hidden by colour or by the display priority still collide. Objects outside the visible area do not collide (they are not drawn).",
+    "Direct comparison of the whole byte is wrong because bits 5-0 are open bus."
+   ],
+   "example": "  bit CXM0P\n  bmi .hit7   ; bit 7\n  bvs .hit6   ; bit 6",
+   "mirror": "$30"
+  },
+  {
+   "name": "CXM1P",
+   "address": "$01",
+   "access": "R",
+   "bits": "76------",
+   "summary": "Collision: missile 1 and player 0 (bit 7), missile 1 and player 1 (bit 6).",
+   "description": "Bit 7 = 1 if missile 1 and player 0 have collided (any pixel overlap) since the last CXCLR; bit 6 = 1 if missile 1 and player 1 have. Latched until CXCLR. Bits 5-0 are not driven by the TIA; real hardware returns residue from the data bus (often the high byte of the operand address, e.g. $00 for $30-$3D mirrors reads with LDA zeropage), which is why direct comparison like 'cmp #$80' is fragile. Use BIT to put bit 7 in N and bit 6 in V.",
+   "timing": "",
+   "issues": [
+    "Collisions are latched, not live: they persist until CXCLR ($2C) is written.",
+    "Collisions are based on pixel overlap, not colour; objects hidden by colour or by the display priority still collide. Objects outside the visible area do not collide (they are not drawn).",
+    "Direct comparison of the whole byte is wrong because bits 5-0 are open bus."
+   ],
+   "example": "  bit CXM1P\n  bmi .hit7   ; bit 7\n  bvs .hit6   ; bit 6",
+   "mirror": "$31"
+  },
+  {
+   "name": "CXP0FB",
+   "address": "$02",
+   "access": "R",
+   "bits": "76------",
+   "summary": "Collision: player 0 and playfield (bit 7), player 0 and ball (bit 6).",
+   "description": "Bit 7 = 1 if player 0 and playfield have collided (any pixel overlap) since the last CXCLR; bit 6 = 1 if player 0 and ball have. Latched until CXCLR. Bits 5-0 are not driven by the TIA; real hardware returns residue from the data bus (often the high byte of the operand address, e.g. $00 for $30-$3D mirrors reads with LDA zeropage), which is why direct comparison like 'cmp #$80' is fragile. Use BIT to put bit 7 in N and bit 6 in V.",
+   "timing": "",
+   "issues": [
+    "Collisions are latched, not live: they persist until CXCLR ($2C) is written.",
+    "Collisions are based on pixel overlap, not colour; objects hidden by colour or by the display priority still collide. Objects outside the visible area do not collide (they are not drawn).",
+    "Direct comparison of the whole byte is wrong because bits 5-0 are open bus."
+   ],
+   "example": "  bit CXP0FB\n  bmi .hit7   ; bit 7\n  bvs .hit6   ; bit 6",
+   "mirror": "$32"
+  },
+  {
+   "name": "CXP1FB",
+   "address": "$03",
+   "access": "R",
+   "bits": "76------",
+   "summary": "Collision: player 1 and playfield (bit 7), player 1 and ball (bit 6).",
+   "description": "Bit 7 = 1 if player 1 and playfield have collided (any pixel overlap) since the last CXCLR; bit 6 = 1 if player 1 and ball have. Latched until CXCLR. Bits 5-0 are not driven by the TIA; real hardware returns residue from the data bus (often the high byte of the operand address, e.g. $00 for $30-$3D mirrors reads with LDA zeropage), which is why direct comparison like 'cmp #$80' is fragile. Use BIT to put bit 7 in N and bit 6 in V.",
+   "timing": "",
+   "issues": [
+    "Collisions are latched, not live: they persist until CXCLR ($2C) is written.",
+    "Collisions are based on pixel overlap, not colour; objects hidden by colour or by the display priority still collide. Objects outside the visible area do not collide (they are not drawn).",
+    "Direct comparison of the whole byte is wrong because bits 5-0 are open bus."
+   ],
+   "example": "  bit CXP1FB\n  bmi .hit7   ; bit 7\n  bvs .hit6   ; bit 6",
+   "mirror": "$33"
+  },
+  {
+   "name": "CXM0FB",
+   "address": "$04",
+   "access": "R",
+   "bits": "76------",
+   "summary": "Collision: missile 0 and playfield (bit 7), missile 0 and ball (bit 6).",
+   "description": "Bit 7 = 1 if missile 0 and playfield have collided (any pixel overlap) since the last CXCLR; bit 6 = 1 if missile 0 and ball have. Latched until CXCLR. Bits 5-0 are not driven by the TIA; real hardware returns residue from the data bus (often the high byte of the operand address, e.g. $00 for $30-$3D mirrors reads with LDA zeropage), which is why direct comparison like 'cmp #$80' is fragile. Use BIT to put bit 7 in N and bit 6 in V.",
+   "timing": "",
+   "issues": [
+    "Collisions are latched, not live: they persist until CXCLR ($2C) is written.",
+    "Collisions are based on pixel overlap, not colour; objects hidden by colour or by the display priority still collide. Objects outside the visible area do not collide (they are not drawn).",
+    "Direct comparison of the whole byte is wrong because bits 5-0 are open bus."
+   ],
+   "example": "  bit CXM0FB\n  bmi .hit7   ; bit 7\n  bvs .hit6   ; bit 6",
+   "mirror": "$34"
+  },
+  {
+   "name": "CXM1FB",
+   "address": "$05",
+   "access": "R",
+   "bits": "76------",
+   "summary": "Collision: missile 1 and playfield (bit 7), missile 1 and ball (bit 6).",
+   "description": "Bit 7 = 1 if missile 1 and playfield have collided (any pixel overlap) since the last CXCLR; bit 6 = 1 if missile 1 and ball have. Latched until CXCLR. Bits 5-0 are not driven by the TIA; real hardware returns residue from the data bus (often the high byte of the operand address, e.g. $00 for $30-$3D mirrors reads with LDA zeropage), which is why direct comparison like 'cmp #$80' is fragile. Use BIT to put bit 7 in N and bit 6 in V.",
+   "timing": "",
+   "issues": [
+    "Collisions are latched, not live: they persist until CXCLR ($2C) is written.",
+    "Collisions are based on pixel overlap, not colour; objects hidden by colour or by the display priority still collide. Objects outside the visible area do not collide (they are not drawn).",
+    "Direct comparison of the whole byte is wrong because bits 5-0 are open bus."
+   ],
+   "example": "  bit CXM1FB\n  bmi .hit7   ; bit 7\n  bvs .hit6   ; bit 6",
+   "mirror": "$35"
+  },
+  {
+   "name": "CXBLPF",
+   "address": "$06",
+   "access": "R",
+   "bits": "7-------",
+   "summary": "Collision: ball and playfield (bit 7).",
+   "description": "Bit 7 = 1 if the ball and the playfield have collided since the last CXCLR. Bit 6 is not used (reads undriven). Bits 5-0 are not driven by the TIA; real hardware returns residue from the data bus (often the high byte of the operand address, e.g. $00 for $30-$3D mirrors reads with LDA zeropage), which is why direct comparison like 'cmp #$80' is fragile. Use BIT to put bit 7 in N and bit 6 in V.",
+   "timing": "",
+   "issues": [
+    "Latched until CXCLR.",
+    "PF collision works even if the playfield pixels have the same colour as the background."
+   ],
+   "example": "",
+   "mirror": "$36"
+  },
+  {
+   "name": "CXPPMM",
+   "address": "$07",
+   "access": "R",
+   "bits": "76------",
+   "summary": "Collision: player 0 and player 1 (bit 7), missile 0 and missile 1 (bit 6).",
+   "description": "Bit 7 = 1 if player 0 and player 1 have collided (any pixel overlap) since the last CXCLR; bit 6 = 1 if missile 0 and missile 1 have. Latched until CXCLR. Bits 5-0 are not driven by the TIA; real hardware returns residue from the data bus (often the high byte of the operand address, e.g. $00 for $30-$3D mirrors reads with LDA zeropage), which is why direct comparison like 'cmp #$80' is fragile. Use BIT to put bit 7 in N and bit 6 in V.",
+   "timing": "",
+   "issues": [
+    "Collisions are latched, not live: they persist until CXCLR ($2C) is written.",
+    "Collisions are based on pixel overlap, not colour; objects hidden by colour or by the display priority still collide. Objects outside the visible area do not collide (they are not drawn).",
+    "Direct comparison of the whole byte is wrong because bits 5-0 are open bus."
+   ],
+   "example": "  bit CXPPMM\n  bmi .hit7   ; bit 7\n  bvs .hit6   ; bit 6",
+   "mirror": "$37"
+  },
+  {
+   "name": "INPT0",
+   "address": "$08",
+   "access": "R",
+   "bits": "7-------",
+   "summary": "Paddle input 0 (dumped capacitor level, bit 7).",
+   "description": "Bit 7 reads 1 once the paddle's timing capacitor has charged above the threshold, 0 while it is lower or while dumped to ground (VBLANK D7 = 1). To read a paddle: set VBLANK D7 for a few lines (dump), clear D7 (starts the charge), then count scanlines until bit 7 becomes 1; the count is proportional to the paddle resistance. Other bits are open bus. These inputs are also used by keypad controllers as the column inputs. Bits 5-0 are not driven by the TIA; real hardware returns residue from the data bus (often the high byte of the operand address, e.g. $00 for $30-$3D mirrors reads with LDA zeropage), which is why direct comparison like 'cmp #$80' is fragile. Use BIT to put bit 7 in N and bit 6 in V.",
+   "timing": "A full paddle sweep takes about 380 scanlines in the worst case, more than a frame, so many games read it over multiple frames or accept a clipped range.",
+   "issues": [
+    "The bit is analogue: noisy paddles flicker around the threshold; filter or median the reading.",
+    "Reading while VBLANK D7 = 1 always returns 0.",
+    "Paddle values are inverted (more resistance -> later transition)."
+   ],
+   "example": "  bit INPT0\n  bmi .charged",
+   "mirror": "$38"
+  },
+  {
+   "name": "INPT1",
+   "address": "$09",
+   "access": "R",
+   "bits": "7-------",
+   "summary": "Paddle input 1 (dumped capacitor level, bit 7).",
+   "description": "Bit 7 reads 1 once the paddle's timing capacitor has charged above the threshold, 0 while it is lower or while dumped to ground (VBLANK D7 = 1). To read a paddle: set VBLANK D7 for a few lines (dump), clear D7 (starts the charge), then count scanlines until bit 7 becomes 1; the count is proportional to the paddle resistance. Other bits are open bus. These inputs are also used by keypad controllers as the column inputs. Bits 5-0 are not driven by the TIA; real hardware returns residue from the data bus (often the high byte of the operand address, e.g. $00 for $30-$3D mirrors reads with LDA zeropage), which is why direct comparison like 'cmp #$80' is fragile. Use BIT to put bit 7 in N and bit 6 in V.",
+   "timing": "A full paddle sweep takes about 380 scanlines in the worst case, more than a frame, so many games read it over multiple frames or accept a clipped range.",
+   "issues": [
+    "The bit is analogue: noisy paddles flicker around the threshold; filter or median the reading.",
+    "Reading while VBLANK D7 = 1 always returns 0.",
+    "Paddle values are inverted (more resistance -> later transition)."
+   ],
+   "example": "  bit INPT0\n  bmi .charged",
+   "mirror": "$39"
+  },
+  {
+   "name": "INPT2",
+   "address": "$0A",
+   "access": "R",
+   "bits": "7-------",
+   "summary": "Paddle input 2 (dumped capacitor level, bit 7).",
+   "description": "Bit 7 reads 1 once the paddle's timing capacitor has charged above the threshold, 0 while it is lower or while dumped to ground (VBLANK D7 = 1). To read a paddle: set VBLANK D7 for a few lines (dump), clear D7 (starts the charge), then count scanlines until bit 7 becomes 1; the count is proportional to the paddle resistance. Other bits are open bus. These inputs are also used by keypad controllers as the column inputs. Bits 5-0 are not driven by the TIA; real hardware returns residue from the data bus (often the high byte of the operand address, e.g. $00 for $30-$3D mirrors reads with LDA zeropage), which is why direct comparison like 'cmp #$80' is fragile. Use BIT to put bit 7 in N and bit 6 in V.",
+   "timing": "A full paddle sweep takes about 380 scanlines in the worst case, more than a frame, so many games read it over multiple frames or accept a clipped range.",
+   "issues": [
+    "The bit is analogue: noisy paddles flicker around the threshold; filter or median the reading.",
+    "Reading while VBLANK D7 = 1 always returns 0.",
+    "Paddle values are inverted (more resistance -> later transition)."
+   ],
+   "example": "  bit INPT0\n  bmi .charged",
+   "mirror": "$3A"
+  },
+  {
+   "name": "INPT3",
+   "address": "$0B",
+   "access": "R",
+   "bits": "7-------",
+   "summary": "Paddle input 3 (dumped capacitor level, bit 7).",
+   "description": "Bit 7 reads 1 once the paddle's timing capacitor has charged above the threshold, 0 while it is lower or while dumped to ground (VBLANK D7 = 1). To read a paddle: set VBLANK D7 for a few lines (dump), clear D7 (starts the charge), then count scanlines until bit 7 becomes 1; the count is proportional to the paddle resistance. Other bits are open bus. These inputs are also used by keypad controllers as the column inputs. Bits 5-0 are not driven by the TIA; real hardware returns residue from the data bus (often the high byte of the operand address, e.g. $00 for $30-$3D mirrors reads with LDA zeropage), which is why direct comparison like 'cmp #$80' is fragile. Use BIT to put bit 7 in N and bit 6 in V.",
+   "timing": "A full paddle sweep takes about 380 scanlines in the worst case, more than a frame, so many games read it over multiple frames or accept a clipped range.",
+   "issues": [
+    "The bit is analogue: noisy paddles flicker around the threshold; filter or median the reading.",
+    "Reading while VBLANK D7 = 1 always returns 0.",
+    "Paddle values are inverted (more resistance -> later transition)."
+   ],
+   "example": "  bit INPT0\n  bmi .charged",
+   "mirror": "$3B"
+  },
+  {
+   "name": "INPT4",
+   "address": "$0C",
+   "access": "R",
+   "bits": "7-------",
+   "summary": "Joystick 0 fire button (bit 7), 0 = pressed.",
+   "description": "Bit 7 = 0 when the fire button of controller 0 is pressed, 1 when released. If VBLANK D6 (latch) is set, a press is latched: the bit stays 0 after release until D6 is cleared. Other bits are open bus. These inputs are also used as keypad column inputs. Bits 5-0 are not driven by the TIA; real hardware returns residue from the data bus (often the high byte of the operand address, e.g. $00 for $30-$3D mirrors reads with LDA zeropage), which is why direct comparison like 'cmp #$80' is fragile. Use BIT to put bit 7 in N and bit 6 in V.",
+   "timing": "",
+   "issues": [
+    "Active low: 0 = pressed. A common mistake is testing with BNE/BEQ the wrong way round.",
+    "With the latch enabled (VBLANK D6=1), the button reads pressed until the latch is reset; programs that want 'edge' presses must manage the latch.",
+    "Joystick directions are not on the TIA: they are in SWCHA ($280) on the RIOT.",
+    "In the 7800 and some controller types (e.g. 2-button genesis-type pads) INPT4/5 doubles as button 1 and INPT1/INPT0/INPT2/INPT3 as the second button depending on controller; details vary by controller."
+   ],
+   "example": "  lda INPT4\n  bpl .firePressed",
+   "mirror": "$3C"
+  },
+  {
+   "name": "INPT5",
+   "address": "$0D",
+   "access": "R",
+   "bits": "7-------",
+   "summary": "Joystick 1 fire button (bit 7), 0 = pressed.",
+   "description": "Bit 7 = 0 when the fire button of controller 1 is pressed, 1 when released. If VBLANK D6 (latch) is set, a press is latched: the bit stays 0 after release until D6 is cleared. Other bits are open bus. These inputs are also used as keypad column inputs. Bits 5-0 are not driven by the TIA; real hardware returns residue from the data bus (often the high byte of the operand address, e.g. $00 for $30-$3D mirrors reads with LDA zeropage), which is why direct comparison like 'cmp #$80' is fragile. Use BIT to put bit 7 in N and bit 6 in V.",
+   "timing": "",
+   "issues": [
+    "Active low: 0 = pressed. A common mistake is testing with BNE/BEQ the wrong way round.",
+    "With the latch enabled (VBLANK D6=1), the button reads pressed until the latch is reset; programs that want 'edge' presses must manage the latch.",
+    "Joystick directions are not on the TIA: they are in SWCHA ($280) on the RIOT.",
+    "In the 7800 and some controller types (e.g. 2-button genesis-type pads) INPT4/5 doubles as button 1 and INPT1/INPT0/INPT2/INPT3 as the second button depending on controller; details vary by controller."
+   ],
+   "example": "  lda INPT4\n  bpl .firePressed",
+   "mirror": "$3D"
+  }
+ ]
+}

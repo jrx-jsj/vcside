@@ -1,0 +1,3359 @@
+{
+ "cpu": "6502/6507",
+ "notes": [
+  "The 6507 in the 2600 is a 6502 with 13 address lines (8 KB space, cartridge at $1000-$1FFF) and no IRQ/NMI pins.",
+  "CPU clock is the colour clock / 3: 76 CPU cycles per scanline (228 colour clocks).",
+  "Indexed reads (abs,X / abs,Y / (zp),Y) take +1 cycle when the effective address crosses a page; stores and read-modify-write always take it.",
+  "Branches: 2 cycles not taken, 3 taken, 4 taken to another page.",
+  "Zero-page indexed addressing wraps inside page 0 ($FF,X with X=2 reads $01)."
+ ],
+ "modes": {
+  "imp": {
+   "bytes": 1,
+   "syntax": "",
+   "name": "Implied"
+  },
+  "acc": {
+   "bytes": 1,
+   "syntax": "A",
+   "name": "Accumulator"
+  },
+  "imm": {
+   "bytes": 2,
+   "syntax": "#$nn",
+   "name": "Immediate"
+  },
+  "zp": {
+   "bytes": 2,
+   "syntax": "$nn",
+   "name": "Zero page"
+  },
+  "zpx": {
+   "bytes": 2,
+   "syntax": "$nn,X",
+   "name": "Zero page,X"
+  },
+  "zpy": {
+   "bytes": 2,
+   "syntax": "$nn,Y",
+   "name": "Zero page,Y"
+  },
+  "abs": {
+   "bytes": 3,
+   "syntax": "$nnnn",
+   "name": "Absolute"
+  },
+  "absx": {
+   "bytes": 3,
+   "syntax": "$nnnn,X",
+   "name": "Absolute,X"
+  },
+  "absy": {
+   "bytes": 3,
+   "syntax": "$nnnn,Y",
+   "name": "Absolute,Y"
+  },
+  "ind": {
+   "bytes": 3,
+   "syntax": "($nnnn)",
+   "name": "Indirect"
+  },
+  "indx": {
+   "bytes": 2,
+   "syntax": "($nn,X)",
+   "name": "(Indirect,X)"
+  },
+  "indy": {
+   "bytes": 2,
+   "syntax": "($nn),Y",
+   "name": "(Indirect),Y"
+  },
+  "rel": {
+   "bytes": 2,
+   "syntax": "label",
+   "name": "Relative"
+  }
+ },
+ "instructions": {
+  "ADC": {
+   "summary": "Add with carry",
+   "flags": "NVZC",
+   "description": "A = A + M + C. In decimal mode (SED) the addition is BCD; on the NMOS 6502 N, V and Z are not valid after a decimal ADC.",
+   "illegal": false
+  },
+  "AND": {
+   "summary": "Logical AND",
+   "flags": "NZ",
+   "description": "A = A & M.",
+   "illegal": false
+  },
+  "ASL": {
+   "summary": "Arithmetic shift left",
+   "flags": "NZC",
+   "description": "Shifts left one bit; bit 7 goes to C, 0 enters bit 0.",
+   "illegal": false
+  },
+  "BCC": {
+   "summary": "Branch if carry clear",
+   "flags": "",
+   "description": "Branches if C = 0. 2 cycles, +1 if taken, +1 more if the target is on another page.",
+   "illegal": false
+  },
+  "BCS": {
+   "summary": "Branch if carry set",
+   "flags": "",
+   "description": "Branches if C = 1. 2 cycles, +1 if taken, +1 more if the target is on another page.",
+   "illegal": false
+  },
+  "BEQ": {
+   "summary": "Branch if equal (Z set)",
+   "flags": "",
+   "description": "Branches if Z = 1. 2 cycles, +1 if taken, +1 more if the target is on another page.",
+   "illegal": false
+  },
+  "BMI": {
+   "summary": "Branch if minus (N set)",
+   "flags": "",
+   "description": "Branches if N = 1. 2 cycles, +1 if taken, +1 more if the target is on another page.",
+   "illegal": false
+  },
+  "BNE": {
+   "summary": "Branch if not equal (Z clear)",
+   "flags": "",
+   "description": "Branches if Z = 0. 2 cycles, +1 if taken, +1 more if the target is on another page.",
+   "illegal": false
+  },
+  "BPL": {
+   "summary": "Branch if plus (N clear)",
+   "flags": "",
+   "description": "Branches if N = 0. 2 cycles, +1 if taken, +1 more if the target is on another page.",
+   "illegal": false
+  },
+  "BVC": {
+   "summary": "Branch if overflow clear",
+   "flags": "",
+   "description": "Branches if V = 0. 2 cycles, +1 if taken, +1 more if the target is on another page.",
+   "illegal": false
+  },
+  "BVS": {
+   "summary": "Branch if overflow set",
+   "flags": "",
+   "description": "Branches if V = 1. 2 cycles, +1 if taken, +1 more if the target is on another page.",
+   "illegal": false
+  },
+  "BIT": {
+   "summary": "Bit test",
+   "flags": "NVZ",
+   "description": "Z = (A & M) == 0; N and V take bits 7 and 6 of M. Common on the 2600 to test collision and input bits (D7/D6) without touching A. BIT abs is also used as a 'skip next 2 bytes' trick.",
+   "illegal": false
+  },
+  "BRK": {
+   "summary": "Force interrupt",
+   "flags": "B I",
+   "description": "Pushes PC+2 and P (with B set) and jumps through $FFFE. The 6507 has no IRQ pin, so BRK is the only way to reach that vector.",
+   "illegal": false
+  },
+  "CLC": {
+   "summary": "Clear carry",
+   "flags": "C",
+   "description": "C = 0.",
+   "illegal": false
+  },
+  "CLD": {
+   "summary": "Clear decimal mode",
+   "flags": "D",
+   "description": "D = 0. Power-on state of D is undefined: clear it at start-up.",
+   "illegal": false
+  },
+  "CLI": {
+   "summary": "Clear interrupt disable",
+   "flags": "I",
+   "description": "I = 0. Irrelevant on the 6507 (no IRQ pin).",
+   "illegal": false
+  },
+  "CLV": {
+   "summary": "Clear overflow",
+   "flags": "V",
+   "description": "V = 0.",
+   "illegal": false
+  },
+  "CMP": {
+   "summary": "Compare accumulator",
+   "flags": "NZC",
+   "description": "Computes A - M: C = A >= M, Z = A == M, N = bit 7 of the result.",
+   "illegal": false
+  },
+  "CPX": {
+   "summary": "Compare X",
+   "flags": "NZC",
+   "description": "Computes X - M and sets flags like CMP.",
+   "illegal": false
+  },
+  "CPY": {
+   "summary": "Compare Y",
+   "flags": "NZC",
+   "description": "Computes Y - M and sets flags like CMP.",
+   "illegal": false
+  },
+  "DEC": {
+   "summary": "Decrement memory",
+   "flags": "NZ",
+   "description": "M = M - 1.",
+   "illegal": false
+  },
+  "DEX": {
+   "summary": "Decrement X",
+   "flags": "NZ",
+   "description": "X = X - 1.",
+   "illegal": false
+  },
+  "DEY": {
+   "summary": "Decrement Y",
+   "flags": "NZ",
+   "description": "Y = Y - 1.",
+   "illegal": false
+  },
+  "EOR": {
+   "summary": "Exclusive OR",
+   "flags": "NZ",
+   "description": "A = A ^ M.",
+   "illegal": false
+  },
+  "INC": {
+   "summary": "Increment memory",
+   "flags": "NZ",
+   "description": "M = M + 1.",
+   "illegal": false
+  },
+  "INX": {
+   "summary": "Increment X",
+   "flags": "NZ",
+   "description": "X = X + 1.",
+   "illegal": false
+  },
+  "INY": {
+   "summary": "Increment Y",
+   "flags": "NZ",
+   "description": "Y = Y + 1.",
+   "illegal": false
+  },
+  "JMP": {
+   "summary": "Jump",
+   "flags": "",
+   "description": "PC = address. Indirect JMP bug: JMP ($xxFF) reads the high byte from $xx00, not from the next page.",
+   "illegal": false
+  },
+  "JSR": {
+   "summary": "Jump to subroutine",
+   "flags": "",
+   "description": "Pushes PC+2 (address of the last byte of JSR) and jumps. With only 128 bytes of RAM, every JSR costs 2 bytes of stack.",
+   "illegal": false
+  },
+  "LDA": {
+   "summary": "Load accumulator",
+   "flags": "NZ",
+   "description": "A = M.",
+   "illegal": false
+  },
+  "LDX": {
+   "summary": "Load X",
+   "flags": "NZ",
+   "description": "X = M.",
+   "illegal": false
+  },
+  "LDY": {
+   "summary": "Load Y",
+   "flags": "NZ",
+   "description": "Y = M.",
+   "illegal": false
+  },
+  "LSR": {
+   "summary": "Logical shift right",
+   "flags": "NZC",
+   "description": "Shifts right one bit; bit 0 goes to C, 0 enters bit 7.",
+   "illegal": false
+  },
+  "NOP": {
+   "summary": "No operation",
+   "flags": "",
+   "description": "Does nothing for 2 cycles.",
+   "illegal": false
+  },
+  "ORA": {
+   "summary": "Logical OR",
+   "flags": "NZ",
+   "description": "A = A | M.",
+   "illegal": false
+  },
+  "PHA": {
+   "summary": "Push accumulator",
+   "flags": "",
+   "description": "Pushes A.",
+   "illegal": false
+  },
+  "PHP": {
+   "summary": "Push processor status",
+   "flags": "",
+   "description": "Pushes P with B and bit 5 set. On the 2600, 'PHP' with S pointing at a TIA register ($00-$3F mirrors) writes several registers in 3 cycles (e.g. the ENAM0/ENAM1/ENABL trick of Combat).",
+   "illegal": false
+  },
+  "PLA": {
+   "summary": "Pull accumulator",
+   "flags": "NZ",
+   "description": "Pulls A.",
+   "illegal": false
+  },
+  "PLP": {
+   "summary": "Pull processor status",
+   "flags": "all",
+   "description": "Pulls P.",
+   "illegal": false
+  },
+  "ROL": {
+   "summary": "Rotate left",
+   "flags": "NZC",
+   "description": "Rotates left through carry.",
+   "illegal": false
+  },
+  "ROR": {
+   "summary": "Rotate right",
+   "flags": "NZC",
+   "description": "Rotates right through carry.",
+   "illegal": false
+  },
+  "RTI": {
+   "summary": "Return from interrupt",
+   "flags": "all",
+   "description": "Pulls P and PC.",
+   "illegal": false
+  },
+  "RTS": {
+   "summary": "Return from subroutine",
+   "flags": "",
+   "description": "Pulls PC and adds 1. Pushing an address-1 and doing RTS is a common jump-table trick.",
+   "illegal": false
+  },
+  "SBC": {
+   "summary": "Subtract with carry",
+   "flags": "NVZC",
+   "description": "A = A - M - (1 - C). Set C (SEC) before a single-byte subtraction.",
+   "illegal": false
+  },
+  "SEC": {
+   "summary": "Set carry",
+   "flags": "C",
+   "description": "C = 1.",
+   "illegal": false
+  },
+  "SED": {
+   "summary": "Set decimal mode",
+   "flags": "D",
+   "description": "D = 1: ADC/SBC work in BCD. Handy for scores.",
+   "illegal": false
+  },
+  "SEI": {
+   "summary": "Set interrupt disable",
+   "flags": "I",
+   "description": "I = 1. Customary at reset even though the 6507 has no IRQ pin.",
+   "illegal": false
+  },
+  "STA": {
+   "summary": "Store accumulator",
+   "flags": "",
+   "description": "M = A. STA abs,X / abs,Y and (zp),Y always take the extra cycle.",
+   "illegal": false
+  },
+  "STX": {
+   "summary": "Store X",
+   "flags": "",
+   "description": "M = X.",
+   "illegal": false
+  },
+  "STY": {
+   "summary": "Store Y",
+   "flags": "",
+   "description": "M = Y.",
+   "illegal": false
+  },
+  "TAX": {
+   "summary": "Transfer A to X",
+   "flags": "NZ",
+   "description": "X = A.",
+   "illegal": false
+  },
+  "TAY": {
+   "summary": "Transfer A to Y",
+   "flags": "NZ",
+   "description": "Y = A.",
+   "illegal": false
+  },
+  "TSX": {
+   "summary": "Transfer S to X",
+   "flags": "NZ",
+   "description": "X = S.",
+   "illegal": false
+  },
+  "TXA": {
+   "summary": "Transfer X to A",
+   "flags": "NZ",
+   "description": "A = X.",
+   "illegal": false
+  },
+  "TXS": {
+   "summary": "Transfer X to S",
+   "flags": "",
+   "description": "S = X. Pointing S at TIA registers allows PHP/PHA tricks.",
+   "illegal": false
+  },
+  "TYA": {
+   "summary": "Transfer Y to A",
+   "flags": "NZ",
+   "description": "A = Y.",
+   "illegal": false
+  },
+  "LAX": {
+   "summary": "Load A and X (illegal)",
+   "flags": "NZ",
+   "description": "A = X = M. Stable except the immediate form (LXA).",
+   "illegal": true
+  },
+  "SAX": {
+   "summary": "Store A AND X (illegal)",
+   "flags": "",
+   "description": "M = A & X; flags untouched.",
+   "illegal": true
+  },
+  "DCP": {
+   "summary": "Decrement and compare (illegal)",
+   "flags": "NZC",
+   "description": "M = M - 1, then CMP M. Popular in 2600 kernels: 'DCP counter / BCS' draws a sprite in fewer cycles.",
+   "illegal": true
+  },
+  "ISB": {
+   "summary": "Increment and subtract (illegal)",
+   "flags": "NVZC",
+   "description": "M = M + 1, then SBC M. Also known as ISC.",
+   "illegal": true
+  },
+  "SLO": {
+   "summary": "Shift left and OR (illegal)",
+   "flags": "NZC",
+   "description": "M = M << 1, then A = A | M.",
+   "illegal": true
+  },
+  "RLA": {
+   "summary": "Rotate left and AND (illegal)",
+   "flags": "NZC",
+   "description": "M = ROL M, then A = A & M.",
+   "illegal": true
+  },
+  "SRE": {
+   "summary": "Shift right and EOR (illegal)",
+   "flags": "NZC",
+   "description": "M = M >> 1, then A = A ^ M.",
+   "illegal": true
+  },
+  "RRA": {
+   "summary": "Rotate right and add (illegal)",
+   "flags": "NVZC",
+   "description": "M = ROR M, then A = A + M + C.",
+   "illegal": true
+  },
+  "ANC": {
+   "summary": "AND, carry = bit 7 (illegal)",
+   "flags": "NZC",
+   "description": "A = A & #imm; C = N.",
+   "illegal": true
+  },
+  "ASR": {
+   "summary": "AND then LSR (illegal)",
+   "flags": "NZC",
+   "description": "A = (A & #imm) >> 1. Also known as ALR.",
+   "illegal": true
+  },
+  "ARR": {
+   "summary": "AND then ROR (illegal)",
+   "flags": "NVZC",
+   "description": "A = ROR(A & #imm) with odd V and C rules.",
+   "illegal": true
+  },
+  "SBX": {
+   "summary": "X = (A AND X) - imm (illegal)",
+   "flags": "NZC",
+   "description": "X = (A & X) - #imm without borrow; flags like CMP. Also known as AXS.",
+   "illegal": true
+  },
+  "USBC": {
+   "summary": "SBC immediate (illegal duplicate)",
+   "flags": "NVZC",
+   "description": "Opcode $EB behaves exactly like SBC #imm.",
+   "illegal": true
+  },
+  "LAS": {
+   "summary": "A = X = S = M AND S (unstable)",
+   "flags": "NZ",
+   "description": "Rarely useful.",
+   "illegal": true
+  },
+  "ANE": {
+   "summary": "Unstable (XAA)",
+   "flags": "NZ",
+   "description": "Depends on the chip: avoid.",
+   "illegal": true
+  },
+  "LXA": {
+   "summary": "LAX immediate (unstable)",
+   "flags": "NZ",
+   "description": "Result depends on a 'magic' constant: use LDA #0 first or avoid.",
+   "illegal": true
+  },
+  "SHA": {
+   "summary": "Store A & X & (H+1) (unstable)",
+   "flags": "",
+   "description": "Avoid.",
+   "illegal": true
+  },
+  "SHS": {
+   "summary": "S = A & X; store S & (H+1) (unstable)",
+   "flags": "",
+   "description": "Avoid.",
+   "illegal": true
+  },
+  "SHX": {
+   "summary": "Store X & (H+1) (unstable)",
+   "flags": "",
+   "description": "Avoid.",
+   "illegal": true
+  },
+  "SHY": {
+   "summary": "Store Y & (H+1) (unstable)",
+   "flags": "",
+   "description": "Avoid.",
+   "illegal": true
+  },
+  "JAM": {
+   "summary": "Halt the CPU",
+   "flags": "",
+   "description": "Locks up the processor until reset (also called KIL).",
+   "illegal": true
+  }
+ },
+ "opcodes": [
+  {
+   "op": "$00",
+   "mnemonic": "BRK",
+   "mode": "imp",
+   "bytes": 2,
+   "cycles": 7,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$01",
+   "mnemonic": "ORA",
+   "mode": "indx",
+   "bytes": 2,
+   "cycles": 6,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$02",
+   "mnemonic": "JAM",
+   "mode": "imp",
+   "bytes": 1,
+   "cycles": 0,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": false
+  },
+  {
+   "op": "$03",
+   "mnemonic": "SLO",
+   "mode": "indx",
+   "bytes": 2,
+   "cycles": 8,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$04",
+   "mnemonic": "NOP",
+   "mode": "zp",
+   "bytes": 2,
+   "cycles": 3,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$05",
+   "mnemonic": "ORA",
+   "mode": "zp",
+   "bytes": 2,
+   "cycles": 3,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$06",
+   "mnemonic": "ASL",
+   "mode": "zp",
+   "bytes": 2,
+   "cycles": 5,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$07",
+   "mnemonic": "SLO",
+   "mode": "zp",
+   "bytes": 2,
+   "cycles": 5,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$08",
+   "mnemonic": "PHP",
+   "mode": "imp",
+   "bytes": 1,
+   "cycles": 3,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$09",
+   "mnemonic": "ORA",
+   "mode": "imm",
+   "bytes": 2,
+   "cycles": 2,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$0A",
+   "mnemonic": "ASL",
+   "mode": "acc",
+   "bytes": 1,
+   "cycles": 2,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$0B",
+   "mnemonic": "ANC",
+   "mode": "imm",
+   "bytes": 2,
+   "cycles": 2,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$0C",
+   "mnemonic": "NOP",
+   "mode": "abs",
+   "bytes": 3,
+   "cycles": 4,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$0D",
+   "mnemonic": "ORA",
+   "mode": "abs",
+   "bytes": 3,
+   "cycles": 4,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$0E",
+   "mnemonic": "ASL",
+   "mode": "abs",
+   "bytes": 3,
+   "cycles": 6,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$0F",
+   "mnemonic": "SLO",
+   "mode": "abs",
+   "bytes": 3,
+   "cycles": 6,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$10",
+   "mnemonic": "BPL",
+   "mode": "rel",
+   "bytes": 2,
+   "cycles": 2,
+   "page_penalty": false,
+   "branch": true,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$11",
+   "mnemonic": "ORA",
+   "mode": "indy",
+   "bytes": 2,
+   "cycles": 5,
+   "page_penalty": true,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$12",
+   "mnemonic": "JAM",
+   "mode": "imp",
+   "bytes": 1,
+   "cycles": 0,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": false
+  },
+  {
+   "op": "$13",
+   "mnemonic": "SLO",
+   "mode": "indy",
+   "bytes": 2,
+   "cycles": 8,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$14",
+   "mnemonic": "NOP",
+   "mode": "zpx",
+   "bytes": 2,
+   "cycles": 4,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$15",
+   "mnemonic": "ORA",
+   "mode": "zpx",
+   "bytes": 2,
+   "cycles": 4,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$16",
+   "mnemonic": "ASL",
+   "mode": "zpx",
+   "bytes": 2,
+   "cycles": 6,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$17",
+   "mnemonic": "SLO",
+   "mode": "zpx",
+   "bytes": 2,
+   "cycles": 6,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$18",
+   "mnemonic": "CLC",
+   "mode": "imp",
+   "bytes": 1,
+   "cycles": 2,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$19",
+   "mnemonic": "ORA",
+   "mode": "absy",
+   "bytes": 3,
+   "cycles": 4,
+   "page_penalty": true,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$1A",
+   "mnemonic": "NOP",
+   "mode": "imp",
+   "bytes": 1,
+   "cycles": 2,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$1B",
+   "mnemonic": "SLO",
+   "mode": "absy",
+   "bytes": 3,
+   "cycles": 7,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$1C",
+   "mnemonic": "NOP",
+   "mode": "absx",
+   "bytes": 3,
+   "cycles": 4,
+   "page_penalty": true,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$1D",
+   "mnemonic": "ORA",
+   "mode": "absx",
+   "bytes": 3,
+   "cycles": 4,
+   "page_penalty": true,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$1E",
+   "mnemonic": "ASL",
+   "mode": "absx",
+   "bytes": 3,
+   "cycles": 7,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$1F",
+   "mnemonic": "SLO",
+   "mode": "absx",
+   "bytes": 3,
+   "cycles": 7,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$20",
+   "mnemonic": "JSR",
+   "mode": "abs",
+   "bytes": 3,
+   "cycles": 6,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$21",
+   "mnemonic": "AND",
+   "mode": "indx",
+   "bytes": 2,
+   "cycles": 6,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$22",
+   "mnemonic": "JAM",
+   "mode": "imp",
+   "bytes": 1,
+   "cycles": 0,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": false
+  },
+  {
+   "op": "$23",
+   "mnemonic": "RLA",
+   "mode": "indx",
+   "bytes": 2,
+   "cycles": 8,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$24",
+   "mnemonic": "BIT",
+   "mode": "zp",
+   "bytes": 2,
+   "cycles": 3,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$25",
+   "mnemonic": "AND",
+   "mode": "zp",
+   "bytes": 2,
+   "cycles": 3,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$26",
+   "mnemonic": "ROL",
+   "mode": "zp",
+   "bytes": 2,
+   "cycles": 5,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$27",
+   "mnemonic": "RLA",
+   "mode": "zp",
+   "bytes": 2,
+   "cycles": 5,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$28",
+   "mnemonic": "PLP",
+   "mode": "imp",
+   "bytes": 1,
+   "cycles": 4,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$29",
+   "mnemonic": "AND",
+   "mode": "imm",
+   "bytes": 2,
+   "cycles": 2,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$2A",
+   "mnemonic": "ROL",
+   "mode": "acc",
+   "bytes": 1,
+   "cycles": 2,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$2B",
+   "mnemonic": "ANC",
+   "mode": "imm",
+   "bytes": 2,
+   "cycles": 2,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$2C",
+   "mnemonic": "BIT",
+   "mode": "abs",
+   "bytes": 3,
+   "cycles": 4,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$2D",
+   "mnemonic": "AND",
+   "mode": "abs",
+   "bytes": 3,
+   "cycles": 4,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$2E",
+   "mnemonic": "ROL",
+   "mode": "abs",
+   "bytes": 3,
+   "cycles": 6,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$2F",
+   "mnemonic": "RLA",
+   "mode": "abs",
+   "bytes": 3,
+   "cycles": 6,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$30",
+   "mnemonic": "BMI",
+   "mode": "rel",
+   "bytes": 2,
+   "cycles": 2,
+   "page_penalty": false,
+   "branch": true,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$31",
+   "mnemonic": "AND",
+   "mode": "indy",
+   "bytes": 2,
+   "cycles": 5,
+   "page_penalty": true,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$32",
+   "mnemonic": "JAM",
+   "mode": "imp",
+   "bytes": 1,
+   "cycles": 0,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": false
+  },
+  {
+   "op": "$33",
+   "mnemonic": "RLA",
+   "mode": "indy",
+   "bytes": 2,
+   "cycles": 8,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$34",
+   "mnemonic": "NOP",
+   "mode": "zpx",
+   "bytes": 2,
+   "cycles": 4,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$35",
+   "mnemonic": "AND",
+   "mode": "zpx",
+   "bytes": 2,
+   "cycles": 4,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$36",
+   "mnemonic": "ROL",
+   "mode": "zpx",
+   "bytes": 2,
+   "cycles": 6,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$37",
+   "mnemonic": "RLA",
+   "mode": "zpx",
+   "bytes": 2,
+   "cycles": 6,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$38",
+   "mnemonic": "SEC",
+   "mode": "imp",
+   "bytes": 1,
+   "cycles": 2,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$39",
+   "mnemonic": "AND",
+   "mode": "absy",
+   "bytes": 3,
+   "cycles": 4,
+   "page_penalty": true,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$3A",
+   "mnemonic": "NOP",
+   "mode": "imp",
+   "bytes": 1,
+   "cycles": 2,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$3B",
+   "mnemonic": "RLA",
+   "mode": "absy",
+   "bytes": 3,
+   "cycles": 7,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$3C",
+   "mnemonic": "NOP",
+   "mode": "absx",
+   "bytes": 3,
+   "cycles": 4,
+   "page_penalty": true,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$3D",
+   "mnemonic": "AND",
+   "mode": "absx",
+   "bytes": 3,
+   "cycles": 4,
+   "page_penalty": true,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$3E",
+   "mnemonic": "ROL",
+   "mode": "absx",
+   "bytes": 3,
+   "cycles": 7,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$3F",
+   "mnemonic": "RLA",
+   "mode": "absx",
+   "bytes": 3,
+   "cycles": 7,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$40",
+   "mnemonic": "RTI",
+   "mode": "imp",
+   "bytes": 1,
+   "cycles": 6,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$41",
+   "mnemonic": "EOR",
+   "mode": "indx",
+   "bytes": 2,
+   "cycles": 6,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$42",
+   "mnemonic": "JAM",
+   "mode": "imp",
+   "bytes": 1,
+   "cycles": 0,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": false
+  },
+  {
+   "op": "$43",
+   "mnemonic": "SRE",
+   "mode": "indx",
+   "bytes": 2,
+   "cycles": 8,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$44",
+   "mnemonic": "NOP",
+   "mode": "zp",
+   "bytes": 2,
+   "cycles": 3,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$45",
+   "mnemonic": "EOR",
+   "mode": "zp",
+   "bytes": 2,
+   "cycles": 3,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$46",
+   "mnemonic": "LSR",
+   "mode": "zp",
+   "bytes": 2,
+   "cycles": 5,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$47",
+   "mnemonic": "SRE",
+   "mode": "zp",
+   "bytes": 2,
+   "cycles": 5,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$48",
+   "mnemonic": "PHA",
+   "mode": "imp",
+   "bytes": 1,
+   "cycles": 3,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$49",
+   "mnemonic": "EOR",
+   "mode": "imm",
+   "bytes": 2,
+   "cycles": 2,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$4A",
+   "mnemonic": "LSR",
+   "mode": "acc",
+   "bytes": 1,
+   "cycles": 2,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$4B",
+   "mnemonic": "ASR",
+   "mode": "imm",
+   "bytes": 2,
+   "cycles": 2,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$4C",
+   "mnemonic": "JMP",
+   "mode": "abs",
+   "bytes": 3,
+   "cycles": 3,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$4D",
+   "mnemonic": "EOR",
+   "mode": "abs",
+   "bytes": 3,
+   "cycles": 4,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$4E",
+   "mnemonic": "LSR",
+   "mode": "abs",
+   "bytes": 3,
+   "cycles": 6,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$4F",
+   "mnemonic": "SRE",
+   "mode": "abs",
+   "bytes": 3,
+   "cycles": 6,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$50",
+   "mnemonic": "BVC",
+   "mode": "rel",
+   "bytes": 2,
+   "cycles": 2,
+   "page_penalty": false,
+   "branch": true,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$51",
+   "mnemonic": "EOR",
+   "mode": "indy",
+   "bytes": 2,
+   "cycles": 5,
+   "page_penalty": true,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$52",
+   "mnemonic": "JAM",
+   "mode": "imp",
+   "bytes": 1,
+   "cycles": 0,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": false
+  },
+  {
+   "op": "$53",
+   "mnemonic": "SRE",
+   "mode": "indy",
+   "bytes": 2,
+   "cycles": 8,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$54",
+   "mnemonic": "NOP",
+   "mode": "zpx",
+   "bytes": 2,
+   "cycles": 4,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$55",
+   "mnemonic": "EOR",
+   "mode": "zpx",
+   "bytes": 2,
+   "cycles": 4,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$56",
+   "mnemonic": "LSR",
+   "mode": "zpx",
+   "bytes": 2,
+   "cycles": 6,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$57",
+   "mnemonic": "SRE",
+   "mode": "zpx",
+   "bytes": 2,
+   "cycles": 6,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$58",
+   "mnemonic": "CLI",
+   "mode": "imp",
+   "bytes": 1,
+   "cycles": 2,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$59",
+   "mnemonic": "EOR",
+   "mode": "absy",
+   "bytes": 3,
+   "cycles": 4,
+   "page_penalty": true,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$5A",
+   "mnemonic": "NOP",
+   "mode": "imp",
+   "bytes": 1,
+   "cycles": 2,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$5B",
+   "mnemonic": "SRE",
+   "mode": "absy",
+   "bytes": 3,
+   "cycles": 7,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$5C",
+   "mnemonic": "NOP",
+   "mode": "absx",
+   "bytes": 3,
+   "cycles": 4,
+   "page_penalty": true,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$5D",
+   "mnemonic": "EOR",
+   "mode": "absx",
+   "bytes": 3,
+   "cycles": 4,
+   "page_penalty": true,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$5E",
+   "mnemonic": "LSR",
+   "mode": "absx",
+   "bytes": 3,
+   "cycles": 7,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$5F",
+   "mnemonic": "SRE",
+   "mode": "absx",
+   "bytes": 3,
+   "cycles": 7,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$60",
+   "mnemonic": "RTS",
+   "mode": "imp",
+   "bytes": 1,
+   "cycles": 6,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$61",
+   "mnemonic": "ADC",
+   "mode": "indx",
+   "bytes": 2,
+   "cycles": 6,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$62",
+   "mnemonic": "JAM",
+   "mode": "imp",
+   "bytes": 1,
+   "cycles": 0,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": false
+  },
+  {
+   "op": "$63",
+   "mnemonic": "RRA",
+   "mode": "indx",
+   "bytes": 2,
+   "cycles": 8,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$64",
+   "mnemonic": "NOP",
+   "mode": "zp",
+   "bytes": 2,
+   "cycles": 3,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$65",
+   "mnemonic": "ADC",
+   "mode": "zp",
+   "bytes": 2,
+   "cycles": 3,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$66",
+   "mnemonic": "ROR",
+   "mode": "zp",
+   "bytes": 2,
+   "cycles": 5,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$67",
+   "mnemonic": "RRA",
+   "mode": "zp",
+   "bytes": 2,
+   "cycles": 5,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$68",
+   "mnemonic": "PLA",
+   "mode": "imp",
+   "bytes": 1,
+   "cycles": 4,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$69",
+   "mnemonic": "ADC",
+   "mode": "imm",
+   "bytes": 2,
+   "cycles": 2,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$6A",
+   "mnemonic": "ROR",
+   "mode": "acc",
+   "bytes": 1,
+   "cycles": 2,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$6B",
+   "mnemonic": "ARR",
+   "mode": "imm",
+   "bytes": 2,
+   "cycles": 2,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$6C",
+   "mnemonic": "JMP",
+   "mode": "ind",
+   "bytes": 3,
+   "cycles": 5,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$6D",
+   "mnemonic": "ADC",
+   "mode": "abs",
+   "bytes": 3,
+   "cycles": 4,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$6E",
+   "mnemonic": "ROR",
+   "mode": "abs",
+   "bytes": 3,
+   "cycles": 6,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$6F",
+   "mnemonic": "RRA",
+   "mode": "abs",
+   "bytes": 3,
+   "cycles": 6,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$70",
+   "mnemonic": "BVS",
+   "mode": "rel",
+   "bytes": 2,
+   "cycles": 2,
+   "page_penalty": false,
+   "branch": true,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$71",
+   "mnemonic": "ADC",
+   "mode": "indy",
+   "bytes": 2,
+   "cycles": 5,
+   "page_penalty": true,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$72",
+   "mnemonic": "JAM",
+   "mode": "imp",
+   "bytes": 1,
+   "cycles": 0,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": false
+  },
+  {
+   "op": "$73",
+   "mnemonic": "RRA",
+   "mode": "indy",
+   "bytes": 2,
+   "cycles": 8,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$74",
+   "mnemonic": "NOP",
+   "mode": "zpx",
+   "bytes": 2,
+   "cycles": 4,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$75",
+   "mnemonic": "ADC",
+   "mode": "zpx",
+   "bytes": 2,
+   "cycles": 4,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$76",
+   "mnemonic": "ROR",
+   "mode": "zpx",
+   "bytes": 2,
+   "cycles": 6,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$77",
+   "mnemonic": "RRA",
+   "mode": "zpx",
+   "bytes": 2,
+   "cycles": 6,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$78",
+   "mnemonic": "SEI",
+   "mode": "imp",
+   "bytes": 1,
+   "cycles": 2,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$79",
+   "mnemonic": "ADC",
+   "mode": "absy",
+   "bytes": 3,
+   "cycles": 4,
+   "page_penalty": true,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$7A",
+   "mnemonic": "NOP",
+   "mode": "imp",
+   "bytes": 1,
+   "cycles": 2,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$7B",
+   "mnemonic": "RRA",
+   "mode": "absy",
+   "bytes": 3,
+   "cycles": 7,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$7C",
+   "mnemonic": "NOP",
+   "mode": "absx",
+   "bytes": 3,
+   "cycles": 4,
+   "page_penalty": true,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$7D",
+   "mnemonic": "ADC",
+   "mode": "absx",
+   "bytes": 3,
+   "cycles": 4,
+   "page_penalty": true,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$7E",
+   "mnemonic": "ROR",
+   "mode": "absx",
+   "bytes": 3,
+   "cycles": 7,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$7F",
+   "mnemonic": "RRA",
+   "mode": "absx",
+   "bytes": 3,
+   "cycles": 7,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$80",
+   "mnemonic": "NOP",
+   "mode": "imm",
+   "bytes": 2,
+   "cycles": 2,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$81",
+   "mnemonic": "STA",
+   "mode": "indx",
+   "bytes": 2,
+   "cycles": 6,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$82",
+   "mnemonic": "NOP",
+   "mode": "imm",
+   "bytes": 2,
+   "cycles": 2,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$83",
+   "mnemonic": "SAX",
+   "mode": "indx",
+   "bytes": 2,
+   "cycles": 6,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$84",
+   "mnemonic": "STY",
+   "mode": "zp",
+   "bytes": 2,
+   "cycles": 3,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$85",
+   "mnemonic": "STA",
+   "mode": "zp",
+   "bytes": 2,
+   "cycles": 3,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$86",
+   "mnemonic": "STX",
+   "mode": "zp",
+   "bytes": 2,
+   "cycles": 3,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$87",
+   "mnemonic": "SAX",
+   "mode": "zp",
+   "bytes": 2,
+   "cycles": 3,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$88",
+   "mnemonic": "DEY",
+   "mode": "imp",
+   "bytes": 1,
+   "cycles": 2,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$89",
+   "mnemonic": "NOP",
+   "mode": "imm",
+   "bytes": 2,
+   "cycles": 2,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$8A",
+   "mnemonic": "TXA",
+   "mode": "imp",
+   "bytes": 1,
+   "cycles": 2,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$8B",
+   "mnemonic": "ANE",
+   "mode": "imm",
+   "bytes": 2,
+   "cycles": 2,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": false
+  },
+  {
+   "op": "$8C",
+   "mnemonic": "STY",
+   "mode": "abs",
+   "bytes": 3,
+   "cycles": 4,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$8D",
+   "mnemonic": "STA",
+   "mode": "abs",
+   "bytes": 3,
+   "cycles": 4,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$8E",
+   "mnemonic": "STX",
+   "mode": "abs",
+   "bytes": 3,
+   "cycles": 4,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$8F",
+   "mnemonic": "SAX",
+   "mode": "abs",
+   "bytes": 3,
+   "cycles": 4,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$90",
+   "mnemonic": "BCC",
+   "mode": "rel",
+   "bytes": 2,
+   "cycles": 2,
+   "page_penalty": false,
+   "branch": true,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$91",
+   "mnemonic": "STA",
+   "mode": "indy",
+   "bytes": 2,
+   "cycles": 6,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$92",
+   "mnemonic": "JAM",
+   "mode": "imp",
+   "bytes": 1,
+   "cycles": 0,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": false
+  },
+  {
+   "op": "$93",
+   "mnemonic": "SHA",
+   "mode": "indy",
+   "bytes": 2,
+   "cycles": 6,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": false
+  },
+  {
+   "op": "$94",
+   "mnemonic": "STY",
+   "mode": "zpx",
+   "bytes": 2,
+   "cycles": 4,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$95",
+   "mnemonic": "STA",
+   "mode": "zpx",
+   "bytes": 2,
+   "cycles": 4,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$96",
+   "mnemonic": "STX",
+   "mode": "zpy",
+   "bytes": 2,
+   "cycles": 4,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$97",
+   "mnemonic": "SAX",
+   "mode": "zpy",
+   "bytes": 2,
+   "cycles": 4,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$98",
+   "mnemonic": "TYA",
+   "mode": "imp",
+   "bytes": 1,
+   "cycles": 2,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$99",
+   "mnemonic": "STA",
+   "mode": "absy",
+   "bytes": 3,
+   "cycles": 5,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$9A",
+   "mnemonic": "TXS",
+   "mode": "imp",
+   "bytes": 1,
+   "cycles": 2,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$9B",
+   "mnemonic": "SHS",
+   "mode": "absy",
+   "bytes": 3,
+   "cycles": 5,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": false
+  },
+  {
+   "op": "$9C",
+   "mnemonic": "SHY",
+   "mode": "absx",
+   "bytes": 3,
+   "cycles": 5,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": false
+  },
+  {
+   "op": "$9D",
+   "mnemonic": "STA",
+   "mode": "absx",
+   "bytes": 3,
+   "cycles": 5,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$9E",
+   "mnemonic": "SHX",
+   "mode": "absy",
+   "bytes": 3,
+   "cycles": 5,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": false
+  },
+  {
+   "op": "$9F",
+   "mnemonic": "SHA",
+   "mode": "absy",
+   "bytes": 3,
+   "cycles": 5,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": false
+  },
+  {
+   "op": "$A0",
+   "mnemonic": "LDY",
+   "mode": "imm",
+   "bytes": 2,
+   "cycles": 2,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$A1",
+   "mnemonic": "LDA",
+   "mode": "indx",
+   "bytes": 2,
+   "cycles": 6,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$A2",
+   "mnemonic": "LDX",
+   "mode": "imm",
+   "bytes": 2,
+   "cycles": 2,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$A3",
+   "mnemonic": "LAX",
+   "mode": "indx",
+   "bytes": 2,
+   "cycles": 6,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$A4",
+   "mnemonic": "LDY",
+   "mode": "zp",
+   "bytes": 2,
+   "cycles": 3,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$A5",
+   "mnemonic": "LDA",
+   "mode": "zp",
+   "bytes": 2,
+   "cycles": 3,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$A6",
+   "mnemonic": "LDX",
+   "mode": "zp",
+   "bytes": 2,
+   "cycles": 3,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$A7",
+   "mnemonic": "LAX",
+   "mode": "zp",
+   "bytes": 2,
+   "cycles": 3,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$A8",
+   "mnemonic": "TAY",
+   "mode": "imp",
+   "bytes": 1,
+   "cycles": 2,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$A9",
+   "mnemonic": "LDA",
+   "mode": "imm",
+   "bytes": 2,
+   "cycles": 2,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$AA",
+   "mnemonic": "TAX",
+   "mode": "imp",
+   "bytes": 1,
+   "cycles": 2,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$AB",
+   "mnemonic": "LXA",
+   "mode": "imm",
+   "bytes": 2,
+   "cycles": 2,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": false
+  },
+  {
+   "op": "$AC",
+   "mnemonic": "LDY",
+   "mode": "abs",
+   "bytes": 3,
+   "cycles": 4,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$AD",
+   "mnemonic": "LDA",
+   "mode": "abs",
+   "bytes": 3,
+   "cycles": 4,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$AE",
+   "mnemonic": "LDX",
+   "mode": "abs",
+   "bytes": 3,
+   "cycles": 4,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$AF",
+   "mnemonic": "LAX",
+   "mode": "abs",
+   "bytes": 3,
+   "cycles": 4,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$B0",
+   "mnemonic": "BCS",
+   "mode": "rel",
+   "bytes": 2,
+   "cycles": 2,
+   "page_penalty": false,
+   "branch": true,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$B1",
+   "mnemonic": "LDA",
+   "mode": "indy",
+   "bytes": 2,
+   "cycles": 5,
+   "page_penalty": true,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$B2",
+   "mnemonic": "JAM",
+   "mode": "imp",
+   "bytes": 1,
+   "cycles": 0,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": false
+  },
+  {
+   "op": "$B3",
+   "mnemonic": "LAX",
+   "mode": "indy",
+   "bytes": 2,
+   "cycles": 5,
+   "page_penalty": true,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$B4",
+   "mnemonic": "LDY",
+   "mode": "zpx",
+   "bytes": 2,
+   "cycles": 4,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$B5",
+   "mnemonic": "LDA",
+   "mode": "zpx",
+   "bytes": 2,
+   "cycles": 4,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$B6",
+   "mnemonic": "LDX",
+   "mode": "zpy",
+   "bytes": 2,
+   "cycles": 4,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$B7",
+   "mnemonic": "LAX",
+   "mode": "zpy",
+   "bytes": 2,
+   "cycles": 4,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$B8",
+   "mnemonic": "CLV",
+   "mode": "imp",
+   "bytes": 1,
+   "cycles": 2,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$B9",
+   "mnemonic": "LDA",
+   "mode": "absy",
+   "bytes": 3,
+   "cycles": 4,
+   "page_penalty": true,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$BA",
+   "mnemonic": "TSX",
+   "mode": "imp",
+   "bytes": 1,
+   "cycles": 2,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$BB",
+   "mnemonic": "LAS",
+   "mode": "absy",
+   "bytes": 3,
+   "cycles": 4,
+   "page_penalty": true,
+   "branch": false,
+   "illegal": true,
+   "stable": false
+  },
+  {
+   "op": "$BC",
+   "mnemonic": "LDY",
+   "mode": "absx",
+   "bytes": 3,
+   "cycles": 4,
+   "page_penalty": true,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$BD",
+   "mnemonic": "LDA",
+   "mode": "absx",
+   "bytes": 3,
+   "cycles": 4,
+   "page_penalty": true,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$BE",
+   "mnemonic": "LDX",
+   "mode": "absy",
+   "bytes": 3,
+   "cycles": 4,
+   "page_penalty": true,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$BF",
+   "mnemonic": "LAX",
+   "mode": "absy",
+   "bytes": 3,
+   "cycles": 4,
+   "page_penalty": true,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$C0",
+   "mnemonic": "CPY",
+   "mode": "imm",
+   "bytes": 2,
+   "cycles": 2,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$C1",
+   "mnemonic": "CMP",
+   "mode": "indx",
+   "bytes": 2,
+   "cycles": 6,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$C2",
+   "mnemonic": "NOP",
+   "mode": "imm",
+   "bytes": 2,
+   "cycles": 2,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$C3",
+   "mnemonic": "DCP",
+   "mode": "indx",
+   "bytes": 2,
+   "cycles": 8,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$C4",
+   "mnemonic": "CPY",
+   "mode": "zp",
+   "bytes": 2,
+   "cycles": 3,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$C5",
+   "mnemonic": "CMP",
+   "mode": "zp",
+   "bytes": 2,
+   "cycles": 3,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$C6",
+   "mnemonic": "DEC",
+   "mode": "zp",
+   "bytes": 2,
+   "cycles": 5,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$C7",
+   "mnemonic": "DCP",
+   "mode": "zp",
+   "bytes": 2,
+   "cycles": 5,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$C8",
+   "mnemonic": "INY",
+   "mode": "imp",
+   "bytes": 1,
+   "cycles": 2,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$C9",
+   "mnemonic": "CMP",
+   "mode": "imm",
+   "bytes": 2,
+   "cycles": 2,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$CA",
+   "mnemonic": "DEX",
+   "mode": "imp",
+   "bytes": 1,
+   "cycles": 2,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$CB",
+   "mnemonic": "SBX",
+   "mode": "imm",
+   "bytes": 2,
+   "cycles": 2,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$CC",
+   "mnemonic": "CPY",
+   "mode": "abs",
+   "bytes": 3,
+   "cycles": 4,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$CD",
+   "mnemonic": "CMP",
+   "mode": "abs",
+   "bytes": 3,
+   "cycles": 4,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$CE",
+   "mnemonic": "DEC",
+   "mode": "abs",
+   "bytes": 3,
+   "cycles": 6,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$CF",
+   "mnemonic": "DCP",
+   "mode": "abs",
+   "bytes": 3,
+   "cycles": 6,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$D0",
+   "mnemonic": "BNE",
+   "mode": "rel",
+   "bytes": 2,
+   "cycles": 2,
+   "page_penalty": false,
+   "branch": true,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$D1",
+   "mnemonic": "CMP",
+   "mode": "indy",
+   "bytes": 2,
+   "cycles": 5,
+   "page_penalty": true,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$D2",
+   "mnemonic": "JAM",
+   "mode": "imp",
+   "bytes": 1,
+   "cycles": 0,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": false
+  },
+  {
+   "op": "$D3",
+   "mnemonic": "DCP",
+   "mode": "indy",
+   "bytes": 2,
+   "cycles": 8,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$D4",
+   "mnemonic": "NOP",
+   "mode": "zpx",
+   "bytes": 2,
+   "cycles": 4,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$D5",
+   "mnemonic": "CMP",
+   "mode": "zpx",
+   "bytes": 2,
+   "cycles": 4,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$D6",
+   "mnemonic": "DEC",
+   "mode": "zpx",
+   "bytes": 2,
+   "cycles": 6,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$D7",
+   "mnemonic": "DCP",
+   "mode": "zpx",
+   "bytes": 2,
+   "cycles": 6,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$D8",
+   "mnemonic": "CLD",
+   "mode": "imp",
+   "bytes": 1,
+   "cycles": 2,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$D9",
+   "mnemonic": "CMP",
+   "mode": "absy",
+   "bytes": 3,
+   "cycles": 4,
+   "page_penalty": true,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$DA",
+   "mnemonic": "NOP",
+   "mode": "imp",
+   "bytes": 1,
+   "cycles": 2,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$DB",
+   "mnemonic": "DCP",
+   "mode": "absy",
+   "bytes": 3,
+   "cycles": 7,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$DC",
+   "mnemonic": "NOP",
+   "mode": "absx",
+   "bytes": 3,
+   "cycles": 4,
+   "page_penalty": true,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$DD",
+   "mnemonic": "CMP",
+   "mode": "absx",
+   "bytes": 3,
+   "cycles": 4,
+   "page_penalty": true,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$DE",
+   "mnemonic": "DEC",
+   "mode": "absx",
+   "bytes": 3,
+   "cycles": 7,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$DF",
+   "mnemonic": "DCP",
+   "mode": "absx",
+   "bytes": 3,
+   "cycles": 7,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$E0",
+   "mnemonic": "CPX",
+   "mode": "imm",
+   "bytes": 2,
+   "cycles": 2,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$E1",
+   "mnemonic": "SBC",
+   "mode": "indx",
+   "bytes": 2,
+   "cycles": 6,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$E2",
+   "mnemonic": "NOP",
+   "mode": "imm",
+   "bytes": 2,
+   "cycles": 2,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$E3",
+   "mnemonic": "ISB",
+   "mode": "indx",
+   "bytes": 2,
+   "cycles": 8,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$E4",
+   "mnemonic": "CPX",
+   "mode": "zp",
+   "bytes": 2,
+   "cycles": 3,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$E5",
+   "mnemonic": "SBC",
+   "mode": "zp",
+   "bytes": 2,
+   "cycles": 3,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$E6",
+   "mnemonic": "INC",
+   "mode": "zp",
+   "bytes": 2,
+   "cycles": 5,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$E7",
+   "mnemonic": "ISB",
+   "mode": "zp",
+   "bytes": 2,
+   "cycles": 5,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$E8",
+   "mnemonic": "INX",
+   "mode": "imp",
+   "bytes": 1,
+   "cycles": 2,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$E9",
+   "mnemonic": "SBC",
+   "mode": "imm",
+   "bytes": 2,
+   "cycles": 2,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$EA",
+   "mnemonic": "NOP",
+   "mode": "imp",
+   "bytes": 1,
+   "cycles": 2,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$EB",
+   "mnemonic": "USBC",
+   "mode": "imm",
+   "bytes": 2,
+   "cycles": 2,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$EC",
+   "mnemonic": "CPX",
+   "mode": "abs",
+   "bytes": 3,
+   "cycles": 4,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$ED",
+   "mnemonic": "SBC",
+   "mode": "abs",
+   "bytes": 3,
+   "cycles": 4,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$EE",
+   "mnemonic": "INC",
+   "mode": "abs",
+   "bytes": 3,
+   "cycles": 6,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$EF",
+   "mnemonic": "ISB",
+   "mode": "abs",
+   "bytes": 3,
+   "cycles": 6,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$F0",
+   "mnemonic": "BEQ",
+   "mode": "rel",
+   "bytes": 2,
+   "cycles": 2,
+   "page_penalty": false,
+   "branch": true,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$F1",
+   "mnemonic": "SBC",
+   "mode": "indy",
+   "bytes": 2,
+   "cycles": 5,
+   "page_penalty": true,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$F2",
+   "mnemonic": "JAM",
+   "mode": "imp",
+   "bytes": 1,
+   "cycles": 0,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": false
+  },
+  {
+   "op": "$F3",
+   "mnemonic": "ISB",
+   "mode": "indy",
+   "bytes": 2,
+   "cycles": 8,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$F4",
+   "mnemonic": "NOP",
+   "mode": "zpx",
+   "bytes": 2,
+   "cycles": 4,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$F5",
+   "mnemonic": "SBC",
+   "mode": "zpx",
+   "bytes": 2,
+   "cycles": 4,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$F6",
+   "mnemonic": "INC",
+   "mode": "zpx",
+   "bytes": 2,
+   "cycles": 6,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$F7",
+   "mnemonic": "ISB",
+   "mode": "zpx",
+   "bytes": 2,
+   "cycles": 6,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$F8",
+   "mnemonic": "SED",
+   "mode": "imp",
+   "bytes": 1,
+   "cycles": 2,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$F9",
+   "mnemonic": "SBC",
+   "mode": "absy",
+   "bytes": 3,
+   "cycles": 4,
+   "page_penalty": true,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$FA",
+   "mnemonic": "NOP",
+   "mode": "imp",
+   "bytes": 1,
+   "cycles": 2,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$FB",
+   "mnemonic": "ISB",
+   "mode": "absy",
+   "bytes": 3,
+   "cycles": 7,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$FC",
+   "mnemonic": "NOP",
+   "mode": "absx",
+   "bytes": 3,
+   "cycles": 4,
+   "page_penalty": true,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  },
+  {
+   "op": "$FD",
+   "mnemonic": "SBC",
+   "mode": "absx",
+   "bytes": 3,
+   "cycles": 4,
+   "page_penalty": true,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$FE",
+   "mnemonic": "INC",
+   "mode": "absx",
+   "bytes": 3,
+   "cycles": 7,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": false,
+   "stable": true
+  },
+  {
+   "op": "$FF",
+   "mnemonic": "ISB",
+   "mode": "absx",
+   "bytes": 3,
+   "cycles": 7,
+   "page_penalty": false,
+   "branch": false,
+   "illegal": true,
+   "stable": true
+  }
+ ]
+}

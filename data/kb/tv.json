@@ -1,0 +1,84 @@
+{
+ "standards": [
+  {
+   "id": "NTSC",
+   "lines_total": 262,
+   "vsync": 3,
+   "vblank": 37,
+   "visible": 192,
+   "overscan": 30,
+   "fps": "59.92 (nominal 60)",
+   "cpu_hz": 1193182,
+   "palette": "128 colours, 16 hues x 8 lumas (hue 0 = greyscale)",
+   "stella_tv": "NTSC",
+   "notes": [
+    "Colour clock 3.579545 MHz; 228 clocks x 262 lines = 59736 clocks per frame; 19912 CPU cycles per frame; 76 cycles per line. Frame rate = 3579545/59736 = about 59.92 Hz (broadcast NTSC is 59.94; the console is not locked to it).",
+    "Typical layout: 3 lines VSYNC + 37 lines VBLANK + 192 visible + 30 overscan = 262. Many games use 191-200 visible lines and total 262 regardless; the total must stay at 262 (some TVs tolerate 260-264).",
+    "Timer idioms: TIM64T 43 for VBLANK (37 lines = 2812 cycles) and about 35-36 for overscan (30 lines = 2280 cycles), then WSYNC; adjust for your loop overhead.",
+    "NTSC hue numbers are the reference for most documentation: $1x yellow-gold, $2x orange, $3x red-orange, $4x red-pink, $5x purple, $6x purple-blue, $7x blue, $8x blue, $9x light-blue, $Ax cyan, $Bx green-cyan, $Cx green, $Dx yellow-green, $Ex olive/orange-green, $Fx tan. Approximate names; display varies by TV and emulator palette."
+   ]
+  },
+  {
+   "id": "PAL",
+   "lines_total": 312,
+   "vsync": 3,
+   "vblank": 45,
+   "visible": 228,
+   "overscan": 36,
+   "fps": "49.86 (nominal 50)",
+   "cpu_hz": 1182298,
+   "palette": "128 entries, 16 hues x 8 lumas, but hues 0, 1, 14 and 15 are greyscale so only 12 true hues",
+   "stella_tv": "PAL",
+   "notes": [
+    "Colour clock 3.546894 MHz; 228 clocks x 312 lines = 71136 clocks per frame; 23712 CPU cycles per frame; 76 cycles per line; frame rate about 49.86 Hz.",
+    "Typical layout: 3 VSYNC + 45 VBLANK + 228 visible + 36 overscan = 312, though many PAL games use only 192-200 visible lines and larger blank areas (the visible height varies per TV; 228 is the maximum conventionally drawn).",
+    "Timer idioms: VBLANK 45 lines = 3420 cycles (about TIM64T 53), overscan 36 lines = 2736 cycles (about TIM64T 42); derive the exact value from your own code.",
+    "PAL hue numbering differs from NTSC (hues 2-13 carry colour). A NTSC colour table must be remapped; the same byte gives a different colour.",
+    "A PAL console can still be fed a 262-line signal (PAL60, below) but many PAL TVs reject it."
+   ]
+  },
+  {
+   "id": "PAL60",
+   "lines_total": 262,
+   "vsync": 3,
+   "vblank": 37,
+   "visible": 192,
+   "overscan": 30,
+   "fps": "59.38 (about 60)",
+   "cpu_hz": 1182298,
+   "palette": "PAL palette (as PAL)",
+   "stella_tv": "PAL60",
+   "notes": [
+    "PAL console running the NTSC line count (262 lines): same timing code as NTSC, but PAL colour clock (3.546894 MHz) so frame rate is about 59.38 Hz and the PAL colour table applies.",
+    "Not all PAL TVs accept 60 Hz PAL; it is common on 1990s-era PAL TVs and modern ones with composite input. Some PAL games ship a '60 Hz' selection for this purpose.",
+    "On an NTSC console the NTSC palette applies; the combination 'NTSC 312 lines at 50 Hz' is called NTSC50 in Stella."
+   ]
+  },
+  {
+   "id": "SECAM",
+   "lines_total": 312,
+   "vsync": 3,
+   "vblank": 45,
+   "visible": 228,
+   "overscan": 36,
+   "fps": "49.86 (nominal 50)",
+   "cpu_hz": 1182298,
+   "palette": "8 colours only; selected by COLUxx bits 3-1, hue bits 7-4 and bit 0 ignored",
+   "stella_tv": "SECAM",
+   "notes": [
+    "SECAM consoles use the same timing as PAL (312 lines, 50 Hz). The TIA outputs one of 8 colours chosen by luminance bits 3-1: 0 black, 1 blue, 2 red, 3 magenta, 4 green, 5 cyan, 6 yellow, 7 white (as commonly documented; verify with a SECAM palette test ROM).",
+    "Many SECAM-era games reuse the PAL ROM; the colours then collapse onto this 8-colour set, and sprites with the same luma become the same colour, so play-ability may need a dedicated SECAM table.",
+    "Stella also has SECAM60 for a SECAM console on a 262-line signal."
+   ]
+  }
+ ],
+ "notes": [
+  "There is NO hardware register that reports the TV standard, so software cannot ask whether the console is NTSC or PAL. Common solutions: ship region-specific ROMs; offer a start-up menu choice (for example SELECT toggles 50/60 Hz and the palette); or use a software heuristic. Colour/BW (SWCHB bit 3) is only the console switch, not the TV standard.",
+  "Frame structure: sync the frame with timers rather than counting WSYNCs in the vertical blank: write TIM64T at the start of the VBLANK/overscan and run game logic, then wait for INTIM = 0 and WSYNC. Keep the line count per frame constant; derive loop counts from constants such as VBLANK_LINES, KERNEL_LINES, OVERSCAN_LINES defined per standard with DASM IFCONST/IF blocks (e.g. `IF PAL ... ELSE ... ENDIF`).",
+  "Use one colour table per standard (NTSC, PAL, optionally SECAM). Define colours by symbolic names (e.g. COL_RED = NTSC $34 / PAL $64) in an include file switched by an assemble-time flag; do not hard-code hue values.",
+  "Timing-dependent code (positioning loops, sprite kernels) is in CPU cycles per line (76) and so is identical in NTSC and PAL; what changes is the number of lines and the frame time. Game speed that depends on frame rate (50 vs 60 Hz) should be compensated with a scale factor on speeds/timers.",
+  "A PAL cart usually shows more lines; kernels written for 192 lines leave black borders on PAL unless extended to 228. Stella shows the detected scanline count.",
+  "Stella command line: -format <NTSC|PAL|SECAM|NTSC50|PAL60|SECAM60|AUTO> sets the display format (the -bs option is the cartridge type). Stella autodetects by line count and by looking at which colours the game uses; wrong detection can be overridden.",
+  "SWCHB colour switch detection (bit 3: 1 = colour, 0 = black and white) can be used to select a monochrome-friendly palette (luma only) when the user flips the TV TYPE switch; this is the intended use of that switch."
+ ]
+}

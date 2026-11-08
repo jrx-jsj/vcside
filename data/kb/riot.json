@@ -1,0 +1,199 @@
+{
+ "chip": "RIOT",
+ "notes": [
+  "The 6532 RIOT (RAM-I/O-Timer) provides 128 bytes of RAM, two 8-bit I/O ports and a programmable interval timer. In the 2600 it is selected when A12=0, A9=1, A7=1, hence the I/O area $0280-$029F (and mirrors), RAM at $0080-$00FF (A9=0, A7=1).",
+  "Register address decoding: A2=0 selects the I/O ports: A1:A0 = 00 SWCHA, 01 SWACNT, 10 SWCHB, 11 SWBCNT. A2=1 selects the timer: reads with A0=0 return INTIM, with A0=1 return the interrupt flags (TIMINT); writes with A4=0 configure PA7 edge detect, writes with A4=1 select the timer: A1:A0 = 00 TIM1T, 01 TIM8T, 10 TIM64T, 11 T1024T (A3 additionally enables the timer interrupt on the real chip, but IRQ is unused).",
+  "The timer only counts CPU cycles: its useful range at divider 64 is a full frame (262 lines x 76 = 19912 cycles = 311 ticks, more than the 8-bit range). Divider 1024 covers a frame in 20 ticks. Timer expiry plus WSYNC is the classic way to run the vertical blank and overscan.",
+  "After the timer underflows, it keeps counting at 1 cycle per tick (negative time), so software can measure how many cycles it overshot.",
+  "Joystick bits are active low; difficulty switches 0 = B (amateur), 1 = A (pro); colour switch 1 = colour, 0 = B/W; RESET and SELECT are 0 when pressed.",
+  "The 6507 has no IRQ or NMI lines, so the RIOT interrupt flags are only useful by polling. BRK still vectors through $FFFE.",
+  "Stella and other emulators implement the timer including the post-underflow behaviour; Gopher2600 also reports timer state in its debugger. Behaviour at the exact wrap cycle is a known edge case.",
+  "Because partial address decoding mirrors RAM and I/O many times, defensive code should use the canonical addresses ($80-$FF, $280-$297)."
+ ],
+ "registers": [
+  {
+   "name": "SWCHA",
+   "address": "$0280",
+   "access": "RW",
+   "bits": "76543210",
+   "summary": "Port A data: joysticks, paddle buttons, keypad rows.",
+   "description": "Read: the state of the 8 port A pins, 0 = active/pressed. Bits 7-4 are the left controller port (player 0), bits 3-0 the right port (player 1). Joystick: bit 7 = P0 right, 6 = P0 left, 5 = P0 down, 4 = P0 up; bit 3 = P1 right, 2 = P1 left, 1 = P1 down, 0 = P1 up. Paddle fire buttons share these bits: bit 7 = paddle 0 button, bit 6 = paddle 1 button (left port), bit 3 = paddle 2 button, bit 2 = paddle 3 button (right port). The paddle position itself comes through TIA INPT0-INPT3. Write: the output latch for pins configured as outputs in SWACNT; used to drive the keypad rows, Kid Vid / other peripherals, and the driving controller's lines.",
+   "timing": "Port reads are synchronous with the CPU cycle; no debouncing in hardware.",
+   "issues": [
+    "Active low: 0 means pressed. Mask the nibble you need: left port is the high nibble (use LSR x4), right port the low nibble.",
+    "Opposite directions at once (left+right, up+down) are physically impossible on a real joystick but possible on emulators and some arcade-style sticks; handle them.",
+    "Bits configured as outputs (SWACNT=1) return the pin level (the output latch driving the pin) on reads; for bits with a controller driving against the output, results can mix. I am not certain whether the 6532 returns the latch or the pin in that case; avoid relying on it.",
+    "Keypad controllers: rows are driven low via SWCHA output bits (bits 7-4 left, 3-0 right, with SWACNT bits set), and the columns are read on TIA INPT0/INPT1/INPT4 (left) and INPT2/INPT3/INPT5 (right).",
+    "Driving controllers use bits up/down (4-5 left, 0-1 right) as a 2-bit gray code to give rotation.",
+    "Writing to SWCHA with SWACNT=0 changes only the latch; it does not drive pins until the data direction register is set."
+   ],
+   "example": "  lda SWCHA\n  and #%10000000   ; P0 right\n  beq .right"
+  },
+  {
+   "name": "SWACNT",
+   "address": "$0281",
+   "access": "W",
+   "bits": "76543210",
+   "summary": "Port A data direction register (DDRA).",
+   "description": "Each bit = 1 makes the corresponding SWCHA pin an output (driven from the SWCHA latch), 0 makes it an input. Reset value is 0 (all inputs), which is what normal joystick games use. Writable and readable (the 6532 DDR can be read back).",
+   "timing": "",
+   "issues": [
+    "Setting outputs while a joystick is plugged in will fight against the controller contacts; only for peripherals like keypads, or for writing to the SaveKey / AtariVox type devices on the right port.",
+    "Because the TIA also sits on the same bus, an unintentional write to $281 from a mistyped address will lock up the joystick bits."
+   ],
+   "example": "  lda #0\n  sta SWACNT"
+  },
+  {
+   "name": "SWCHB",
+   "address": "$0282",
+   "access": "R",
+   "bits": "76--3-10",
+   "summary": "Port B: console switches.",
+   "description": "Read-only in normal use (SWBCNT = 0). Bit 0 = RESET switch (0 = pressed). Bit 1 = SELECT switch (0 = pressed). Bit 3 = TV TYPE switch: 1 = colour, 0 = black and white. Bit 6 = left (player 0) difficulty: 0 = B (amateur), 1 = A (pro). Bit 7 = right (player 1) difficulty: 0 = B, 1 = A. Bits 2, 4 and 5 are not connected on a standard 2600; they typically read as 1 (but treat them as undefined).",
+   "timing": "",
+   "issues": [
+    "Switches RESET and SELECT are active low (0 = pressed). The colour switch is the opposite sense of the difficulty switches in naming: 1 = colour, 0 = B/W.",
+    "Bit 3 is the console's colour/B&W switch; it does NOT detect NTSC versus PAL. There is no hardware register that reports the TV standard.",
+    "On the 2600 Jr. and in 7800 2600-mode some switches have a different physical form or additional meaning (the 7800 pause button is not on the 2600 port). Not verified in detail.",
+    "RESET and SELECT bounce; use a debounced edge (previous-frame state) rather than polling a level.",
+    "The 2600 has no hardware reset line connected to RESET: the switch is read as a normal input, and the program decides what to do."
+   ],
+   "example": "  lda SWCHB\n  and #1\n  beq .resetPressed"
+  },
+  {
+   "name": "SWBCNT",
+   "address": "$0283",
+   "access": "W",
+   "bits": "76543210",
+   "summary": "Port B data direction register (DDRB).",
+   "description": "On the 2600 all port B pins are inputs and the DDR is left as 0. Writing 1 to a bit would make that pin an output, but the console switches are not designed for it. The register exists in the 6532 and can be read/written; it is not used by normal software.",
+   "timing": "",
+   "issues": [
+    "Leaving this at 0 is required for SWCHB to read the switches. Some hardware extensions (the Harmony/Melody type cartridges or peripherals) do not use it.",
+    "A stray write here (e.g., an uninitialised stack variable overwriting $283) leaves bit 7 or bit 6 driven, corrupting difficulty switch reads."
+   ],
+   "example": ""
+  },
+  {
+   "name": "INTIM",
+   "address": "$0284",
+   "access": "R",
+   "bits": "76543210",
+   "summary": "Timer output (current timer value).",
+   "description": "Reads the current timer value. The timer is loaded by writing TIM1T/TIM8T/TIM64T/T1024T and then decrements once every 1, 8, 64 or 1024 CPU cycles respectively. When it passes 0 it wraps to $FF and from then on decrements every CPU cycle regardless of the selected divider, until a new value is written. Reading INTIM clears the timer interrupt flag (TIMINT bit 7).",
+   "timing": "A write of N to TIMxxT with divider D: INTIM = N immediately (the first read after the write is N), then it decrements as each D cycles pass. The flag (TIMINT bit 7) is set when the counter underflows past 0. The timer starts counting on the cycle following the write, so a loop `lda INTIM; bne` that spins until 0 exits roughly N*D cycles after the write, but exact cycle accounting needs the first-tick offset (the commonly used rule is about N*D + 1 cycles).",
+   "issues": [
+    "After underflow the timer counts down once per cycle: reading INTIM then gives $FF - (cycles since the wrap) + 1, which lets you measure how late you are. Many wait loops test for BNE to 0 and are off by one if the timer has just wrapped.",
+    "A common idiom: write TIM64T, do work, then loop `lda INTIM; bne loop` followed by WSYNC to resync the beam. Loop exits when INTIM = 0 (not at underflow), so the remaining time is less than one divider step; always follow with WSYNC.",
+    "Reading INTIM on the exact cycle it wraps from 0 to $FF can return either value; avoid reading right at the boundary or use TIMINT bit 7 as the expiry test.",
+    "INTIM read clears the flag in TIMINT; reading TIMINT does not clear the timer value.",
+    "Stella's RIOT model has a special case concerning reading INTIM after the interrupt flag was set (the divider seems to restart); details uncertain, test on hardware.",
+    "Note: the timer does not continue at the divider rate after expiry; if a program expects it to keep counting at 64-cycle steps it will see it racing ahead at 1 cycle per tick."
+   ],
+   "example": "  lda #43\n  sta TIM64T\n.wait:\n  lda INTIM\n  bne .wait"
+  },
+  {
+   "name": "TIMINT",
+   "address": "$0285",
+   "access": "R",
+   "bits": "76------",
+   "summary": "Timer / PA7 edge interrupt flags (INSTAT).",
+   "description": "Bit 7 = timer flag: set when the timer has underflowed (passed 0) since the last timer write or INTIM read. Bit 6 = PA7 edge detect flag: set when a transition on port A bit 7 matching the polarity set by the edge detect control has occurred. The IRQ output of the 6532 is not connected on the 2600 (the 6507 has no IRQ), so the flags are for polling only. Bits 5-0 are not defined.",
+   "timing": "",
+   "issues": [
+    "Bit 7 gives a polling test without reading the timer value: `bit TIMINT; bmi expired`.",
+    "The flag is cleared by reading INTIM or by writing a new timer value. The PA7 flag is cleared on reading TIMINT; on the real chip this read-clears behaviour for PA7 is documented in the MOS 6532 datasheet.",
+    "Not all emulators emulate the PA7 edge detect; seldom used in 2600 games.",
+    "The mirror addresses are at $0285/$0287/$028D...; the real chip decodes A0, A2, A3 so it appears at several addresses; programs should use $0285."
+   ],
+   "example": "  bit TIMINT\n  bmi .timerExpired"
+  },
+  {
+   "name": "TIM1T",
+   "address": "$0294",
+   "access": "W",
+   "bits": "76543210",
+   "summary": "Set timer, 1 cycle per tick.",
+   "description": "Writes the start value N; the timer counts down once per CPU cycle. Maximum interval 255 cycles (about 3.4 scanlines). Useful for exact cycle waits and for measuring.",
+   "timing": "",
+   "issues": [
+    "After the count reaches 0 and underflows, it counts at 1 cycle per tick (the same as the divider rate, so there is no change).",
+    "A write also clears the TIMINT flag."
+   ],
+   "example": "  lda #50\n  sta TIM1T"
+  },
+  {
+   "name": "TIM8T",
+   "address": "$0295",
+   "access": "W",
+   "bits": "76543210",
+   "summary": "Set timer, 8 cycles per tick.",
+   "description": "Writes the start value N; the timer decrements every 8 CPU cycles. Maximum interval about 2040 cycles (just under 27 scanlines).",
+   "timing": "",
+   "issues": [
+    "After underflow it switches to 1-cycle decrements.",
+    "A write also clears the TIMINT flag."
+   ],
+   "example": "  lda #19\n  sta TIM8T"
+  },
+  {
+   "name": "TIM64T",
+   "address": "$0296",
+   "access": "W",
+   "bits": "76543210",
+   "summary": "Set timer, 64 cycles per tick.",
+   "description": "Writes the start value N; the timer decrements every 64 CPU cycles. This is the most commonly used timer in 2600 code: a 76-cycle scanline is roughly 1.2 ticks, so 64-cycle granularity is used to wait out the vertical blank and overscan while doing game logic. NTSC example: TIM64T with 43 gives about 2752 cycles (+ loop overhead), approximating the 37 VBLANK lines (2812 cycles) after the three VSYNC lines; adjust per kernel and finish with a WSYNC. A typical NTSC overscan is TIM64T with 35 or 36 (2240 / 2304 cycles) against 30 lines = 2280 cycles. PAL needs larger values for 45 / 36 lines. These are idioms; derive exact values by counting the cycles your own code uses.",
+   "timing": "",
+   "issues": [
+    "The values above are conventional approximations; exact timing depends on how many cycles pass between the write and the first scanline. Verify with an emulator's cycle counter.",
+    "After underflow it switches to 1-cycle decrements; a program that waits for 'INTIM bit 7' or reads $FF-ish values is seeing the post-underflow phase."
+   ],
+   "example": "  lda #43\n  sta TIM64T"
+  },
+  {
+   "name": "T1024T",
+   "address": "$0297",
+   "access": "W",
+   "bits": "76543210",
+   "summary": "Set timer, 1024 cycles per tick.",
+   "description": "Writes the start value N; the timer decrements every 1024 CPU cycles. One tick is 13.5 scanlines. Maximum about 261120 cycles (more than 13 frames). Used for very long delays, or by games that run the visible kernel under timer control.",
+   "timing": "",
+   "issues": [
+    "After underflow it switches to 1-cycle decrements (so the elapsed-since-underflow reading is in cycles, not 1024s).",
+    "A write also clears the TIMINT flag."
+   ],
+   "example": "  lda #14\n  sta T1024T"
+  },
+  {
+   "name": "RAM",
+   "address": "$80-$FF",
+   "access": "RW",
+   "bits": "76543210",
+   "summary": "128 bytes of RAM, including the stack.",
+   "description": "The RIOT provides 128 bytes of static RAM mapped at $0080-$00FF (zero page) and mirrored at $0180-$01FF. The 6507's stack pointer starts wherever the program sets it (typically via LDX #$FF / TXS) and the stack lives in page 1, which is the same 128 bytes mirrored at $1xx: S=$FF means the stack top at $01FF which is RAM address $FF. The stack therefore competes with variables: JSR/RTS/PHA/PLA use RAM from the top downwards, so variables should be allocated from $80 upward, leaving a gap for the deepest stack. Many programs also use PHA/PHP/TXS clearing tricks.",
+   "timing": "RAM access is the same speed as ROM; zero-page addressing is the fast form.",
+   "issues": [
+    "Stack overflow silently overwrites variables (there is no protection); typical depth is only a few levels of JSR plus PHA. 128 bytes is very tight: count carefully.",
+    "RAM contents at power on are random, not zero; always initialise ($80-$FF) at startup. The standard cold-start code clears TIA ($00-$7F) and RAM at once: `ldx #0; txa; .clear: dex; txs; pha; bne .clear` and leaves the stack pointer in an arbitrary state; many programs finish with `ldx #$FF; txs` or rely on the loop ending with S=$FF depending on how it is written.",
+    "The same RAM appears at $80-$FF and $180-$1FF (and $480 and others due to partial decoding): programs that use $180+ addresses for variables share the stack area.",
+    "Superchip (SC) cartridges add 128 extra bytes in the ROM address space (see formats.json).",
+    "The RIOT RAM select is A12=0, A9=0, A7=1, so the RAM also appears at other mirrors (e.g. $0480-$04FF); only $80-$FF and $180-$1FF should be used."
+   ],
+   "example": "  ldx #$FF\n  txs        ; stack at top of RAM"
+  },
+  {
+   "name": "EDGCTL",
+   "address": "$0284-$0287",
+   "access": "W",
+   "bits": "------10",
+   "summary": "PA7 edge detect control (write).",
+   "description": "A write to $0284-$0287 (A2=1, A4=0) configures PA7 edge detection: bit 1 selects the polarity (A1 of the address in the 6532 selects negative or positive edge) and bit 0 (A0) enables the PA7 interrupt. On the 6532 the data bits are ignored and the address bits A1 and A0 carry the control. Since the IRQ pin is not connected on the 2600, the only visible effect is bit 6 of TIMINT.",
+   "timing": "",
+   "issues": [
+    "Rarely used in 2600 software.",
+    "Address-based control means `sta $0284`..`sta $0287` pick the mode; the value stored is ignored."
+   ],
+   "example": ""
+  }
+ ]
+}
