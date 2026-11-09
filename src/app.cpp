@@ -34,6 +34,13 @@ static const char* kLangIds[] = {"dasm", "batari-basic", "elf-c"};
 static const char* kTvMultipleHelp = N_("The program runs on more than one system and handles it in its code: the DASM template chooses with -DPAL=1, batari Basic with set tv, C detects it when it starts. The emulator is not told one: it detects it from the frame.");
 static const char* kLangNames[] = {N_("Assembler (DASM)"), N_("batari Basic"), N_("C for ELF (vcsLib)")};
 
+// The language's name for people, as the New project dialog shows it.
+static std::string languageName(Language language) {
+  for (size_t i = 0; i < std::size(kLangIds); i++)
+    if (languageFromId(kLangIds[i]) == language) return T(kLangNames[i]);
+  return languageId(language);
+}
+
 static std::string readFile(const std::string& path) {
   std::ifstream file(path, std::ios::binary);
   std::stringstream stream;
@@ -197,6 +204,7 @@ std::string App::linkedFile(const std::string& name, const std::string& fromFile
 
 void App::projectSettings() {
   if (!project_) return;
+  if (projectUnsaved_ && !createProjectFile()) return;  // the settings are the project file
   if (OpenFile* file = openFile(project_->file); file && file->form && !file->dirty()) file->form->showText(file->editor, false);
 }
 
@@ -221,6 +229,7 @@ void App::openProject(const std::string& file) {
     return;
   }
   project_ = loadedProject;
+  projectUnsaved_ = false;
   folder_ = loadedProject.dir;
   symbols_.clear();
   builtFiles_.clear();
@@ -236,6 +245,7 @@ void App::openProject(const std::string& file) {
 void App::openFolder(const std::string& dir) {
   if (hooks.raiseIfOpen && hooks.raiseIfOpen(fs::absolute(dir).string(), this)) return;
   project_.reset();
+  projectUnsaved_ = false;
   folder_ = fs::absolute(dir).string();
   addRecent(folder_);
   SDL_SetWindowTitle(window_, ("VCSIDE - " + fs::path(folder_).filename().string()).c_str());
@@ -454,7 +464,16 @@ void App::saveAll() {
 void App::build(int thenRun) {
   if (building_) return;
   if (!project_) {
-    output_ += std::string(T("No project open.")) + "\n";
+    Project candidate;
+    if (!folder_.empty() && Project::detect(folder_, &candidate)) {
+      buildCandidate_ = candidate, candidateRun_ = thenRun, showNoProject_ = true;
+      return;
+    }
+    std::string why = folder_.empty() ? T("No project open.")
+                                      : T("Nothing to build in this folder: it has no project file, Makefile or build script, and no DASM source (with a \"processor\" line) or batari Basic one.");
+    output_ += why + "\n";
+    lastStatus_ = why;
+    outputScroll_ = true;
     return;
   }
   saveAll();
@@ -748,7 +767,7 @@ void App::loadUserState() {
 }
 
 void App::saveUserState() {
-  if (!project_) return;
+  if (!project_ || projectUnsaved_) return;
   json breakpointsJson = json::object();
   for (auto& [file, lines] : breakpoints_) {
     if (lines.empty()) continue;
@@ -1351,6 +1370,7 @@ void App::doCloseProject() {
   activeFile_ = -1;
   closeRequest_ = -1;
   project_.reset();
+  projectUnsaved_ = false;
   folder_.clear();
   symbols_.clear();
   builtFiles_.clear();
@@ -1457,6 +1477,7 @@ void App::frame() {
   }
   newProjectDialog();
   toolsDialog();
+  noProjectDialog();
   themeEditor_.draw(themes_, themeId_,
                     {[this](const std::string& id) { useTheme(id); },
                      [this] {
@@ -1590,7 +1611,7 @@ MenuBar App::buildMenuBar(bool native) {
   }, hasFile));
 
   // Build
-  bool canBuild = project_.has_value() && !building_;
+  bool canBuild = (project_.has_value() || !folder_.empty()) && !building_;  // a folder: build() looks at what it has
   std::vector<MenuItem> buildMenu = {item(T("Build"), "F7", [this] { build(0); }, canBuild),
                              item(T("Build and run"), "F5", [this] { build(1); }, canBuild),
                              item(T("Build and debug"), "F6", [this] { build(2); }, canBuild),
@@ -1608,7 +1629,7 @@ MenuBar App::buildMenuBar(bool native) {
         if (!project_) return;
         change(*project_);
         std::string error;
-        project_->save(&error);
+        if (!projectUnsaved_) project_->save(&error);  // a detected folder keeps it until its project file is made
         // an open settings tab with no changes of its own shows the new value
         for (auto& openedFile : files_)
           if (openedFile->form && !openedFile->dirty() && fs::weakly_canonical(openedFile->path) == fs::weakly_canonical(project_->file)) {
@@ -1830,31 +1851,29 @@ void App::projectPanel() {
     ImGui::End();
     return;
   }
-  // A folder that builds by itself (Makefile, build script) and has no project yet
-  if (!project_) {
-    if (detectedFor_ != folder_) {
+  // A folder that can be built and has no project file yet (or a detected one not saved)
+  if (!project_ || projectUnsaved_) {
+    if (!projectUnsaved_ && detectedFor_ != folder_) {
       detectedFor_ = folder_;
       detected_.reset();
       if (Project candidate; Project::detect(folder_, &candidate)) detected_ = candidate;
     }
-    if (detected_) {
+    const Project* found = projectUnsaved_ ? &*project_ : detected_ ? &*detected_ : nullptr;
+    if (found) {
       ImGui::PushTextWrapPos(0);
-      ImGui::TextUnformatted(F("This folder builds with \"{0}\".", {detected_->buildCommand}).c_str());
-      ImGui::TextDisabled("%s", F("A project lets F7 run it, and F5 open {0} in the emulator.", {detected_->output}).c_str());
+      if (!found->buildCommand.empty()) ImGui::TextUnformatted(F("This folder builds with \"{0}\".", {found->buildCommand}).c_str());
+      else ImGui::TextUnformatted(F("This folder has a program in {0}: {1}.", {languageName(found->language), found->main}).c_str());
+      ImGui::TextDisabled("%s", projectUnsaved_ ? T("Built with what was found, without a project file: one keeps these settings.")
+                                                : F("F7 builds it and F5 opens {0} in the emulator; a project file keeps the settings.", {found->output}).c_str());
       ImGui::PopTextWrapPos();
       if (ImGui::Button(T("Create a project for it"))) {
-        std::string error;
-        if (detected_->save(&error)) {
-          std::string file = detected_->file;
-          detectedFor_.clear(), detected_.reset();
-          openProject(file);
-        } else {
-          output_ += error + "\n";
-        }
+        if (!projectUnsaved_) project_ = *found, projectUnsaved_ = true;
+        detectedFor_.clear(), detected_.reset();
+        createProjectFile();
       }
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("%s", F("Writes {0}. Its settings (main source, ROM, format...) can be changed afterwards in Build > Project settings...",
-                                  {fs::path(detected_->file).filename().string()}).c_str());
+                                  {fs::path(found->file).filename().string()}).c_str());
       ImGui::Separator();
     }
   }
@@ -2364,7 +2383,7 @@ void App::emulatorOptionsDialog() {
   ImGui::TextDisabled("%s", T("The emulators start with a copy of your own settings, so these options never change them; what you change in an emulator started from VCSIDE is not kept."));
   ImGui::PopTextWrapPos();
   if (theme::primaryButton(T("Close")) || theme::dialogEscape()) ImGui::CloseCurrentPopup();
-  if (changed) {
+  if (changed && !projectUnsaved_) {
     std::string error;
     if (!project_->save(&error)) lastStatus_ = error;
   }
@@ -2817,6 +2836,73 @@ void App::newProjectDialog() {
   if (theme::dialogButton(T("Cancel")) || theme::dialogEscape()) {
     error.clear();
     ImGui::CloseCurrentPopup();
+  }
+  ImGui::EndPopup();
+}
+
+bool App::createProjectFile() {
+  std::string error;
+  if (!project_ || !project_->save(&error)) {
+    output_ += error + "\n";
+    lastStatus_ = error;
+    outputScroll_ = true;
+    return false;
+  }
+  std::string file = project_->file;
+  openProject(file);  // as any project: symbols, recent projects, the window's title
+  return true;
+}
+
+void App::noProjectDialog() {
+  if (showNoProject_) ImGui::OpenPopup("###noproject"), showNoProject_ = false;
+  char title[96];
+  snprintf(title, sizeof title, "%s###noproject", T("No project file"));
+  if (!theme::beginModal(title, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) return;
+  if (!buildCandidate_) {
+    ImGui::CloseCurrentPopup();
+    ImGui::EndPopup();
+    return;
+  }
+  const Project& candidate = *buildCandidate_;
+  ImGui::TextUnformatted(F("{0} has no project file, but it can be built:", {fs::path(candidate.dir).filename().string()}).c_str());
+  if (ImGui::BeginTable("##found", 2, ImGuiTableFlags_SizingFixedFit)) {
+    auto row = [](const char* label, const std::string& value) {
+      ImGui::TableNextRow();
+      ImGui::TableNextColumn();
+      ImGui::TextDisabled("%s", label);
+      ImGui::TableNextColumn();
+      ImGui::TextUnformatted(value.c_str());
+    };
+    row(T("Programming language"), languageName(candidate.language));
+    row(T("Main source"), candidate.main);
+    row(T("Builds with"), !candidate.buildCommand.empty() ? candidate.buildCommand
+                          : candidate.language == Language::BatariBasic ? std::string("batari Basic") : std::string("DASM"));
+    row(T("ROM"), candidate.output);
+    ImGui::EndTable();
+  }
+  ImGui::Dummy(ImVec2(0, ImGui::GetFontSize() * 0.4f));
+  enum class Choice { None, Build, CreateAndBuild, CreateAndConfigure, Cancel } choice = Choice::None;
+  if (theme::primaryButton(T("Build"))) choice = Choice::Build;
+  ImGui::SameLine();
+  if (theme::dialogButton(T("Create project and build"))) choice = Choice::CreateAndBuild;
+  ImGui::SameLine();
+  if (theme::dialogButton(T("Create and configure..."))) choice = Choice::CreateAndConfigure;
+  ImGui::SameLine();
+  if (theme::dialogButton(T("Cancel")) || theme::dialogEscape()) choice = Choice::Cancel;
+  ImGui::PushTextWrapPos(ImGui::GetFontSize() * 34);
+  ImGui::TextDisabled("%s", F("Build keeps these settings until the folder is closed, and writes nothing. A project file ({0}) keeps them for good, and Build > Project settings... changes them.",
+                              {fs::path(candidate.file).filename().string()}).c_str());
+  ImGui::PopTextWrapPos();
+  if (choice != Choice::None) {
+    ImGui::CloseCurrentPopup();
+    if (choice != Choice::Cancel) {
+      project_ = candidate;
+      projectUnsaved_ = true;
+      bool ready = choice == Choice::Build || createProjectFile();
+      if (ready && choice == Choice::CreateAndConfigure) projectSettings();
+      else if (ready) build(candidateRun_);
+    }
+    buildCandidate_.reset();
   }
   ImGui::EndPopup();
 }

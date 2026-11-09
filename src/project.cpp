@@ -303,6 +303,9 @@ static std::string readAll(const fs::path& path) {
 bool Project::detect(const std::string& dirIn, Project* result) {
   std::error_code errorCode;
   fs::path directory = fs::absolute(dirIn);
+  // a folder with a project file of its own is opened as that project, not detected again
+  for (auto& entry : fs::directory_iterator(directory, errorCode))
+    if (entry.path().extension() == ".vcsproj") return false;
   std::string command, script;
   for (auto candidate : {"Makefile", "makefile", "GNUmakefile"})
     if (fs::is_regular_file(directory / candidate, errorCode)) {
@@ -322,33 +325,55 @@ bool Project::detect(const std::string& dirIn, Project* result) {
         script = candidate;
         break;
       }
-  if (command.empty()) return false;
   Project found;
   found.dir = directory.string();
   found.name = directory.filename().string();
   found.file = (directory / (found.name + ".vcsproj")).string();
   found.buildCommand = command;
-  // the main source: main.* first, else a file with the 6502's processor line, else any
+  // the main source, in the folder or in src/: main.* first, else a file with the 6502's
+  // processor line (assembly), else any (batari Basic, C)
   std::string asmMain, basMain, cMain;
-  std::vector<fs::path> files;
-  for (auto& entry : fs::directory_iterator(directory, errorCode))
-    if (entry.is_regular_file(errorCode)) files.push_back(entry.path());
-  std::sort(files.begin(), files.end());
-  for (auto& file : files) {
-    std::string ext = file.extension().string(), stem = file.stem().string();
-    for (auto& character : ext) character = (char)std::tolower((unsigned char)character);
-    bool isMain = stem == "main";
-    if (ext == ".asm" || ext == ".s" || ext == ".a") {
-      if (isMain || (asmMain.empty() && readAll(file).find("processor") != std::string::npos)) asmMain = file.filename().string();
-    } else if (ext == ".bas" && (isMain || basMain.empty())) {
-      basMain = file.filename().string();
-    } else if (ext == ".c" && (isMain || cMain.empty())) {
-      cMain = file.filename().string();
+  for (const fs::path& folder : {directory, directory / "src"}) {
+    std::vector<fs::path> files;
+    for (auto& entry : fs::directory_iterator(folder, errorCode))
+      if (entry.is_regular_file(errorCode)) files.push_back(entry.path());
+    std::sort(files.begin(), files.end());
+    for (auto& file : files) {
+      std::string ext = file.extension().string(), stem = file.stem().string();
+      for (auto& character : ext) character = (char)std::tolower((unsigned char)character);
+      std::string relative = fs::relative(file, directory, errorCode).generic_string();
+      bool isMain = stem == "main";
+      if (ext == ".asm" || ext == ".s" || ext == ".a") {
+        bool hasProcessor = readAll(file).find("processor") != std::string::npos;
+        if ((isMain && (hasProcessor || !command.empty())) || (asmMain.empty() && hasProcessor)) asmMain = relative;
+      } else if (ext == ".bas" && (isMain || basMain.empty())) {
+        basMain = relative;
+      } else if (ext == ".c" && (isMain || cMain.empty())) {
+        cMain = relative;
+      }
     }
+    if (!asmMain.empty() || !basMain.empty() || !cMain.empty()) break;  // the folder's own sources win over src/
   }
   if (!cMain.empty() && asmMain.empty() && basMain.empty()) found.language = Language::ElfC, found.main = cMain;
   else if (!basMain.empty() && asmMain.empty()) found.language = Language::BatariBasic, found.main = basMain;
   else found.language = Language::Dasm, found.main = asmMain.empty() ? (basMain.empty() ? cMain : basMain) : asmMain;
+
+  if (command.empty()) {
+    // no build of its own: VCSIDE builds it with DASM or batari Basic (C needs a Makefile)
+    if (found.language == Language::ElfC || found.main.empty()) return false;
+    found.format = "AUTO";  // the emulators tell the format from the ROM
+    if (found.language == Language::Dasm) {
+      found.output = "build/" + fs::path(found.main).stem().string() + ".bin";
+      // DASM looks for include files where it runs: the source's folder and include/ too
+      std::string sourceFolder = fs::path(found.main).parent_path().generic_string();
+      if (!sourceFolder.empty()) found.includeDirs.push_back(sourceFolder);
+      if (fs::is_directory(directory / "include", errorCode)) found.includeDirs.push_back("include");
+    } else {
+      found.output = found.main + ".bin";  // batari Basic writes it next to the source
+    }
+    *result = found;
+    return true;
+  }
   // the ROM: the first word of the build file that names a .bin, .a26 or .elf
   std::string text = readAll(directory / script);
   static const std::regex rom(R"(([A-Za-z0-9_./\-]+)\.(bin|a26|elf)\b)");

@@ -125,6 +125,10 @@ class App {
   void statusBar();
   void newProjectDialog();
   void toolsDialog();
+  // F7/F5 in a folder without a .vcsproj that Project::detect recognises: build it as found,
+  // with or without writing the project file.
+  void noProjectDialog();
+  bool createProjectFile();  // saves project_ (detected, not saved yet) and opens it as a project
   void aboutDialog();
   void missingToolDialog();
   void askForTool(const std::string& id, const std::string& why, std::function<void()> then);
@@ -201,6 +205,10 @@ class App {
   std::string folder_;  // folder shown in the project panel
   std::string detectedFor_;          // the folder detected_ was looked for in
   std::optional<Project> detected_;  // how that folder builds, when it has no project
+  std::optional<Project> buildCandidate_;  // what the no-project dialog offers to build
+  int candidateRun_ = 0;                   // and what to do after (as build's thenRun)
+  bool showNoProject_ = false;
+  bool projectUnsaved_ = false;  // project_ is a folder's detection, with no .vcsproj written yet
   std::vector<std::unique_ptr<OpenFile>> files_;
   int activeFile_ = -1;
   int closeRequest_ = -1;

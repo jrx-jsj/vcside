@@ -68,8 +68,10 @@ struct Project {
   // VCSIDE found; "" if neither.
   std::string toolPath(Toolchain& toolchain, const std::string& id) const;
 
-  // A folder that builds by itself (Makefile, build.sh, build.bat, make.bat): a project for
-  // it, with that command, the main source and the ROM it seems to write. False if none.
+  // A folder without a .vcsproj that can be built: one that builds by itself (Makefile,
+  // build.sh, build.bat, make.bat), with that command, the main source and the ROM it seems
+  // to write; or one with a DASM source (a "processor" line) or a batari Basic one, in it or
+  // in src/, built by VCSIDE. False if none (C needs a Makefile).
   static bool detect(const std::string& directory, Project* result);
 
   // Creates a new project folder with a template for the language.

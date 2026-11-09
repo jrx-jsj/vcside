@@ -650,6 +650,26 @@ static void testElfSpace() {
     std::ofstream(scriptedDir / "build.sh") << "bb main.bas\n";
     std::ofstream(scriptedDir / "main.bas") << "  drawscreen\n";
     CHECK(Project::detect(scriptedDir.string(), &detected) && detected.buildCommand == "sh build.sh" && detected.language == Language::BatariBasic && detected.output == "main.bin");
+    // no build of its own: a DASM source (with its processor line) or a batari Basic one, in the
+    // folder or in src/, is built by VCSIDE; C needs a Makefile; a project file wins
+    fs::path plainDir = dir / "plain";
+    fs::create_directories(plainDir / "src", errorCode);
+    fs::create_directories(plainDir / "include", errorCode);
+    std::ofstream(plainDir / "src" / "kernel.asm") << "; included by game.asm\n";
+    std::ofstream(plainDir / "src" / "game.asm") << "\tprocessor 6502\n\tinclude \"vcs.h\"\n";
+    CHECK(Project::detect(plainDir.string(), &detected));
+    CHECK(detected.buildCommand.empty() && detected.language == Language::Dasm && detected.main == "src/game.asm" && detected.output == "build/game.bin");
+    CHECK(detected.format == "AUTO" && detected.includeDirs == std::vector<std::string>({"src", "include"}));
+    fs::path basicDir = dir / "basic-only";
+    fs::create_directories(basicDir, errorCode);
+    std::ofstream(basicDir / "game.bas") << "  drawscreen\n";
+    CHECK(Project::detect(basicDir.string(), &detected) && detected.language == Language::BatariBasic && detected.main == "game.bas" && detected.buildCommand.empty());
+    fs::path cDir = dir / "c-only";
+    fs::create_directories(cDir, errorCode);
+    std::ofstream(cDir / "main.c") << "int main(void) { return 0; }\n";
+    CHECK(!Project::detect(cDir.string(), &detected));
+    std::ofstream(basicDir / "game.vcsproj") << "{}\n";
+    CHECK(!Project::detect(basicDir.string(), &detected));
 
     Toolchain toolchain;
     Project own;
