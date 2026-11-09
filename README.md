@@ -27,7 +27,7 @@ A small native IDE for making Atari 2600 games, on macOS, Windows and Linux. It 
   - DASM syntax colouring, with illegal opcodes in their own colours (purple for stable ones, red for unstable ones).
   - A cycle column for every instruction (e.g. `4/5` when crossing a page, `2/4` for a branch). Symbols from the last build are used to tell zero page from absolute.
   - Select lines to see their total cycles, bytes and fraction of a scanline in the status bar.
-  - Hover help for instructions, registers and symbols, plus completion (Ctrl+Space). Labels, constants and macros count as soon as they are written, in the open files and in the project's other sources, before any build; constants show their value and the cycle counts use it. A symbol of the last build that its sources no longer define (deleted or renamed) is no longer offered.
+  - Hover help for instructions, registers and symbols, plus completion (Ctrl+Space; Control+Space on macOS, where Cmd+Space is Spotlight). Labels, constants and macros count as soon as they are written, in the open files and in the project's other sources, before any build; constants show their value and the cycle counts use it. A symbol of the last build that its sources no longer define (deleted or renamed) is no longer offered.
   - Ctrl/Cmd+click on a file a line names opens it: DASM's `include` and `incbin`, C's `#include`, batari Basic's `include`, `inline` and `incgraphic`, and the `.vcsgfx` of a `rem vcsgfx` block. It is looked for next to the file, in the project, in its include folders and in `include/`.
   - Folding (arrows in the gutter, Ctrl/Cmd+Alt+Up and Down, *Edit → Fold all*): regions found from the text. DASM: `MAC`/`ENDM`, `IF`/`ENDIF`, `REPEAT`/`REPEND`, `SEG` and `SUBROUTINE` sections, each global label to the next one and runs of comments. batari Basic: `function`, `data`, `asm`, blocks such as `player0:` up to `end`, the `rem vcsgfx` blocks, labels and runs of `rem`. C: braces, `#if`/`#endif` and comments.
 - **Documentation panel** (F1 on a word):
@@ -51,7 +51,7 @@ A small native IDE for making Atari 2600 games, on macOS, Windows and Linux. It 
   - ELF projects get `<name>.gfx.h` on save: `const uint8_t` arrays per frame, `#define`s, the animations as step arrays and `vcsgfx_animate()` to play them from C.
   - Projects with a kernel of their own get `<name>.gfx.asm` on save; *Copy as...* gives DASM tables or the kernel's batari Basic blocks (row order, `playerNcolor:`, 32- or 16-column playfields, `DFnFRACINC` for DPC+ and PXE). *Import* reads those, PlayerPal's assembly tables, batari Basic's blocks and the playfields of masswerk's Tiny VCS Playfield Editor (with its mode and line height) from the clipboard.
 - **Illegal-opcode policy** per project: allow, stable only, warn or forbid.
-- **Menus** in the system menu bar on macOS (application menu with About, Tools and Language; Window menu), and in the window on Windows and Linux. Ctrl shortcuts are Cmd on macOS; Replace is Cmd+Shift+F there, since Cmd+H hides the app.
+- **Menus** in the system menu bar on macOS (application menu with About, Tools and Language; Window menu), and in the window on Windows and Linux. Ctrl shortcuts are Cmd on macOS; Replace is Cmd+Shift+F there, since Cmd+H hides the app, and completion is Control+Space, since Cmd+Space is Spotlight.
 - **About** (*VCSIDE → About* on macOS, *Help → About* elsewhere): the system's About panel on macOS, a window of its own on Windows and Linux. Both show the icon, the version, VCSIDE's licences, the libraries built in, the tools it works with by group (compilers and assemblers, emulators, build helpers) with the versions it was tested with and their licences, the sources of the knowledge base, the Solarized palette and the fonts.
 - **Themes** (*View → Theme*): Dark, Light, Solarized Light and Solarized Dark, plus your own. Every colour of the IDE is a named role (interface, dialogs, code editor, syntax, messages, space report, graphics editor), and the code editor can shade each indentation level. *Edit themes...* changes them live: a theme can build on another one and keep only its differences, use a palette of named colours, refer to other roles and set alpha. Themes are `.vcstheme` files (JSON) that can be exported, imported, copied as text and pasted.
 - **Several windows**, one project each: *File → New window* (Ctrl+Shift+N, Cmd on macOS) opens one on the welcome page; *Close project* takes a window back to it; closing a window (Ctrl+Shift+W) removes it, and the last one goes back to the welcome page before the program quits. A project already open in another window brings that window forward. Settings (theme, zoom, recent projects) are shared.
@@ -83,6 +83,10 @@ docker run --rm -v "$PWD":/src -w /src vcside-windows sh tools/docker/build-wind
 ```
 
 The Windows one is cross-compiled with MinGW-w64 and linked statically (SDL3 included): `vcside.exe` and `data/` are the whole program. Its tests run in Wine with `VCSIDE_TEST_DATA=Z:<repository>/data wine64 build-windows/vcside_tests.exe`. `VCSIDE_CONFIG_DIR=<folder>` makes VCSIDE keep its settings there instead of the user's (for tests). VCSIDE needs OpenGL 2.1 or later; it tries 3.0, 3.2 core and 2.1, and says so in a message box if none works.
+
+## Releases
+
+`tools/release.sh X.Y.Z` publishes a version from a Mac with Docker and `gh`: it builds and tests macOS (universal), Linux and Windows, tags `vX.Y.Z`, creates the GitHub release with the packages, checksums and notes, and updates the download page of the website (`vcside-web`). What is new in each version goes in `docs/releases/X.Y.Z.md`. The whole process, and why the builds are not signed yet, is in [`docs/releases/README.md`](docs/releases/README.md).
 
 ## Translations
 

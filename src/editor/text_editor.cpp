@@ -530,6 +530,11 @@ void TextEditor::handleKeyboard() {
     if (pressed(ImGuiKey_A)) { selectAll(); return; }
     if (pressed(ImGuiKey_Space)) { updateCompletion(); return; }
   }
+#ifdef __APPLE__
+  // ImGui reads Cmd as Ctrl on macOS, and Cmd+Space is Spotlight: completion is Control+Space
+  // there (the Control key arrives as Super).
+  if (io.KeySuper && !alt && !shift && pressed(ImGuiKey_Space)) { updateCompletion(); return; }
+#endif
 
   Coord c = cursor_;
   if (pressed(ImGuiKey_LeftArrow)) {
