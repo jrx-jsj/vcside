@@ -22,9 +22,12 @@
 #include "gfx.h"
 #include "theme.h"
 #include "child_process.h"
+#include "music/tia_audio.h"
+#include "music/tuning.h"
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <filesystem>
 #include <tuple>
 #include <fstream>
@@ -1747,6 +1750,164 @@ static void testThemes(const std::string& data) {
   fs::remove(file, errorCode);
 }
 
+// The TIA's sound and the tuning maths of the music editor.
+static void testMusic() {
+  using namespace vcs::music;
+  // Counter by counter, the same as Gopher2600 (Chris Brenner's model): channel 0's level
+  // over 2048 audio clocks from reset, for every AUDC and some AUDF values, hashed.
+  struct Reference {
+    int control, frequency;
+    uint32_t hash;
+  };
+  const Reference references[] = {
+      {0, 0, 0xf40099e4u},
+      {0, 1, 0x6731897cu},
+      {0, 7, 0x78ec09a8u},
+      {0, 31, 0xf2066498u},
+      {1, 0, 0x28e3b9e6u},
+      {1, 1, 0xd71642b4u},
+      {1, 7, 0xc4fde218u},
+      {1, 31, 0xc39fbe18u},
+      {2, 0, 0x14f43130u},
+      {2, 1, 0xa8c64c65u},
+      {2, 7, 0xf6a3adadu},
+      {2, 31, 0x6e678418u},
+      {3, 0, 0xa5168840u},
+      {3, 1, 0x835c770eu},
+      {3, 7, 0xde43e510u},
+      {3, 31, 0x6fbe50d8u},
+      {4, 0, 0xef95cdc5u},
+      {4, 1, 0x477dd9c5u},
+      {4, 7, 0xdf2829c5u},
+      {4, 31, 0xc9cf69c5u},
+      {5, 0, 0xef95cdc5u},
+      {5, 1, 0x477dd9c5u},
+      {5, 7, 0xdf2829c5u},
+      {5, 31, 0xc9cf69c5u},
+      {6, 0, 0xd419c213u},
+      {6, 1, 0x15dd6204u},
+      {6, 7, 0x78ab2ae0u},
+      {6, 31, 0x683c4a38u},
+      {7, 0, 0x3320227bu},
+      {7, 1, 0xcc2ce6f7u},
+      {7, 7, 0x6b7d13d5u},
+      {7, 31, 0x42b4a4b8u},
+      {8, 0, 0x64aae5cdu},
+      {8, 1, 0x848ede47u},
+      {8, 7, 0x66fd82edu},
+      {8, 31, 0x915dcb58u},
+      {9, 0, 0xc8eece2du},
+      {9, 1, 0x80c071fau},
+      {9, 7, 0xe2cb7d75u},
+      {9, 31, 0x9ce509c5u},
+      {10, 0, 0xd419c213u},
+      {10, 1, 0x15dd6204u},
+      {10, 7, 0x78ab2ae0u},
+      {10, 31, 0x683c4a38u},
+      {11, 0, 0xc12c7bf5u},
+      {11, 1, 0xac5beb12u},
+      {11, 7, 0xb3136f40u},
+      {11, 31, 0xe8d3e878u},
+      {12, 0, 0x8679562fu},
+      {12, 1, 0xf80db318u},
+      {12, 7, 0x6f462558u},
+      {12, 31, 0x84c50b58u},
+      {13, 0, 0x8679562fu},
+      {13, 1, 0xf80db318u},
+      {13, 7, 0x6f462558u},
+      {13, 31, 0x84c50b58u},
+      {14, 0, 0x2876cb21u},
+      {14, 1, 0x809b44cfu},
+      {14, 7, 0x350c4c48u},
+      {14, 31, 0x6e678418u},
+      {15, 0, 0xe3c264bdu},
+      {15, 1, 0x3c8619cbu},
+      {15, 7, 0x6d8d3e18u},
+      {15, 31, 0x645930d8u},
+  };
+  int matching = 0;
+  for (auto& reference : references) {
+    TiaAudioChannel channel;
+    channel.control = (uint8_t)reference.control, channel.frequency = (uint8_t)reference.frequency, channel.volume = 15;
+    uint32_t hash = 2166136261u;
+    for (int clockIndex = 0; clockIndex < 2048; clockIndex++) {
+      channel.clock();
+      hash = (hash ^ channel.level()) * 16777619u;
+    }
+    if (hash == reference.hash) matching++;
+    else std::fprintf(stderr, "TIA audio differs: AUDC %d AUDF %d\n", reference.control, reference.frequency);
+  }
+  CHECK(matching == (int)std::size(references));
+
+  // The periods of the distortions table, found by playing them.
+  auto periodOf = [](int control, int frequency) {
+    TiaAudioChannel channel;
+    channel.control = (uint8_t)control, channel.frequency = (uint8_t)frequency, channel.volume = 15;
+    std::vector<int> bits;
+    for (int clockIndex = 0; clockIndex < 40000; clockIndex++) {
+      channel.clock();
+      if (clockIndex >= 4000) bits.push_back(channel.high());
+    }
+    for (size_t period = 1; period < 20000; period++) {
+      bool repeats = true;
+      for (size_t index = 0; index + period < bits.size() && repeats; index++) repeats = bits[index] == bits[index + period];
+      if (repeats) return (int)period;
+    }
+    return 0;
+  };
+  for (auto& distortion : distortions())
+    for (int control : distortion.controls) {
+      CHECK(periodOf(control, 0) == distortion.period);
+      CHECK(periodOf(control, 3) == distortion.period * 4);
+    }
+  CHECK(distortionOf(0) == nullptr && distortionOf(11) == nullptr && distortionOf(8)->period == 511);
+  // AUDC 0: the output settles high, so AUDV is a level (samples)
+  {
+    TiaAudioChannel channel;
+    channel.volume = 9;
+    for (int clockIndex = 0; clockIndex < 8; clockIndex++) channel.clock();
+    bool steady = true;
+    for (int clockIndex = 0; clockIndex < 500; clockIndex++) channel.clock(), steady = steady && channel.level() == 9;
+    CHECK(steady);
+  }
+  // mixing: 15 + 15 is the top, one channel at 15 two thirds of it
+  CHECK(mixLevels(0) == 0 && mixLevels(30) == 1.0f && std::fabs(mixLevels(15) - 2.0f / 3.0f) < 1e-6);
+  {
+    Resampler resampler(31399.5, 48000);
+    std::vector<float> output;
+    for (int index = 0; index < 31400; index++) resampler.push(0.5f, output);
+    bool flat = true;
+    for (float value : output) flat = flat && std::fabs(value - 0.5f) < 1e-5;
+    CHECK(flat && std::abs((int)output.size() - 48000) <= 2);
+  }
+
+  // Pitches and tuning
+  double ntsc = audioClockHz("NTSC"), pal = audioClockHz("PAL");
+  CHECK(std::fabs(ntsc - 31399.5) < 0.1 && std::fabs(pal - 31113.1) < 0.1 && audioClockHz("PAL60") == pal);
+  CHECK(std::fabs(pitchHz(ntsc, 2, 0) - 15699.75) < 0.1 && noteName(60) == "C4" && noteName(69) == "A4" && noteName(70) == "A#4");
+  CHECK(std::fabs(noteNumber(440) - 69) < 1e-9 && std::fabs(noteNumber(440, 50) - 68.5) < 1e-9);
+  int nearNotes = 0;
+  for (int frequency = 0; frequency < 32; frequency++) {
+    double note = noteNumber(pitchHz(ntsc, 6, frequency));
+    if (std::fabs(note - std::round(note)) * 100 <= 10) nearNotes++;
+  }
+  CHECK(nearNotes == 5);  // ÷6 square on NTSC: 5 of 32 values within 10 cents of A440
+  NotePitch pitch = closestPitch(69, ntsc, {4, 12});
+  CHECK(pitch.playable && pitch.control == 12 && std::fabs(pitch.hz - pitchHz(ntsc, 6, pitch.frequency)) < 1e-9);
+  CHECK(!closestPitch(20, ntsc, {4}).playable && !closestPitch(69, ntsc, {8}).playable);  // too low; noise has no pitch
+  // a C major melody over two octaves with square and ÷6
+  std::vector<SongNote> melody;
+  for (int octave = 0; octave < 2; octave++)
+    for (int step : {0, 2, 4, 5, 7, 9, 11}) melody.push_back({60 + octave * 12 + step, {4, 12}});
+  melody.push_back({84, {4, 12}});
+  SongTuning asWritten = measureSong(melody, ntsc);
+  CHECK(asWritten.unplayable == 0 && std::lround(asWritten.worstCents) == 46 && std::lround(asWritten.averageCents) == 14);
+  SongTuning tunedWorst = tuneSong(melody, ntsc, TuningGoal::WorstNote);
+  SongTuning tunedAverage = tuneSong(melody, ntsc, TuningGoal::Average);
+  CHECK(tunedWorst.worstCents < asWritten.worstCents && tunedWorst.unplayable == 0 && tunedWorst.pitches.size() == melody.size());
+  CHECK(tunedAverage.averageCents <= asWritten.averageCents && tunedAverage.averageCents <= tunedWorst.averageCents);
+}
+
 int main() {
   KnowledgeBase kb;
   std::string error;
@@ -1767,6 +1928,7 @@ int main() {
   loadLanguages(data + "/i18n");
   testEmulatorOptions(kb);
   testElfSpace();
+  testMusic();
   testBasic();
   testBasicSyntax(kb);
   testFormatOrder(kb);

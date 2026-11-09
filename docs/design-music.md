@@ -38,12 +38,12 @@ frequency = audio clock / ((AUDF + 1) × period of the distortion)
 | 6, 10 | pulse, ÷31 | 31 | 32 – 1,013 Hz |
 | 7, 9 | 5-bit poly | 31 | 32 – 1,013 Hz |
 | 14 | ÷93 | 93 | 11 – 338 Hz |
-| 15 | 5-bit poly ÷6 | 186 | 5 – 169 Hz |
+| 15 | 5-bit poly ÷6 | 93 | 11 – 338 Hz |
 | 2, 3 | 465-step poly (rumble) | 465 | low noise |
 | 8 | 9-bit poly | 511 | white noise |
 | 0, 11 | constant: AUDV becomes the output level | — | used for samples |
 
-The dividers are integers, so only some AUDF values land near equal-tempered notes. For example, with a ÷6 square on NTSC, only 5 of the 32 values are within 10 cents of an A440 note. PAL is a little worse.
+TIASOUND gives AUDC 15 a period of 186, but at the counter level (Chris Brenner's model, which the emulators follow) it repeats every 93 clocks, like AUDC 14 with a different waveform; VCSIDE uses 93. The dividers are integers, so only some AUDF values land near equal-tempered notes. For example, with a ÷6 square on NTSC, only 5 of the 32 values are within 10 cents of an A440 note. PAL is a little worse.
 
 ### How the editor shows it
 
@@ -72,7 +72,7 @@ With AUDC = 0 the TIA outputs AUDV as a level, so a program that writes AUDV0 on
   - noise, from an LFSR with a choice of lengths, including the TIA's own 4-, 5- and 9-bit sequences;
   - user-drawn waveforms of 32 samples.
 - **Shaping:** volume envelopes (attack, decay, sustain, release) and pitch effects (vibrato, slide, arpeggio). The Stay Frosty 2 driver (Darrell Spice Jr.) already shaped its waveforms on the fly to get ADSR envelopes.
-- **Mixing:** the voices are added, scaled and limited to 16 levels, with dithering as an option. Two channels (AUDV0 + AUDV1) give more levels. The TIA mixes the channels non-linearly. That is taken into account once a measured table is found, credited to whoever measured it. Players that keep one channel free for sound effects use only one.
+- **Mixing:** the voices are added, scaled and limited to 16 levels, with dithering as an option. Two channels (AUDV0 + AUDV1) give more levels. The TIA mixes the channels non-linearly: out = 2 × sum / (30 + sum), for a sum of levels from 0 to 30 (Chris Brenner, simplified by Thomas Jentzsch). Players that keep one channel free for sound effects use only one.
 - **Cost:** the ARM code is a generated C player for the project, with its CPU time per scanline estimated, so it fits next to the kernel. On the Chameleon Cart (Cortex-M0+) that matters more than on the PlusCart.
 
 **DPC+ and CDFJ** (batari Basic DPC+ and assembly projects) have 3 hardware voices with 32-sample waveforms and 32-bit frequencies. The same song, limited to 3 voices and to waveforms of that size, can be exported for them. **DPC** (Pitfall II) has 3 square voices.
@@ -96,7 +96,7 @@ With AUDC = 0 the TIA outputs AUDV as a level, so a program that writes AUDV0 on
   - a piano keyboard coloured by tuning;
   - input from the computer keyboard.
 - **Listening:**
-  - VCSIDE synthesises the sound itself, from the published behaviour of the TIA's audio counters (written for VCSIDE, not copied from an emulator), through SDL3's audio.
+  - VCSIDE synthesises the sound itself (`src/music/tia_audio.cpp`), counter by counter as Chris Brenner described the TIA, mixing the two channels as he measured them, through SDL3's audio. The code is VCSIDE's; a test checks it gives exactly what Gopher2600 gives for every AUDC.
   - The sample target goes through the same path as the console: 4-bit levels at the scanline rate.
   - Playback follows the cursor, and one channel can be heard alone.
   - Export to WAV.
@@ -118,6 +118,7 @@ Each technique, with whoever devised or spread it. The editor's help shows the s
 |---|---|
 | The TIA's sound: dividers, distortions, polynomial counters | Jay Miner and Joe Decuir, Atari (1977) |
 | Frequency formula and bit patterns of the distortions | Ron Fries, TIASOUND (1996) |
+| The TIA's audio counter by counter, and how its two channels mix | Chris Brenner, "TIA Sounding Off in the Digital Domain" (AtariAge); the mixing formula in Thomas Jentzsch's simplified form. Implemented in Stella, 6502.ts and Gopher2600 |
 | Tables of every TIA note and its tuning | Eckhard Stolberg; Paul Slocum (2003) |
 | Tuning against the song, not A440 (non-tempered setups) | Paul Slocum, *Atari 2600 Music and Sound Programming Guide* (2003) |
 | Exploring A4 and transposition against TIA pitches | pizzatari, TIA Music Explorer |
@@ -127,6 +128,7 @@ Each technique, with whoever devised or spread it. The editor's help shows the s
 | 3 voices mixed by the cartridge into one channel | David Crane, DPC in Pitfall II (Activision, 1984) |
 | Waveforms in the cartridge's music; ADSR by shaping them | Darrell Spice Jr. and Fred Quimby, DPC+ (Stay Frosty 2); reused in CDF and CDFJ |
 | 4-bit samples by writing AUDV with AUDC = 0 | Still to be found |
+| More than 4 bits by sampling the volume between audio clocks | Discussed in AtariAge's "8-bit digital audio from 2600" thread; authors still to be credited |
 | Direct digital synthesis (phase accumulator) | A general technique with no single author |
 
 ## Phases for 0.2.0
