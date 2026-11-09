@@ -45,6 +45,20 @@ Each JSON file has a top-level `sources` array (`id`, `title`, `author`, `url`, 
 - **Gopher2600 (code)**: accepted `-mapping` ids (`cartridge.go`: F0, 0840, X07, 4A50 and BUS do not exist), fingerprint of ELF/CDF/DPC+/3E+/AR/SC, CDF and E7 hotspot table, vcsLib names of the ELF loader, line counts per TV specification.
 - **Tests with the Gopher2600 binary** (our own test programs): RESP0 position = 3·N − 68 + 5 (N = write cycle; N = 23 gives 6), RESM0/RESBL = 3·N − 68 + 4, in HBLANK without HMOVE the player ends up at 3 and the missile/ball at 2; WSYNC written at cycles 72, 74 or 75 resumes at cycle 0 of the next line, and written at cycle 0 it waits a whole line.
 
+## Music editor (0.2.0): techniques and their authors
+
+Read for the design in `docs/design-music.md`; only facts are taken, in our own words, and no code. The editor's help credits the same people next to each feature.
+
+- **TIATracker** (Andre "Kylearan" Wichmann, 2016-2017, https://bitbucket.org/kylearan/tiatracker; licences from Debian's copyright file: program GPL-2.0-or-later, player Apache-2.0): instruments with per-frame envelopes, swing, the `.ttt` format to import.
+- **Paul Slocum, *Atari 2600 Music and Sound Programming Guide*** (v1.02, 2003, https://www.qotile.net/files/2600_music_guide.txt): the three non-tempered setups, tuning against the song.
+- **Eckhard Stolberg, frequency and waveform guide** (referenced by Slocum's guide): the tuning of every TIA note.
+- **Ron Fries, TIASOUND** (1996, LGPL-2): the frequency formula and the bit patterns of the distortions.
+- **pizzatari, TIA Music Explorer** (https://pizzatari.github.io/TiaMusicExplorer/): A4 and transposition settings against TIA pitches.
+- **Aleksi Eeben, Star Bars** (2023, https://forums.atariage.com/topic/353597-star-bars/): Tiatonic Tuning, fractional frequency bits as 8-bit patterns applied every 8 or 16 scanlines.
+- **Natt (AYCE), TIunA** (2024, MIT, https://github.com/AYCEdemo/twin-tiuna): finer pitch by switching between two AUDF values.
+- **utz, TIAtune** (2017, updated with Thomas Jentzsch in 2022, MIT, https://github.com/utz82/tiatune): software dividers, 16-bit, pitch within 0.15 %, using all the CPU time.
+- **DPC+ and CDFJ music** (https://forums.atariage.com/topic/345456-cdfj-audiowaveformsenvelopes/): 3 voices with 32-sample waveforms in RAM, aligned to 32 bytes, the amplitude copied to AUDV0 every scanline; CDF and CDFJ reuse the DPC+ music routines (the Mappy driver is a port of Stay Frosty 2's).
+
 ## Main errors fixed
 
 1. **WSYNC at cycle 75**: the note said the wait was "very short"; in fact the wait still ends at the start of the next line (the stall is less than a cycle) and only a write at cycle 0 waits a full line.
@@ -75,6 +89,7 @@ Each JSON file has a top-level `sources` array (`id`, `title`, `author`, `url`, 
 - Behaviour of INTIM read exactly on the cycle it wraps around (0 → `$FF`), and "idiomatic" TIM64T values (43, 35/36).
 - Doubtful formats: FA (Stella's comment says D0 must be 1; the code has it commented out), FA2 (number of banks per variant), BUS (seven banks according to the comment, six hotspots in the code), DF/DFSC (Gopher2600 has no id of its own), CV (title/layout only according to Stella), 4A50 (exact hotspot addresses), F8 (real boot bank).
 - ELF: which vcsLib symbols PlusCart firmware 2.3.32 lacks, old Gopher2600 versions with code in RAM and the Chameleon sizes comes from the project's notes, not from a public source.
+- Music credits not yet checked in a primary source: the TIA's sound designed by Jay Miner and Joe Decuir; DPC+ by Darrell Spice Jr. and Fred Quimby; DPC by David Crane for Pitfall II. Not found yet: who first played 4-bit samples by writing AUDV with AUDC = 0, and a measured table of how the TIA mixes AUDV0 and AUDV1.
 - PAL colours: hues 0, 1, 14 and 15 as greys (not checked in a primary document).
 - MCS6500 (6 MB datasheet) and Bruce Clark's decimal mode tutorial were not read in this pass.
 - Version 0.96 of *No More Secrets* could not be downloaded; 0.91 was used.
