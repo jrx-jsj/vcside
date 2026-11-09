@@ -2,9 +2,12 @@
 
 | System | File | What is in it |
 |---|---|---|
-| macOS 11 or later (Apple silicon and Intel) | `VCSIDE-{{VERSION}}-macos.zip` | `VCSIDE.app` |
-| Windows 10 or later, 64-bit | `vcside-{{VERSION}}-windows-x86_64.zip` | `vcside.exe` and its `data` folder: keep them together |
+| macOS 11 or later (Apple silicon and Intel) | `VCSIDE-{{VERSION}}-macos.dmg` | Disk image with `VCSIDE.app`: drag it to Applications |
+| | `VCSIDE-{{VERSION}}-macos.zip` | The same `VCSIDE.app` |
+| Windows 10 or 11, 64-bit (Windows 11 on Arm runs it too) | `vcside-{{VERSION}}-windows-x86_64-setup.exe` | Installer for your user, no administrator rights needed: Start menu shortcut and uninstaller |
+| | `vcside-{{VERSION}}-windows-x86_64.zip` | `vcside.exe` and its `data` folder: keep them together |
 | Linux x86-64, glibc 2.41 or later (Debian 13, Ubuntu 25.04, Fedora 42) | `vcside-{{VERSION}}-linux-x86_64.tar.gz` | `vcside` and its `data` folder: keep them together |
+| Linux arm64 (Raspberry Pi 4 and 5 with a 64-bit system), glibc 2.41 or later | `vcside-{{VERSION}}-linux-arm64.tar.gz` | `vcside` and its `data` folder: keep them together |
 
 VCSIDE needs OpenGL 2.1 or later and nothing else of its own: SDL3 is built in.
 

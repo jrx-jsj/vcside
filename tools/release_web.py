@@ -4,7 +4,7 @@
     python3 tools/release_web.py VERSION DIST_FOLDER OWNER/REPO WEB_FOLDER
 
 The website (vcside-web) builds its download page from that file: version, date, the
-release page and, for each system, the package's name, address, size and SHA-256.
+release page and, for each package (two per system), its name, address, size and SHA-256.
 """
 import datetime
 import hashlib
@@ -18,9 +18,12 @@ def main():
     tag = "v" + version
     base = f"https://github.com/{repo}/releases"
     names = {
-        "macos": f"VCSIDE-{version}-macos.zip",
-        "windows": f"vcside-{version}-windows-x86_64.zip",
-        "linux": f"vcside-{version}-linux-x86_64.tar.gz",
+        "macos-dmg": f"VCSIDE-{version}-macos.dmg",
+        "macos-zip": f"VCSIDE-{version}-macos.zip",
+        "windows-setup": f"vcside-{version}-windows-x86_64-setup.exe",
+        "windows-zip": f"vcside-{version}-windows-x86_64.zip",
+        "linux-x86_64": f"vcside-{version}-linux-x86_64.tar.gz",
+        "linux-arm64": f"vcside-{version}-linux-arm64.tar.gz",
     }
     files = {}
     for system, name in names.items():

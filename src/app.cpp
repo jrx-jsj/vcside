@@ -849,6 +849,8 @@ std::vector<std::string> App::debugArgs(const std::string& emulator) {
       return args;
     }
     std::ofstream out(path);
+    // "break" toggles: start from none, so running the script again cannot clear them
+    out << "clearBreaks\n";
     for (auto& breakpoint : placed) {
       char line[64];
       snprintf(line, sizeof line, "break $%04lX %d\n", breakpoint.cpu, breakpoint.bank);

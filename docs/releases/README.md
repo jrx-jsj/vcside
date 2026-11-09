@@ -14,10 +14,10 @@ tools/release.sh 0.2.0
 1. If `docs/releases/0.2.0.md` does not exist, the script writes a draft from the commits since the last tag and stops. Rewrite it for people who use VCSIDE (what they can do now, not the commit list), commit it and run the script again.
 2. It sets the version in `CMakeLists.txt` (the About window takes it from there).
 3. It builds and tests:
-   - macOS: a universal `VCSIDE.app` (arm64 + x86_64, macOS 11 or later) with SDL3 linked statically, signed ad hoc, in a zip. The script stops if the executable links a library from Homebrew.
-   - Linux x86-64: in the `vcside-linux` Docker image for `linux/amd64` (emulated on Apple silicon, so it is slow), with SDL3 linked statically. Built on Debian 13, so it needs glibc 2.41 or later.
-   - Windows x86-64: cross-compiled with MinGW-w64, static, `vcside.exe` + `data`.
-4. It commits the version as "VCSIDE 0.2.0", tags it `v0.2.0` (annotated), pushes both, and creates the GitHub release with the three packages, `SHA256SUMS` and the notes.
+   - macOS: a universal `VCSIDE.app` (arm64 + x86_64, macOS 11 or later) with SDL3 linked statically, signed ad hoc, in a disk image (`.dmg`, made with `hdiutil`, with a link to Applications) and in a zip. The script stops if the executable links a library from Homebrew.
+   - Linux x86-64 and arm64: in the `vcside-linux-amd64` and `vcside-linux-arm64` Docker images (on Apple silicon arm64 runs natively and amd64 is emulated, so it is slow), with SDL3 linked statically. Built on Debian 13, so they need glibc 2.41 or later.
+   - Windows x86-64: cross-compiled with MinGW-w64, static, `vcside.exe` + `data` in a zip, and an installer (`-setup.exe`) made with NSIS from `tools/windows/vcside.nsi` in the same Docker image. It installs for the current user in `%LOCALAPPDATA%\Programs\VCSIDE`, so it needs no administrator rights. There is no Windows on Arm build: Windows 11 on Arm runs the x86-64 one.
+4. It commits the version as "VCSIDE 0.2.0", tags it `v0.2.0` (annotated), pushes both, and creates the GitHub release with the six packages (`.dmg` and zip for macOS, installer and zip for Windows, x86-64 and arm64 for Linux), `SHA256SUMS` and the notes.
 5. It tells the website: `tools/release_web.py` writes `release.json` in `../vcside-web` (or `$VCSIDE_WEB`), the website's `scripts/build.py` puts the download buttons, sizes and checksums on its download page, in English and Spanish, and the change is committed and pushed there. If the website is not on a clean `main`, this step is skipped and the command to run is printed. Deploying the website is still a separate step.
 
 There is no automation on GitHub: the script is the whole process, so it runs the same way every time and nothing builds on someone else's machine.

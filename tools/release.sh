@@ -78,17 +78,34 @@ fi
 codesign --force --deep --sign - "$APP_BUNDLE"  # ad hoc: not a Developer ID, but a valid bundle
 MAC_ZIP="VCSIDE-$VERSION-macos.zip"
 ditto -c -k --sequesterRsrc --keepParent "$APP_BUNDLE" "$DIST/$MAC_ZIP"
+# The disk image: the app and a link to Applications, to drag it there.
+MAC_DMG="VCSIDE-$VERSION-macos.dmg"
+DMG_STAGE="$BUILD_DIR/dmg"
+rm -rf "$DMG_STAGE"
+mkdir -p "$DMG_STAGE"
+ditto "$APP_BUNDLE" "$DMG_STAGE/VCSIDE.app"
+ln -s /Applications "$DMG_STAGE/Applications"
+hdiutil create -quiet -volname "VCSIDE $VERSION" -srcfolder "$DMG_STAGE" -fs HFS+ -format UDZO "$DIST/$MAC_DMG"
 
-say "Linux x86-64 (Docker, SDL3 built in)"
-docker build -q --platform linux/amd64 -t vcside-linux-amd64 -f tools/docker/linux.Dockerfile tools/docker >/dev/null
-docker run --rm --platform linux/amd64 -v "$ROOT":/src -w /src vcside-linux-amd64 \
-  sh tools/docker/build-linux.sh build-release/linux -DVCSIDE_VENDORED_SDL=ON
-LINUX_NAME="vcside-$VERSION-linux-x86_64"
-mkdir -p "$BUILD_DIR/pkg/$LINUX_NAME"
-cp "$BUILD_DIR/linux/vcside" "$BUILD_DIR/pkg/$LINUX_NAME/"
-cp -R "$BUILD_DIR/linux/data" "$BUILD_DIR/pkg/$LINUX_NAME/"
-cp LICENSE "$BUILD_DIR/pkg/$LINUX_NAME/"
-tar -C "$BUILD_DIR/pkg" -czf "$DIST/$LINUX_NAME.tar.gz" "$LINUX_NAME"
+# Linux for one architecture: Docker platform (amd64, arm64) and the name in the package.
+# On Apple silicon arm64 runs natively and amd64 is emulated (slower).
+linux_package() {
+  local platform=$1 arch=$2
+  say "Linux $arch (Docker, SDL3 built in)"
+  docker build -q --platform "linux/$platform" -t "vcside-linux-$platform" -f tools/docker/linux.Dockerfile tools/docker >/dev/null
+  docker run --rm --platform "linux/$platform" -v "$ROOT":/src -w /src "vcside-linux-$platform" \
+    sh tools/docker/build-linux.sh "build-release/linux-$platform" -DVCSIDE_VENDORED_SDL=ON
+  local name="vcside-$VERSION-linux-$arch"
+  mkdir -p "$BUILD_DIR/pkg/$name"
+  cp "$BUILD_DIR/linux-$platform/vcside" "$BUILD_DIR/pkg/$name/"
+  cp -R "$BUILD_DIR/linux-$platform/data" "$BUILD_DIR/pkg/$name/"
+  cp LICENSE "$BUILD_DIR/pkg/$name/"
+  tar -C "$BUILD_DIR/pkg" -czf "$DIST/$name.tar.gz" "$name"
+}
+linux_package amd64 x86_64
+linux_package arm64 arm64
+LINUX_X64="vcside-$VERSION-linux-x86_64.tar.gz"
+LINUX_ARM64="vcside-$VERSION-linux-arm64.tar.gz"
 
 say "Windows x86-64 (Docker, MinGW-w64)"
 docker build -q -t vcside-windows -f tools/docker/windows.Dockerfile tools/docker >/dev/null
@@ -99,8 +116,12 @@ cp "$BUILD_DIR/windows/vcside.exe" "$BUILD_DIR/pkg/$WINDOWS_NAME/"
 cp -R "$BUILD_DIR/windows/data" "$BUILD_DIR/pkg/$WINDOWS_NAME/"
 cp LICENSE "$BUILD_DIR/pkg/$WINDOWS_NAME/LICENSE.txt"
 (cd "$BUILD_DIR/pkg" && zip -qr "$DIST/$WINDOWS_NAME.zip" "$WINDOWS_NAME")
+WINDOWS_SETUP="$WINDOWS_NAME-setup.exe"
+docker run --rm -v "$ROOT":/src -w /src vcside-windows makensis -V2 -DVERSION="$VERSION" \
+  -DSOURCE="/src/build-release/pkg/$WINDOWS_NAME" -DOUTFILE="/src/build-release/dist/$WINDOWS_SETUP" \
+  tools/windows/vcside.nsi
 
-(cd "$DIST" && shasum -a 256 "$MAC_ZIP" "$LINUX_NAME.tar.gz" "$WINDOWS_NAME.zip" > SHA256SUMS)
+(cd "$DIST" && shasum -a 256 "$MAC_DMG" "$MAC_ZIP" "$WINDOWS_SETUP" "$WINDOWS_NAME.zip" "$LINUX_X64" "$LINUX_ARM64" > SHA256SUMS)
 
 # --- notes ----------------------------------------------------------------------------------
 REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null || echo jrx-jsj/vcside)
@@ -132,7 +153,8 @@ git push -q origin main "$TAG"
 
 say "GitHub release"
 gh release create "$TAG" --title "VCSIDE $VERSION" --notes-file "$DIST/notes.md" \
-  "$DIST/$MAC_ZIP" "$DIST/$LINUX_NAME.tar.gz" "$DIST/$WINDOWS_NAME.zip" "$DIST/SHA256SUMS"
+  "$DIST/$MAC_DMG" "$DIST/$MAC_ZIP" "$DIST/$WINDOWS_SETUP" "$DIST/$WINDOWS_NAME.zip" \
+  "$DIST/$LINUX_X64" "$DIST/$LINUX_ARM64" "$DIST/SHA256SUMS"
 
 # --- website --------------------------------------------------------------------------------
 say "website"
