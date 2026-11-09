@@ -20,10 +20,10 @@ Toolchain::Toolchain() {
   tools_ = {
       {"dasm", "DASM", N_("assembler"), "", "", "https://dasm-assembler.github.io/",
        N_("macOS: brew install dasm. Linux: your package manager or the release binaries. Windows: dasm.exe from the releases page.")},
-      {"stella", "Stella", N_("emulator"), "", "", "https://stella-emu.github.io/downloads.html",
-       N_("Install it normally; VCSIDE looks in the usual application folders.")},
       {"gopher2600", "Gopher2600", N_("emulator"), "", "", "https://github.com/JetSetIlly/Gopher2600/releases",
        N_("ELF cartridges need a recent build (nightly from 2026-11 or later).")},
+      {"stella", "Stella", N_("emulator"), "", "", "https://stella-emu.github.io/downloads.html",
+       N_("Install it normally; VCSIDE looks in the usual application folders.")},
       {"bb", "batari Basic", N_("compiler"), "", "", "https://github.com/batari-Basic/batari-Basic/releases",
        N_("Unpack the release zip into the bb folder of VCSIDE's tools folder, or choose its 2600basic.sh (2600bas.bat on Windows). It brings its own DASM; version 1.9 also needs wasmtime.")},
       {"wasmtime", "wasmtime", N_("runtime"), "", "", "https://wasmtime.dev/",

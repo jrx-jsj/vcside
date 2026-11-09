@@ -357,6 +357,17 @@ void TextEditor::backspace() {
   }
   if (cursor_.col == 0 && cursor_.line == 0) return;
   pushUndo(false);
+  // in an indentation of spaces, back to the level before
+  IndentStyle style = cursor_.col > 0 ? indentStyle() : IndentStyle{};
+  std::string& current = lines_[cursor_.line];
+  if (!style.tabs && cursor_.col > 1 && leadingWhitespace(current).size() >= (size_t)cursor_.col &&
+      current.compare(0, cursor_.col, std::string(cursor_.col, ' ')) == 0) {
+    int level = (cursor_.col - 1) / style.width * style.width;
+    current.erase(level, cursor_.col - level);
+    cursor_.col = level;
+    selStart_ = selEnd_ = anchor_ = cursor_;
+    return;
+  }
   if (cursor_.col == 0) {
     int prev = (int)lines_[cursor_.line - 1].size();
     lines_[cursor_.line - 1] += lines_[cursor_.line];
@@ -394,16 +405,94 @@ void TextEditor::del() {
 
 void TextEditor::newline() {
   pushUndo(false);
-  // keep the indentation of the current line
-  const std::string& l = lines_[cursor_.line];
-  std::string indent;
-  for (char c : l) {
-    if (c == ' ' || c == '\t') indent += c;
-    else break;
+  deleteSelection();
+  IndentStyle style = indentStyle();
+  const std::string current = lines_[cursor_.line];
+  std::string indent = leadingWhitespace(current);
+  if (foldSyntax_ == FoldSyntax::C) {
+    if ((size_t)cursor_.col <= indent.size()) {
+      // Enter in the indentation: an empty line above, and the cursor stays before the code
+      lines_.insert(lines_.begin() + cursor_.line, std::string());
+      cursor_ = selStart_ = selEnd_ = anchor_ = {cursor_.line + 1, (int)indent.size()};
+      scrollToCursor_ = true;
+      return;
+    }
+    CNewline plan = cNewline(lines_, cursor_.line, cursor_.col, style, tabSize_);
+    // what goes down to the new line loses the spaces it started with, and what stays loses
+    // the ones it ended with
+    std::string& line = lines_[cursor_.line];
+    size_t restStart = cursor_.col;
+    while (restStart < line.size() && (line[restStart] == ' ' || line[restStart] == '\t')) restStart++;
+    size_t keptEnd = cursor_.col;
+    while (keptEnd > indent.size() && (line[keptEnd - 1] == ' ' || line[keptEnd - 1] == '\t')) keptEnd--;
+    line.erase(keptEnd, restStart - keptEnd);
+    cursor_.col = (int)keptEnd;
+    insertText("\n" + plan.indent + plan.prefix);
+    if (plan.closeLine) {
+      Coord inBlock = cursor_;
+      insertText("\n" + plan.closeIndent + (plan.addBrace ? "}" : ""));
+      cursor_ = selStart_ = selEnd_ = anchor_ = inBlock;
+    }
+    return;
   }
-  // a label at column 0 still wants the code indented
-  if (indent.empty() && !l.empty() && !std::isspace((unsigned char)l[0]) && l[0] != ';') indent = "\t";
+  // keep the indentation of the current line; after a label at column 0 the code still goes
+  // one level in
+  if ((size_t)cursor_.col < indent.size()) indent.resize(cursor_.col);
+  bool hasLabels = foldSyntax_ == FoldSyntax::Asm || foldSyntax_ == FoldSyntax::Basic;
+  if (hasLabels && indent.empty() && !current.empty() && !std::isspace((unsigned char)current[0]) && current[0] != ';')
+    indent = style.unit();
   insertText("\n" + indent);
+}
+
+void TextEditor::typeText(const std::string& text) {
+  pushUndo(text.size() == 1 && text[0] != ' ');
+  deleteSelection();
+  std::string& line = lines_[cursor_.line];
+  bool onlyIndentBefore = leadingWhitespace(line).size() >= (size_t)cursor_.col;
+  std::string indent;
+  // a brace on a line of its own goes where the block it opens or closes says
+  if (foldSyntax_ == FoldSyntax::C && (text == "}" || text == "{") && onlyIndentBefore &&
+      cBraceIndent(lines_, cursor_.line, text[0], indent)) {
+    line = indent + line.substr(leadingWhitespace(line).size());
+    cursor_.col = (int)indent.size();
+  }
+  insertText(text);
+}
+
+void TextEditor::indentKey(bool outdent) {
+  IndentStyle style = indentStyle();
+  // one level less at the start of a line: a tab, or up to a level of spaces
+  auto removeLevel = [&](std::string& line) {
+    size_t remove = 0;
+    if (!line.empty() && line[0] == '\t') remove = 1;
+    else
+      while (remove < line.size() && remove < (size_t)style.width && line[remove] == ' ') remove++;
+    line.erase(0, remove);
+    return (int)remove;
+  };
+  if (hasSelection() && selStart_.line != selEnd_.line) {
+    pushUndo(false);
+    auto [first, last] = selectedLines();
+    for (int index = first; index <= last; index++) {
+      if (outdent) removeLevel(lines_[index]);
+      else if (!lines_[index].empty()) lines_[index].insert(0, style.unit());
+    }
+    selStart_ = {first, 0};
+    selEnd_ = clamp({last, (int)lines_[last].size()});
+    return;
+  }
+  pushUndo(false);
+  if (outdent) {
+    int removed = removeLevel(lines_[cursor_.line]);
+    cursor_.col = std::max(0, cursor_.col - removed);
+    selStart_ = selEnd_ = anchor_ = cursor_;
+    return;
+  }
+  if (style.tabs) insertText("\t");
+  else {
+    int column = visualCol(cursor_.line, cursor_.col);
+    insertText(std::string(style.width - column % style.width, ' '));  // to the next level
+  }
 }
 
 void TextEditor::moveCursor(Coord c, bool select) {
@@ -588,20 +677,7 @@ void TextEditor::handleKeyboard() {
   } else if (pressed(ImGuiKey_Enter) || pressed(ImGuiKey_KeypadEnter)) {
     newline();
   } else if (pressed(ImGuiKey_Tab)) {
-    if (hasSelection() && selStart_.line != selEnd_.line) {
-      pushUndo(false);
-      auto [a, b] = selectedLines();
-      for (int i = a; i <= b; i++) {
-        if (shift) {
-          if (!lines_[i].empty() && lines_[i][0] == '\t') lines_[i].erase(0, 1);
-        } else lines_[i].insert(0, "\t");
-      }
-      selStart_ = {a, 0};
-      selEnd_ = clamp({b, (int)lines_[b].size()});
-    } else if (!shift) {
-      pushUndo(false);
-      insertText("\t");
-    }
+    indentKey(shift);
   } else if (pressed(ImGuiKey_Escape)) {
     completionOpen_ = false;
   }
@@ -618,8 +694,7 @@ void TextEditor::handleKeyboard() {
     }
     io.InputQueueCharacters.resize(0);
     if (!s.empty()) {
-      pushUndo(s.size() == 1 && s[0] != ' ');
-      insertText(s);
+      typeText(s);
       if (isWordChar(s.back())) updateCompletion();
       else completionOpen_ = false;
     }

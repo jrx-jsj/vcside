@@ -195,7 +195,7 @@ void ProjectForm::render(TextEditor& text, ImFont* mono, const KnowledgeBase& kb
     row(T("Emulator"), T("Its launch options: Build > Emulator options..."));
     {
       std::vector<std::pair<std::string, std::string>> items;
-      for (auto e : {"stella", "gopher2600"}) {
+      for (auto e : {"gopher2600", "stella"}) {
         Tool* t = tc.get(e);
         items.push_back({e, t ? t->name : e});
       }

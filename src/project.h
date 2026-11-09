@@ -23,7 +23,7 @@ struct Project {
   std::string output = "build/game.bin";
   std::string format = "4K";      // cartridge format id (formats.json)
   std::string tv = "NTSC";        // NTSC, PAL, PAL60, SECAM, NTSC50, SECAM60, PAL-M, AUTO
-  std::string emulator = "stella";
+  std::string emulator = "gopher2600";
   IllegalOpcodes illegal = IllegalOpcodes::Warn;
   std::vector<std::string> includeDirs;
   // optional: a command of the project's own (e.g. "make" or "sh build.sh") instead of the

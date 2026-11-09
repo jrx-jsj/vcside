@@ -302,6 +302,7 @@ OpenFile* App::openFile(const std::string& pathIn, int line) {
   if (cLike) f->asmSyntax = false;
   f->editor.setCommentPrefix(cLike ? "//" : ext == ".bas" ? "rem" : ";");
   f->editor.setFoldSyntax(cLike ? FoldSyntax::C : ext == ".bas" ? FoldSyntax::Basic : f->asmSyntax ? FoldSyntax::Asm : FoldSyntax::None);
+  f->editor.setDefaultIndent(cLike ? IndentStyle{false, 4} : IndentStyle{true, 4});  // as the templates
   {
     EditorHooks h = f->asmSyntax ? asmHooks() : ext == ".bas" ? basicHooks() : EditorHooks{};
     OpenFile* self = f.get();
@@ -1527,7 +1528,7 @@ MenuBar App::buildMenuBar(bool native) {
       item(T("New window"), "Ctrl+Shift+N", [] { if (hooks.newWindow) hooks.newWindow(); }),
       item(T("New graphics..."), "", [this] {
         static const SDL_DialogFileFilter filters[] = {{"VCSIDE graphics", "vcsgfx"}};
-        std::string where = (project_ ? fs::path(project_->dir) : fs::path(folder_.empty() ? "." : folder_)) / "graphics.vcsgfx";
+        std::string where = ((project_ ? fs::path(project_->dir) : fs::path(folder_.empty() ? "." : folder_)) / "graphics.vcsgfx").string();
         SDL_ShowSaveFileDialog(dialogCallback, new DialogCtx{this, "newgfx"}, window_, filters, 1, where.c_str());
       }),
       MenuItem::sep(),
@@ -1653,7 +1654,7 @@ MenuBar App::buildMenuBar(bool native) {
       }
       tvs.push_back(m);
     }
-    for (auto e : {"stella", "gopher2600"}) {
+    for (auto e : {"gopher2600", "stella"}) {
       Tool* t = tools_.get(e);
       MenuItem m = item(t->name, "", set([e](Project& pr) { pr.emulator = e; }), true, project_->emulator == e);
       m.hint = t->found() ? T("found") : T("not found");
@@ -2126,7 +2127,7 @@ void App::closeDialogs() {
     ImGui::SameLine();
     if (theme::dialogButton(T("Don't save"))) action = 2;
     ImGui::SameLine();
-    if (theme::dialogButton(T("Cancel"))) action = 3;
+    if (theme::dialogButton(T("Cancel")) || theme::dialogEscape()) action = 3;
     if (action) {
       if (closeRequest_ >= 0) {
         if (action == 1) saveFile(*files_[closeRequest_]);
@@ -2155,7 +2156,7 @@ void App::closeDialogs() {
     ImGui::SameLine();
     if (theme::dialogButton(T("Don't save"))) done();
     ImGui::SameLine();
-    if (theme::dialogButton(T("Cancel"))) ImGui::CloseCurrentPopup();
+    if (theme::dialogButton(T("Cancel")) || theme::dialogEscape()) ImGui::CloseCurrentPopup();
     ImGui::EndPopup();
   }
 }
@@ -2259,7 +2260,7 @@ void App::emulatorOptionsDialog() {
   }
   bool changed = false;
   if (ImGui::BeginTabBar("emus")) {
-    for (const char* id : {"stella", "gopher2600"}) {
+    for (const char* id : {"gopher2600", "stella"}) {
       const EmulatorInfo* emu = kb_.emulator(id);
       if (!emu) continue;
       ImGuiTabItemFlags tabFlags = emuOptionsTab_ == id ? ImGuiTabItemFlags_SetSelected : 0;
@@ -2362,7 +2363,7 @@ void App::emulatorOptionsDialog() {
   ImGui::PushTextWrapPos(0);
   ImGui::TextDisabled("%s", T("The emulators start with a copy of your own settings, so these options never change them; what you change in an emulator started from VCSIDE is not kept."));
   ImGui::PopTextWrapPos();
-  if (theme::primaryButton(T("Close")) || ImGui::IsKeyPressed(ImGuiKey_Escape)) ImGui::CloseCurrentPopup();
+  if (theme::primaryButton(T("Close")) || theme::dialogEscape()) ImGui::CloseCurrentPopup();
   if (changed) {
     std::string err;
     if (!project_->save(&err)) lastStatus_ = err;
@@ -2410,7 +2411,7 @@ void App::goToAddressDialog() {
     openFile(target->file, target->line);
     ImGui::CloseCurrentPopup();
   }
-  if (ImGui::IsKeyPressed(ImGuiKey_Escape) || theme::dialogButton(T("Cancel"))) ImGui::CloseCurrentPopup();
+  if (theme::dialogEscape() || theme::dialogButton(T("Cancel"))) ImGui::CloseCurrentPopup();
   ImGui::EndPopup();
 }
 
@@ -2779,7 +2780,7 @@ void App::newProjectDialog() {
           if (tv == "AUTO") ImGui::Separator();
           bool sel = tv == npTvId_;
           std::string label = tvLabel(tv);
-          if (tv != "AUTO" && !tvSupported("stella", tv)) label += "  " + F("(not in {0})", {"Stella"});
+          if (tv != "AUTO" && !tvSupported("gopher2600", tv)) label += "  " + F("(not in {0})", {"Gopher2600"});  // the default emulator
           if (ImGui::Selectable(label.c_str(), sel)) npTvId_ = tv;
           if (ImGui::IsItemHovered()) {
             if (tv == "AUTO") ImGui::SetTooltip("%s", T(kTvMultipleHelp));
@@ -2813,7 +2814,7 @@ void App::newProjectDialog() {
     }
   }
   ImGui::SameLine();
-  if (theme::dialogButton(T("Cancel"))) {
+  if (theme::dialogButton(T("Cancel")) || theme::dialogEscape()) {
     error.clear();
     ImGui::CloseCurrentPopup();
   }
@@ -2872,7 +2873,7 @@ void App::toolsDialog() {
   }
   ImGui::TextDisabled("%s", Toolchain::toolsDir().c_str());
   ImGui::Dummy(ImVec2(0, 4 * em));
-  if (theme::primaryButton(T("Close"))) ImGui::CloseCurrentPopup();
+  if (theme::primaryButton(T("Close")) || theme::dialogEscape()) ImGui::CloseCurrentPopup();
   ImGui::SameLine();
   if (theme::dialogButton(T("Detect again"))) tools_.detect();
   ImGui::EndPopup();
@@ -2933,7 +2934,7 @@ void App::missingToolDialog() {
     if (theme::dialogButton(T("Search again"))) tools_.detect();
   }
   ImGui::SameLine();
-  if (theme::dialogButton(T("Close")) || ImGui::IsKeyPressed(ImGuiKey_Escape)) close = true;
+  if (theme::dialogButton(T("Close")) || theme::dialogEscape()) close = true;
   if (close) {
     ImGui::CloseCurrentPopup();
     missingThen_ = nullptr;
@@ -3011,7 +3012,7 @@ void App::aboutDialog() {
   ImGui::PopTextWrapPos();
   ImGui::EndChild();
   ImGui::TextDisabled("%s", F("Data: {0}", {a.dataDir}).c_str());
-  if (theme::primaryButton(T("Close")) || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+  if (theme::primaryButton(T("Close")) || theme::dialogEscape()) {
     ImGui::CloseCurrentPopup();
     about_.reset();
   }

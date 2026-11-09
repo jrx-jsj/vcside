@@ -13,6 +13,7 @@
 #include "imgui.h"
 
 #include "folding.h"
+#include "indentation.h"
 
 namespace vcs {
 
@@ -126,6 +127,15 @@ class TextEditor {
   // first line. Folds follow the text when lines are inserted or deleted above them, and
   // a region opens when the cursor goes into it.
   void setFoldSyntax(FoldSyntax s) { foldSyntax_ = s, regionsVersion_ = 0; }
+  // Indentation: a level is what most of the file uses (indentation.h); `fallback` for a file
+  // with no indented line yet. In C (FoldSyntax::C), Enter and braces indent as the code goes.
+  void setDefaultIndent(IndentStyle fallback) { defaultIndent_ = fallback; }
+  IndentStyle indentStyle() const { return detectIndentStyle(lines_, defaultIndent_); }
+  // What the keys do, also for tests: Enter, typed text, Tab (Shift+Tab: `outdent`), Backspace.
+  void newline();
+  void typeText(const std::string& text);
+  void indentKey(bool outdent);
+  void backspace();
   bool foldAt(int line);    // the innermost region that starts at or holds the line
   bool unfoldAt(int line);  // the folded region that starts at or holds the line
   void foldAll();
@@ -143,9 +153,7 @@ class TextEditor {
   void pushUndo(bool mergeTyping);
   void insertText(const std::string& s);
   void deleteSelection();
-  void backspace();
   void del();
-  void newline();
   void moveCursor(Coord c, bool select);
   std::string selectedText() const;
   Coord clamp(Coord c) const;
@@ -200,6 +208,7 @@ class TextEditor {
   int currentMatch_ = -1;
 
   FoldSyntax foldSyntax_ = FoldSyntax::None;
+  IndentStyle defaultIndent_;
   std::vector<FoldRegion> regions_;
   size_t regionsVersion_ = 0, foldVersion_ = 0;
   std::set<int> folds_;               // first lines of the folded regions

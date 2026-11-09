@@ -35,6 +35,8 @@ float stripesHeight();
 // The dialog's main button (Create, Save, OK...), and the others (small: SmallButton's size).
 bool primaryButton(const char* label, const ImVec2& size = ImVec2(0, 0));
 bool dialogButton(const char* label, const ImVec2& size = ImVec2(0, 0), bool small = false);
+// Esc pressed in the dialog being drawn (not in a popup over it): every dialog closes with it.
+bool dialogEscape();
 // A heading inside a dialog: a dark band as wide as the content, with a line under it.
 void dialogHeading(const char* text);
 

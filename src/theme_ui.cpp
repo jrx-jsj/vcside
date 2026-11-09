@@ -42,6 +42,10 @@ bool beginModal(const char* name, bool* open, ImGuiWindowFlags flags) {
   return true;
 }
 
+bool dialogEscape() {
+  return ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && ImGui::IsKeyPressed(ImGuiKey_Escape, false);
+}
+
 void drawStripes(ImDrawList* dl, const ImVec2& min, const ImVec2& max) {
   Role stripes[3] = {Role::DlgStripe1, Role::DlgStripe2, Role::DlgStripe3};
   float h = (max.y - min.y) / 3;
@@ -191,6 +195,7 @@ void Editor::draw(Library& lib, const std::string& current, const Hooks& h) {
     ImGui::End();
     return;
   }
+  if (dialogEscape() && !ImGui::IsAnyItemActive()) open = false;  // closes like the dialogs
   bool changed = false;
 
   // the themes

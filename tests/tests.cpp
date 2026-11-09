@@ -8,6 +8,8 @@
 #include "builder_parse.h"
 #include "editor/text_editor.h"
 #include "editor/folding.h"
+#include "editor/indentation.h"
+#include <memory>
 #include "source_links.h"
 #include "cycles.h"
 #include "kb.h"
@@ -856,6 +858,106 @@ static bool hasRegion(const std::vector<FoldRegion>& rs, int first, int last) {
   return false;
 }
 
+// Indentation: the file's own style, and what Enter, braces, Tab and Backspace do in C.
+static void testIndentation() {
+  IndentStyle tabs{true, 4}, fourSpaces{false, 4};
+  CHECK(detectIndentStyle({"int f()", "{", "  a();", "  if (x) {", "    b();", "  }", "}"}, tabs) == (IndentStyle{false, 2}));
+  CHECK(detectIndentStyle({"main", "\tlda #1", "\tsta COLUBK"}, fourSpaces) == tabs);
+  CHECK(detectIndentStyle({"int x;"}, fourSpaces) == fourSpaces);  // nothing indented: the fallback
+  CHECK(detectIndentStyle({"/*", " * a comment", " */", "int x;"}, fourSpaces) == fourSpaces);
+  bool inComment = false;
+  CHECK(cCode("if (c == '{') { // {", inComment) == "if (c == '') { ");
+  CHECK(cCode("s = \"}\"; /* { ", inComment) == "s = \"\"; " && inComment);
+  CHECK(cCode("} */ x();", inComment) == " x();" && !inComment);
+
+  auto editor = [](const std::string& text, IndentStyle fallback = IndentStyle{false, 4}) {
+    auto made = std::make_unique<TextEditor>();
+    made->setFoldSyntax(FoldSyntax::C);
+    made->setDefaultIndent(fallback);
+    made->setText(text);
+    return made;
+  };
+  // after "{" one level more, and the "}" that closes it, in the file's style (2 spaces)
+  auto ed = editor("void f(void) {\n  int a;\n}\nvoid g(void) {");
+  ed->goTo(3, 14);
+  ed->newline();
+  CHECK(ed->lines().size() == 6 && ed->lines()[4] == "  " && ed->lines()[5] == "}");
+  CHECK(ed->cursor().line == 4 && ed->cursor().col == 2);
+  ed->typeText("x();");
+  ed->newline();
+  CHECK(ed->lines()[5] == "  " && ed->lines()[6] == "}");  // no second "}"
+  // a block already closed gets no other "}"
+  ed = editor("int main()\n{\n    return 0;\n}");
+  ed->goTo(1, 1);
+  ed->newline();
+  CHECK(ed->lines().size() == 5 && ed->lines()[2] == "    " && ed->lines()[3] == "    return 0;" && ed->lines()[4] == "}");
+  // "{|}" opens up into three lines
+  ed = editor("if (x) {}");
+  ed->goTo(0, 8);
+  ed->newline();
+  CHECK(ed->lines().size() == 3 && ed->lines()[1] == "    " && ed->lines()[2] == "}" && ed->cursor().line == 1);
+  // a line at column 0 that is not a label: no tab, as in assembly
+  ed = editor("int x;");
+  ed->goTo(0, 6);
+  ed->newline();
+  CHECK(ed->lines()[1].empty());
+  // a braceless "if": one level for its statement, then back
+  ed = editor("void f(void)\n{\n    if (x)");
+  ed->goTo(2, 10);
+  ed->newline();
+  CHECK(ed->lines()[3] == "        ");
+  ed->typeText("y();");
+  ed->newline();
+  CHECK(ed->lines()[4] == "    ");
+  // "{" on its own line under the "if" (Allman), "}" under the line it closes
+  ed = editor("void f(void)\n{\n    if (x)\n        ");
+  ed->goTo(3, 8);
+  ed->typeText("{");
+  CHECK(ed->lines()[3] == "    {");
+  ed->newline();
+  CHECK(ed->lines()[4] == "        " && ed->lines()[5] == "    }");
+  ed = editor("int f(void) {\n  if (x) {\n    y();\n      ");
+  ed->goTo(3, 6);
+  ed->typeText("}");
+  CHECK(ed->lines()[3] == "  }");
+  ed->undo();
+  CHECK(ed->lines()[3] == "      ");
+  // a block comment goes on with " * "
+  ed = editor("/* The kernel");
+  ed->goTo(0, 13);
+  ed->newline();
+  CHECK(ed->lines()[1] == " * " && ed->cursor().col == 3);
+  ed->typeText("runs.");
+  ed->newline();
+  CHECK(ed->lines()[2] == " * ");
+  // Enter in the indentation leaves the code where it was
+  ed = editor("{\n    x();\n}");
+  ed->goTo(1, 2);
+  ed->newline();
+  CHECK(ed->lines()[1].empty() && ed->lines()[2] == "    x();" && ed->cursor().line == 2 && ed->cursor().col == 4);
+  // Tab, Shift+Tab and Backspace go by levels of spaces
+  ed = editor("x();\n  y();");
+  ed->goTo(0, 0);
+  ed->indentKey(false);
+  CHECK(ed->lines()[0] == "  x();");
+  ed->indentKey(true);
+  CHECK(ed->lines()[0] == "x();");
+  ed = editor("void f(void) {\n    if (a) {\n        b();\n    }\n      x();\n}", tabs);  // levels of 4
+  ed->goTo(4, 6);
+  ed->backspace();
+  CHECK(ed->lines()[4] == "    x();" && ed->cursor().col == 4);
+  ed->selectLines(3, 4);
+  ed->indentKey(false);
+  CHECK(ed->lines()[3] == "        }" && ed->lines()[4] == "        x();");
+  // assembly keeps its tabs, and the label rule
+  TextEditor assembly;
+  assembly.setFoldSyntax(FoldSyntax::Asm);
+  assembly.setText("Start");
+  assembly.goTo(0, 5);
+  assembly.newline();
+  CHECK(assembly.lines()[1] == "\t");
+}
+
 static void testFolding() {
   // DASM
   auto a = splitLines(
@@ -1543,6 +1645,7 @@ int main() {
   if (!err.empty()) std::fprintf(stderr, "knowledge base: %s", err.c_str());
   CHECK(err.empty());
   testKb(kb);
+  testIndentation();
   testCycles(kb);
   testParsers();
   testSourceSymbols();
