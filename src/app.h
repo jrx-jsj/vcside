@@ -76,6 +76,8 @@ class App {
   void closeProject();      // back to the welcome page (asks about unsaved files)
   bool hasProject() const { return !folder_.empty() || !files_.empty(); }
   const std::string& folder() const { return folder_; }
+  // What a window reopens with next time: the project file, else the folder ("" = welcome).
+  std::string sessionPath() const;
   SDL_Window* window() const { return window_; }
   void setActive(bool active) { active_ = active; }  // the focused window: the system menu acts on it
   void syncSettings();      // another window saved the settings: take the shared ones
@@ -167,6 +169,9 @@ class App {
   // breakpoints: per file (absolute path, 0-based lines), kept in <project>.vcsproj.user
   void loadUserState();
   void saveUserState();
+  // The files open in the project when it was last closed: path, cursor (0-based); and the one in front.
+  std::vector<std::pair<std::string, Coord>> savedFiles_;
+  std::string savedActiveFile_;
   std::vector<std::string> debugArgs(const std::string& emulator);  // writes the scripts, returns extra arguments
   void goToAddressDialog();
   void emulatorOptionsDialog();

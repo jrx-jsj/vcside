@@ -1204,16 +1204,20 @@ bool TextEditor::render(const char* id, ImFont* font) {
     linkWord_.clear(), linkLine_ = -1;
   }
 
-  // separators: a rule above the line, with its label at the right of the view
+  // separators: a rule above the line, with its label at the right
   for (int row = firstRow; row <= lastRow; row++) {
     auto separator = separators_.find(lineAt_[row]);
     if (separator == separators_.end()) continue;
     float y = origin.y + row * lineH_;
     float right = winPos.x + ImGui::GetWindowWidth() - charW_ * 2;
     float labelWidth = ImGui::CalcTextSize(separator->second.c_str()).x;
-    drawList->AddLine(ImVec2(winPos.x + gutterW, y), ImVec2(right, y), col(Role::EdGutterBorder), 1.0f);
-    float labelX = right - labelWidth;
-    drawList->AddRectFilled(ImVec2(labelX - charW_ * 0.5f, y - lineH_ * 0.5f), ImVec2(right, y + lineH_ * 0.5f), col(Role::EdBackground));
+    // the label goes right of the code on both sides of the rule, or at the right edge
+    int lineIndex = lineAt_[row];
+    int besideCols = visualCol(lineIndex, (int)lines_[lineIndex].size());
+    if (row > 0) besideCols = std::max(besideCols, visualCol(lineAt_[row - 1], (int)lines_[lineAt_[row - 1]].size()));
+    float labelX = std::max(right - labelWidth, textX + (besideCols + 3) * charW_);
+    drawList->AddLine(ImVec2(winPos.x + gutterW, y), ImVec2(labelX + labelWidth, y), col(Role::EdGutterBorder), 1.0f);
+    drawList->AddRectFilled(ImVec2(labelX - charW_ * 0.5f, y - lineH_ * 0.5f), ImVec2(labelX + labelWidth, y + lineH_ * 0.5f), col(Role::EdBackground));
     drawList->AddText(font, fontSize * 0.9f, ImVec2(labelX, y - lineH_ * 0.45f), col(Role::EdLineNumber), separator->second.c_str());
   }
 

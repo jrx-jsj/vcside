@@ -12,6 +12,8 @@
 #include <string>
 #include <vector>
 
+#include <nlohmann/json.hpp>
+
 #include "app.h"
 #include "menu.h"
 #include "i18n.h"
@@ -312,6 +314,62 @@ static bool makeGl(SDL_Window* window) {
   return true;
 }
 
+// The windows to open again at the next start: what each one had (project file or
+// folder), where it was and its size. Written when VCSIDE quits or its last window
+// closes; read when it starts with nothing to open.
+struct SessionWindow {
+  std::string path;
+  int x = 0, y = 0, width = 0, height = 0;
+  bool maximized = false;
+};
+
+static std::string sessionFile() { return vcs::configDir() + "session.json"; }
+
+static void saveSession(const std::vector<SessionWindow>& sessionWindows) {
+  nlohmann::json list = nlohmann::json::array();
+  for (auto& window : sessionWindows)
+    list.push_back({{"path", window.path}, {"x", window.x}, {"y", window.y}, {"width", window.width},
+                    {"height", window.height}, {"maximized", window.maximized}});
+  std::ofstream(sessionFile()) << nlohmann::json{{"windows", list}}.dump(2) << "\n";
+}
+
+static std::vector<SessionWindow> loadSession() {
+  std::vector<SessionWindow> sessionWindows;
+  try {
+    std::ifstream file(sessionFile());
+    if (!file) return sessionWindows;
+    nlohmann::json session = nlohmann::json::parse(file);
+    for (auto& entry : session.value("windows", nlohmann::json::array())) {
+      SessionWindow window;
+      window.path = entry.value("path", std::string());
+      window.x = entry.value("x", 0), window.y = entry.value("y", 0);
+      window.width = entry.value("width", 0), window.height = entry.value("height", 0);
+      window.maximized = entry.value("maximized", false);
+      std::error_code errorCode;
+      if (!window.path.empty() && fs::exists(window.path, errorCode)) sessionWindows.push_back(window);
+    }
+  } catch (...) {
+  }
+  return sessionWindows;
+}
+
+static SessionWindow describeWindow(SDL_Window* sdlWindow, const std::string& path) {
+  SessionWindow window;
+  window.path = path;
+  window.maximized = (SDL_GetWindowFlags(sdlWindow) & SDL_WINDOW_MAXIMIZED) != 0;
+  SDL_GetWindowPosition(sdlWindow, &window.x, &window.y);
+  SDL_GetWindowSize(sdlWindow, &window.width, &window.height);
+  return window;
+}
+
+// Back where it was, if that place is still on a display.
+static void placeWindow(SDL_Window* sdlWindow, const SessionWindow& window) {
+  if (window.width >= 400 && window.height >= 300) SDL_SetWindowSize(sdlWindow, window.width, window.height);
+  SDL_Point corner{window.x + 40, window.y + 20};
+  if (SDL_GetDisplayForPoint(&corner)) SDL_SetWindowPosition(sdlWindow, window.x, window.y);
+  if (window.maximized) SDL_MaximizeWindow(sdlWindow);
+}
+
 // Sets up ImGui and the App of a window already made.
 static std::unique_ptr<IdeWindow> openIdeWindow(SDL_Window* sdlWindow) {
   auto ideWindow = std::make_unique<IdeWindow>();
@@ -380,7 +438,17 @@ int main(int argc, char** argv) {
   bool newWindowWanted = false, quitting = false;
   auto activeApp = [&]() -> vcs::App* { return active ? active->app.get() : windows[0]->app.get(); };
   vcs::App::hooks.newWindow = [&] { newWindowWanted = true; };
+  bool keepSession = false;  // the last window closed with a project: its session stands
+  auto windowsWithProjects = [&] {
+    std::vector<SessionWindow> sessionWindows;
+    for (auto& ideWindow : windows) {
+      std::string path = ideWindow->app->sessionPath();
+      if (!path.empty()) sessionWindows.push_back(describeWindow(ideWindow->sdlWindow, path));
+    }
+    return sessionWindows;
+  };
   vcs::App::hooks.quitAll = [&] {
+    saveSession(windowsWithProjects());
     quitting = true;
     for (auto& ideWindow : windows) {
       ImGui::SetCurrentContext(ideWindow->imguiContext);
@@ -418,6 +486,7 @@ int main(int argc, char** argv) {
   bool doBuild = false;
   std::string complete;
   InputScript input;
+  bool pathGiven = false;
   for (int i = 1; i < argc; i++) {
     std::string arg = argv[i];
     if (arg == "--shot" && i + 1 < argc) shot = argv[++i];
@@ -437,8 +506,28 @@ int main(int argc, char** argv) {
       for (std::string line; std::getline(file, line);)
         if (!line.empty() && line[0] != '#') input.lines.push_back(line);
     } else if (arg == "--imgui-menu") continue;
-    else app.openPath(arg);
+    else app.openPath(arg), pathGiven = true;
   }
+  // Started with nothing to open: the windows of the last session.
+  if (!pathGiven) {
+    std::vector<SessionWindow> sessionWindows = loadSession();
+    for (size_t index = 0; index < sessionWindows.size(); index++) {
+      IdeWindow* target = windows[0].get();
+      if (index > 0) {
+        SDL_Window* sdlWindow = newSdlWindow(windows.back()->sdlWindow);
+        auto ideWindow = sdlWindow ? openIdeWindow(sdlWindow) : nullptr;
+        if (!ideWindow) break;
+        windows.push_back(std::move(ideWindow));
+        target = windows.back().get();
+      }
+      placeWindow(target->sdlWindow, sessionWindows[index]);
+      ImGui::SetCurrentContext(target->imguiContext);
+      target->app->openPath(sessionWindows[index].path);
+    }
+    active = windows.back().get();
+    ImGui::SetCurrentContext(windows[0]->imguiContext);
+  }
+
   int frame = 0, shotFrame = -1;
   bool done = false;
 
@@ -548,12 +637,18 @@ int main(int argc, char** argv) {
       ImGui::SetCurrentContext(ideWindow.imguiContext);
       bool last = windows.size() == 1;
       if (last && !quitting && ideWindow.app->hasProject()) {
+        saveSession(windowsWithProjects());  // closing the last window is closing VCSIDE
+        keepSession = true;
         ideWindow.app->closeProject();
         ideWindow.app->cancelQuit();
       } else {
+        // the last window, on the welcome page: VCSIDE ends with no project open
+        if (last && !quitting && !keepSession) saveSession({});
         ideWindow.alive = false;
       }
     }
+    for (auto& ideWindow : windows)
+      if (ideWindow->alive && !ideWindow->app->sessionPath().empty()) keepSession = false;
     for (size_t i = 0; i < windows.size();) {
       if (windows[i]->alive) {
         i++;

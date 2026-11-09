@@ -75,7 +75,10 @@ bool App::init(SDL_Window* window, ImFont* mono, bool imguiMenu) {
   return true;
 }
 
-void App::shutdown() { saveSettings(); }
+void App::shutdown() {
+  saveUserState();
+  saveSettings();
+}
 
 void App::loadSettings() {
   json settings;
@@ -232,6 +235,7 @@ void App::openProject(const std::string& file) {
     output_ += error + "\n";
     return;
   }
+  saveUserState();  // the project this window leaves
   project_ = loadedProject;
   projectUnsaved_ = false;
   folder_ = loadedProject.dir;
@@ -242,7 +246,17 @@ void App::openProject(const std::string& file) {
   loadSymbols();
   loadUserState();
   addRecent(loadedProject.file);
-  openFile(loadedProject.abs(loadedProject.main));
+  // the files that were open, each where its cursor was; the main program if there were none
+  OpenFile* front = nullptr;
+  int reopened = 0;
+  for (auto& [path, cursor] : savedFiles_)
+    if (OpenFile* opened = openFile(path)) {
+      opened->editor.goTo(cursor.line, cursor.col);
+      if (path == savedActiveFile_) front = opened;
+      reopened++;
+    }
+  if (!reopened) openFile(loadedProject.abs(loadedProject.main));
+  else if (front) openFile(front->path);
   SDL_SetWindowTitle(window_, ("VCSIDE - " + loadedProject.name).c_str());
 }
 
@@ -807,7 +821,20 @@ void App::loadUserState() {
     if (stream) state = json::parse(stream);
   } catch (...) {
   }
-  if (!state.is_object() || !state.contains("breakpoints")) return;
+  savedFiles_.clear();
+  savedActiveFile_.clear();
+  if (!state.is_object()) return;
+  std::error_code pathError;
+  if (state.contains("open_files") && state["open_files"].is_array())
+    for (auto& entry : state["open_files"]) {
+      if (!entry.is_object() || !entry.contains("file") || !entry["file"].is_string()) continue;
+      std::string path = fs::weakly_canonical(fs::path(project_->dir) / entry["file"].get<std::string>(), pathError).string();
+      Coord cursor{std::max(0, entry.value("line", 1) - 1), std::max(0, entry.value("column", 1) - 1)};
+      savedFiles_.push_back({path, cursor});
+    }
+  if (state.contains("active_file") && state["active_file"].is_string())
+    savedActiveFile_ = fs::weakly_canonical(fs::path(project_->dir) / state["active_file"].get<std::string>(), pathError).string();
+  if (!state.contains("breakpoints") || !state["breakpoints"].is_object()) return;
   for (auto& [file, lines] : state["breakpoints"].items()) {
     std::set<int> breakpointLines;
     for (auto& number : lines)
@@ -819,16 +846,33 @@ void App::loadUserState() {
 
 void App::saveUserState() {
   if (!project_ || projectUnsaved_) return;
+  auto projectRelative = [this](const std::string& file) {
+    std::error_code errorCode;
+    auto relative = fs::relative(file, project_->dir, errorCode);
+    return errorCode || relative.empty() ? file : relative.generic_string();
+  };
+  for (auto& openedFile : files_)  // the open files' breakpoints as they are now
+    if (!openedFile->editor.breakpoints().empty() || breakpoints_.count(openedFile->path)) breakpoints_[openedFile->path] = openedFile->editor.breakpoints();
   json breakpointsJson = json::object();
   for (auto& [file, lines] : breakpoints_) {
     if (lines.empty()) continue;
-    std::error_code errorCode;
-    auto relative = fs::relative(file, project_->dir, errorCode);
     json array = json::array();
     for (int line : lines) array.push_back(line + 1);
-    breakpointsJson[errorCode ? file : relative.generic_string()] = array;
+    breakpointsJson[projectRelative(file)] = array;
   }
-  std::ofstream(project_->file + ".user") << json{{"breakpoints", breakpointsJson}}.dump(2) << "\n";
+  json openFiles = json::array();
+  for (auto& openedFile : files_) {
+    Coord cursor = openedFile->editor.cursor();
+    openFiles.push_back({{"file", projectRelative(openedFile->path)}, {"line", cursor.line + 1}, {"column", cursor.col + 1}});
+  }
+  json state = {{"breakpoints", breakpointsJson}, {"open_files", openFiles}};
+  if (activeFile_ >= 0 && activeFile_ < (int)files_.size()) state["active_file"] = projectRelative(files_[activeFile_]->path);
+  std::ofstream(project_->file + ".user") << state.dump(2) << "\n";
+}
+
+std::string App::sessionPath() const {
+  if (project_ && !projectUnsaved_) return project_->file;
+  return folder_;
 }
 
 // Sends the editor's breakpoints to the emulator: Gopher2600 reads a script given
@@ -1419,6 +1463,7 @@ void App::closeProject() {
 }
 
 void App::doCloseProject() {
+  saveUserState();
   files_.clear();
   activeFile_ = -1;
   closeRequest_ = -1;
@@ -1983,6 +2028,7 @@ void App::projectPanel() {
     for (auto& entry : fs::directory_iterator(dir, errorCode)) {
       std::string name = entry.path().filename().string();
       if (name.empty() || name[0] == '.') continue;
+      if (name.size() > 13 && name.compare(name.size() - 13, 13, ".vcsproj.user") == 0) continue;  // VCSIDE's own state
       entries.push_back(entry);
     }
     std::sort(entries.begin(), entries.end(), [](auto& first, auto& second) {
