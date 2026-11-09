@@ -1,6 +1,6 @@
 # VCSIDE — music editor (0.2.0)
 
-This is a proposal, not a decision record yet. It covers what already exists, what the 2600 can do, and what VCSIDE would add. The questions at the end still need an answer before work starts.
+It covers what already exists, what the 2600 can do, and what VCSIDE adds. The decisions taken are at the end.
 
 ## What already exists
 
@@ -54,7 +54,7 @@ The dividers are integers, so only some AUDF values land near equal-tempered not
 
   Adding the pulse and buzzy distortions brings the worst note down to 27 cents. Neither criterion is right for every song, so both are offered.
 - **NTSC and PAL** have different clocks. The song is tuned for the project's standard. With "Multiple (in the code)", two AUDF tables are written, and the editor shows the errors of both.
-- **Finer pitch** (later, optional): switching between two AUDF values in the same frame, as TIunA does, or as the cartridge's ARM can do on every scanline. It costs CPU time, so it is an instrument setting, not a default.
+- **Finer pitch** (optional per instrument): switching between two AUDF values in the same frame, as TIunA does, or as the cartridge's ARM can do on every scanline. It costs CPU time, so it is an instrument setting, not a default.
 
 ## Samples: ELF and the ARM cartridges
 
@@ -113,11 +113,10 @@ With AUDC = 0 the TIA outputs AUDV as a level, so a program that writes AUDV0 on
 3. DASM and batari Basic export, and the DASM example. Checked in Stella and Gopher2600.
 4. Samples for ELF: waveforms, voices, mixing, the C player and the C example. Checked in Stella; on the PlusCart and the Chameleon if possible.
 5. TIATracker import; DPC+ and CDFJ export.
+6. Finer pitch: switching AUDF values within a frame (TIA) or per scanline (ELF).
 
-## Open questions
+## Decisions (2026-11-09)
 
-1. **Tracker grid, piano roll, or both?** A grid is closer to how 2600 music is usually written and to the data the player reads. A piano roll makes tuning easier to see.
-2. **Players:** write VCSIDE's own (CC0, no conditions for games), or also offer TIATracker's (Apache-2.0, needs its notice in the game)?
-3. **Scope of 0.2.0:**
-   - Is TIA plus ELF samples enough, with DPC+, CDFJ and the TIATracker import left for 0.3.0?
-   - Is finer pitch (switching AUDF values) in or out?
+1. **Both views:** a tracker grid to write in, and a piano roll of the same pattern that shows each note's tuning.
+2. **Only VCSIDE's own players** (CC0), so games carry no licence notice. TIATracker songs are imported, not exported.
+3. **All of it in 0.2.0:** TIA with tuning, samples for ELF, DPC+ and CDFJ export, TIATracker import and finer pitch by switching AUDF values.
