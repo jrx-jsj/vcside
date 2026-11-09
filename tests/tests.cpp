@@ -514,6 +514,23 @@ static void testEmulatorOptions(const KnowledgeBase& kb) {
   CHECK(prepareEmulatorLaunch(project, kb, root.string(), launch, &error, home.string()));
   CHECK(!has(launch.args, {"-basedir"}) && launch.env.size() == 1 && launch.env[0].first == "HOME");
   CHECK(fs::exists(root / "stella-home" / "Library" / "Application Support" / "Stella" / "stella.sqlite3"));
+  // the macOS app reads <HOME>/<rom name>.script, not the one in -userdir
+  Project scriptProject = project;
+  scriptProject.dir = (tempDir / "proj").string();
+  fs::create_directories(tempDir / "proj" / "build");
+  std::ofstream(tempDir / "proj" / "build" / "game.script") << "clearBreaks\nbreak $F000 0\n";
+  launch = {};
+  launch.args = {"/Applications/Stella.app/Contents/MacOS/Stella", "-debug", (tempDir / "proj" / "build" / "game.bin").string()};
+  CHECK(prepareEmulatorLaunch(scriptProject, kb, root.string(), launch, &error, home.string()));
+  std::ifstream copiedScript(root / "stella-home" / "game.script");
+  std::string copiedText((std::istreambuf_iterator<char>(copiedScript)), std::istreambuf_iterator<char>());
+  copiedScript.close();
+  CHECK(copiedText == "clearBreaks\nbreak $F000 0\n");
+  fs::remove(tempDir / "proj" / "build" / "game.script");
+  launch = {};
+  launch.args = {"/Applications/Stella.app/Contents/MacOS/Stella", "-debug", (tempDir / "proj" / "build" / "game.bin").string()};
+  CHECK(prepareEmulatorLaunch(scriptProject, kb, root.string(), launch, &error, home.string()));
+  CHECK(!fs::exists(root / "stella-home" / "game.script"));
 
   project.emulator = "gopher2600";
   project.tv = "SECAM60";

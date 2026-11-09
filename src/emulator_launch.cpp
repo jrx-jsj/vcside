@@ -124,6 +124,16 @@ static bool prepareStella(const Project& project, const fs::path& root, const st
   if (!macApp) arguments = {"-basedir", profile.string()};
   // the debugger runs <userdir>/<rom name>.script when it opens: the breakpoints
   arguments.insert(arguments.end(), {"-userdir", buildDir(project)});
+  if (macApp) {
+    // the macOS app ignores -userdir and takes HOME instead: the script goes there too
+    fs::path script = fs::path(project.outputPath()).replace_extension(".script");
+    fs::path inHome = root / "stella-home" / script.filename();
+    if (fs::exists(script, errorCode)) {
+      if (!copyOver(script, inHome, error)) return false;
+    } else {
+      fs::remove(inHome, errorCode);
+    }
+  }
   launch.args.insert(launch.args.end() - 1, arguments.begin(), arguments.end());
   return true;
 }
