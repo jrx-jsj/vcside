@@ -15,58 +15,58 @@ struct Word {
 };
 
 // The words of the line up to a comment (; or //), with their positions.
-std::vector<Word> wordsOf(const std::string& s) {
-  std::vector<Word> out;
-  int n = (int)s.size(), i = 0;
-  while (i < n) {
-    while (i < n && std::isspace((unsigned char)s[i])) i++;
-    if (i >= n || s[i] == ';' || (s[i] == '/' && i + 1 < n && s[i + 1] == '/')) break;
-    int b = i;
-    if (s[i] == '"' || s[i] == '<') {
-      char close = s[i] == '"' ? '"' : '>';
+std::vector<Word> wordsOf(const std::string& text) {
+  std::vector<Word> words;
+  int length = (int)text.size(), i = 0;
+  while (i < length) {
+    while (i < length && std::isspace((unsigned char)text[i])) i++;
+    if (i >= length || text[i] == ';' || (text[i] == '/' && i + 1 < length && text[i + 1] == '/')) break;
+    int begin = i;
+    if (text[i] == '"' || text[i] == '<') {
+      char close = text[i] == '"' ? '"' : '>';
       i++;
-      while (i < n && s[i] != close) i++;
-      if (i < n) i++;
+      while (i < length && text[i] != close) i++;
+      if (i < length) i++;
     } else {
-      while (i < n && !std::isspace((unsigned char)s[i]) && s[i] != ';') i++;
+      while (i < length && !std::isspace((unsigned char)text[i]) && text[i] != ';') i++;
     }
-    std::string t = s.substr(b, i - b);
-    for (auto& c : t) c = (char)std::tolower((unsigned char)c);
-    out.push_back({b, i, t});
+    std::string word = text.substr(begin, i - begin);
+    for (auto& character : word) character = (char)std::tolower((unsigned char)character);
+    words.push_back({begin, i, word});
   }
-  return out;
+  return words;
 }
 
 }  // namespace
 
 bool fileNameInLine(const std::string& line, std::string* name, int* start, int* end) {
-  auto w = wordsOf(line);
+  auto lineWords = wordsOf(line);
   // the keyword: first, or second after a label (DASM), or "#" "include"
-  size_t k = 0, arg = 0;
+  size_t wordIndex = 0, argumentIndex = 0;
   bool found = false;
   // a second word only after a label (it starts the line)
   size_t words = !line.empty() && !std::isspace((unsigned char)line[0]) && line[0] != '#' ? 2 : 1;
-  for (; k < w.size() && k < words && !found; k++) {
-    const std::string& t = w[k].text;
-    if (t == "include" || t == "incbin" || t == "#include" || t == "inline" || t == "incgraphic" ||
-        t == ".include" || t == ".incbin")
-      found = true, arg = k + 1;
-    else if (t == "#" && k + 1 < w.size() && w[k + 1].text == "include")
-      found = true, arg = k + 2;
-    else if (t == "rem" && k + 1 < w.size() && w[k + 1].text == "vcsgfx")
-      found = true, arg = k + 2;
+  for (; wordIndex < lineWords.size() && wordIndex < words && !found; wordIndex++) {
+    const std::string& word = lineWords[wordIndex].text;
+    if (word == "include" || word == "incbin" || word == "#include" || word == "inline" || word == "incgraphic" ||
+        word == ".include" || word == ".incbin")
+      found = true, argumentIndex = wordIndex + 1;
+    else if (word == "#" && wordIndex + 1 < lineWords.size() && lineWords[wordIndex + 1].text == "include")
+      found = true, argumentIndex = wordIndex + 2;
+    else if (word == "rem" && wordIndex + 1 < lineWords.size() && lineWords[wordIndex + 1].text == "vcsgfx")
+      found = true, argumentIndex = wordIndex + 2;
   }
-  if (!found || arg >= w.size()) return false;
-  int b = w[arg].start, e = w[arg].end;
-  if (e - b >= 2 && (line[b] == '"' || line[b] == '<')) b++, e--;  // without the quotes or brackets
+  if (!found || argumentIndex >= lineWords.size()) return false;
+  int from = lineWords[argumentIndex].start, to = lineWords[argumentIndex].end;
+  if (to - from >= 2 && (line[from] == '"' || line[from] == '<')) from++, to--;  // without the quotes or brackets
   else
-    while (e > b && line[e - 1] == ',') e--;
-  if (e <= b) return false;
-  std::string n = line.substr(b, e - b);
-  if (n == "end") return false;  // rem vcsgfx end
-  if (name) *name = n;
-  if (start) *start = b;
-  if (end) *end = e;
+    while (to > from && line[to - 1] == ',') to--;
+  if (to <= from) return false;
+  std::string fileName = line.substr(from, to - from);
+  if (fileName == "end") return false;  // rem vcsgfx end
+  if (name) *name = fileName;
+  if (start) *start = from;
+  if (end) *end = to;
   return true;
 }
 

@@ -14,26 +14,26 @@ std::string dataDir() {
   static std::string cached;
   if (!cached.empty()) return cached;
   std::string base = SDL_GetBasePath() ? SDL_GetBasePath() : "";
-  for (const char* rel : {"data", "../Resources/data", "../data", "../../data"}) {
-    fs::path p = fs::path(base) / rel;
-    std::error_code ec;
-    if (fs::is_directory(p / "kb", ec)) return cached = fs::weakly_canonical(p).string();
+  for (const char* relativePath : {"data", "../Resources/data", "../data", "../../data"}) {
+    fs::path candidate = fs::path(base) / relativePath;
+    std::error_code errorCode;
+    if (fs::is_directory(candidate / "kb", errorCode)) return cached = fs::weakly_canonical(candidate).string();
   }
   return cached = (fs::path(base) / "data").string();
 }
 
 std::string configDir() {
   // VCSIDE_CONFIG_DIR: another settings folder (tests that must not touch the real one)
-  if (const char* env = SDL_getenv("VCSIDE_CONFIG_DIR"); env && *env) {
-    std::error_code ec;
-    fs::create_directories(env, ec);
-    std::string s = env;
-    return s.back() == '/' || s.back() == '\\' ? s : s + "/";
+  if (const char* configOverride = SDL_getenv("VCSIDE_CONFIG_DIR"); configOverride && *configOverride) {
+    std::error_code errorCode;
+    fs::create_directories(configOverride, errorCode);
+    std::string folder = configOverride;
+    return folder.back() == '/' || folder.back() == '\\' ? folder : folder + "/";
   }
-  char* p = SDL_GetPrefPath("vcside", "VCSIDE");
-  std::string s = p ? p : "";
-  SDL_free(p);
-  return s;
+  char* prefPath = SDL_GetPrefPath("vcside", "VCSIDE");
+  std::string folder = prefPath ? prefPath : "";
+  SDL_free(prefPath);
+  return folder;
 }
 
 }  // namespace vcs

@@ -23,7 +23,7 @@ class ImageViewer {
 
   std::string path_;
   std::filesystem::file_time_type mtime_{};
-  int w_ = 0, h_ = 0;
+  int width_ = 0, height_ = 0;
   std::vector<uint32_t> pixels_;  // RGBA, row by row
   unsigned texture_ = 0;
   float zoom_ = 0;                // 0: fit it on the next frame

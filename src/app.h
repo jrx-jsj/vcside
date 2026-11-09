@@ -77,7 +77,7 @@ class App {
   bool hasProject() const { return !folder_.empty() || !files_.empty(); }
   const std::string& folder() const { return folder_; }
   SDL_Window* window() const { return window_; }
-  void setActive(bool a) { active_ = a; }  // the focused window: the system menu acts on it
+  void setActive(bool active) { active_ = active; }  // the focused window: the system menu acts on it
   void syncSettings();      // another window saved the settings: take the shared ones
   MenuBar menuBarForSystem() { return buildMenuBar(true); }
   void showAbout() { showAbout_ = true; }
@@ -91,19 +91,19 @@ class App {
   void testDoc(const std::string& word) { showDoc(word); }
   std::string testMenuDump() { return nativeMenu_ ? nativeMenuDump() : std::string(); }
   bool testMenu(const std::string& path);  // "File/Save": the system menu, or the ImGui one
-  void testGoToAddress(const std::string& a) { showGoToAddress_ = true, pendingAddress_ = a; }
+  void testGoToAddress(const std::string& address) { showGoToAddress_ = true, pendingAddress_ = address; }
   void testFocus(const std::string& panel) { ImGui::SetWindowFocus(("###" + panel).c_str()); }
   // What completion offers for a prefix and the tooltip of a word, in the active file.
   std::string testComplete(const std::string& prefix);
-  void testDefinition(const std::string& w) {
-    if (activeFile_ >= 0) gotoDefinition(w, files_[activeFile_]->path, files_[activeFile_]->editor.cursor().line);
+  void testDefinition(const std::string& word) {
+    if (activeFile_ >= 0) gotoDefinition(word, files_[activeFile_]->path, files_[activeFile_]->editor.cursor().line);
   }
-  void testFind(const std::string& q, bool replace) {
+  void testFind(const std::string& query, bool replace) {
     if (activeFile_ < 0) return;
-    auto& ed = files_[activeFile_]->editor;
-    ed.openFind(replace);
-    ed.setFindQuery(q);
-    ed.findNext();
+    auto& textEditor = files_[activeFile_]->editor;
+    textEditor.openFind(replace);
+    textEditor.setFindQuery(query);
+    textEditor.findNext();
   }
 
   void zoomEditor(int steps);  // 0 = back to 100 %
@@ -139,7 +139,7 @@ class App {
   void projectFileSaved();    // the .vcsproj changed: the project takes it again
   void openFolder(const std::string& dir);
   OpenFile* openFile(const std::string& path, int line = 0);
-  bool saveFile(OpenFile& f);
+  bool saveFile(OpenFile& file);
   // What the graphics editor checks against: a kernel of one's own for assembly, or the
   // kernel and options the main .bas sets (read again when the file changes).
   gfx::Profile gfxProfile();
@@ -163,7 +163,7 @@ class App {
   void goToAddressDialog();
   void emulatorOptionsDialog();
   std::string findProjectFile(const std::string& name) const;
-  void lint(OpenFile& f);
+  void lint(OpenFile& file);
   void showDoc(const std::string& word);
   bool gotoDefinition(const std::string& word, const std::string& fromFile, int fromLine);
   // Where a symbol is defined: the open file first, then the project's sources.
@@ -172,7 +172,7 @@ class App {
   // editor hooks
   EditorHooks asmHooks();
   EditorHooks basicHooks();
-  std::string registerHelp(const Register& r) const;
+  std::string registerHelp(const Register& reg) const;
   std::vector<Token> tokenizeAsm(const std::string& line) const;
   std::optional<int> lookupSymbol(const std::string& name) const;
 
@@ -216,12 +216,12 @@ class App {
   // What the sources define now, before building: the open files as they are in the
   // editor and the project's other .asm files on disk (rescanned when they change).
   struct LiveSymbol {
-    SourceSymbol sym;
+    SourceSymbol symbol;
     std::string file;  // absolute path
   };
   struct ScannedFile {
     long long mtime = 0;
-    std::vector<SourceSymbol> syms;
+    std::vector<SourceSymbol> symbols;
   };
   std::map<std::string, LiveSymbol> liveSymbols_;  // global names (not .local)
   std::map<std::string, int> liveValues_;          // the constants that evaluate
@@ -236,7 +236,7 @@ class App {
     return liveReady_ && !builtFiles_.empty() && !liveSymbols_.count(name);
   }
   void refreshLiveSymbols(bool force = false);
-  std::string liveSymbolText(const LiveSymbol& s, bool full) const;
+  std::string liveSymbolText(const LiveSymbol& liveSymbol, bool full) const;
   AddressMap addresses_;
   std::map<std::string, std::set<int>> breakpoints_;
   std::set<std::string> treeToggled_;  // project tree folders opened or closed against their default

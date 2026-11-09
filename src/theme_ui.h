@@ -14,23 +14,23 @@ namespace vcs::theme {
 // A size in pixels at 100 % zoom, scaled like the current font (the IDE's zoom).
 inline float em(float px) { return px * ImGui::GetFontSize() / 15.0f; }
 
-inline ImU32 u32(Rgba c) { return IM_COL32(c >> 24, (c >> 16) & 255, (c >> 8) & 255, c & 255); }
-inline ImVec4 vec(Rgba c) { return ImVec4((c >> 24) / 255.0f, ((c >> 16) & 255) / 255.0f, ((c >> 8) & 255) / 255.0f, (c & 255) / 255.0f); }
-inline ImU32 col(Role r) { return u32(colour(r)); }
-inline ImVec4 colv(Role r) { return vec(colour(r)); }
+inline ImU32 u32(Rgba colour) { return IM_COL32(colour >> 24, (colour >> 16) & 255, (colour >> 8) & 255, colour & 255); }
+inline ImVec4 vec(Rgba colour) { return ImVec4((colour >> 24) / 255.0f, ((colour >> 16) & 255) / 255.0f, ((colour >> 8) & 255) / 255.0f, (colour & 255) / 255.0f); }
+inline ImU32 col(Role role) { return u32(colour(role)); }
+inline ImVec4 colv(Role role) { return vec(colour(role)); }
 
 // The name to show: built-in themes are translated.
-std::string displayName(const Theme& t);
+std::string displayName(const Theme& theme);
 
 // Sets every ImGui colour from the roles, then the theme's own "imgui" ones.
-void applyImGui(const Resolved& r);
+void applyImGui(const Resolved& resolved);
 
 // A dialog: BeginPopupModal with the dialog look (a dark title band over three stripes,
 // a thick border, room around the content). Ends with ImGui::EndPopup, like it.
 bool beginModal(const char* name, bool* open = nullptr, ImGuiWindowFlags flags = 0);
 // The three stripes (dialog.stripe1-3) filling a rectangle, top to bottom, and the height
 // they take at the top of the window.
-void drawStripes(ImDrawList* dl, const ImVec2& min, const ImVec2& max);
+void drawStripes(ImDrawList* drawList, const ImVec2& min, const ImVec2& max);
 float stripesHeight();
 // The dialog's main button (Create, Save, OK...), and the others (small: SmallButton's size).
 bool primaryButton(const char* label, const ImVec2& size = ImVec2(0, 0));
@@ -50,7 +50,7 @@ class Editor {
   };
   bool open = false;
   // `current` is the theme in use; editing a theme makes it the current one.
-  void draw(Library& lib, const std::string& current, const Hooks& h);
+  void draw(Library& library, const std::string& current, const Hooks& hooks);
 
  private:
   std::string selected_, message_, filter_;

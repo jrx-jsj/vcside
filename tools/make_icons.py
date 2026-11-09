@@ -59,78 +59,78 @@ ASPECT = 1.25  # pixels a little wider than tall, like the 2600 playfield
 
 def text_blocks(label, size):
     """Lettering blocks, in 1024 units, aligned to the pixel grid of `size` px."""
-    lx, ly, lw, lh = label
-    u = 1024 / size                      # one output pixel, in SVG units
-    cols = len(TEXT) * 6 - 1
-    avail_w = lw / u - 2 * max(1, round(lw / u * 0.06))
-    avail_h = lh / u * 0.62
-    ph = max(1, int(avail_h // 7))
+    label_x, label_y, label_width, label_height = label
+    unit = 1024 / size                   # one output pixel, in SVG units
+    columns = len(TEXT) * 6 - 1
+    room_width = label_width / unit - 2 * max(1, round(label_width / unit * 0.06))
+    room_height = label_height / unit * 0.62
+    block_height = max(1, int(room_height // 7))
     while True:
-        pw = max(1, round(ph * ASPECT))
-        if (cols * pw <= avail_w and 7 * ph <= avail_h) or ph == 1:
+        block_width = max(1, round(block_height * ASPECT))
+        if (columns * block_width <= room_width and 7 * block_height <= room_height) or block_height == 1:
             break
-        ph -= 1
-    pw = max(1, round(ph * ASPECT))
-    if cols * pw > avail_w:
-        pw = ph = 1
-    tw, th = cols * pw, 7 * ph
-    ox = round((lx / u) + (lw / u - tw) / 2)
-    oy = round((ly / u) + (lh / u - th) / 2)
+        block_height -= 1
+    block_width = max(1, round(block_height * ASPECT))
+    if columns * block_width > room_width:
+        block_width = block_height = 1
+    text_width, text_height = columns * block_width, 7 * block_height
+    origin_x = round((label_x / unit) + (label_width / unit - text_width) / 2)
+    origin_y = round((label_y / unit) + (label_height / unit - text_height) / 2)
     rects = []
-    for i, ch in enumerate(TEXT):
-        for r, row in enumerate(FONT[ch]):
-            c = 0
-            while c < 5:                 # merge runs of blocks in each row
-                if row[c] != "X":
-                    c += 1
+    for letter_index, letter in enumerate(TEXT):
+        for row_index, row in enumerate(FONT[letter]):
+            column = 0
+            while column < 5:            # merge runs of blocks in each row
+                if row[column] != "X":
+                    column += 1
                     continue
-                e = c
-                while e < 5 and row[e] == "X":
-                    e += 1
-                x = (ox + (i * 6 + c) * pw) * u
-                y = (oy + r * ph) * u
-                rects.append(f'<rect x="{x:g}" y="{y:g}" width="{(e - c) * pw * u:g}" height="{ph * u:g}"/>')
-                c = e
+                run_end = column
+                while run_end < 5 and row[run_end] == "X":
+                    run_end += 1
+                x = (origin_x + (letter_index * 6 + column) * block_width) * unit
+                y = (origin_y + row_index * block_height) * unit
+                rects.append(f'<rect x="{x:g}" y="{y:g}" width="{(run_end - column) * block_width * unit:g}" height="{block_height * unit:g}"/>')
+                column = run_end
     return "".join(rects)
 
 
 def grip_blocks(grip, size):
     """Grip bands, in 1024 units, aligned to the pixel grid of `size` px."""
-    bx, by, bw, step, bh, rows = grip
+    grip_x, grip_y, grip_width, step, band_height, rows = grip
     rows = int(rows)
-    u = 1024 / size
+    unit = 1024 / size
     rects = []
     if size < GRIP_MIN:
         # Five plain bands, inset from the IDE block.
-        x0, x1 = round((bx + 40) / u), round((bx + bw - 40) / u)
-        for r in range(5):
-            y0 = round((by + 20 + r * 48) / u)
-            rects.append((x0, y0, x1 - x0, max(1, round((by + 40 + r * 48) / u) - y0)))
+        left, right = round((grip_x + 40) / unit), round((grip_x + grip_width - 40) / unit)
+        for band in range(5):
+            top = round((grip_y + 20 + band * 48) / unit)
+            rects.append((left, top, right - left, max(1, round((grip_y + 40 + band * 48) / unit) - top)))
     else:
-        x0, x1 = round(bx / u), round((bx + bw) / u)
-        cols = sum(len(GRIP_FONT[c][0]) for c in GRIP_WORD) + len(GRIP_WORD) - 1
-        cw = max(1, int((bw / u) / (cols + 2)))
-        tx = x0 + ((x1 - x0) - cols * cw) // 2
-        for r in range(rows):
-            y0 = round((by + r * step) / u)
-            h = max(1, round((by + r * step + bh) / u) - y0)
-            lr = r - (rows - 5) // 2          # font row, letters centred vertically
+        left, right = round(grip_x / unit), round((grip_x + grip_width) / unit)
+        columns = sum(len(GRIP_FONT[letter][0]) for letter in GRIP_WORD) + len(GRIP_WORD) - 1
+        column_width = max(1, int((grip_width / unit) / (columns + 2)))
+        text_left = left + ((right - left) - columns * column_width) // 2
+        for band in range(rows):
+            top = round((grip_y + band * step) / unit)
+            height = max(1, round((grip_y + band * step + band_height) / unit) - top)
+            font_row = band - (rows - 5) // 2  # letters centred vertically
             gaps = []
-            c = 0
-            for ch in GRIP_WORD:
-                if 0 <= lr < 5:
-                    gaps += [c + k for k, v in enumerate(GRIP_FONT[ch][lr]) if v == "X"]
-                c += len(GRIP_FONT[ch][0]) + 1
-            cur = x0
-            for g in gaps:
-                gx = tx + g * cw
-                if gx > cur:
-                    rects.append((cur, y0, gx - cur, h))
-                cur = max(cur, gx + cw)
-            if x1 > cur:
-                rects.append((cur, y0, x1 - cur, h))
-    return "".join(f'<rect x="{x * u:g}" y="{y * u:g}" width="{w * u:g}" height="{h * u:g}"/>'
-                   for x, y, w, h in rects)
+            column = 0
+            for letter in GRIP_WORD:
+                if 0 <= font_row < 5:
+                    gaps += [column + offset for offset, cell in enumerate(GRIP_FONT[letter][font_row]) if cell == "X"]
+                column += len(GRIP_FONT[letter][0]) + 1
+            drawn_to = left
+            for gap in gaps:
+                gap_x = text_left + gap * column_width
+                if gap_x > drawn_to:
+                    rects.append((drawn_to, top, gap_x - drawn_to, height))
+                drawn_to = max(drawn_to, gap_x + column_width)
+            if right > drawn_to:
+                rects.append((drawn_to, top, right - drawn_to, height))
+    return "".join(f'<rect x="{x * unit:g}" y="{y * unit:g}" width="{width * unit:g}" height="{height * unit:g}"/>'
+                   for x, y, width, height in rects)
 
 
 GRIP_RE = re.compile(r'(<g id="grip"[^>]*data-grip="([^"]+)"[^>]*>)(.*?)(</g>)', re.S)
@@ -138,46 +138,46 @@ LABEL_RE = re.compile(r'(<g id="label-text"[^>]*data-label="([^"]+)"[^>]*>)(.*?)
 
 
 def svg_for_size(svg, size):
-    m = GRIP_RE.search(svg)
-    if m:
-        grip = [float(v) for v in m.group(2).split()]
-        svg = svg[:m.start(3)] + grip_blocks(grip, size) + svg[m.end(3):]
-    m = LABEL_RE.search(svg)
-    if m:
-        label = [float(v) for v in m.group(2).split()]
-        svg = svg[:m.start(3)] + text_blocks(label, size) + svg[m.end(3):]
+    match = GRIP_RE.search(svg)
+    if match:
+        grip = [float(value) for value in match.group(2).split()]
+        svg = svg[:match.start(3)] + grip_blocks(grip, size) + svg[match.end(3):]
+    match = LABEL_RE.search(svg)
+    if match:
+        label = [float(value) for value in match.group(2).split()]
+        svg = svg[:match.start(3)] + text_blocks(label, size) + svg[match.end(3):]
     return svg
 
 
 def render(svg_text, size, out):
-    with tempfile.NamedTemporaryFile("w", suffix=".svg", delete=False) as f:
-        f.write(svg_text)
-        tmp = f.name
+    with tempfile.NamedTemporaryFile("w", suffix=".svg", delete=False) as svg_file:
+        svg_file.write(svg_text)
+        svg_path = svg_file.name
     try:
-        subprocess.run(["rsvg-convert", "-w", str(size), "-h", str(size), tmp, "-o", out], check=True)
+        subprocess.run(["rsvg-convert", "-w", str(size), "-h", str(size), svg_path, "-o", out], check=True)
     finally:
-        os.unlink(tmp)
+        os.unlink(svg_path)
 
 
 def write_ico(pngs, out):
     """ICO with embedded PNGs (supported since Windows Vista)."""
-    data = [open(p, "rb").read() for _, p in pngs]
+    images = [open(path, "rb").read() for _, path in pngs]
     head = struct.pack("<HHH", 0, 1, len(pngs))
     offset = 6 + 16 * len(pngs)
     entries = b""
-    for (size, _), d in zip(pngs, data):
-        b = 0 if size >= 256 else size
-        entries += struct.pack("<BBBBHHII", b, b, 0, 0, 1, 32, len(d), offset)
-        offset += len(d)
-    with open(out, "wb") as f:
-        f.write(head + entries + b"".join(data))
+    for (size, _), image in zip(pngs, images):
+        side = 0 if size >= 256 else size  # 0 means 256
+        entries += struct.pack("<BBBBHHII", side, side, 0, 0, 1, 32, len(image), offset)
+        offset += len(image)
+    with open(out, "wb") as ico:
+        ico.write(head + entries + b"".join(images))
 
 
 def main():
     if not shutil.which("rsvg-convert"):
         sys.exit("rsvg-convert (librsvg) is missing.")
     main_svg = open(os.path.join(ICON, "vcside.svg"), encoding="utf-8").read()
-    small = {n: open(os.path.join(ICON, f"vcside-{n}.svg"), encoding="utf-8").read() for n in (16, 32)}
+    small = {size: open(os.path.join(ICON, f"vcside-{size}.svg"), encoding="utf-8").read() for size in (16, 32)}
 
     # The main SVG keeps the lettering snapped to 1024.
     fixed = svg_for_size(main_svg, 1024)
@@ -185,27 +185,27 @@ def main():
         open(os.path.join(ICON, "vcside.svg"), "w", encoding="utf-8").write(fixed)
 
     pngs = {}
-    for n in SIZES:
-        src = small[n] if n in small else main_svg
-        out = os.path.join(ICON, f"vcside-{n}.png")
-        render(svg_for_size(src, n), n, out)
-        pngs[n] = out
+    for size in SIZES:
+        source = small[size] if size in small else main_svg
+        out = os.path.join(ICON, f"vcside-{size}.png")
+        render(svg_for_size(source, size), size, out)
+        pngs[size] = out
         print(out)
 
     window_icon = os.path.join(ROOT, "data", "vcside.png")
     shutil.copy(pngs[256], window_icon)
     print(window_icon)
 
-    write_ico([(n, pngs[n]) for n in ICO_SIZES], os.path.join(ICON, "vcside.ico"))
+    write_ico([(size, pngs[size]) for size in ICO_SIZES], os.path.join(ICON, "vcside.ico"))
     print(os.path.join(ICON, "vcside.ico"))
 
     if shutil.which("iconutil"):
-        with tempfile.TemporaryDirectory() as d:
-            iconset = os.path.join(d, "vcside.iconset")
+        with tempfile.TemporaryDirectory() as folder:
+            iconset = os.path.join(folder, "vcside.iconset")
             os.mkdir(iconset)
-            for n in (16, 32, 128, 256, 512):
-                shutil.copy(pngs[n], os.path.join(iconset, f"icon_{n}x{n}.png"))
-                shutil.copy(pngs[n * 2], os.path.join(iconset, f"icon_{n}x{n}@2x.png"))
+            for size in (16, 32, 128, 256, 512):
+                shutil.copy(pngs[size], os.path.join(iconset, f"icon_{size}x{size}.png"))
+                shutil.copy(pngs[size * 2], os.path.join(iconset, f"icon_{size}x{size}@2x.png"))
             subprocess.run(["iconutil", "-c", "icns", iconset, "-o", os.path.join(ICON, "vcside.icns")], check=True)
         print(os.path.join(ICON, "vcside.icns"))
     else:

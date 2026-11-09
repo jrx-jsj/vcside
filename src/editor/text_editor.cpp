@@ -16,8 +16,8 @@ namespace vcs {
 using theme::Role;
 using theme::col;
 
-static ImU32 colorOf(TokenKind k) {
-  switch (k) {
+static ImU32 colorOf(TokenKind kind) {
+  switch (kind) {
     case TokenKind::Comment: return col(Role::SynComment);
     case TokenKind::String: return col(Role::SynString);
     case TokenKind::Number: return col(Role::SynNumber);
@@ -32,22 +32,22 @@ static ImU32 colorOf(TokenKind k) {
   }
 }
 
-static bool isWordChar(char c) { return std::isalnum((unsigned char)c) || c == '_' || c == '.' || (unsigned char)c >= 0x80; }
+static bool isWordChar(char character) { return std::isalnum((unsigned char)character) || character == '_' || character == '.' || (unsigned char)character >= 0x80; }
 
 TextEditor::TextEditor() {}
 
 void TextEditor::setText(const std::string& text) {
   lines_.clear();
-  std::string cur;
-  for (char c : text) {
-    if (c == '\n') {
-      if (!cur.empty() && cur.back() == '\r') cur.pop_back();
-      lines_.push_back(cur);
-      cur.clear();
-    } else cur += c;
+  std::string currentLine;
+  for (char character : text) {
+    if (character == '\n') {
+      if (!currentLine.empty() && currentLine.back() == '\r') currentLine.pop_back();
+      lines_.push_back(currentLine);
+      currentLine.clear();
+    } else currentLine += character;
   }
-  if (!cur.empty() && cur.back() == '\r') cur.pop_back();
-  lines_.push_back(cur);
+  if (!currentLine.empty() && currentLine.back() == '\r') currentLine.pop_back();
+  lines_.push_back(currentLine);
   cursor_ = selStart_ = selEnd_ = anchor_ = {};
   undo_.clear();
   redo_.clear();
@@ -67,58 +67,58 @@ void TextEditor::replaceText(const std::string& text) {
 }
 
 std::string TextEditor::text() const {
-  std::string s;
+  std::string result;
   for (size_t i = 0; i < lines_.size(); i++) {
-    s += lines_[i];
-    if (i + 1 < lines_.size()) s += '\n';
+    result += lines_[i];
+    if (i + 1 < lines_.size()) result += '\n';
   }
-  return s;
+  return result;
 }
 
-Coord TextEditor::clamp(Coord c) const {
-  c.line = std::clamp(c.line, 0, (int)lines_.size() - 1);
-  c.col = std::clamp(c.col, 0, (int)lines_[c.line].size());
+Coord TextEditor::clamp(Coord coord) const {
+  coord.line = std::clamp(coord.line, 0, (int)lines_.size() - 1);
+  coord.col = std::clamp(coord.col, 0, (int)lines_[coord.line].size());
   // never stop inside a UTF-8 sequence
-  while (c.col > 0 && c.col < (int)lines_[c.line].size() && ((unsigned char)lines_[c.line][c.col] & 0xC0) == 0x80) c.col--;
-  return c;
+  while (coord.col > 0 && coord.col < (int)lines_[coord.line].size() && ((unsigned char)lines_[coord.line][coord.col] & 0xC0) == 0x80) coord.col--;
+  return coord;
 }
 
 int TextEditor::visualCol(int line, int byteCol) const {
-  const std::string& l = lines_[line];
-  int v = 0;
-  for (int i = 0; i < byteCol && i < (int)l.size(); i++) {
-    unsigned char c = l[i];
-    if (c == '\t') v = (v / tabSize_ + 1) * tabSize_;
-    else if ((c & 0xC0) != 0x80) v++;
+  const std::string& lineText = lines_[line];
+  int visualColumn = 0;
+  for (int i = 0; i < byteCol && i < (int)lineText.size(); i++) {
+    unsigned char character = lineText[i];
+    if (character == '\t') visualColumn = (visualColumn / tabSize_ + 1) * tabSize_;
+    else if ((character & 0xC0) != 0x80) visualColumn++;
   }
-  return v;
+  return visualColumn;
 }
 
 int TextEditor::byteCol(int line, int visCol) const {
-  const std::string& l = lines_[line];
-  int v = 0, i = 0;
-  while (i < (int)l.size()) {
-    unsigned char c = l[i];
-    int w = c == '\t' ? (v / tabSize_ + 1) * tabSize_ - v : 1;
-    if (v + w / 2.0f >= visCol + 0.5f && v + w > visCol) {
-      if (visCol - v < (w + 1) / 2) break;
+  const std::string& lineText = lines_[line];
+  int visualColumn = 0, i = 0;
+  while (i < (int)lineText.size()) {
+    unsigned char character = lineText[i];
+    int charWidth = character == '\t' ? (visualColumn / tabSize_ + 1) * tabSize_ - visualColumn : 1;
+    if (visualColumn + charWidth / 2.0f >= visCol + 0.5f && visualColumn + charWidth > visCol) {
+      if (visCol - visualColumn < (charWidth + 1) / 2) break;
     }
-    if (v >= visCol) break;
-    v += w;
+    if (visualColumn >= visCol) break;
+    visualColumn += charWidth;
     i++;
-    while (i < (int)l.size() && ((unsigned char)l[i] & 0xC0) == 0x80) i++;
+    while (i < (int)lineText.size() && ((unsigned char)lineText[i] & 0xC0) == 0x80) i++;
   }
   return i;
 }
 
-std::string TextEditor::wordAt(Coord c, int* start, int* end) const {
-  const std::string& l = lines_[c.line];
-  int s = c.col, e = c.col;
-  while (s > 0 && isWordChar(l[s - 1])) s--;
-  while (e < (int)l.size() && isWordChar(l[e])) e++;
-  if (start) *start = s;
-  if (end) *end = e;
-  return l.substr(s, e - s);
+std::string TextEditor::wordAt(Coord coord, int* start, int* end) const {
+  const std::string& lineText = lines_[coord.line];
+  int wordStart = coord.col, wordEnd = coord.col;
+  while (wordStart > 0 && isWordChar(lineText[wordStart - 1])) wordStart--;
+  while (wordEnd < (int)lineText.size() && isWordChar(lineText[wordEnd])) wordEnd++;
+  if (start) *start = wordStart;
+  if (end) *end = wordEnd;
+  return lineText.substr(wordStart, wordEnd - wordStart);
 }
 
 void TextEditor::pushUndo(bool mergeTyping) {
@@ -136,17 +136,17 @@ void TextEditor::pushUndo(bool mergeTyping) {
 // block are matched, so breakpoints below an insertion or deletion move with it.
 // Lines of an older text, moved to where they are in the new one: lines above the change
 // stay, lines below it shift, lines inside it stay if the text still has them.
-static std::set<int> followEdit(const std::set<int>& marks, const std::vector<std::string>& a, const std::vector<std::string>& b) {
-  size_t n = std::min(a.size(), b.size()), p = 0, q = 0;
-  while (p < n && a[p] == b[p]) p++;
-  while (q < n - p && a[a.size() - 1 - q] == b[b.size() - 1 - q]) q++;
-  long oldEnd = (long)a.size() - (long)q, newEnd = (long)b.size() - (long)q;
-  long delta = (long)b.size() - (long)a.size();
+static std::set<int> followEdit(const std::set<int>& marks, const std::vector<std::string>& oldLines, const std::vector<std::string>& newLines) {
+  size_t commonSize = std::min(oldLines.size(), newLines.size()), prefixLength = 0, suffixLength = 0;
+  while (prefixLength < commonSize && oldLines[prefixLength] == newLines[prefixLength]) prefixLength++;
+  while (suffixLength < commonSize - prefixLength && oldLines[oldLines.size() - 1 - suffixLength] == newLines[newLines.size() - 1 - suffixLength]) suffixLength++;
+  long oldEnd = (long)oldLines.size() - (long)suffixLength, newEnd = (long)newLines.size() - (long)suffixLength;
+  long delta = (long)newLines.size() - (long)oldLines.size();
   std::set<int> moved;
-  for (int l : marks) {
-    if (l < (long)p) moved.insert(l);
-    else if (l >= oldEnd) moved.insert((int)(l + delta));
-    else if (l < newEnd) moved.insert(l);
+  for (int line : marks) {
+    if (line < (long)prefixLength) moved.insert(line);
+    else if (line >= oldEnd) moved.insert((int)(line + delta));
+    else if (line < newEnd) moved.insert(line);
   }
   return moved;
 }
@@ -174,8 +174,8 @@ void TextEditor::syncFolds() {
     foldVersion_ = textVersion_;
     if (!folds_.empty()) {
       std::set<int> moved = followEdit(folds_, foldBase_, lines_), kept;
-      for (int l : moved)
-        if (regionAt(l)) kept.insert(l);  // the region is still there
+      for (int line : moved)
+        if (regionAt(line)) kept.insert(line);  // the region is still there
       folds_ = std::move(kept);
     }
     foldBase_ = lines_;
@@ -184,24 +184,24 @@ void TextEditor::syncFolds() {
 }
 
 const FoldRegion* TextEditor::regionAt(int first) const {
-  auto it = std::lower_bound(regions_.begin(), regions_.end(), first, [](const FoldRegion& r, int l) { return r.first < l; });
-  return it != regions_.end() && it->first == first ? &*it : nullptr;
+  auto found = std::lower_bound(regions_.begin(), regions_.end(), first, [](const FoldRegion& region, int line) { return region.first < line; });
+  return found != regions_.end() && found->first == first ? &*found : nullptr;
 }
 
 void TextEditor::updateRows() {
   syncFolds();
   if (!rowsDirty_ && rowOf_.size() == lines_.size()) return;
   rowsDirty_ = false;
-  int n = (int)lines_.size();
-  std::vector<char> hidden(n, 0);
-  for (int f : folds_)
-    if (const FoldRegion* r = regionAt(f))
-      for (int l = r->first + 1; l <= r->last && l < n; l++) hidden[l] = 1;
-  rowOf_.assign(n, 0);
+  int lineCount = (int)lines_.size();
+  std::vector<char> hidden(lineCount, 0);
+  for (int foldStart : folds_)
+    if (const FoldRegion* region = regionAt(foldStart))
+      for (int line = region->first + 1; line <= region->last && line < lineCount; line++) hidden[line] = 1;
+  rowOf_.assign(lineCount, 0);
   lineAt_.clear();
-  for (int l = 0; l < n; l++) {
-    if (!hidden[l]) lineAt_.push_back(l);
-    rowOf_[l] = std::max(0, (int)lineAt_.size() - 1);
+  for (int line = 0; line < lineCount; line++) {
+    if (!hidden[line]) lineAt_.push_back(line);
+    rowOf_[line] = std::max(0, (int)lineAt_.size() - 1);
   }
   if (lineAt_.empty()) lineAt_.push_back(0);
 }
@@ -210,8 +210,8 @@ bool TextEditor::foldAt(int line) {
   syncFolds();
   const FoldRegion* best = regionAt(line);
   if (!best || folds_.count(line))  // the innermost region around it that is still open
-    for (auto& r : regions_)
-      if (r.first < line && r.last >= line && !folds_.count(r.first) && (!best || folds_.count(best->first) || r.first > best->first)) best = &r;
+    for (auto& region : regions_)
+      if (region.first < line && region.last >= line && !folds_.count(region.first) && (!best || folds_.count(best->first) || region.first > best->first)) best = &region;
   if (!best || folds_.count(best->first)) return false;
   folds_.insert(best->first);
   rowsDirty_ = true;
@@ -224,8 +224,8 @@ bool TextEditor::unfoldAt(int line) {
   syncFolds();
   if (folds_.erase(line)) return rowsDirty_ = true;
   int best = -1;
-  for (int f : folds_)
-    if (const FoldRegion* r = regionAt(f); r && r->first < line && r->last >= line) best = std::max(best, f);
+  for (int foldStart : folds_)
+    if (const FoldRegion* region = regionAt(foldStart); region && region->first < line && region->last >= line) best = std::max(best, foldStart);
   if (best < 0) return false;
   folds_.erase(best);
   return rowsDirty_ = true;
@@ -233,7 +233,7 @@ bool TextEditor::unfoldAt(int line) {
 
 void TextEditor::foldAll() {
   syncFolds();
-  for (auto& r : regions_) folds_.insert(r.first);
+  for (auto& region : regions_) folds_.insert(region.first);
   rowsDirty_ = true;
   updateRows();
   if (hiddenLine(cursor_.line)) moveCursor({lineAt_[rowOf_[cursor_.line]], 0}, false);
@@ -274,8 +274,8 @@ void TextEditor::toggleBreakpoint(int line) {
 
 void TextEditor::setBreakpoints(const std::set<int>& lines) {
   bps_.clear();
-  for (int l : lines)
-    if (l >= 0 && l < (int)lines_.size()) bps_.insert(l);
+  for (int line : lines)
+    if (line >= 0 && line < (int)lines_.size()) bps_.insert(line);
   bpBase_ = lines_;
   bpVersion_ = textVersion_;
 }
@@ -311,37 +311,37 @@ void TextEditor::redo() {
 
 std::string TextEditor::selectedText() const {
   if (!hasSelection()) return {};
-  Coord a = selStart_, b = selEnd_;
-  if (a.line == b.line) return lines_[a.line].substr(a.col, b.col - a.col);
-  std::string s = lines_[a.line].substr(a.col) + "\n";
-  for (int i = a.line + 1; i < b.line; i++) s += lines_[i] + "\n";
-  s += lines_[b.line].substr(0, b.col);
-  return s;
+  Coord selectionStart = selStart_, selectionEnd = selEnd_;
+  if (selectionStart.line == selectionEnd.line) return lines_[selectionStart.line].substr(selectionStart.col, selectionEnd.col - selectionStart.col);
+  std::string selected = lines_[selectionStart.line].substr(selectionStart.col) + "\n";
+  for (int i = selectionStart.line + 1; i < selectionEnd.line; i++) selected += lines_[i] + "\n";
+  selected += lines_[selectionEnd.line].substr(0, selectionEnd.col);
+  return selected;
 }
 
 void TextEditor::deleteSelection() {
   if (!hasSelection()) return;
-  Coord a = selStart_, b = selEnd_;
-  lines_[a.line] = lines_[a.line].substr(0, a.col) + lines_[b.line].substr(b.col);
-  lines_.erase(lines_.begin() + a.line + 1, lines_.begin() + b.line + 1);
-  cursor_ = selStart_ = selEnd_ = anchor_ = a;
+  Coord selectionStart = selStart_, selectionEnd = selEnd_;
+  lines_[selectionStart.line] = lines_[selectionStart.line].substr(0, selectionStart.col) + lines_[selectionEnd.line].substr(selectionEnd.col);
+  lines_.erase(lines_.begin() + selectionStart.line + 1, lines_.begin() + selectionEnd.line + 1);
+  cursor_ = selStart_ = selEnd_ = anchor_ = selectionStart;
 }
 
-void TextEditor::insertText(const std::string& s) {
+void TextEditor::insertText(const std::string& inserted) {
   deleteSelection();
-  std::string& l = lines_[cursor_.line];
-  std::string tail = l.substr(cursor_.col);
-  l = l.substr(0, cursor_.col);
+  std::string& currentLine = lines_[cursor_.line];
+  std::string tail = currentLine.substr(cursor_.col);
+  currentLine = currentLine.substr(0, cursor_.col);
   size_t pos = 0;
   for (;;) {
-    size_t nl = s.find('\n', pos);
-    std::string part = s.substr(pos, nl == std::string::npos ? std::string::npos : nl - pos);
+    size_t newlineIndex = inserted.find('\n', pos);
+    std::string part = inserted.substr(pos, newlineIndex == std::string::npos ? std::string::npos : newlineIndex - pos);
     if (!part.empty() && part.back() == '\r') part.pop_back();
     lines_[cursor_.line] += part;
-    if (nl == std::string::npos) break;
+    if (newlineIndex == std::string::npos) break;
     lines_.insert(lines_.begin() + cursor_.line + 1, std::string());
     cursor_.line++;
-    pos = nl + 1;
+    pos = newlineIndex + 1;
   }
   cursor_.col = (int)lines_[cursor_.line].size();
   lines_[cursor_.line] += tail;
@@ -369,16 +369,16 @@ void TextEditor::backspace() {
     return;
   }
   if (cursor_.col == 0) {
-    int prev = (int)lines_[cursor_.line - 1].size();
+    int previousSize = (int)lines_[cursor_.line - 1].size();
     lines_[cursor_.line - 1] += lines_[cursor_.line];
     lines_.erase(lines_.begin() + cursor_.line);
-    cursor_ = {cursor_.line - 1, prev};
+    cursor_ = {cursor_.line - 1, previousSize};
   } else {
-    std::string& l = lines_[cursor_.line];
-    int s = cursor_.col - 1;
-    while (s > 0 && ((unsigned char)l[s] & 0xC0) == 0x80) s--;
-    l.erase(s, cursor_.col - s);
-    cursor_.col = s;
+    std::string& lineText = lines_[cursor_.line];
+    int charStart = cursor_.col - 1;
+    while (charStart > 0 && ((unsigned char)lineText[charStart] & 0xC0) == 0x80) charStart--;
+    lineText.erase(charStart, cursor_.col - charStart);
+    cursor_.col = charStart;
   }
   selStart_ = selEnd_ = anchor_ = cursor_;
 }
@@ -389,18 +389,18 @@ void TextEditor::del() {
     deleteSelection();
     return;
   }
-  std::string& l = lines_[cursor_.line];
-  if (cursor_.col >= (int)l.size()) {
+  std::string& lineText = lines_[cursor_.line];
+  if (cursor_.col >= (int)lineText.size()) {
     if (cursor_.line + 1 >= (int)lines_.size()) return;
     pushUndo(false);
-    l += lines_[cursor_.line + 1];
+    lineText += lines_[cursor_.line + 1];
     lines_.erase(lines_.begin() + cursor_.line + 1);
     return;
   }
   pushUndo(false);
-  int e = cursor_.col + 1;
-  while (e < (int)l.size() && ((unsigned char)l[e] & 0xC0) == 0x80) e++;
-  l.erase(cursor_.col, e - cursor_.col);
+  int charEnd = cursor_.col + 1;
+  while (charEnd < (int)lineText.size() && ((unsigned char)lineText[charEnd] & 0xC0) == 0x80) charEnd++;
+  lineText.erase(cursor_.col, charEnd - cursor_.col);
 }
 
 void TextEditor::newline() {
@@ -495,8 +495,8 @@ void TextEditor::indentKey(bool outdent) {
   }
 }
 
-void TextEditor::moveCursor(Coord c, bool select) {
-  cursor_ = clamp(c);
+void TextEditor::moveCursor(Coord target, bool select) {
+  cursor_ = clamp(target);
   if (select) {
     selStart_ = std::min(anchor_, cursor_);
     selEnd_ = std::max(anchor_, cursor_);
@@ -536,10 +536,10 @@ void TextEditor::cut() {
 }
 
 void TextEditor::paste() {
-  const char* t = ImGui::GetClipboardText();
-  if (!t || !*t) return;
+  const char* clipboard = ImGui::GetClipboardText();
+  if (!clipboard || !*clipboard) return;
   pushUndo(false);
-  insertText(t);
+  insertText(clipboard);
 }
 
 void TextEditor::selectAll() {
@@ -557,9 +557,9 @@ void TextEditor::updateCompletion() {
   completions_.clear();
   completionOpen_ = false;
   if (!hooks_.complete) return;
-  int s;
-  std::string w = wordAt({cursor_.line, cursor_.col}, &s);
-  std::string prefix = lines_[cursor_.line].substr(s, cursor_.col - s);
+  int wordStart;
+  std::string word = wordAt({cursor_.line, cursor_.col}, &wordStart);
+  std::string prefix = lines_[cursor_.line].substr(wordStart, cursor_.col - wordStart);
   if (prefix.size() < 2) return;
   completions_ = hooks_.complete(prefix, lines_[cursor_.line]);
   if (completions_.size() == 1 && completions_[0].word.size() == prefix.size()) completions_.clear();
@@ -569,17 +569,17 @@ void TextEditor::updateCompletion() {
 
 void TextEditor::acceptCompletion() {
   if (!completionOpen_ || completions_.empty()) return;
-  int s;
-  wordAt(cursor_, &s);
+  int wordStart;
+  wordAt(cursor_, &wordStart);
   std::string word = completions_[completionSel_].word;
   // keep the case the user started typing in
-  std::string typed = lines_[cursor_.line].substr(s, cursor_.col - s);
+  std::string typed = lines_[cursor_.line].substr(wordStart, cursor_.col - wordStart);
   bool lower = !typed.empty() && std::islower((unsigned char)typed[0]);
   if (lower && completions_[completionSel_].kind == TokenKind::Mnemonic)
-    for (auto& c : word) c = (char)std::tolower((unsigned char)c);
+    for (auto& character : word) character = (char)std::tolower((unsigned char)character);
   pushUndo(false);
-  lines_[cursor_.line].replace(s, cursor_.col - s, word);
-  cursor_.col = s + (int)word.size();
+  lines_[cursor_.line].replace(wordStart, cursor_.col - wordStart, word);
+  cursor_.col = wordStart + (int)word.size();
   selStart_ = selEnd_ = anchor_ = cursor_;
   completionOpen_ = false;
 }
@@ -588,7 +588,7 @@ void TextEditor::handleKeyboard() {
   ImGuiIO& io = ImGui::GetIO();
   bool shift = io.KeyShift, ctrl = io.KeyCtrl, alt = io.KeyAlt;
   bool wordMove = alt || ctrl;
-  auto pressed = [](ImGuiKey k) { return ImGui::IsKeyPressed(k, true); };
+  auto pressed = [](ImGuiKey key) { return ImGui::IsKeyPressed(key, true); };
   int pageLines = std::max(1, (int)(ImGui::GetWindowHeight() / lineH_) - 2);
 
   if (completionOpen_) {
@@ -599,8 +599,8 @@ void TextEditor::handleKeyboard() {
   }
 
   if (pressed(ImGuiKey_F12) && hooks_.gotoDefinition) {
-    std::string w = wordAt(cursor_);
-    if (!w.empty()) hooks_.gotoDefinition(w);
+    std::string word = wordAt(cursor_);
+    if (!word.empty()) hooks_.gotoDefinition(word);
     return;
   }
   if (alt && !ctrl && (pressed(ImGuiKey_UpArrow) || pressed(ImGuiKey_DownArrow))) {
@@ -625,50 +625,50 @@ void TextEditor::handleKeyboard() {
   if (io.KeySuper && !alt && !shift && pressed(ImGuiKey_Space)) { updateCompletion(); return; }
 #endif
 
-  Coord c = cursor_;
+  Coord target = cursor_;
   if (pressed(ImGuiKey_LeftArrow)) {
     if (!shift && hasSelection()) { moveCursor(selStart_, false); return; }
     if (wordMove) {
-      int s; wordAt(c, &s);
-      c.col = s == c.col ? std::max(0, c.col - 1) : s;
-      if (c.col == 0 && cursor_.col == 0 && c.line > 0) c = {c.line - 1, (int)lines_[c.line - 1].size()};
-    } else if (c.col > 0) {
-      c.col--;
-      while (c.col > 0 && ((unsigned char)lines_[c.line][c.col] & 0xC0) == 0x80) c.col--;
-    } else if (c.line > 0) c = {c.line - 1, (int)lines_[c.line - 1].size()};
-    moveCursor(c, shift);
+      int wordStart; wordAt(target, &wordStart);
+      target.col = wordStart == target.col ? std::max(0, target.col - 1) : wordStart;
+      if (target.col == 0 && cursor_.col == 0 && target.line > 0) target = {target.line - 1, (int)lines_[target.line - 1].size()};
+    } else if (target.col > 0) {
+      target.col--;
+      while (target.col > 0 && ((unsigned char)lines_[target.line][target.col] & 0xC0) == 0x80) target.col--;
+    } else if (target.line > 0) target = {target.line - 1, (int)lines_[target.line - 1].size()};
+    moveCursor(target, shift);
     completionOpen_ = false;
   } else if (pressed(ImGuiKey_RightArrow)) {
     if (!shift && hasSelection()) { moveCursor(selEnd_, false); return; }
     if (wordMove) {
-      int e; wordAt(c, nullptr, &e);
-      c.col = e == c.col ? c.col + 1 : e;
-      if (c.col > (int)lines_[c.line].size() && c.line + 1 < (int)lines_.size()) c = {c.line + 1, 0};
-    } else if (c.col < (int)lines_[c.line].size()) {
-      c.col++;
-      while (c.col < (int)lines_[c.line].size() && ((unsigned char)lines_[c.line][c.col] & 0xC0) == 0x80) c.col++;
-    } else if (c.line + 1 < (int)lines_.size()) c = {c.line + 1, 0};
-    moveCursor(c, shift);
+      int wordEnd; wordAt(target, nullptr, &wordEnd);
+      target.col = wordEnd == target.col ? target.col + 1 : wordEnd;
+      if (target.col > (int)lines_[target.line].size() && target.line + 1 < (int)lines_.size()) target = {target.line + 1, 0};
+    } else if (target.col < (int)lines_[target.line].size()) {
+      target.col++;
+      while (target.col < (int)lines_[target.line].size() && ((unsigned char)lines_[target.line][target.col] & 0xC0) == 0x80) target.col++;
+    } else if (target.line + 1 < (int)lines_.size()) target = {target.line + 1, 0};
+    moveCursor(target, shift);
     completionOpen_ = false;
   } else if (pressed(ImGuiKey_UpArrow) || pressed(ImGuiKey_DownArrow) || pressed(ImGuiKey_PageUp) || pressed(ImGuiKey_PageDown)) {
-    int d = pressed(ImGuiKey_UpArrow) ? -1 : pressed(ImGuiKey_DownArrow) ? 1 : pressed(ImGuiKey_PageUp) ? -pageLines : pageLines;
-    int v = visualCol(c.line, c.col);
+    int rowDelta = pressed(ImGuiKey_UpArrow) ? -1 : pressed(ImGuiKey_DownArrow) ? 1 : pressed(ImGuiKey_PageUp) ? -pageLines : pageLines;
+    int visualColumn = visualCol(target.line, target.col);
     if (rowOf_.size() == lines_.size() && !lineAt_.empty())  // by rows on screen: folded regions are skipped
-      c.line = lineAt_[std::clamp(rowOf_[c.line] + d, 0, (int)lineAt_.size() - 1)];
+      target.line = lineAt_[std::clamp(rowOf_[target.line] + rowDelta, 0, (int)lineAt_.size() - 1)];
     else
-      c.line = std::clamp(c.line + d, 0, (int)lines_.size() - 1);
-    c.col = byteCol(c.line, v);
-    moveCursor(c, shift);
+      target.line = std::clamp(target.line + rowDelta, 0, (int)lines_.size() - 1);
+    target.col = byteCol(target.line, visualColumn);
+    moveCursor(target, shift);
   } else if (pressed(ImGuiKey_Home)) {
     int first = 0;
-    while (first < (int)lines_[c.line].size() && std::isspace((unsigned char)lines_[c.line][first])) first++;
-    c.col = c.col == first ? 0 : first;
-    if (ctrl) c = {0, 0};
-    moveCursor(c, shift);
+    while (first < (int)lines_[target.line].size() && std::isspace((unsigned char)lines_[target.line][first])) first++;
+    target.col = target.col == first ? 0 : first;
+    if (ctrl) target = {0, 0};
+    moveCursor(target, shift);
   } else if (pressed(ImGuiKey_End)) {
-    c.col = (int)lines_[c.line].size();
-    if (ctrl) c = {(int)lines_.size() - 1, (int)lines_.back().size()};
-    moveCursor(c, shift);
+    target.col = (int)lines_[target.line].size();
+    if (ctrl) target = {(int)lines_.size() - 1, (int)lines_.back().size()};
+    moveCursor(target, shift);
   } else if (pressed(ImGuiKey_Backspace)) {
     backspace();
     if (completionOpen_) updateCompletion();
@@ -684,18 +684,18 @@ void TextEditor::handleKeyboard() {
 
   // typed characters
   if (!ctrl && io.InputQueueCharacters.Size > 0) {
-    std::string s;
-    for (ImWchar w : io.InputQueueCharacters) {
-      unsigned int cp = w;
-      if (cp < 32 || cp == 127) continue;
-      if (cp < 0x80) s += (char)cp;
-      else if (cp < 0x800) s += (char)(0xC0 | (cp >> 6)), s += (char)(0x80 | (cp & 0x3F));
-      else s += (char)(0xE0 | (cp >> 12)), s += (char)(0x80 | ((cp >> 6) & 0x3F)), s += (char)(0x80 | (cp & 0x3F));
+    std::string typedText;
+    for (ImWchar wideChar : io.InputQueueCharacters) {
+      unsigned int codePoint = wideChar;
+      if (codePoint < 32 || codePoint == 127) continue;
+      if (codePoint < 0x80) typedText += (char)codePoint;
+      else if (codePoint < 0x800) typedText += (char)(0xC0 | (codePoint >> 6)), typedText += (char)(0x80 | (codePoint & 0x3F));
+      else typedText += (char)(0xE0 | (codePoint >> 12)), typedText += (char)(0x80 | ((codePoint >> 6) & 0x3F)), typedText += (char)(0x80 | (codePoint & 0x3F));
     }
     io.InputQueueCharacters.resize(0);
-    if (!s.empty()) {
-      typeText(s);
-      if (isWordChar(s.back())) updateCompletion();
+    if (!typedText.empty()) {
+      typeText(typedText);
+      if (isWordChar(typedText.back())) updateCompletion();
       else completionOpen_ = false;
     }
   }
@@ -704,24 +704,24 @@ void TextEditor::handleKeyboard() {
 // ---------------------------------------------------------------------------
 // Search
 
-static char lowerAscii(char c) { return (c >= 'A' && c <= 'Z') ? (char)(c + 32) : c; }
+static char lowerAscii(char character) { return (character >= 'A' && character <= 'Z') ? (char)(character + 32) : character; }
 
-std::vector<Match> findMatches(const std::vector<std::string>& lines, const std::string& query, FindOptions opt) {
-  std::vector<Match> out;
-  if (query.empty()) return out;
-  std::string q = query;
-  if (!opt.matchCase) for (auto& c : q) c = lowerAscii(c);
+std::vector<Match> findMatches(const std::vector<std::string>& lines, const std::string& query, FindOptions options) {
+  std::vector<Match> matchesFound;
+  if (query.empty()) return matchesFound;
+  std::string lowerQuery = query;
+  if (!options.matchCase) for (auto& character : lowerQuery) character = lowerAscii(character);
   for (int i = 0; i < (int)lines.size(); i++) {
-    std::string l = lines[i];
-    if (!opt.matchCase) for (auto& c : l) c = lowerAscii(c);
-    for (size_t pos = l.find(q); pos != std::string::npos; pos = l.find(q, pos + 1)) {
-      size_t end = pos + q.size();
-      if (opt.wholeWord && ((pos > 0 && isWordChar(l[pos - 1])) || (end < l.size() && isWordChar(l[end])))) continue;
-      out.push_back({i, (int)pos, (int)end});
+    std::string lineLower = lines[i];
+    if (!options.matchCase) for (auto& character : lineLower) character = lowerAscii(character);
+    for (size_t pos = lineLower.find(lowerQuery); pos != std::string::npos; pos = lineLower.find(lowerQuery, pos + 1)) {
+      size_t end = pos + lowerQuery.size();
+      if (options.wholeWord && ((pos > 0 && isWordChar(lineLower[pos - 1])) || (end < lineLower.size() && isWordChar(lineLower[end])))) continue;
+      matchesFound.push_back({i, (int)pos, (int)end});
       pos = end - 1;  // no overlapping matches
     }
   }
-  return out;
+  return matchesFound;
 }
 
 void TextEditor::refreshMatches() {
@@ -730,21 +730,21 @@ void TextEditor::refreshMatches() {
     currentMatch_ = -1;
     return;
   }
-  if (matchesVersion_ == textVersion_ && matchesQuery_ == findText_ && matchesOpt_.matchCase == findOpt_.matchCase &&
-      matchesOpt_.wholeWord == findOpt_.wholeWord)
+  if (matchesVersion_ == textVersion_ && matchesQuery_ == findText_ && matchesOptions_.matchCase == findOptions_.matchCase &&
+      matchesOptions_.wholeWord == findOptions_.wholeWord)
     return;
-  matches_ = findMatches(lines_, findText_, findOpt_);
+  matches_ = findMatches(lines_, findText_, findOptions_);
   matchesVersion_ = textVersion_;
   matchesQuery_ = findText_;
-  matchesOpt_ = findOpt_;
+  matchesOptions_ = findOptions_;
   currentMatch_ = -1;
   for (int i = 0; i < (int)matches_.size(); i++)
     if (hasSelection() && matches_[i].line == selStart_.line && matches_[i].start == selStart_.col) currentMatch_ = i;
 }
 
-void TextEditor::setSelection(Coord a, Coord b) {
-  anchor_ = selStart_ = clamp(a);
-  cursor_ = selEnd_ = clamp(b);
+void TextEditor::setSelection(Coord start, Coord end) {
+  anchor_ = selStart_ = clamp(start);
+  cursor_ = selEnd_ = clamp(end);
   scrollToCursor_ = true;
   lastWasTyping_ = false;
 }
@@ -787,11 +787,11 @@ void TextEditor::findNext(bool backwards) {
 
 bool TextEditor::replaceCurrent() {
   refreshMatches();
-  for (auto& m : matches_)
-    if (hasSelection() && selStart_ == Coord{m.line, m.start} && selEnd_ == Coord{m.line, m.end}) {
+  for (auto& match : matches_)
+    if (hasSelection() && selStart_ == Coord{match.line, match.start} && selEnd_ == Coord{match.line, match.end}) {
       pushUndo(false);
-      lines_[m.line].replace(m.start, m.end - m.start, replaceText_);
-      setSelection({m.line, m.start}, {m.line, m.start + (int)replaceText_.size()});
+      lines_[match.line].replace(match.start, match.end - match.start, replaceText_);
+      setSelection({match.line, match.start}, {match.line, match.start + (int)replaceText_.size()});
       refreshMatches();
       findNext();
       return true;
@@ -804,85 +804,85 @@ int TextEditor::replaceAll() {
   refreshMatches();
   if (matches_.empty()) return 0;
   pushUndo(false);
-  int n = (int)matches_.size();
-  for (int i = n - 1; i >= 0; i--) {
-    auto& m = matches_[i];
-    lines_[m.line].replace(m.start, m.end - m.start, replaceText_);
+  int count = (int)matches_.size();
+  for (int i = count - 1; i >= 0; i--) {
+    auto& match = matches_[i];
+    lines_[match.line].replace(match.start, match.end - match.start, replaceText_);
   }
   cursor_ = clamp(cursor_);
   selStart_ = selEnd_ = anchor_ = cursor_;
   refreshMatches();
-  return n;
+  return count;
 }
 
 // ---------------------------------------------------------------------------
 // Line editing
 
 void TextEditor::toggleComment() {
-  auto [a, b] = selectedLines();
-  const std::string& p = commentPrefix_;
-  bool all = true, any = false;
-  for (int i = a; i <= b; i++) {
-    size_t f = lines_[i].find_first_not_of(" \t");
-    if (f == std::string::npos) continue;
-    any = true;
-    if (lines_[i].compare(f, p.size(), p) != 0) all = false;
+  auto [firstLine, lastLine] = selectedLines();
+  const std::string& prefix = commentPrefix_;
+  bool allCommented = true, anyText = false;
+  for (int i = firstLine; i <= lastLine; i++) {
+    size_t firstChar = lines_[i].find_first_not_of(" \t");
+    if (firstChar == std::string::npos) continue;
+    anyText = true;
+    if (lines_[i].compare(firstChar, prefix.size(), prefix) != 0) allCommented = false;
   }
-  if (!any) return;
+  if (!anyText) return;
   pushUndo(false);
-  for (int i = a; i <= b; i++) {
-    std::string& l = lines_[i];
-    size_t f = l.find_first_not_of(" \t");
-    if (f == std::string::npos) continue;
-    if (all) {
-      size_t len = p.size() + (l.compare(f + p.size(), 1, " ") == 0 && p != ";" ? 1 : 0);
-      l.erase(f, len);
+  for (int i = firstLine; i <= lastLine; i++) {
+    std::string& lineText = lines_[i];
+    size_t firstChar = lineText.find_first_not_of(" \t");
+    if (firstChar == std::string::npos) continue;
+    if (allCommented) {
+      size_t prefixLength = prefix.size() + (lineText.compare(firstChar + prefix.size(), 1, " ") == 0 && prefix != ";" ? 1 : 0);
+      lineText.erase(firstChar, prefixLength);
     } else {
       // DASM comments go at column 0; "rem" and "//" after the indentation
       // (in batari Basic a word at column 0 would be a label).
-      if (p == ";") l.insert(0, p);
-      else l.insert(f, p + " ");
+      if (prefix == ";") lineText.insert(0, prefix);
+      else lineText.insert(firstChar, prefix + " ");
     }
   }
-  if (hasSelection()) setSelection({a, 0}, {b, (int)lines_[b].size()});
+  if (hasSelection()) setSelection({firstLine, 0}, {lastLine, (int)lines_[lastLine].size()});
   else cursor_ = clamp(cursor_), selStart_ = selEnd_ = anchor_ = cursor_;
 }
 
 void TextEditor::duplicateLines() {
-  auto [a, b] = selectedLines();
+  auto [firstLine, lastLine] = selectedLines();
   pushUndo(false);
-  std::vector<std::string> block(lines_.begin() + a, lines_.begin() + b + 1);
-  lines_.insert(lines_.begin() + b + 1, block.begin(), block.end());
-  int n = b - a + 1;
-  if (hasSelection()) setSelection({selStart_.line + n, selStart_.col}, {selEnd_.line + n, selEnd_.col});
-  else moveCursor({cursor_.line + n, cursor_.col}, false);
+  std::vector<std::string> block(lines_.begin() + firstLine, lines_.begin() + lastLine + 1);
+  lines_.insert(lines_.begin() + lastLine + 1, block.begin(), block.end());
+  int lineCount = lastLine - firstLine + 1;
+  if (hasSelection()) setSelection({selStart_.line + lineCount, selStart_.col}, {selEnd_.line + lineCount, selEnd_.col});
+  else moveCursor({cursor_.line + lineCount, cursor_.col}, false);
 }
 
 void TextEditor::moveLines(int delta) {
-  auto [a, b] = selectedLines();
-  if ((delta < 0 && a == 0) || (delta > 0 && b + 1 >= (int)lines_.size())) return;
+  auto [firstLine, lastLine] = selectedLines();
+  if ((delta < 0 && firstLine == 0) || (delta > 0 && lastLine + 1 >= (int)lines_.size())) return;
   pushUndo(false);
   if (delta < 0) {
-    std::string above = lines_[a - 1];
-    lines_.erase(lines_.begin() + a - 1);
-    lines_.insert(lines_.begin() + b, above);
+    std::string above = lines_[firstLine - 1];
+    lines_.erase(lines_.begin() + firstLine - 1);
+    lines_.insert(lines_.begin() + lastLine, above);
   } else {
-    std::string below = lines_[b + 1];
-    lines_.erase(lines_.begin() + b + 1);
-    lines_.insert(lines_.begin() + a, below);
+    std::string below = lines_[lastLine + 1];
+    lines_.erase(lines_.begin() + lastLine + 1);
+    lines_.insert(lines_.begin() + firstLine, below);
   }
-  Coord s = selStart_, e = selEnd_, c = cursor_;
-  s.line += delta, e.line += delta, c.line += delta;
-  if (hasSelection()) setSelection(s, e);
-  else moveCursor(c, false);
+  Coord newStart = selStart_, newEnd = selEnd_, newCursor = cursor_;
+  newStart.line += delta, newEnd.line += delta, newCursor.line += delta;
+  if (hasSelection()) setSelection(newStart, newEnd);
+  else moveCursor(newCursor, false);
 }
 
 void TextEditor::deleteLines() {
-  auto [a, b] = selectedLines();
+  auto [firstLine, lastLine] = selectedLines();
   pushUndo(false);
-  lines_.erase(lines_.begin() + a, lines_.begin() + b + 1);
+  lines_.erase(lines_.begin() + firstLine, lines_.begin() + lastLine + 1);
   if (lines_.empty()) lines_.push_back("");
-  moveCursor({std::min(a, (int)lines_.size() - 1), 0}, false);
+  moveCursor({std::min(firstLine, (int)lines_.size() - 1), 0}, false);
 }
 
 void TextEditor::renderFindBar() {
@@ -898,8 +898,8 @@ void TextEditor::renderFindBar() {
     ImGui::SetNextItemWidth(120);
     if (focusBar_) ImGui::SetKeyboardFocusHere(), focusBar_ = false;
     if (ImGui::InputText("##goto", &gotoText_, ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_CharsDecimal)) {
-      int n = std::atoi(gotoText_.c_str());
-      if (n > 0) goTo(n - 1), centerOnCursor_ = true;
+      int lineNumber = std::atoi(gotoText_.c_str());
+      if (lineNumber > 0) goTo(lineNumber - 1), centerOnCursor_ = true;
       close = true;
     }
     ImGui::SameLine();
@@ -914,10 +914,10 @@ void TextEditor::renderFindBar() {
       ImGui::SetKeyboardFocusHere(-1);  // keep typing in the box after Enter
     }
     ImGui::SameLine();
-    if (ImGui::Checkbox(T("Aa"), &findOpt_.matchCase)) matchesVersion_ = 0;
+    if (ImGui::Checkbox(T("Aa"), &findOptions_.matchCase)) matchesVersion_ = 0;
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", T("Match case"));
     ImGui::SameLine();
-    if (ImGui::Checkbox(T("Word"), &findOpt_.wholeWord)) matchesVersion_ = 0;
+    if (ImGui::Checkbox(T("Word"), &findOptions_.wholeWord)) matchesVersion_ = 0;
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", T("Whole word"));
     ImGui::SameLine();
     refreshMatches();
@@ -931,8 +931,8 @@ void TextEditor::renderFindBar() {
     if (ImGui::ArrowButton("##next", ImGuiDir_Down)) findNext(false);
     if (bar_ == Bar::Replace) {
       ImGui::SetNextItemWidth(280);
-      bool rep = ImGui::InputTextWithHint("##replace", T("Replace"), &replaceText_, ImGuiInputTextFlags_EnterReturnsTrue);
-      if (rep) {
+      bool replaceEntered = ImGui::InputTextWithHint("##replace", T("Replace"), &replaceText_, ImGuiInputTextFlags_EnterReturnsTrue);
+      if (replaceEntered) {
         replaceCurrent();
         ImGui::SetKeyboardFocusHere(-1);
       }
@@ -977,20 +977,20 @@ bool TextEditor::render(const char* id, ImFont* font) {
 
   // Editor-wide shortcuts (work from the text and from the find bar).
   {
-    ImGuiIO& kio = ImGui::GetIO();
+    ImGuiIO& shortcutIo = ImGui::GetIO();
     bool here = ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows);
-    if (here && kio.KeyCtrl && !kio.KeyAlt) {
+    if (here && shortcutIo.KeyCtrl && !shortcutIo.KeyAlt) {
       if (ImGui::IsKeyPressed(ImGuiKey_F, false)) openFind(false);
-      if (ImGui::IsKeyPressed(ImGuiKey_H, false) || (kio.KeyShift && ImGui::IsKeyPressed(ImGuiKey_F, false))) openFind(true);
-      if (!kio.KeyShift && ImGui::IsKeyPressed(ImGuiKey_G, false)) openGoto();  // Ctrl+Shift+G: go to address (app)
+      if (ImGui::IsKeyPressed(ImGuiKey_H, false) || (shortcutIo.KeyShift && ImGui::IsKeyPressed(ImGuiKey_F, false))) openFind(true);
+      if (!shortcutIo.KeyShift && ImGui::IsKeyPressed(ImGuiKey_G, false)) openGoto();  // Ctrl+Shift+G: go to address (app)
     }
     if (here && ImGui::IsKeyPressed(ImGuiKey_F9, false)) toggleBreakpoint(cursor_.line);
     // Ctrl/Cmd+Alt+Up folds the region around the cursor, +Down opens it
-    if (here && kio.KeyCtrl && kio.KeyAlt && ImGui::IsKeyPressed(ImGuiKey_UpArrow, false)) foldAt(cursor_.line), updateRows();
-    if (here && kio.KeyCtrl && kio.KeyAlt && ImGui::IsKeyPressed(ImGuiKey_DownArrow, false)) unfoldAt(cursor_.line), updateRows();
+    if (here && shortcutIo.KeyCtrl && shortcutIo.KeyAlt && ImGui::IsKeyPressed(ImGuiKey_UpArrow, false)) foldAt(cursor_.line), updateRows();
+    if (here && shortcutIo.KeyCtrl && shortcutIo.KeyAlt && ImGui::IsKeyPressed(ImGuiKey_DownArrow, false)) unfoldAt(cursor_.line), updateRows();
     if (here && ImGui::IsKeyPressed(ImGuiKey_F3)) {
       if (bar_ == Bar::None) openFind(false), focusBar_ = false;
-      findNext(kio.KeyShift);
+      findNext(shortcutIo.KeyShift);
     }
   }
   renderFindBar();
@@ -1000,12 +1000,12 @@ bool TextEditor::render(const char* id, ImFont* font) {
     ImGui::SetNextWindowFocus();
     focusEditor_ = false;
   }
-  ImGuiIO& zio = ImGui::GetIO();
-  bool zoomWheel = zio.KeyCtrl && zio.MouseWheel != 0;  // the wheel zooms instead of scrolling
+  ImGuiIO& zoomIo = ImGui::GetIO();
+  bool zoomWheel = zoomIo.KeyCtrl && zoomIo.MouseWheel != 0;  // the wheel zooms instead of scrolling
   ImGui::BeginChild(id, ImVec2(0, 0), ImGuiChildFlags_None,
                     ImGuiWindowFlags_HorizontalScrollbar | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoNavInputs |
                         (zoomWheel ? ImGuiWindowFlags_NoScrollWithMouse : 0));
-  if (zoomWheel && ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows)) zoomSteps_ += zio.MouseWheel > 0 ? 1 : -1;
+  if (zoomWheel && ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows)) zoomSteps_ += zoomIo.MouseWheel > 0 ? 1 : -1;
   ImGui::PopStyleVar();
 
   ImVec2 origin = ImGui::GetCursorScreenPos();
@@ -1028,10 +1028,10 @@ bool TextEditor::render(const char* id, ImFont* font) {
   };
   auto lineY = [&](int line) { return origin.y + rowOf_[std::clamp(line, 0, (int)rowOf_.size() - 1)] * lineH_; };
   auto mouseCoord = [&]() {
-    ImVec2 m = io.MousePos;
-    int line = lineAtY(m.y);
-    int vis = std::max(0, (int)std::lround((m.x - textX) / charW_));
-    return clamp({line, byteCol(line, vis)});
+    ImVec2 mousePos = io.MousePos;
+    int line = lineAtY(mousePos.y);
+    int visualColumn = std::max(0, (int)std::lround((mousePos.x - textX) / charW_));
+    return clamp({line, byteCol(line, visualColumn)});
   };
 
   // mouse
@@ -1047,27 +1047,27 @@ bool TextEditor::render(const char* id, ImFont* font) {
       updateRows();
     }
   } else if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && io.KeyCtrl && (hooks_.gotoDefinition || hooks_.openFile)) {
-    Coord c = mouseCoord();
-    moveCursor(c, false);
+    Coord clicked = mouseCoord();
+    moveCursor(clicked, false);
     std::string file;
-    int fs = 0, fe = 0;
-    if (hooks_.openFile && fileNameInLine(lines_[c.line], &file, &fs, &fe) && c.col >= fs && c.col <= fe &&
+    int fileStart = 0, fileEnd = 0;
+    if (hooks_.openFile && fileNameInLine(lines_[clicked.line], &file, &fileStart, &fileEnd) && clicked.col >= fileStart && clicked.col <= fileEnd &&
         (!hooks_.hasFile || hooks_.hasFile(file))) {
       hooks_.openFile(file);
     } else if (hooks_.gotoDefinition) {
-      std::string w = wordAt(c);
-      if (!w.empty()) hooks_.gotoDefinition(w);
+      std::string word = wordAt(clicked);
+      if (!word.empty()) hooks_.gotoDefinition(word);
     }
   } else if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
-    Coord c = mouseCoord();
+    Coord clicked = mouseCoord();
     if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
-      int s, e;
-      wordAt(c, &s, &e);
-      anchor_ = selStart_ = {c.line, s};
-      cursor_ = selEnd_ = {c.line, e};
+      int wordStart, wordEnd;
+      wordAt(clicked, &wordStart, &wordEnd);
+      anchor_ = selStart_ = {clicked.line, wordStart};
+      cursor_ = selEnd_ = {clicked.line, wordEnd};
     } else {
-      if (!io.KeyShift) anchor_ = c;
-      moveCursor(c, io.KeyShift);
+      if (!io.KeyShift) anchor_ = clicked;
+      moveCursor(clicked, io.KeyShift);
     }
     completionOpen_ = false;
   } else if (ImGui::IsItemActive() && ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
@@ -1083,88 +1083,88 @@ bool TextEditor::render(const char* id, ImFont* font) {
   float viewH = ImGui::GetWindowHeight();
   int firstRow = std::max(0, (int)(scrollY / lineH_) - 1);
   int lastRow = std::min((int)lineAt_.size() - 1, (int)((scrollY + viewH) / lineH_) + 1);
-  ImDrawList* dl = ImGui::GetWindowDrawList();
+  ImDrawList* drawList = ImGui::GetWindowDrawList();
   float fontSize = ImGui::GetFontSize();
   ImVec2 winPos = ImGui::GetWindowPos();
 
   // indentation: tabs are a level each; spaces go by the smallest indentation in sight (2-8, else 4)
   std::vector<ImU32> indentColours;
-  for (auto c : theme::current().indent)
-    if (c & 0xFF) indentColours.push_back(theme::u32(c));
+  for (auto guideColour : theme::current().indent)
+    if (guideColour & 0xFF) indentColours.push_back(theme::u32(guideColour));
   ImU32 indentGuide = (theme::colour(Role::EdIndentGuide) & 0xFF) ? col(Role::EdIndentGuide) : 0;
   int spaceUnit = 0;
-  for (int r = firstRow; r <= lastRow; r++) {
-    int i = lineAt_[r];
-    int n = 0;
-    while (n < (int)lines_[i].size() && lines_[i][n] == ' ') n++;
-    if (n > 0 && n < (int)lines_[i].size()) spaceUnit = spaceUnit ? std::min(spaceUnit, n) : n;
+  for (int row = firstRow; row <= lastRow; row++) {
+    int lineIndex = lineAt_[row];
+    int spaceCount = 0;
+    while (spaceCount < (int)lines_[lineIndex].size() && lines_[lineIndex][spaceCount] == ' ') spaceCount++;
+    if (spaceCount > 0 && spaceCount < (int)lines_[lineIndex].size()) spaceUnit = spaceUnit ? std::min(spaceUnit, spaceCount) : spaceCount;
   }
   spaceUnit = spaceUnit >= 2 && spaceUnit <= 8 ? spaceUnit : 4;
-  for (int r = firstRow; r <= lastRow; r++) {
-    int i = lineAt_[r];
-    float y = origin.y + r * lineH_;
+  for (int row = firstRow; row <= lastRow; row++) {
+    int lineIndex = lineAt_[row];
+    float y = origin.y + row * lineH_;
     // current line
-    if (i == cursor_.line && !hasSelection())
-      dl->AddRectFilled(ImVec2(winPos.x, y), ImVec2(winPos.x + ImGui::GetWindowWidth() + scrollX, y + lineH_), col(Role::EdCurrentLine));
+    if (lineIndex == cursor_.line && !hasSelection())
+      drawList->AddRectFilled(ImVec2(winPos.x, y), ImVec2(winPos.x + ImGui::GetWindowWidth() + scrollX, y + lineH_), col(Role::EdCurrentLine));
     // indentation levels: a shade per level and a guide where each one starts
     if (!indentColours.empty() || indentGuide) {
-      const std::string& il = lines_[i];
-      int v = 0, level = 0;
-      for (size_t b = 0; b < il.size() && (il[b] == ' ' || il[b] == '\t'); level++) {
-        int from = v;
-        if (il[b] == '\t') v = (v / tabSize_ + 1) * tabSize_, b++;
+      const std::string& indentText = lines_[lineIndex];
+      int visualColumn = 0, level = 0;
+      for (size_t byteIndex = 0; byteIndex < indentText.size() && (indentText[byteIndex] == ' ' || indentText[byteIndex] == '\t'); level++) {
+        int from = visualColumn;
+        if (indentText[byteIndex] == '\t') visualColumn = (visualColumn / tabSize_ + 1) * tabSize_, byteIndex++;
         else
-          for (int n = 0; n < spaceUnit && b < il.size() && il[b] == ' '; n++) v++, b++;
-        float x0 = textX + from * charW_, x1 = textX + v * charW_;
-        if (!indentColours.empty()) dl->AddRectFilled(ImVec2(x0, y), ImVec2(x1, y + lineH_), indentColours[level % indentColours.size()]);
-        if (indentGuide && level > 0) dl->AddLine(ImVec2(x0, y), ImVec2(x0, y + lineH_), indentGuide);
+          for (int spaceCount = 0; spaceCount < spaceUnit && byteIndex < indentText.size() && indentText[byteIndex] == ' '; spaceCount++) visualColumn++, byteIndex++;
+        float x0 = textX + from * charW_, x1 = textX + visualColumn * charW_;
+        if (!indentColours.empty()) drawList->AddRectFilled(ImVec2(x0, y), ImVec2(x1, y + lineH_), indentColours[level % indentColours.size()]);
+        if (indentGuide && level > 0) drawList->AddLine(ImVec2(x0, y), ImVec2(x0, y + lineH_), indentGuide);
       }
     }
     // marker background
-    auto mk = markers_.find(i + 1);
-    if (mk != markers_.end())
-      dl->AddRectFilled(ImVec2(textX, y), ImVec2(textX + contentSize.x, y + lineH_),
-                        mk->second.first ? col(Role::EdErrorLine) : col(Role::EdWarningLine));
+    auto marker = markers_.find(lineIndex + 1);
+    if (marker != markers_.end())
+      drawList->AddRectFilled(ImVec2(textX, y), ImVec2(textX + contentSize.x, y + lineH_),
+                        marker->second.first ? col(Role::EdErrorLine) : col(Role::EdWarningLine));
     // search matches
-    for (int k = 0; k < (int)matches_.size(); k++) {
-      const Match& m = matches_[k];
-      if (m.line != i) continue;
-      float x0 = textX + visualCol(i, m.start) * charW_, x1 = textX + visualCol(i, m.end) * charW_;
-      dl->AddRectFilled(ImVec2(x0, y), ImVec2(x1, y + lineH_), k == currentMatch_ ? col(Role::EdMatchCurrent) : col(Role::EdMatch));
+    for (int matchIndex = 0; matchIndex < (int)matches_.size(); matchIndex++) {
+      const Match& match = matches_[matchIndex];
+      if (match.line != lineIndex) continue;
+      float x0 = textX + visualCol(lineIndex, match.start) * charW_, x1 = textX + visualCol(lineIndex, match.end) * charW_;
+      drawList->AddRectFilled(ImVec2(x0, y), ImVec2(x1, y + lineH_), matchIndex == currentMatch_ ? col(Role::EdMatchCurrent) : col(Role::EdMatch));
     }
     // selection
-    if (hasSelection() && i >= selStart_.line && i <= selEnd_.line) {
-      int a = i == selStart_.line ? visualCol(i, selStart_.col) : 0;
-      int b = i == selEnd_.line ? visualCol(i, selEnd_.col) : visualCol(i, (int)lines_[i].size()) + 1;
-      dl->AddRectFilled(ImVec2(textX + a * charW_, y), ImVec2(textX + b * charW_, y + lineH_), col(Role::EdSelection));
+    if (hasSelection() && lineIndex >= selStart_.line && lineIndex <= selEnd_.line) {
+      int startColumn = lineIndex == selStart_.line ? visualCol(lineIndex, selStart_.col) : 0;
+      int endColumn = lineIndex == selEnd_.line ? visualCol(lineIndex, selEnd_.col) : visualCol(lineIndex, (int)lines_[lineIndex].size()) + 1;
+      drawList->AddRectFilled(ImVec2(textX + startColumn * charW_, y), ImVec2(textX + endColumn * charW_, y + lineH_), col(Role::EdSelection));
     }
     // text
-    const std::string& l = lines_[i];
-    std::vector<Token> toks = hooks_.tokenize ? hooks_.tokenize(l) : std::vector<Token>{};
-    size_t ti = 0;
-    int v = 0;
-    for (int b = 0; b < (int)l.size();) {
-      while (ti < toks.size() && toks[ti].end <= b) ti++;
-      TokenKind k = (ti < toks.size() && toks[ti].start <= b) ? toks[ti].kind : TokenKind::Text;
-      unsigned char c = l[b];
-      if (c == '\t') {
-        v = (v / tabSize_ + 1) * tabSize_;
-        b++;
+    const std::string& lineText = lines_[lineIndex];
+    std::vector<Token> tokens = hooks_.tokenize ? hooks_.tokenize(lineText) : std::vector<Token>{};
+    size_t tokenIndex = 0;
+    int visualColumn = 0;
+    for (int byteIndex = 0; byteIndex < (int)lineText.size();) {
+      while (tokenIndex < tokens.size() && tokens[tokenIndex].end <= byteIndex) tokenIndex++;
+      TokenKind tokenKind = (tokenIndex < tokens.size() && tokens[tokenIndex].start <= byteIndex) ? tokens[tokenIndex].kind : TokenKind::Text;
+      unsigned char character = lineText[byteIndex];
+      if (character == '\t') {
+        visualColumn = (visualColumn / tabSize_ + 1) * tabSize_;
+        byteIndex++;
         continue;
       }
-      int len = 1;
-      if (c >= 0xF0) len = 4; else if (c >= 0xE0) len = 3; else if (c >= 0xC0) len = 2;
-      dl->AddText(font, fontSize, ImVec2(textX + v * charW_, y + 1), colorOf(k), l.data() + b, l.data() + std::min((int)l.size(), b + len));
-      v++;
-      b += len;
+      int charLength = 1;
+      if (character >= 0xF0) charLength = 4; else if (character >= 0xE0) charLength = 3; else if (character >= 0xC0) charLength = 2;
+      drawList->AddText(font, fontSize, ImVec2(textX + visualColumn * charW_, y + 1), colorOf(tokenKind), lineText.data() + byteIndex, lineText.data() + std::min((int)lineText.size(), byteIndex + charLength));
+      visualColumn++;
+      byteIndex += charLength;
     }
     // a folded region: a box after the line says how many lines it hides
-    if (folds_.count(i))
-      if (const FoldRegion* fr = regionAt(i)) {
-        std::string tag = " ... " + std::to_string(fr->last - fr->first) + " ";
-        float x0 = textX + (v + 1) * charW_, x1 = x0 + ImGui::CalcTextSize(tag.c_str()).x;
-        dl->AddRectFilled(ImVec2(x0, y + 1), ImVec2(x1, y + lineH_ - 1), col(Role::EdMatch), lineH_ * 0.25f);
-        dl->AddText(font, fontSize, ImVec2(x0, y + 1), col(Role::EdLineNumber), tag.c_str());
+    if (folds_.count(lineIndex))
+      if (const FoldRegion* foldRegion = regionAt(lineIndex)) {
+        std::string tag = " ... " + std::to_string(foldRegion->last - foldRegion->first) + " ";
+        float x0 = textX + (visualColumn + 1) * charW_, x1 = x0 + ImGui::CalcTextSize(tag.c_str()).x;
+        drawList->AddRectFilled(ImVec2(x0, y + 1), ImVec2(x1, y + lineH_ - 1), col(Role::EdMatch), lineH_ * 0.25f);
+        drawList->AddText(font, fontSize, ImVec2(x0, y + 1), col(Role::EdLineNumber), tag.c_str());
       }
   }
 
@@ -1172,26 +1172,26 @@ bool TextEditor::render(const char* id, ImFont* font) {
   if (hovered && io.KeyCtrl && !io.KeyAlt && !inMargin && (hooks_.gotoDefinition || hooks_.openFile) && io.MousePos.x > textX) {
     int line = lineAtY(io.MousePos.y);
     if (line >= 0 && line < (int)lines_.size()) {
-      int s = 0, e = 0;
-      Coord at = clamp({line, byteCol(line, (int)((io.MousePos.x - textX) / charW_))});
-      std::string w, file;
-      int fs = 0, fe = 0;
-      bool onFile = hooks_.openFile && fileNameInLine(lines_[line], &file, &fs, &fe) && at.col >= fs && at.col <= fe;
+      int linkStart = 0, linkEnd = 0;
+      Coord hoverPos = clamp({line, byteCol(line, (int)((io.MousePos.x - textX) / charW_))});
+      std::string hoveredWord, file;
+      int fileStart = 0, fileEnd = 0;
+      bool onFile = hooks_.openFile && fileNameInLine(lines_[line], &file, &fileStart, &fileEnd) && hoverPos.col >= fileStart && hoverPos.col <= fileEnd;
       if (onFile) {
-        w = "\x01" + file, s = fs, e = fe;  // a file name: its own cache key
+        hoveredWord = "\x01" + file, linkStart = fileStart, linkEnd = fileEnd;  // a file name: its own cache key
       } else if (hooks_.gotoDefinition) {
-        w = wordAt(at, &s, &e);
-        if (!w.empty() && std::isdigit((unsigned char)w[0])) w.clear();
+        hoveredWord = wordAt(hoverPos, &linkStart, &linkEnd);
+        if (!hoveredWord.empty() && std::isdigit((unsigned char)hoveredWord[0])) hoveredWord.clear();
       }
-      if (w != linkWord_ || line != linkLine_) {
-        linkWord_ = w, linkLine_ = line;
+      if (hoveredWord != linkWord_ || line != linkLine_) {
+        linkWord_ = hoveredWord, linkLine_ = line;
         if (onFile) linkOk_ = !hooks_.hasFile || hooks_.hasFile(file);
-        else linkOk_ = !w.empty() && (!hooks_.hasDefinition || hooks_.hasDefinition(w, line));
+        else linkOk_ = !hoveredWord.empty() && (!hooks_.hasDefinition || hooks_.hasDefinition(hoveredWord, line));
       }
       if (linkOk_) {
-        float x0 = textX + visualCol(line, s) * charW_, x1 = textX + visualCol(line, e) * charW_;
+        float x0 = textX + visualCol(line, linkStart) * charW_, x1 = textX + visualCol(line, linkEnd) * charW_;
         float y = lineY(line) + lineH_ - 1;
-        dl->AddLine(ImVec2(x0, y), ImVec2(x1, y), col(Role::EdLink), 1.0f);
+        drawList->AddLine(ImVec2(x0, y), ImVec2(x1, y), col(Role::EdLink), 1.0f);
         ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
       }
     }
@@ -1201,38 +1201,38 @@ bool TextEditor::render(const char* id, ImFont* font) {
 
   // gutter (drawn over the text so it stays fixed when scrolling horizontally)
   float gx = winPos.x;
-  dl->AddRectFilled(ImVec2(gx, winPos.y), ImVec2(gx + gutterW - charW_ * 0.5f, winPos.y + viewH), col(Role::EdGutter));
-  for (int r = firstRow; r <= lastRow; r++) {
-    int i = lineAt_[r];
-    float y = origin.y + r * lineH_;
-    char num[32];
-    snprintf(num, sizeof num, "%*d", std::min(numChars - 1, 12), i + 1);
-    auto mk = markers_.find(i + 1);
-    ImU32 numCol = mk != markers_.end() ? (mk->second.first ? col(Role::EdErrorNumber) : col(Role::EdWarningNumber))
-                   : i == cursor_.line ? col(Role::EdLineNumberCurrent) : col(Role::EdLineNumber);
-    if (bps_.count(i))
-      dl->AddCircleFilled(ImVec2(gx + bpW * 0.5f, y + lineH_ * 0.5f), std::min(bpW, lineH_) * 0.32f, col(Role::EdBreakpoint));
-    dl->AddText(font, fontSize, ImVec2(gx + bpW, y + 1), numCol, num);
+  drawList->AddRectFilled(ImVec2(gx, winPos.y), ImVec2(gx + gutterW - charW_ * 0.5f, winPos.y + viewH), col(Role::EdGutter));
+  for (int row = firstRow; row <= lastRow; row++) {
+    int lineIndex = lineAt_[row];
+    float y = origin.y + row * lineH_;
+    char lineNumberText[32];
+    snprintf(lineNumberText, sizeof lineNumberText, "%*d", std::min(numChars - 1, 12), lineIndex + 1);
+    auto marker = markers_.find(lineIndex + 1);
+    ImU32 numCol = marker != markers_.end() ? (marker->second.first ? col(Role::EdErrorNumber) : col(Role::EdWarningNumber))
+                   : lineIndex == cursor_.line ? col(Role::EdLineNumberCurrent) : col(Role::EdLineNumber);
+    if (bps_.count(lineIndex))
+      drawList->AddCircleFilled(ImVec2(gx + bpW * 0.5f, y + lineH_ * 0.5f), std::min(bpW, lineH_) * 0.32f, col(Role::EdBreakpoint));
+    drawList->AddText(font, fontSize, ImVec2(gx + bpW, y + 1), numCol, lineNumberText);
     if (cycW > 0 && hooks_.gutter) {
-      std::string g = hooks_.gutter(i, lines_[i]);
-      if (!g.empty()) {
-        float w = ImGui::CalcTextSize(g.c_str()).x;
-        dl->AddText(font, fontSize, ImVec2(gx + bpW + numW + cycW - w, y + 1), col(Role::EdCycles), g.c_str());
+      std::string gutterText = hooks_.gutter(lineIndex, lines_[lineIndex]);
+      if (!gutterText.empty()) {
+        float textWidth = ImGui::CalcTextSize(gutterText.c_str()).x;
+        drawList->AddText(font, fontSize, ImVec2(gx + bpW + numW + cycW - textWidth, y + 1), col(Role::EdCycles), gutterText.c_str());
       }
     }
     // fold arrow: always on a folded region, on the others while the mouse is over the gutter
-    if (foldW > 0 && regionAt(i)) {
-      bool isFolded = folds_.count(i) > 0;
+    if (foldW > 0 && regionAt(lineIndex)) {
+      bool isFolded = folds_.count(lineIndex) > 0;
       bool overGutter = hovered && io.MousePos.x < gx + gutterW;
       if (isFolded || overGutter) {
-        float cx = gx + bpW + numW + cycW + foldW * 0.5f, cy = y + lineH_ * 0.5f, a = std::min(foldW, lineH_) * 0.22f;
-        ImU32 c = isFolded ? col(Role::EdLineNumberCurrent) : col(Role::EdLineNumber);
-        if (isFolded) dl->AddTriangleFilled(ImVec2(cx - a * 0.6f, cy - a), ImVec2(cx - a * 0.6f, cy + a), ImVec2(cx + a * 0.9f, cy), c);
-        else dl->AddTriangleFilled(ImVec2(cx - a, cy - a * 0.6f), ImVec2(cx + a, cy - a * 0.6f), ImVec2(cx, cy + a * 0.9f), c);
+        float cx = gx + bpW + numW + cycW + foldW * 0.5f, cy = y + lineH_ * 0.5f, arrowSize = std::min(foldW, lineH_) * 0.22f;
+        ImU32 arrowColour = isFolded ? col(Role::EdLineNumberCurrent) : col(Role::EdLineNumber);
+        if (isFolded) drawList->AddTriangleFilled(ImVec2(cx - arrowSize * 0.6f, cy - arrowSize), ImVec2(cx - arrowSize * 0.6f, cy + arrowSize), ImVec2(cx + arrowSize * 0.9f, cy), arrowColour);
+        else drawList->AddTriangleFilled(ImVec2(cx - arrowSize, cy - arrowSize * 0.6f), ImVec2(cx + arrowSize, cy - arrowSize * 0.6f), ImVec2(cx, cy + arrowSize * 0.9f), arrowColour);
       }
     }
   }
-  dl->AddLine(ImVec2(gx + gutterW - charW_ * 0.5f, winPos.y), ImVec2(gx + gutterW - charW_ * 0.5f, winPos.y + viewH), col(Role::EdGutterBorder));
+  drawList->AddLine(ImVec2(gx + gutterW - charW_ * 0.5f, winPos.y), ImVec2(gx + gutterW - charW_ * 0.5f, winPos.y + viewH), col(Role::EdGutterBorder));
   // offset the gutter by the horizontal scroll so it stays on screen
   (void)scrollX;
 
@@ -1241,19 +1241,19 @@ bool TextEditor::render(const char* id, ImFont* font) {
     float cx = textX + visualCol(cursor_.line, cursor_.col) * charW_;
     float cy = lineY(cursor_.line);
     if (std::fmod(ImGui::GetTime(), 1.0) < 0.6 || io.InputQueueCharacters.Size)
-      dl->AddRectFilled(ImVec2(cx, cy), ImVec2(cx + 2, cy + lineH_), col(Role::EdCursor));
+      drawList->AddRectFilled(ImVec2(cx, cy), ImVec2(cx + 2, cy + lineH_), col(Role::EdCursor));
     // completion popup
     if (completionOpen_) {
       ImGui::SetNextWindowPos(ImVec2(cx, cy + lineH_));
       ImGui::SetNextWindowBgAlpha(0.97f);
       ImGui::BeginTooltip();
-      for (int k = 0; k < (int)completions_.size() && k < 12; k++) {
-        bool sel = k == completionSel_;
-        ImGui::PushStyleColor(ImGuiCol_Text, colorOf(completions_[k].kind));
-        ImGui::Selectable(completions_[k].word.c_str(), sel, 0, ImVec2(charW_ * 10, 0));
+      for (int entryIndex = 0; entryIndex < (int)completions_.size() && entryIndex < 12; entryIndex++) {
+        bool selected = entryIndex == completionSel_;
+        ImGui::PushStyleColor(ImGuiCol_Text, colorOf(completions_[entryIndex].kind));
+        ImGui::Selectable(completions_[entryIndex].word.c_str(), selected, 0, ImVec2(charW_ * 10, 0));
         ImGui::PopStyleColor();
         ImGui::SameLine();
-        ImGui::TextDisabled("%s", completions_[k].detail.c_str());
+        ImGui::TextDisabled("%s", completions_[entryIndex].detail.c_str());
       }
       ImGui::EndTooltip();
     }
@@ -1262,14 +1262,14 @@ bool TextEditor::render(const char* id, ImFont* font) {
   // hover help
   if (hovered && hooks_.hover && !ImGui::IsMouseDown(ImGuiMouseButton_Left) && !completionOpen_ &&
       ImGui::GetIO().MouseDelta.x == 0 && ImGui::GetIO().MouseDelta.y == 0) {
-    ImVec2 m = io.MousePos;
-    int line = lineAtY(m.y);
-    if (line >= 0 && line < (int)lines_.size() && m.x > textX) {
-      Coord c = clamp({line, byteCol(line, (int)((m.x - textX) / charW_))});
-      std::string w = wordAt(c);
-      auto mk = markers_.find(line + 1);
-      std::string help = w.empty() ? std::string() : hooks_.hover(w, lines_[line]);
-      if (mk != markers_.end()) help = mk->second.second + (help.empty() ? "" : "\n\n" + help);
+    ImVec2 mousePos = io.MousePos;
+    int line = lineAtY(mousePos.y);
+    if (line >= 0 && line < (int)lines_.size() && mousePos.x > textX) {
+      Coord hoverCoord = clamp({line, byteCol(line, (int)((mousePos.x - textX) / charW_))});
+      std::string hoveredWord = wordAt(hoverCoord);
+      auto marker = markers_.find(line + 1);
+      std::string help = hoveredWord.empty() ? std::string() : hooks_.hover(hoveredWord, lines_[line]);
+      if (marker != markers_.end()) help = marker->second.second + (help.empty() ? "" : "\n\n" + help);
       if (!help.empty() && ImGui::BeginTooltip()) {
         ImGui::PushTextWrapPos(charW_ * 70);
         ImGui::TextUnformatted(help.c_str());
@@ -1286,9 +1286,9 @@ bool TextEditor::render(const char* id, ImFont* font) {
     else if (cy < scrollY) ImGui::SetScrollY(cy);
     else if (cy + lineH_ * 2 > scrollY + viewH) ImGui::SetScrollY(cy + lineH_ * 2 - viewH);
     float cx = gutterW + visualCol(cursor_.line, cursor_.col) * charW_;
-    float vw = ImGui::GetWindowWidth();
+    float viewWidth = ImGui::GetWindowWidth();
     if (cx - gutterW < scrollX) ImGui::SetScrollX(std::max(0.0f, cx - gutterW - charW_ * 4));
-    else if (cx > scrollX + vw - charW_ * 2) ImGui::SetScrollX(cx - vw + charW_ * 4);
+    else if (cx > scrollX + viewWidth - charW_ * 2) ImGui::SetScrollX(cx - viewWidth + charW_ * 4);
     scrollToCursor_ = false;
     centerOnCursor_ = false;
   }

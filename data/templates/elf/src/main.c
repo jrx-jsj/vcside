@@ -7,7 +7,7 @@
  *
  * Build: F7 (runs make). Run: F5. This template is CC0: use it as you like.
  */
-#include "vcs.h"
+#include "vcsLib.h"
 
 static int lines = 199;          /* visible lines: 262 - 63 of overblank (NTSC, PAL60) */
 static int multicart;            /* started from a menu (PlusCart, UnoCart): can go back */

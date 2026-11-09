@@ -6,73 +6,73 @@
 
 namespace vcs {
 
-static bool wordChar(char c) { return std::isalnum((unsigned char)c) || c == '_'; }
+static bool wordChar(char character) { return std::isalnum((unsigned char)character) || character == '_'; }
 
 std::string basicLabelOf(const std::string& line) {
   if (line.empty() || !wordChar(line[0])) return {};
-  size_t e = 0;
-  while (e < line.size() && wordChar(line[e])) e++;
-  if (e < line.size() && line[e] == ':') return {};  // a block such as player0: or playfield:
-  return line.substr(0, e);
+  size_t labelEnd = 0;
+  while (labelEnd < line.size() && wordChar(line[labelEnd])) labelEnd++;
+  if (labelEnd < line.size() && line[labelEnd] == ':') return {};  // a block such as player0: or playfield:
+  return line.substr(0, labelEnd);
 }
 
-std::vector<Token> tokenizeBasic(const KnowledgeBase& kb, const std::string& l) {
-  std::vector<Token> t;
-  int n = (int)l.size(), i = 0;
+std::vector<Token> tokenizeBasic(const KnowledgeBase& kb, const std::string& line) {
+  std::vector<Token> tokens;
+  int length = (int)line.size(), i = 0;
   bool jumpTarget = false;  // after goto, gosub, then: a bare word is a label
   bool afterThen = false;
-  if (!basicLabelOf(l).empty()) {
-    while (i < n && wordChar(l[i])) i++;
-    t.push_back({0, i, TokenKind::Label});
+  if (!basicLabelOf(line).empty()) {
+    while (i < length && wordChar(line[i])) i++;
+    tokens.push_back({0, i, TokenKind::Label});
   }
-  while (i < n) {
-    char c = l[i];
-    if (std::isspace((unsigned char)c)) { i++; continue; }
-    int s = i;
-    if (c == '"') {
+  while (i < length) {
+    char character = line[i];
+    if (std::isspace((unsigned char)character)) { i++; continue; }
+    int tokenStart = i;
+    if (character == '"') {
       i++;
-      while (i < n && l[i] != '"') i++;
-      i = std::min(n, i + 1);
-      t.push_back({s, i, TokenKind::String});
-    } else if (c == '$' || c == '%' || std::isdigit((unsigned char)c)) {
+      while (i < length && line[i] != '"') i++;
+      i = std::min(length, i + 1);
+      tokens.push_back({tokenStart, i, TokenKind::String});
+    } else if (character == '$' || character == '%' || std::isdigit((unsigned char)character)) {
       i++;
-      while (i < n && (wordChar(l[i]) || l[i] == '.')) i++;  // also 8kSC
-      t.push_back({s, i, TokenKind::Number});
-      jumpTarget = jumpTarget && std::isdigit((unsigned char)c);  // goto 100
+      while (i < length && (wordChar(line[i]) || line[i] == '.')) i++;  // also 8kSC
+      tokens.push_back({tokenStart, i, TokenKind::Number});
+      jumpTarget = jumpTarget && std::isdigit((unsigned char)character);  // goto 100
       afterThen = false;
-    } else if (std::isalpha((unsigned char)c) || c == '_') {
-      while (i < n && wordChar(l[i])) i++;
-      std::string w = l.substr(s, i - s);
-      if (w == "rem") {
-        t.push_back({s, n, TokenKind::Comment});
+    } else if (std::isalpha((unsigned char)character) || character == '_') {
+      while (i < length && wordChar(line[i])) i++;
+      std::string word = line.substr(tokenStart, i - tokenStart);
+      if (word == "rem") {
+        tokens.push_back({tokenStart, length, TokenKind::Comment});
         break;
       }
-      int e = i;
-      if (i < n && l[i] == ':' && kb.basic(w + ":")) w += ":", e = ++i;
-      TokenKind k = TokenKind::Symbol;
+      int wordEnd = i;
+      if (i < length && line[i] == ':' && kb.basic(word + ":")) word += ":", wordEnd = ++i;
+      TokenKind kind = TokenKind::Symbol;
       bool jump = false;
-      if (const BasicKeyword* b = kb.basic(w)) {
-        if (b->kind == "variable") k = TokenKind::Register;
-        else if (b->kind == "directive" || b->kind == "block") k = TokenKind::Directive;
-        else k = TokenKind::Mnemonic;
-        jump = w == "goto" || w == "gosub" || w == "then" || w == "else";
-      } else if (kb.reg(w)) {
-        k = TokenKind::Register;
+      if (const BasicKeyword* keyword = kb.basic(word)) {
+        if (keyword->kind == "variable") kind = TokenKind::Register;
+        else if (keyword->kind == "directive" || keyword->kind == "block") kind = TokenKind::Directive;
+        else kind = TokenKind::Mnemonic;
+        jump = word == "goto" || word == "gosub" || word == "then" || word == "else";
+      } else if (kb.reg(word)) {
+        kind = TokenKind::Register;
       } else if (jumpTarget) {
         // after then, only a word alone is a label (then a = 1 is a statement)
-        size_t r = l.find_first_not_of(" \t", e);
-        bool alone = r == std::string::npos || l.compare(r, 4, "else") == 0 || l.compare(r, 1, ":") == 0;
-        if (!afterThen || alone) k = TokenKind::Label;
+        size_t nextPos = line.find_first_not_of(" \t", wordEnd);
+        bool alone = nextPos == std::string::npos || line.compare(nextPos, 4, "else") == 0 || line.compare(nextPos, 1, ":") == 0;
+        if (!afterThen || alone) kind = TokenKind::Label;
       }
-      t.push_back({s, e, k});
-      afterThen = w == "then" || w == "else";
-      jumpTarget = jump || (jumpTarget && k == TokenKind::Label);  // on x goto a b c
+      tokens.push_back({tokenStart, wordEnd, kind});
+      afterThen = word == "then" || word == "else";
+      jumpTarget = jump || (jumpTarget && kind == TokenKind::Label);  // on x goto a b c
     } else {
       i++;
       jumpTarget = afterThen = false;
     }
   }
-  return t;
+  return tokens;
 }
 
 }  // namespace vcs

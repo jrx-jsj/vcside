@@ -18,19 +18,19 @@ class ProjectForm {
  public:
   // Reads the file into the text editor and the form.
   bool load(const std::string& path, TextEditor& text, std::string* error);
-  void render(TextEditor& text, ImFont* mono, const KnowledgeBase& kb, Toolchain& tc);
+  void render(TextEditor& text, ImFont* mono, const KnowledgeBase& kb, Toolchain& toolchain);
   bool dirty(const TextEditor& text) const { return dirty_ || text.dirty(); }
   // What to write: the form as JSON, or the text if it is shown (false if it does not read).
-  bool contents(TextEditor& text, std::string* out, std::string* error);
+  bool contents(TextEditor& text, std::string* jsonText, std::string* error);
   void saved(TextEditor& text, const std::string& written);  // after writing: both clean
   bool showingText() const { return asText_; }
-  bool showText(TextEditor& text, bool on);  // false: the text has an error and stays
+  bool showText(TextEditor& text, bool show);  // false: the text has an error and stays
 
  private:
   bool asText_ = false;
   bool dirty_ = false;   // the form has changes the file does not
   std::string path_, error_;
-  Project p_;
+  Project project_;
   std::string includeText_;  // include folders, one per line, while editing
 };
 

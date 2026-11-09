@@ -19,102 +19,102 @@ using json = nlohmann::ordered_json;
 namespace vcs::theme {
 
 static const RoleInfo kInfo[] = {
-#define X(e, id, group, label) {id, group, label},
+#define X(role, id, group, label) {id, group, label},
     VCS_THEME_ROLES(X)
 #undef X
 };
 
-const RoleInfo& info(Role r) { return kInfo[(int)r]; }
+const RoleInfo& info(Role role) { return kInfo[(int)role]; }
 
-bool roleFromId(const std::string& id, Role* r) {
+bool roleFromId(const std::string& id, Role* role) {
   for (int i = 0; i < kRoles; i++)
     if (id == kInfo[i].id) {
-      if (r) *r = (Role)i;
+      if (role) *role = (Role)i;
       return true;
     }
   return false;
 }
 
 bool parseColour(const std::string& text, Rgba* out) {
-  std::string t = text;
-  t.erase(std::remove_if(t.begin(), t.end(), [](unsigned char c) { return std::isspace(c); }), t.end());
-  if (t.empty() || t[0] != '#' || (t.size() != 7 && t.size() != 9)) return false;
-  for (size_t i = 1; i < t.size(); i++)
-    if (!std::isxdigit((unsigned char)t[i])) return false;
-  Rgba v = (Rgba)std::stoul(t.substr(1), nullptr, 16);
-  if (t.size() == 7) v = v << 8 | 0xFF;
-  if (out) *out = v;
+  std::string compact = text;
+  compact.erase(std::remove_if(compact.begin(), compact.end(), [](unsigned char character) { return std::isspace(character); }), compact.end());
+  if (compact.empty() || compact[0] != '#' || (compact.size() != 7 && compact.size() != 9)) return false;
+  for (size_t i = 1; i < compact.size(); i++)
+    if (!std::isxdigit((unsigned char)compact[i])) return false;
+  Rgba rgba = (Rgba)std::stoul(compact.substr(1), nullptr, 16);
+  if (compact.size() == 7) rgba = rgba << 8 | 0xFF;
+  if (out) *out = rgba;
   return true;
 }
 
-std::string colourText(Rgba c) {
-  char b[16];
-  if ((c & 0xFF) == 0xFF) snprintf(b, sizeof b, "#%06X", (unsigned)(c >> 8));
-  else snprintf(b, sizeof b, "#%08X", (unsigned)c);
-  return b;
+std::string colourText(Rgba colour) {
+  char buffer[16];
+  if ((colour & 0xFF) == 0xFF) snprintf(buffer, sizeof buffer, "#%06X", (unsigned)(colour >> 8));
+  else snprintf(buffer, sizeof buffer, "#%08X", (unsigned)colour);
+  return buffer;
 }
 
 // ---------------------------------------------------------------------------
 // Files
 
-std::string toJson(const Theme& t) {
-  json j;
-  j["vcstheme"] = 1;
-  j["name"] = t.name;
-  if (!t.base.empty()) j["base"] = t.base;
-  if (!t.palette.empty()) j["palette"] = t.palette;
+std::string toJson(const Theme& theme) {
+  json document;
+  document["vcstheme"] = 1;
+  document["name"] = theme.name;
+  if (!theme.base.empty()) document["base"] = theme.base;
+  if (!theme.palette.empty()) document["palette"] = theme.palette;
   // the roles in their order, the rest after
-  json c = json::object();
+  json colourObject = json::object();
   std::set<std::string> done;
   for (int i = 0; i < kRoles; i++)
-    if (auto it = t.colours.find(kInfo[i].id); it != t.colours.end()) c[it->first] = it->second, done.insert(it->first);
-  for (auto& [k, v] : t.colours)
-    if (!done.count(k)) c[k] = v;
-  j["colours"] = c;
-  if (t.hasIndent) j["indent"] = t.indent;
-  if (!t.imgui.empty()) j["imgui"] = t.imgui;
-  return j.dump(2) + "\n";
+    if (auto found = theme.colours.find(kInfo[i].id); found != theme.colours.end()) colourObject[found->first] = found->second, done.insert(found->first);
+  for (auto& [name, value] : theme.colours)
+    if (!done.count(name)) colourObject[name] = value;
+  document["colours"] = colourObject;
+  if (theme.hasIndent) document["indent"] = theme.indent;
+  if (!theme.imgui.empty()) document["imgui"] = theme.imgui;
+  return document.dump(2) + "\n";
 }
 
-bool fromJson(const std::string& text, Theme* t, std::string* error) {
-  json j;
+bool fromJson(const std::string& text, Theme* theme, std::string* error) {
+  json document;
   try {
-    j = json::parse(text);
-  } catch (const std::exception& e) {
-    if (error) *error = e.what();
+    document = json::parse(text);
+  } catch (const std::exception& exception) {
+    if (error) *error = exception.what();
     return false;
   }
-  if (!j.is_object() || !j.contains("vcstheme")) {
+  if (!document.is_object() || !document.contains("vcstheme")) {
     if (error) *error = T("This is not a VCSIDE theme (it has no \"vcstheme\" key).");
     return false;
   }
-  Theme r;
-  r.name = j.value("name", "");
-  r.base = j.value("base", "");
+  Theme result;
+  result.name = document.value("name", "");
+  result.base = document.value("base", "");
   auto strings = [&](const char* key, std::map<std::string, std::string>* out) {
-    if (!j.contains(key) || !j[key].is_object()) return;
-    for (auto& [k, v] : j[key].items())
-      if (v.is_string()) (*out)[k] = v.get<std::string>();
+    if (!document.contains(key) || !document[key].is_object()) return;
+    for (auto& [name, value] : document[key].items())
+      if (value.is_string()) (*out)[name] = value.get<std::string>();
   };
-  strings("palette", &r.palette);
-  strings("colours", &r.colours);
-  strings("colors", &r.colours);  // the other spelling works too
-  strings("imgui", &r.imgui);
-  if (j.contains("indent") && j["indent"].is_array()) {
-    r.hasIndent = true;
-    for (auto& v : j["indent"])
-      if (v.is_string()) r.indent.push_back(v.get<std::string>());
+  strings("palette", &result.palette);
+  strings("colours", &result.colours);
+  strings("colors", &result.colours);  // the other spelling works too
+  strings("imgui", &result.imgui);
+  if (document.contains("indent") && document["indent"].is_array()) {
+    result.hasIndent = true;
+    for (auto& value : document["indent"])
+      if (value.is_string()) result.indent.push_back(value.get<std::string>());
   }
-  *t = r;
+  *theme = result;
   return true;
 }
 
 // ---------------------------------------------------------------------------
 // Library
 
-static std::string readAll(const fs::path& p) {
-  std::ifstream f(p, std::ios::binary);
-  return std::string(std::istreambuf_iterator<char>(f), {});
+static std::string readAll(const fs::path& path) {
+  std::ifstream file(path, std::ios::binary);
+  return std::string(std::istreambuf_iterator<char>(file), {});
 }
 
 void Library::load(const std::string& builtInDir, const std::string& userDir) {
@@ -123,72 +123,72 @@ void Library::load(const std::string& builtInDir, const std::string& userDir) {
   for (int pass = 0; pass < 2; pass++) {
     std::error_code ec;
     std::vector<fs::path> files;
-    for (auto& e : fs::directory_iterator(pass ? userDir : builtInDir, ec))
-      if (e.path().extension() == ".vcstheme") files.push_back(e.path());
+    for (auto& entry : fs::directory_iterator(pass ? userDir : builtInDir, ec))
+      if (entry.path().extension() == ".vcstheme") files.push_back(entry.path());
     std::sort(files.begin(), files.end());
-    for (auto& f : files) {
-      Theme t;
-      std::string err;
-      if (!fromJson(readAll(f), &t, &err)) continue;
-      t.id = f.stem().string();
-      t.path = f.string();
-      t.builtIn = pass == 0;
-      if (t.name.empty()) t.name = t.id;
+    for (auto& file : files) {
+      Theme theme;
+      std::string error;
+      if (!fromJson(readAll(file), &theme, &error)) continue;
+      theme.id = file.stem().string();
+      theme.path = file.string();
+      theme.builtIn = pass == 0;
+      if (theme.name.empty()) theme.name = theme.id;
       // a user theme with a built-in one's id replaces it
-      auto same = std::find_if(themes_.begin(), themes_.end(), [&](const Theme& o) { return o.id == t.id; });
-      if (same != themes_.end()) *same = t;
-      else themes_.push_back(t);
+      auto same = std::find_if(themes_.begin(), themes_.end(), [&](const Theme& existing) { return existing.id == theme.id; });
+      if (same != themes_.end()) *same = theme;
+      else themes_.push_back(theme);
     }
   }
 }
 
 const Theme* Library::find(const std::string& id) const {
-  for (auto& t : themes_)
-    if (t.id == id) return &t;
+  for (auto& theme : themes_)
+    if (theme.id == id) return &theme;
   return nullptr;
 }
 Theme* Library::find(const std::string& id) {
-  for (auto& t : themes_)
-    if (t.id == id) return &t;
+  for (auto& theme : themes_)
+    if (theme.id == id) return &theme;
   return nullptr;
 }
 
 void Library::merged(const std::string& id, std::map<std::string, std::string>* palette,
                      std::map<std::string, std::string>* colours) const {
   std::vector<const Theme*> chain;
-  for (const Theme* t = find(id); t && chain.size() < 16; t = t->base.empty() ? nullptr : find(t->base)) {
-    if (std::find(chain.begin(), chain.end(), t) != chain.end()) break;
-    chain.push_back(t);
+  for (const Theme* theme = find(id); theme && chain.size() < 16; theme = theme->base.empty() ? nullptr : find(theme->base)) {
+    if (std::find(chain.begin(), chain.end(), theme) != chain.end()) break;
+    chain.push_back(theme);
   }
-  for (auto it = chain.rbegin(); it != chain.rend(); ++it) {
+  for (auto link = chain.rbegin(); link != chain.rend(); ++link) {
     if (palette)
-      for (auto& [k, v] : (*it)->palette) (*palette)[k] = v;
+      for (auto& [name, value] : (*link)->palette) (*palette)[name] = value;
     if (colours)
-      for (auto& [k, v] : (*it)->colours) (*colours)[k] = v;
+      for (auto& [name, value] : (*link)->colours) (*colours)[name] = value;
   }
 }
 
 // "#..", "$name" (palette, which may name another palette entry), "@role", each with an
 // optional "/AA" alpha
-static bool evalSpec(const std::string& v, const std::map<std::string, std::string>& palette,
+static bool evalSpec(const std::string& spec, const std::map<std::string, std::string>& palette,
                      const std::map<std::string, std::string>& colours, Rgba* out, int depth) {
-  if (depth > 32 || v.empty()) return false;
-  if (size_t slash = v.rfind('/'); slash != std::string::npos && slash + 3 == v.size() &&
-                                    std::isxdigit((unsigned char)v[slash + 1]) && std::isxdigit((unsigned char)v[slash + 2])) {
-    Rgba c;
-    if (!evalSpec(v.substr(0, slash), palette, colours, &c, depth + 1)) return false;
-    *out = (c & 0xFFFFFF00u) | (Rgba)std::stoul(v.substr(slash + 1), nullptr, 16);
+  if (depth > 32 || spec.empty()) return false;
+  if (size_t slash = spec.rfind('/'); slash != std::string::npos && slash + 3 == spec.size() &&
+                                    std::isxdigit((unsigned char)spec[slash + 1]) && std::isxdigit((unsigned char)spec[slash + 2])) {
+    Rgba colour;
+    if (!evalSpec(spec.substr(0, slash), palette, colours, &colour, depth + 1)) return false;
+    *out = (colour & 0xFFFFFF00u) | (Rgba)std::stoul(spec.substr(slash + 1), nullptr, 16);
     return true;
   }
-  if (v[0] == '$') {
-    auto p = palette.find(v.substr(1));
-    return p != palette.end() && evalSpec(p->second, palette, colours, out, depth + 1);
+  if (spec[0] == '$') {
+    auto paletteEntry = palette.find(spec.substr(1));
+    return paletteEntry != palette.end() && evalSpec(paletteEntry->second, palette, colours, out, depth + 1);
   }
-  if (v[0] == '@') {
-    auto c = colours.find(v.substr(1));
-    return c != colours.end() && evalSpec(c->second, palette, colours, out, depth + 1);
+  if (spec[0] == '@') {
+    auto colourEntry = colours.find(spec.substr(1));
+    return colourEntry != colours.end() && evalSpec(colourEntry->second, palette, colours, out, depth + 1);
   }
-  return parseColour(v, out);
+  return parseColour(spec, out);
 }
 
 bool Library::resolveSpec(const std::string& id, const std::string& spec, Rgba* out) const {
@@ -198,68 +198,68 @@ bool Library::resolveSpec(const std::string& id, const std::string& spec, Rgba* 
 }
 
 Resolved Library::resolve(const std::string& id) const {
-  Resolved r;
+  Resolved resolved;
   std::vector<const Theme*> chain;
-  for (const Theme* t = find(id); t && chain.size() < 16; t = t->base.empty() ? nullptr : find(t->base)) {
-    if (std::find(chain.begin(), chain.end(), t) != chain.end()) {
-      r.problems.push_back(F("{0}: its bases go round in a loop.", {id}));
+  for (const Theme* theme = find(id); theme && chain.size() < 16; theme = theme->base.empty() ? nullptr : find(theme->base)) {
+    if (std::find(chain.begin(), chain.end(), theme) != chain.end()) {
+      resolved.problems.push_back(F("{0}: its bases go round in a loop.", {id}));
       break;
     }
-    chain.push_back(t);
+    chain.push_back(theme);
   }
   if (chain.empty()) {
-    r.problems.push_back(F("There is no theme called {0}.", {id}));
-    return r;
+    resolved.problems.push_back(F("There is no theme called {0}.", {id}));
+    return resolved;
   }
   if (!chain.back()->base.empty() && !find(chain.back()->base))
-    r.problems.push_back(F("{0}: there is no base theme called {1}.", {chain.back()->id, chain.back()->base}));
+    resolved.problems.push_back(F("{0}: there is no base theme called {1}.", {chain.back()->id, chain.back()->base}));
   std::map<std::string, std::string> palette, colours, imgui;
   std::vector<std::string> indent;
-  for (auto it = chain.rbegin(); it != chain.rend(); ++it) {
-    for (auto& [k, v] : (*it)->palette) palette[k] = v;
-    for (auto& [k, v] : (*it)->colours) colours[k] = v;
-    for (auto& [k, v] : (*it)->imgui) imgui[k] = v;
-    if ((*it)->hasIndent) indent = (*it)->indent;
+  for (auto link = chain.rbegin(); link != chain.rend(); ++link) {
+    for (auto& [name, value] : (*link)->palette) palette[name] = value;
+    for (auto& [name, value] : (*link)->colours) colours[name] = value;
+    for (auto& [name, value] : (*link)->imgui) imgui[name] = value;
+    if ((*link)->hasIndent) indent = (*link)->indent;
   }
-  auto value = [&](const std::string& v, Rgba* out, int) { return evalSpec(v, palette, colours, out, 0); };
+  auto evaluate = [&](const std::string& spec, Rgba* out, int) { return evalSpec(spec, palette, colours, out, 0); };
   std::vector<int> missing;
   for (int i = 0; i < kRoles; i++) {
-    auto c = colours.find(kInfo[i].id);
-    if (c == colours.end()) {
+    auto found = colours.find(kInfo[i].id);
+    if (found == colours.end()) {
       missing.push_back(i);
-      r.colour[i] = 0xFF00FFFF;  // magenta: easy to spot
-    } else if (!value(c->second, &r.colour[i], 0)) {
-      r.problems.push_back(F("{0}: cannot read \"{1}\".", {kInfo[i].id, c->second}));
-      r.colour[i] = 0xFF00FFFF;
+      resolved.colour[i] = 0xFF00FFFF;  // magenta: easy to spot
+    } else if (!evaluate(found->second, &resolved.colour[i], 0)) {
+      resolved.problems.push_back(F("{0}: cannot read \"{1}\".", {kInfo[i].id, found->second}));
+      resolved.colour[i] = 0xFF00FFFF;
     }
   }
   // A theme of its own with no base (a full copy, say) made before a colour existed:
   // that colour comes from the built-in theme of its kind, dark or light.
   if (!missing.empty() && !chain.back()->builtIn) {
-    Rgba bg = r.colour[(int)Role::UiBackground];
-    float lum = (0.299f * (bg >> 24) + 0.587f * ((bg >> 16) & 255) + 0.114f * ((bg >> 8) & 255)) / 255;
+    Rgba background = resolved.colour[(int)Role::UiBackground];
+    float lum = (0.299f * (background >> 24) + 0.587f * ((background >> 16) & 255) + 0.114f * ((background >> 8) & 255)) / 255;
     const char* from = lum > 0.5f ? "light" : "dark";
     if (find(from) && find(from)->builtIn) {
-      Resolved fb = resolve(from);
-      for (int i : missing) r.colour[i] = fb.colour[i];
-      r.notes.push_back(F("{0} colours not in this theme come from \"{1}\".", {std::to_string(missing.size()), T(find(from)->name.c_str())}));
+      Resolved fallback = resolve(from);
+      for (int i : missing) resolved.colour[i] = fallback.colour[i];
+      resolved.notes.push_back(F("{0} colours not in this theme come from \"{1}\".", {std::to_string(missing.size()), T(find(from)->name.c_str())}));
       missing.clear();
     }
   }
-  for (int i : missing) r.problems.push_back(F("{0} has no colour.", {kInfo[i].id}));
-  for (auto& [k, v] : colours)
-    if (!roleFromId(k, nullptr)) r.problems.push_back(F("{0} is not a colour of VCSIDE.", {k}));
-  for (auto& v : indent) {
-    Rgba c;
-    if (value(v, &c, 0)) r.indent.push_back(c);
-    else r.problems.push_back(F("indent: cannot read \"{0}\".", {v}));
+  for (int i : missing) resolved.problems.push_back(F("{0} has no colour.", {kInfo[i].id}));
+  for (auto& [name, value] : colours)
+    if (!roleFromId(name, nullptr)) resolved.problems.push_back(F("{0} is not a colour of VCSIDE.", {name}));
+  for (auto& spec : indent) {
+    Rgba colour;
+    if (evaluate(spec, &colour, 0)) resolved.indent.push_back(colour);
+    else resolved.problems.push_back(F("indent: cannot read \"{0}\".", {spec}));
   }
-  for (auto& [k, v] : imgui) {
-    Rgba c;
-    if (value(v, &c, 0)) r.imgui[k] = c;
-    else r.problems.push_back(F("imgui.{0}: cannot read \"{1}\".", {k, v}));
+  for (auto& [name, spec] : imgui) {
+    Rgba colour;
+    if (evaluate(spec, &colour, 0)) resolved.imgui[name] = colour;
+    else resolved.problems.push_back(F("imgui.{0}: cannot read \"{1}\".", {name, spec}));
   }
-  return r;
+  return resolved;
 }
 
 std::string Library::uniqueId(const std::string& name) const {
@@ -271,66 +271,66 @@ std::string Library::uniqueId(const std::string& name) const {
                                      {"Ó", "o"}, {"Ú", "u"}, {"Ü", "u"}, {"Ñ", "n"}, {"Ç", "c"}};
   std::string base;
   for (size_t i = 0; i < name.size();) {
-    unsigned char c = (unsigned char)name[i];
-    if (c < 0x80) {
-      if (std::isalnum(c)) base += (char)std::tolower(c);
+    unsigned char byte = (unsigned char)name[i];
+    if (byte < 0x80) {
+      if (std::isalnum(byte)) base += (char)std::tolower(byte);
       else if (!base.empty() && base.back() != '-') base += '-';
       i++;
       continue;
     }
-    size_t n = c >= 0xF0 ? 4 : c >= 0xE0 ? 3 : 2;  // one UTF-8 character
-    std::string ch = name.substr(i, n);
-    i += n;
+    size_t length = byte >= 0xF0 ? 4 : byte >= 0xE0 ? 3 : 2;  // one UTF-8 character
+    std::string character = name.substr(i, length);
+    i += length;
     const char* plain = nullptr;
-    for (auto& a : accents)
-      if (ch == a[0]) plain = a[1];
+    for (auto& accent : accents)
+      if (character == accent[0]) plain = accent[1];
     if (plain) base += plain;
     else if (!base.empty() && base.back() != '-') base += '-';
   }
   while (!base.empty() && base.back() == '-') base.pop_back();
   if (base.empty()) base = "theme";
   std::string id = base;
-  for (int n = 2; find(id); n++) id = base + "-" + std::to_string(n);
+  for (int suffix = 2; find(id); suffix++) id = base + "-" + std::to_string(suffix);
   return id;
 }
 
-bool Library::save(Theme& t, std::string* error) {
-  if (t.id.empty()) t.id = uniqueId(t.name);
+bool Library::save(Theme& theme, std::string* error) {
+  if (theme.id.empty()) theme.id = uniqueId(theme.name);
   std::error_code ec;
   fs::create_directories(userDir_, ec);
-  fs::path p = fs::path(userDir_) / (t.id + ".vcstheme");
-  std::ofstream f(p, std::ios::binary);
-  if (!f) {
-    if (error) *error = F("Cannot write {0}", {p.string()});
+  fs::path filePath = fs::path(userDir_) / (theme.id + ".vcstheme");
+  std::ofstream file(filePath, std::ios::binary);
+  if (!file) {
+    if (error) *error = F("Cannot write {0}", {filePath.string()});
     return false;
   }
-  f << toJson(t);
-  t.path = p.string();
-  t.builtIn = false;
-  if (Theme* old = find(t.id)) *old = t;
-  else themes_.push_back(t);
+  file << toJson(theme);
+  theme.path = filePath.string();
+  theme.builtIn = false;
+  if (Theme* existing = find(theme.id)) *existing = theme;
+  else themes_.push_back(theme);
   return true;
 }
 
 bool Library::remove(const std::string& id, std::string* error) {
-  auto it = std::find_if(themes_.begin(), themes_.end(), [&](const Theme& t) { return t.id == id; });
-  if (it == themes_.end() || it->builtIn) {
+  auto found = std::find_if(themes_.begin(), themes_.end(), [&](const Theme& theme) { return theme.id == id; });
+  if (found == themes_.end() || found->builtIn) {
     if (error) *error = T("Built-in themes cannot be deleted.");
     return false;
   }
   std::error_code ec;
-  fs::remove(it->path, ec);
-  themes_.erase(it);
+  fs::remove(found->path, ec);
+  themes_.erase(found);
   return true;
 }
 
 bool Library::importText(const std::string& text, const std::string& fallbackName, std::string* id, std::string* error) {
-  Theme t;
-  if (!fromJson(text, &t, error)) return false;
-  if (t.name.empty()) t.name = fallbackName;
-  t.id = uniqueId(fallbackName.empty() ? t.name : fallbackName);
-  if (!save(t, error)) return false;
-  if (id) *id = t.id;
+  Theme theme;
+  if (!fromJson(text, &theme, error)) return false;
+  if (theme.name.empty()) theme.name = fallbackName;
+  theme.id = uniqueId(fallbackName.empty() ? theme.name : fallbackName);
+  if (!save(theme, error)) return false;
+  if (id) *id = theme.id;
   return true;
 }
 
@@ -344,22 +344,22 @@ bool Library::import(const std::string& path, std::string* id, std::string* erro
 }
 
 std::string Library::exportJson(const std::string& id) const {
-  const Theme* t = find(id);
-  if (!t) return "";
-  Theme out = *t;
+  const Theme* theme = find(id);
+  if (!theme) return "";
+  Theme out = *theme;
   // up the chain until a built-in theme: what is in between goes into this one
   std::vector<const Theme*> chain;
-  const Theme* b = t->base.empty() ? nullptr : find(t->base);
-  while (b && !b->builtIn && chain.size() < 16 && std::find(chain.begin(), chain.end(), b) == chain.end()) {
-    chain.push_back(b);
-    b = b->base.empty() ? nullptr : find(b->base);
+  const Theme* base = theme->base.empty() ? nullptr : find(theme->base);
+  while (base && !base->builtIn && chain.size() < 16 && std::find(chain.begin(), chain.end(), base) == chain.end()) {
+    chain.push_back(base);
+    base = base->base.empty() ? nullptr : find(base->base);
   }
-  out.base = b ? b->id : "";
-  for (auto* c : chain) {  // nearest first: what the theme says itself wins
-    for (auto& [k, v] : c->palette) out.palette.emplace(k, v);
-    for (auto& [k, v] : c->colours) out.colours.emplace(k, v);
-    for (auto& [k, v] : c->imgui) out.imgui.emplace(k, v);
-    if (!out.hasIndent && c->hasIndent) out.indent = c->indent, out.hasIndent = true;
+  out.base = base ? base->id : "";
+  for (auto* ancestor : chain) {  // nearest first: what the theme says itself wins
+    for (auto& [name, value] : ancestor->palette) out.palette.emplace(name, value);
+    for (auto& [name, value] : ancestor->colours) out.colours.emplace(name, value);
+    for (auto& [name, value] : ancestor->imgui) out.imgui.emplace(name, value);
+    if (!out.hasIndent && ancestor->hasIndent) out.indent = ancestor->indent, out.hasIndent = true;
   }
   return toJson(out);
 }
@@ -367,11 +367,11 @@ std::string Library::exportJson(const std::string& id) const {
 // ---------------------------------------------------------------------------
 
 static Resolved& cur() {
-  static Resolved r;
-  return r;
+  static Resolved resolved;
+  return resolved;
 }
-void setCurrent(const Resolved& r) { cur() = r; }
+void setCurrent(const Resolved& resolved) { cur() = resolved; }
 const Resolved& current() { return cur(); }
-Rgba colour(Role r) { return cur().colour[(int)r]; }
+Rgba colour(Role role) { return cur().colour[(int)role]; }
 
 }  // namespace vcs::theme

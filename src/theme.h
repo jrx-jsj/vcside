@@ -145,7 +145,7 @@ namespace vcs::theme {
   X(FilesText, "files.text", N_("Project files"), N_("Text and other files"))
 
 enum class Role {
-#define X(e, id, group, label) e,
+#define X(role, id, group, label) role,
   VCS_THEME_ROLES(X)
 #undef X
   Count
@@ -157,13 +157,13 @@ struct RoleInfo {
   const char* group;  // English; translated where shown
   const char* label;
 };
-const RoleInfo& info(Role r);
-bool roleFromId(const std::string& id, Role* r);
+const RoleInfo& info(Role role);
+bool roleFromId(const std::string& id, Role* role);
 
 // 0xRRGGBBAA
 using Rgba = uint32_t;
 bool parseColour(const std::string& text, Rgba* out);  // "#RRGGBB" or "#RRGGBBAA"
-std::string colourText(Rgba c);                        // "#RRGGBB", or "#RRGGBBAA" if not opaque
+std::string colourText(Rgba colour);                        // "#RRGGBB", or "#RRGGBBAA" if not opaque
 
 // A theme as written: what its file says, before the base and the references.
 struct Theme {
@@ -179,8 +179,8 @@ struct Theme {
   std::map<std::string, std::string> imgui;     // ImGui colour name (without ImGuiCol_) -> colour
 };
 
-std::string toJson(const Theme& t);
-bool fromJson(const std::string& text, Theme* t, std::string* error);
+std::string toJson(const Theme& theme);
+bool fromJson(const std::string& text, Theme* theme, std::string* error);
 
 // Every colour, ready to use.
 struct Resolved {
@@ -206,7 +206,7 @@ class Library {
   // The palette and colours a theme ends up with after its bases (unresolved text).
   void merged(const std::string& id, std::map<std::string, std::string>* palette, std::map<std::string, std::string>* colours) const;
   // Saves a user theme (id taken from its name if empty) in the user folder.
-  bool save(Theme& t, std::string* error);
+  bool save(Theme& theme, std::string* error);
   bool remove(const std::string& id, std::string* error);
   // Copies a .vcstheme from anywhere (or its text, from the clipboard) into the user folder;
   // *id gets its id. Nothing is overwritten: a theme whose id exists gets a new one.
@@ -224,8 +224,8 @@ class Library {
 };
 
 // The colours in use (set by the app when the theme changes).
-void setCurrent(const Resolved& r);
+void setCurrent(const Resolved& resolved);
 const Resolved& current();
-Rgba colour(Role r);
+Rgba colour(Role role);
 
 }  // namespace vcs::theme

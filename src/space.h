@@ -66,11 +66,11 @@ struct SpaceReport {
 };
 
 SpaceReport analyzeSpace(const std::vector<Range>& rom, long romFileSize, const std::vector<RamDecl>& ram,
-                         const std::vector<CodeLine>& code, const FormatSpace& fmt, const SpaceOptions& opt);
+                         const std::vector<CodeLine>& code, const FormatSpace& formatSpace, const SpaceOptions& options);
 
 // batari Basic prints "N bytes of ROM space left" (one bank) or "... left in bank K"
 // (K from 1, 4 KB banks); banks here count from 0, as in the emulators. Its RAM is
 // not measured: the variables are fixed.
-SpaceReport parseBasicSpace(const std::string& output, long romFileSize, const SpaceOptions& opt);
+SpaceReport parseBasicSpace(const std::string& output, long romFileSize, const SpaceOptions& options);
 
 }  // namespace vcs

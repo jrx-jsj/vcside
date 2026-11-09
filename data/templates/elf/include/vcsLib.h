@@ -1,5 +1,5 @@
 /*
- * vcs.h - the vcsLib functions of an ELF cartridge (PlusCart, UnoCart, Chameleon Cart,
+ * vcsLib.h - the vcsLib functions of an ELF cartridge (PlusCart, UnoCart, Chameleon Cart,
  * Stella, Gopher2600). Written for VCSIDE's ELF template: CC0 1.0, public domain.
  * The names and values follow the vcsLib interface as Stella (ElfEnvironment.cxx,
  * VcsLib.cxx), Al-Nafuur's TinyELF-Basic (vcsLib.h) and Gopher2600 define it; the text is
@@ -9,8 +9,8 @@
  * 6507 instructions on the cartridge bus, so the 6507 runs what the ARM sends it. The
  * 6507 cycles of each call are in parentheses.
  */
-#ifndef VCS_H
-#define VCS_H
+#ifndef VCSLIB_H
+#define VCSLIB_H
 
 #include <stdint.h>
 

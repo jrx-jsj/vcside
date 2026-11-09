@@ -31,7 +31,7 @@ struct ElfFile {
   std::vector<Segment> segments;
 };
 // 32-bit little-endian ELF; false and an error if it is not one.
-bool readElf(const std::string& data, ElfFile& out, std::string* error);
+bool readElf(const std::string& data, ElfFile& elf, std::string* error);
 
 struct ElfSpace {
   struct Area {
@@ -46,8 +46,8 @@ struct ElfSpace {
   std::string summary() const;
 };
 
-// chameleon: the image linked with the firmware, or nullptr. warnPercent as in SpaceOptions.
-ElfSpace analyzeElfSpace(const ElfFile& rom, long fileSize, const ElfFile* chameleon, int warnPercent);
+// chameleonImage: the image linked with the firmware, or nullptr. warnPercent as in SpaceOptions.
+ElfSpace analyzeElfSpace(const ElfFile& rom, long fileSize, const ElfFile* chameleonImage, int warnPercent);
 
 // Chameleon Cart sizes (STM32G070RB) and what its firmware takes, measured on the
 // ELF template of 2025-10-23 (flash: vectors, HAL, vcsLib, logo; RAM: its variables,

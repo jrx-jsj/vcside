@@ -19,73 +19,73 @@ namespace vcs {
 
 using theme::em;
 
-static std::string joinLines(const std::vector<std::string>& v) {
-  std::string s;
-  for (auto& x : v) s += (s.empty() ? "" : "\n") + x;
-  return s;
+static std::string joinLines(const std::vector<std::string>& lines) {
+  std::string joined;
+  for (auto& line : lines) joined += (joined.empty() ? "" : "\n") + line;
+  return joined;
 }
 
-static std::vector<std::string> splitLines(const std::string& s) {
-  std::vector<std::string> out;
-  std::istringstream in(s);
-  for (std::string l; std::getline(in, l);) {
-    while (!l.empty() && (l.back() == '\r' || l.back() == ' ')) l.pop_back();
-    if (!l.empty()) out.push_back(l);
+static std::vector<std::string> splitLines(const std::string& text) {
+  std::vector<std::string> lines;
+  std::istringstream stream(text);
+  for (std::string line; std::getline(stream, line);) {
+    while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) line.pop_back();
+    if (!line.empty()) lines.push_back(line);
   }
-  return out;
+  return lines;
 }
 
 bool ProjectForm::load(const std::string& path, TextEditor& text, std::string* error) {
-  std::ifstream f(path, std::ios::binary);
-  if (!f) {
+  std::ifstream file(path, std::ios::binary);
+  if (!file) {
     if (error) *error = F("Cannot open {0}", {path});
     return false;
   }
-  std::ostringstream s;
-  s << f.rdbuf();
+  std::ostringstream buffer;
+  buffer << file.rdbuf();
   path_ = path;
-  text.setText(s.str());
+  text.setText(buffer.str());
   text.setFoldSyntax(FoldSyntax::C);  // braces: the objects of the JSON fold
   error_.clear();
   dirty_ = false;
   // a file that does not read opens as text, to be mended there
-  if (!p_.fromJson(s.str(), path, &error_)) asText_ = true;
-  includeText_ = joinLines(p_.includeDirs);
+  if (!project_.fromJson(buffer.str(), path, &error_)) asText_ = true;
+  includeText_ = joinLines(project_.includeDirs);
   return true;
 }
 
-bool ProjectForm::showText(TextEditor& text, bool on) {
-  if (on == asText_) return true;
-  if (on) {
-    if (dirty_) text.replaceText(p_.toJson());  // undo in the text goes back to the file's
+bool ProjectForm::showText(TextEditor& text, bool show) {
+  if (show == asText_) return true;
+  if (show) {
+    if (dirty_) text.replaceText(project_.toJson());  // undo in the text goes back to the file's
     asText_ = true;
     return true;
   }
-  Project q;
-  if (!q.fromJson(text.text(), path_, &error_)) return false;
-  p_ = q;
-  includeText_ = joinLines(p_.includeDirs);
+  Project parsed;
+  if (!parsed.fromJson(text.text(), path_, &error_)) return false;
+  project_ = parsed;
+  includeText_ = joinLines(project_.includeDirs);
   if (text.dirty()) dirty_ = true;
   error_.clear();
   asText_ = false;
   return true;
 }
 
-bool ProjectForm::contents(TextEditor& text, std::string* out, std::string* error) {
+bool ProjectForm::contents(TextEditor& text, std::string* jsonText, std::string* error) {
   if (!asText_) {
-    *out = p_.toJson();
+    *jsonText = project_.toJson();
     return true;
   }
-  Project q;
-  std::string err;
-  if (!q.fromJson(text.text(), path_, &err)) {
-    if (error) *error = err;
-    error_ = err;
+  Project parsed;
+  std::string parseError;
+  if (!parsed.fromJson(text.text(), path_, &parseError)) {
+    if (error) *error = parseError;
+    error_ = parseError;
     return false;
   }
-  p_ = q;
-  *out = text.text();
-  if (out->empty() || out->back() != '\n') *out += "\n";
+  project_ = parsed;
+  *jsonText = text.text();
+  if (jsonText->empty() || jsonText->back() != '\n') *jsonText += "\n";
   return true;
 }
 
@@ -96,7 +96,7 @@ void ProjectForm::saved(TextEditor& text, const std::string& written) {
   error_.clear();
 }
 
-void ProjectForm::render(TextEditor& text, ImFont* mono, const KnowledgeBase& kb, Toolchain& tc) {
+void ProjectForm::render(TextEditor& text, ImFont* mono, const KnowledgeBase& kb, Toolchain& toolchain) {
   // Form | Text
   ImGui::SetCursorPos(ImVec2(ImGui::GetCursorPosX() + em(6), ImGui::GetCursorPosY() + em(4)));
   if (ImGui::RadioButton(T("Form"), !asText_)) showText(text, false);
@@ -130,21 +130,21 @@ void ProjectForm::render(TextEditor& text, ImFont* mono, const KnowledgeBase& kb
     ImGui::Dummy(ImVec2(0, em(6)));
     ImGui::TextDisabled("%s", title);
   };
-  auto text1 = [&](const char* id, std::string& v, const char* hint = "") {
-    if (ImGui::InputTextWithHint(id, hint, &v)) changed = true;
+  auto text1 = [&](const char* id, std::string& value, const char* hint = "") {
+    if (ImGui::InputTextWithHint(id, hint, &value)) changed = true;
   };
   auto combo = [&](const char* id, const std::string& current, const std::vector<std::pair<std::string, std::string>>& items,
-                   std::string& out) {
+                   std::string& chosen) {
     std::string shown = current;
-    for (auto& [v, l] : items)
-      if (v == current) shown = l;
+    for (auto& [value, label] : items)
+      if (value == current) shown = label;
     if (ImGui::BeginCombo(id, shown.c_str())) {
-      for (auto& [v, l] : items) {
-        if (v.empty() && !l.empty()) {  // a heading
-          ImGui::SeparatorText(l.c_str());
+      for (auto& [value, label] : items) {
+        if (value.empty() && !label.empty()) {  // a heading
+          ImGui::SeparatorText(label.c_str());
           continue;
         }
-        if (ImGui::Selectable(l.c_str(), v == current)) out = v, changed = true;
+        if (ImGui::Selectable(label.c_str(), value == current)) chosen = value, changed = true;
       }
       ImGui::EndCombo();
     }
@@ -156,83 +156,83 @@ void ProjectForm::render(TextEditor& text, ImFont* mono, const KnowledgeBase& kb
     ImGui::TableSetupColumn("field", ImGuiTableColumnFlags_WidthStretch);
     section(T("Project"));
     row(T("Name"), nullptr);
-    text1("##name", p_.name);
+    text1("##name", project_.name);
     row(T("Programming language"), nullptr);
     {
-      std::string lang = languageId(p_.language);
-      combo("##lang", lang, {{"dasm", T("Assembler (DASM)")}, {"batari-basic", T("batari Basic")}, {"elf-c", T("C for ELF (vcsLib)")}}, lang);
-      p_.language = languageFromId(lang);
+      std::string languageValue = languageId(project_.language);
+      combo("##lang", languageValue, {{"dasm", T("Assembler (DASM)")}, {"batari-basic", T("batari Basic")}, {"elf-c", T("C for ELF (vcsLib)")}}, languageValue);
+      project_.language = languageFromId(languageValue);
     }
     row(T("Main source"), T("The file the build starts from, relative to the project."));
-    text1("##main", p_.main);
+    text1("##main", project_.main);
     row(T("ROM"), T("Where the build leaves the ROM, relative to the project. Run and debug open it."));
-    text1("##output", p_.output);
+    text1("##output", project_.output);
 
     section(T("Cartridge and TV"));
     row(T("Format"), nullptr);
     {
       std::vector<std::pair<std::string, std::string>> items = {{"AUTO", T("Detected by the emulator (AUTO)")}};
-      for (auto& [cat, title] : formatCategories()) {
-        std::vector<const CartFormat*> in;
-        for (auto& f : kb.formats())
-          if (f.category == cat) in.push_back(&f);
-        if (in.empty()) continue;
-        std::sort(in.begin(), in.end(), [](auto* a, auto* b) { return naturalLess(a->name, b->name); });
+      for (auto& [category, title] : formatCategories()) {
+        std::vector<const CartFormat*> categoryFormats;
+        for (auto& cartFormat : kb.formats())
+          if (cartFormat.category == category) categoryFormats.push_back(&cartFormat);
+        if (categoryFormats.empty()) continue;
+        std::sort(categoryFormats.begin(), categoryFormats.end(), [](auto* left, auto* right) { return naturalLess(left->name, right->name); });
         items.push_back({"", title});
-        for (auto* f : in) items.push_back({f->id, f->name.find(f->id) != std::string::npos ? f->name : f->id + " - " + f->name});
+        for (auto* cartFormat : categoryFormats) items.push_back({cartFormat->id, cartFormat->name.find(cartFormat->id) != std::string::npos ? cartFormat->name : cartFormat->id + " - " + cartFormat->name});
       }
-      combo("##format", p_.format, items, p_.format);
+      combo("##format", project_.format, items, project_.format);
     }
     row(T("TV standard"), nullptr);
     {
       std::vector<std::pair<std::string, std::string>> items;
-      auto ids = tvStandardsFor(p_.language);
+      auto ids = tvStandardsFor(project_.language);
       ids.push_back("AUTO");
-      if (std::find(ids.begin(), ids.end(), p_.tv) == ids.end()) ids.push_back(p_.tv);
-      for (auto& t : ids) items.push_back({t, tvLabel(t)});
-      combo("##tv", p_.tv, items, p_.tv);
+      if (std::find(ids.begin(), ids.end(), project_.tv) == ids.end()) ids.push_back(project_.tv);
+      for (auto& standard : ids) items.push_back({standard, tvLabel(standard)});
+      combo("##tv", project_.tv, items, project_.tv);
     }
     row(T("Emulator"), T("Its launch options: Build > Emulator options..."));
     {
       std::vector<std::pair<std::string, std::string>> items;
-      for (auto e : {"gopher2600", "stella"}) {
-        Tool* t = tc.get(e);
-        items.push_back({e, t ? t->name : e});
+      for (auto emulatorId : {"gopher2600", "stella"}) {
+        Tool* tool = toolchain.get(emulatorId);
+        items.push_back({emulatorId, tool ? tool->name : emulatorId});
       }
-      combo("##emu", p_.emulator, items, p_.emulator);
+      combo("##emu", project_.emulator, items, project_.emulator);
     }
-    if (p_.language == Language::Dasm) {
+    if (project_.language == Language::Dasm) {
       row(T("Illegal opcodes"), nullptr);
-      std::string il = illegalId(p_.illegal);
-      combo("##illegal", il, {{"allow", T("Allow")}, {"stable-only", T("Stable only")}, {"warn", T("Warn")}, {"forbid", T("Forbid")}}, il);
-      p_.illegal = illegalFromId(il);
+      std::string illegalValue = illegalId(project_.illegal);
+      combo("##illegal", illegalValue, {{"allow", T("Allow")}, {"stable-only", T("Stable only")}, {"warn", T("Warn")}, {"forbid", T("Forbid")}}, illegalValue);
+      project_.illegal = illegalFromId(illegalValue);
     }
 
     section(T("Build"));
     row(T("Build command"), T("A command of the project's own, run in its folder (make, sh build.sh...). With &&, | or ; the system's shell runs it. Empty: VCSIDE runs the tool."));
-    text1("##cmd", p_.buildCommand, p_.language == Language::BatariBasic ? T("(batari Basic)") : p_.language == Language::ElfC ? "make" : T("(DASM)"));
-    if (p_.buildCommand.empty() && p_.language != Language::ElfC) {
-      const char* id = p_.language == Language::BatariBasic ? "bb" : "dasm";
-      Tool* t = tc.get(id);
-      std::string label = F("{0} of the project", {t ? t->name : id});
+    text1("##cmd", project_.buildCommand, project_.language == Language::BatariBasic ? T("(batari Basic)") : project_.language == Language::ElfC ? "make" : T("(DASM)"));
+    if (project_.buildCommand.empty() && project_.language != Language::ElfC) {
+      const char* id = project_.language == Language::BatariBasic ? "bb" : "dasm";
+      Tool* tool = toolchain.get(id);
+      std::string label = F("{0} of the project", {tool ? tool->name : id});
       row(label.c_str(), T("A path to use this project's own copy (a version of its own) instead of the one in Settings > Tools. Relative to the project or absolute."));
-      std::string v = p_.toolPaths.count(id) ? p_.toolPaths[id] : "";
-      std::string hint = t && t->found() ? F("Settings > Tools: {0}", {t->path}) : std::string(T("not found in Settings > Tools"));
-      if (ImGui::InputTextWithHint("##tool", hint.c_str(), &v)) {
-        if (v.empty()) p_.toolPaths.erase(id);
-        else p_.toolPaths[id] = v;
+      std::string value = project_.toolPaths.count(id) ? project_.toolPaths[id] : "";
+      std::string hint = tool && tool->found() ? F("Settings > Tools: {0}", {tool->path}) : std::string(T("not found in Settings > Tools"));
+      if (ImGui::InputTextWithHint("##tool", hint.c_str(), &value)) {
+        if (value.empty()) project_.toolPaths.erase(id);
+        else project_.toolPaths[id] = value;
         changed = true;
       }
-      if (!v.empty() && p_.toolPath(tc, id).empty()) {
+      if (!value.empty() && project_.toolPath(toolchain, id).empty()) {
         ImGui::SameLine();
         ImGui::TextColored(theme::colv(theme::Role::MsgError), "%s", T("not found"));
       }
-      if (p_.language == Language::Dasm) {
+      if (project_.language == Language::Dasm) {
         row(T("DASM arguments"), T("Added to DASM's command line, e.g. -DPAL=1 to set a symbol."));
-        text1("##flags", p_.buildFlags, "-DPAL=1");
+        text1("##flags", project_.buildFlags, "-DPAL=1");
         row(T("Include folders"), T("One per line, relative to the project: DASM looks for include and incbin files in them."));
         if (ImGui::InputTextMultiline("##inc", &includeText_, ImVec2(fieldW, ImGui::GetTextLineHeight() * 3.6f))) {
-          p_.includeDirs = splitLines(includeText_);
+          project_.includeDirs = splitLines(includeText_);
           changed = true;
         }
       }
@@ -240,14 +240,14 @@ void ProjectForm::render(TextEditor& text, ImFont* mono, const KnowledgeBase& kb
 
     section(T("Space report"));
     row(T("Warn when fuller than"), T("A bank or a RAM area fuller than this gets a warning."));
-    if (ImGui::SliderInt("##warn", &p_.spaceWarnPercent, 50, 100, "%d %%")) changed = true;
+    if (ImGui::SliderInt("##warn", &project_.spaceWarnPercent, 50, 100, "%d %%")) changed = true;
     row(T("Bytes kept for the stack"), T("Bytes of the 2600's RAM that the RAM count leaves free for the stack."));
-    if (ImGui::SliderInt("##stack", &p_.stackReserve, 0, 32)) changed = true;
+    if (ImGui::SliderInt("##stack", &project_.stackReserve, 0, 32)) changed = true;
     ImGui::EndTable();
   }
-  if (!p_.otherKeys.empty()) {
+  if (!project_.otherKeys.empty()) {
     std::string keys;
-    for (auto& [k, v] : p_.otherKeys) keys += (keys.empty() ? "" : ", ") + k;
+    for (auto& [key, value] : project_.otherKeys) keys += (keys.empty() ? "" : ", ") + key;
     ImGui::Dummy(ImVec2(0, em(6)));
     ImGui::TextDisabled("%s", F("Also in the file (kept as it is): {0}", {keys}).c_str());
   }

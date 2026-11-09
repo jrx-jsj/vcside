@@ -31,11 +31,11 @@ Tv tvFromProject(const std::string& tv) {
 // cool on odd ones) and leaves hues 0, 1, 14 and 15 grey; SECAM ignores the hue and
 // gives one of eight fixed colours per luminance.
 static uint32_t yiq(double y, double angleDeg, double sat) {
-  double a = angleDeg * 3.14159265358979 / 180.0;
-  double i = sat * std::cos(a), q = sat * std::sin(a);
-  double c[3] = {y + 0.956 * i + 0.621 * q, y - 0.272 * i - 0.647 * q, y - 1.106 * i + 1.703 * q};
+  double angle = angleDeg * 3.14159265358979 / 180.0;
+  double i = sat * std::cos(angle), q = sat * std::sin(angle);
+  double channels[3] = {y + 0.956 * i + 0.621 * q, y - 0.272 * i - 0.647 * q, y - 1.106 * i + 1.703 * q};
   uint32_t out = 0;
-  for (double v : c) out = out << 8 | (uint32_t)std::lround(std::clamp(v, 0.0, 1.0) * 255);
+  for (double value : channels) out = out << 8 | (uint32_t)std::lround(std::clamp(value, 0.0, 1.0) * 255);
   return out;
 }
 
@@ -53,113 +53,113 @@ uint32_t rgb(Tv tv, int colour) {
 }
 
 std::string hexColour(int colour) {
-  char b[8];
-  std::snprintf(b, sizeof b, "$%02X", colour & 0xFE);
-  return b;
+  char buffer[8];
+  std::snprintf(buffer, sizeof buffer, "$%02X", colour & 0xFE);
+  return buffer;
 }
 
 // ---------------------------------------------------------------------------
 // Sprites
 
-const char* objName(Obj o) {
-  static const char* n[kObjects] = {"P0", "P1", "M0", "M1", "BL", "P2", "P3", "P4", "P5", "P6",
+const char* objName(Obj object) {
+  static const char* names[kObjects] = {"P0", "P1", "M0", "M1", "BL", "P2", "P3", "P4", "P5", "P6",
                                     "P7", "P8", "P9", "P10", "P11", "P12", "P13", "P14", "P15", "P16"};
-  return n[(int)o];
+  return names[(int)object];
 }
-bool isPlayer(Obj o) { return o == Obj::P0 || o == Obj::P1 || (int)o >= (int)Obj::P2; }
-int playerNumber(Obj o) { return o == Obj::P0 ? 0 : o == Obj::P1 ? 1 : (int)o >= (int)Obj::P2 ? (int)o - (int)Obj::P2 + 2 : -1; }
-Obj playerObj(int n) { return n == 0 ? Obj::P0 : n == 1 ? Obj::P1 : (Obj)((int)Obj::P2 + n - 2); }
-const char* colourRegister(Obj o) {
-  return o == Obj::P0 || o == Obj::M0 ? "COLUP0" : o == Obj::BL ? "COLUPF" : "COLUP1";
+bool isPlayer(Obj object) { return object == Obj::P0 || object == Obj::P1 || (int)object >= (int)Obj::P2; }
+int playerNumber(Obj object) { return object == Obj::P0 ? 0 : object == Obj::P1 ? 1 : (int)object >= (int)Obj::P2 ? (int)object - (int)Obj::P2 + 2 : -1; }
+Obj playerObj(int number) { return number == 0 ? Obj::P0 : number == 1 ? Obj::P1 : (Obj)((int)Obj::P2 + number - 2); }
+const char* colourRegister(Obj object) {
+  return object == Obj::P0 || object == Obj::M0 ? "COLUP0" : object == Obj::BL ? "COLUPF" : "COLUP1";
 }
-static int objIndex(Obj o) { return (int)o; }
+static int objIndex(Obj object) { return (int)object; }
 
 bool Layer::pixel(int frame, int row, int x) const {
   if (frame < 0 || frame >= (int)bits.size() || row < 0 || row >= (int)bits[frame].size() || x < 0 || x >= width()) return false;
-  uint8_t v = bits[frame][row];
-  if (!isPlayer(obj)) return v != 0;
-  int b = x / size;
-  if (reflect) b = 7 - b;
-  return (v >> (7 - b)) & 1;
+  uint8_t rowValue = bits[frame][row];
+  if (!isPlayer(obj)) return rowValue != 0;
+  int bitIndex = x / size;
+  if (reflect) bitIndex = 7 - bitIndex;
+  return (rowValue >> (7 - bitIndex)) & 1;
 }
 
 int Layer::colour(int frame, int row) const {
   if (frame < 0 || frame >= (int)colours.size()) return 0x0E;
-  for (int r = std::min(row, (int)colours[frame].size() - 1); r >= 0; r--)
-    if (colours[frame][r] >= 0) return colours[frame][r];
+  for (int i = std::min(row, (int)colours[frame].size() - 1); i >= 0; i--)
+    if (colours[frame][i] >= 0) return colours[frame][i];
   return 0x0E;
 }
 
-void Layer::resize(int frames, int h) {
-  height = std::max(1, h);
+void Layer::resize(int frames, int newHeight) {
+  height = std::max(1, newHeight);
   bits.resize(frames);
   colours.resize(frames);
-  for (auto& f : bits) f.resize(height, 0);
-  for (auto& f : colours) f.resize(height, -1);
+  for (auto& frameRows : bits) frameRows.resize(height, 0);
+  for (auto& frameRows : colours) frameRows.resize(height, -1);
 }
 
 int Sprite::phases() const {
-  int n = 1;
-  for (auto& l : layers) n = std::max(n, l.phase + 1);
-  return n;
+  int count = 1;
+  for (auto& layer : layers) count = std::max(count, layer.phase + 1);
+  return count;
 }
 
-void Sprite::setFrames(int n) {
-  frames = std::max(1, n);
-  for (auto& l : layers) l.resize(frames, l.height);
+void Sprite::setFrames(int count) {
+  frames = std::max(1, count);
+  for (auto& layer : layers) layer.resize(frames, layer.height);
 }
 
 void Sprite::insertFrame(int at, int copyOf) {
   at = std::clamp(at, 0, frames);
-  for (auto& l : layers) {
-    l.resize(frames, l.height);
-    std::vector<uint8_t> b(l.height, 0);
-    std::vector<int> c(l.height, -1);
-    if (copyOf >= 0 && copyOf < frames) b = l.bits[copyOf], c = l.colours[copyOf];
-    l.bits.insert(l.bits.begin() + at, b);
-    l.colours.insert(l.colours.begin() + at, c);
+  for (auto& layer : layers) {
+    layer.resize(frames, layer.height);
+    std::vector<uint8_t> frameBits(layer.height, 0);
+    std::vector<int> frameColours(layer.height, -1);
+    if (copyOf >= 0 && copyOf < frames) frameBits = layer.bits[copyOf], frameColours = layer.colours[copyOf];
+    layer.bits.insert(layer.bits.begin() + at, frameBits);
+    layer.colours.insert(layer.colours.begin() + at, frameColours);
   }
-  for (auto& an : animations)
-    for (auto& st : an.steps)
-      if (st.frame >= at) st.frame++;
+  for (auto& animation : animations)
+    for (auto& step : animation.steps)
+      if (step.frame >= at) step.frame++;
   frames++;
 }
 
 int Animation::length() const {
-  int n = 0;
-  for (auto& st : steps) n += std::max(1, st.ticks);
-  return n;
+  int total = 0;
+  for (auto& step : steps) total += std::max(1, step.ticks);
+  return total;
 }
 
-int Sprite::frameAt(const Animation& a, int tick) const {
-  if (a.steps.empty()) return 0;
-  int len = a.length();
-  tick = a.loop ? tick % len : std::min(tick, len - 1);
-  for (auto& st : a.steps) {
-    if (tick < std::max(1, st.ticks)) return std::clamp(st.frame, 0, frames - 1);
-    tick -= std::max(1, st.ticks);
+int Sprite::frameAt(const Animation& animation, int tick) const {
+  if (animation.steps.empty()) return 0;
+  int totalTicks = animation.length();
+  tick = animation.loop ? tick % totalTicks : std::min(tick, totalTicks - 1);
+  for (auto& step : animation.steps) {
+    if (tick < std::max(1, step.ticks)) return std::clamp(step.frame, 0, frames - 1);
+    tick -= std::max(1, step.ticks);
   }
-  return std::clamp(a.steps.back().frame, 0, frames - 1);
+  return std::clamp(animation.steps.back().frame, 0, frames - 1);
 }
 
-void Sprite::swapFrames(int a, int b) {
-  if (a < 0 || b < 0 || a >= frames || b >= frames || a == b) return;
-  for (auto& l : layers) std::swap(l.bits[a], l.bits[b]), std::swap(l.colours[a], l.colours[b]);
-  for (auto& an : animations)
-    for (auto& st : an.steps) st.frame = st.frame == a ? b : st.frame == b ? a : st.frame;
+void Sprite::swapFrames(int first, int second) {
+  if (first < 0 || second < 0 || first >= frames || second >= frames || first == second) return;
+  for (auto& layer : layers) std::swap(layer.bits[first], layer.bits[second]), std::swap(layer.colours[first], layer.colours[second]);
+  for (auto& animation : animations)
+    for (auto& step : animation.steps) step.frame = step.frame == first ? second : step.frame == second ? first : step.frame;
 }
 
 void Sprite::removeFrame(int at) {
   if (frames <= 1 || at < 0 || at >= frames) return;
-  for (auto& an : animations) {
-    an.steps.erase(std::remove_if(an.steps.begin(), an.steps.end(), [&](const AnimStep& st) { return st.frame == at; }), an.steps.end());
-    for (auto& st : an.steps)
-      if (st.frame > at) st.frame--;
+  for (auto& animation : animations) {
+    animation.steps.erase(std::remove_if(animation.steps.begin(), animation.steps.end(), [&](const AnimStep& step) { return step.frame == at; }), animation.steps.end());
+    for (auto& step : animation.steps)
+      if (step.frame > at) step.frame--;
   }
-  for (auto& l : layers) {
-    l.resize(frames, l.height);
-    l.bits.erase(l.bits.begin() + at);
-    l.colours.erase(l.colours.begin() + at);
+  for (auto& layer : layers) {
+    layer.resize(frames, layer.height);
+    layer.bits.erase(layer.bits.begin() + at);
+    layer.colours.erase(layer.colours.begin() + at);
   }
   frames--;
 }
@@ -167,207 +167,207 @@ void Sprite::removeFrame(int at) {
 // ---------------------------------------------------------------------------
 // Playfields
 
-void pfBit(int j, int* reg, int* bit) {
-  if (j < 4) *reg = 0, *bit = 4 + j;            // PF0: bits 4-7, left to right
-  else if (j < 12) *reg = 1, *bit = 7 - (j - 4); // PF1: bits 7-0
-  else *reg = 2, *bit = j - 12;                  // PF2: bits 0-7
+void pfBit(int column, int* registerIndex, int* bitIndex) {
+  if (column < 4) *registerIndex = 0, *bitIndex = 4 + column;            // PF0: bits 4-7, left to right
+  else if (column < 12) *registerIndex = 1, *bitIndex = 7 - (column - 4); // PF1: bits 7-0
+  else *registerIndex = 2, *bitIndex = column - 12;                  // PF2: bits 0-7
 }
 
-bool Playfield::pixel(int row, int col) const {
-  if (row < 0 || row >= (int)rows.size() || col < 0 || col >= 40) return false;
-  const PfRow& r = rows[row];
-  if (col >= 20 && !r.asymmetric) col = r.mode == PfMode::Mirror ? 39 - col : col - 20;
-  return (r.bits >> col) & 1;
+bool Playfield::pixel(int row, int column) const {
+  if (row < 0 || row >= (int)rows.size() || column < 0 || column >= 40) return false;
+  const PfRow& pfRow = rows[row];
+  if (column >= 20 && !pfRow.asymmetric) column = pfRow.mode == PfMode::Mirror ? 39 - column : column - 20;
+  return (pfRow.bits >> column) & 1;
 }
 
 void Playfield::setAsymmetric(int row, bool on) {
   if (row < 0 || row >= (int)rows.size() || rows[row].asymmetric == on) return;
-  PfRow& r = rows[row];
+  PfRow& pfRow = rows[row];
   if (on) {
     uint64_t right = 0;
-    for (int c = 20; c < 40; c++)
-      if (pixel(row, c)) right |= 1ull << c;
-    r.bits = (r.bits & 0xFFFFFull) | right;
+    for (int column = 20; column < 40; column++)
+      if (pixel(row, column)) right |= 1ull << column;
+    pfRow.bits = (pfRow.bits & 0xFFFFFull) | right;
   } else {
-    r.bits &= 0xFFFFFull;
+    pfRow.bits &= 0xFFFFFull;
   }
-  r.asymmetric = on;
+  pfRow.asymmetric = on;
 }
 
-void Playfield::setPixel(int row, int col, bool on) {
-  if (row < 0 || row >= (int)rows.size() || col < 0 || col >= 40) return;
-  if (col >= 20) setAsymmetric(row, true);
-  uint64_t m = 1ull << col;
-  rows[row].bits = on ? rows[row].bits | m : rows[row].bits & ~m;
+void Playfield::setPixel(int row, int column, bool on) {
+  if (row < 0 || row >= (int)rows.size() || column < 0 || column >= 40) return;
+  if (column >= 20) setAsymmetric(row, true);
+  uint64_t mask = 1ull << column;
+  rows[row].bits = on ? rows[row].bits | mask : rows[row].bits & ~mask;
 }
 
 int Playfield::pfAt(int row) const {
-  for (int r = std::min(row, (int)rows.size() - 1); r >= 0; r--)
-    if (rows[r].pf >= 0) return rows[r].pf;
+  for (int i = std::min(row, (int)rows.size() - 1); i >= 0; i--)
+    if (rows[i].pf >= 0) return rows[i].pf;
   return pfColour;
 }
 int Playfield::bkAt(int row) const {
-  for (int r = std::min(row, (int)rows.size() - 1); r >= 0; r--)
-    if (rows[r].bk >= 0) return rows[r].bk;
+  for (int i = std::min(row, (int)rows.size() - 1); i >= 0; i--)
+    if (rows[i].bk >= 0) return rows[i].bk;
   return bkColour;
 }
 
 void Playfield::registers(int row, uint8_t left[3], uint8_t right[3]) const {
   for (int i = 0; i < 3; i++) left[i] = right[i] = 0;
-  int reg, bit;
+  int registerIndex, bitIndex;
   for (int j = 0; j < 20; j++)
-    if (pixel(row, j)) pfBit(j, &reg, &bit), left[reg] |= 1 << bit;
-  const PfRow& r = rows[row];
-  for (int c = 20; c < 40; c++) {
-    int j = r.mode == PfMode::Mirror ? 39 - c : c - 20;
-    if (pixel(row, c)) pfBit(j, &reg, &bit), right[reg] |= 1 << bit;
+    if (pixel(row, j)) pfBit(j, &registerIndex, &bitIndex), left[registerIndex] |= 1 << bitIndex;
+  const PfRow& pfRow = rows[row];
+  for (int column = 20; column < 40; column++) {
+    int sourceColumn = pfRow.mode == PfMode::Mirror ? 39 - column : column - 20;
+    if (pixel(row, column)) pfBit(sourceColumn, &registerIndex, &bitIndex), right[registerIndex] |= 1 << bitIndex;
   }
 }
 
 // ---------------------------------------------------------------------------
 // JSON. Rows are "X" and "." so the file reads (and diffs) as a picture.
 
-static std::string rowString(uint64_t bits, int n, bool msbFirst) {
-  std::string s;
-  for (int i = 0; i < n; i++) s += ((bits >> (msbFirst ? n - 1 - i : i)) & 1) ? 'X' : '.';
-  return s;
+static std::string rowString(uint64_t bits, int count, bool msbFirst) {
+  std::string text;
+  for (int i = 0; i < count; i++) text += ((bits >> (msbFirst ? count - 1 - i : i)) & 1) ? 'X' : '.';
+  return text;
 }
-static uint64_t rowBits(const std::string& s, bool msbFirst) {
-  uint64_t v = 0;
-  int n = (int)s.size();
-  for (int i = 0; i < n; i++)
-    if (s[i] == 'X' || s[i] == 'x' || s[i] == '1' || s[i] == '#') v |= 1ull << (msbFirst ? n - 1 - i : i);
-  return v;
+static uint64_t rowBits(const std::string& text, bool msbFirst) {
+  uint64_t value = 0;
+  int count = (int)text.size();
+  for (int i = 0; i < count; i++)
+    if (text[i] == 'X' || text[i] == 'x' || text[i] == '1' || text[i] == '#') value |= 1ull << (msbFirst ? count - 1 - i : i);
+  return value;
 }
 
-std::string toJson(const Asset& a) {
-  json j;
-  j["vcsgfx"] = 1;
-  if (!a.kernel.empty()) j["kernel"] = a.kernel;
-  if (a.split != Asset::Split::One) j["split"] = a.split == Asset::Split::Each ? "each" : "group";
-  j["sprites"] = json::array();
-  for (auto& s : a.sprites) {
-    json js = {{"name", s.name}, {"frames", s.frames}, {"line_height", s.lineHeight}, {"frame_ticks", s.frameTicks}};
-    if (s.background) js["background"] = s.background;
-    if (!s.group.empty()) js["group"] = s.group;
-    js["layers"] = json::array();
-    for (auto& l : s.layers) {
-      json jl = {{"object", objName(l.obj)}, {"name", l.name}, {"dx", l.dx},     {"dy", l.dy},
-                 {"size", l.size},           {"reflect", l.reflect}, {"phase", l.phase}, {"height", l.height}};
-      jl["frames"] = json::array();
-      for (int f = 0; f < (int)l.bits.size(); f++) {
+std::string toJson(const Asset& asset) {
+  json document;
+  document["vcsgfx"] = 1;
+  if (!asset.kernel.empty()) document["kernel"] = asset.kernel;
+  if (asset.split != Asset::Split::One) document["split"] = asset.split == Asset::Split::Each ? "each" : "group";
+  document["sprites"] = json::array();
+  for (auto& sprite : asset.sprites) {
+    json spriteJson = {{"name", sprite.name}, {"frames", sprite.frames}, {"line_height", sprite.lineHeight}, {"frame_ticks", sprite.frameTicks}};
+    if (sprite.background) spriteJson["background"] = sprite.background;
+    if (!sprite.group.empty()) spriteJson["group"] = sprite.group;
+    spriteJson["layers"] = json::array();
+    for (auto& layer : sprite.layers) {
+      json layerJson = {{"object", objName(layer.obj)}, {"name", layer.name}, {"dx", layer.dx},     {"dy", layer.dy},
+                 {"size", layer.size},           {"reflect", layer.reflect}, {"phase", layer.phase}, {"height", layer.height}};
+      layerJson["frames"] = json::array();
+      for (int frame = 0; frame < (int)layer.bits.size(); frame++) {
         json rows = json::array();
-        for (auto b : l.bits[f]) rows.push_back(rowString(b, isPlayer(l.obj) ? 8 : 1, true));
-        jl["frames"].push_back({{"rows", rows}, {"colours", f < (int)l.colours.size() ? l.colours[f] : std::vector<int>{}}});
+        for (auto rowValue : layer.bits[frame]) rows.push_back(rowString(rowValue, isPlayer(layer.obj) ? 8 : 1, true));
+        layerJson["frames"].push_back({{"rows", rows}, {"colours", frame < (int)layer.colours.size() ? layer.colours[frame] : std::vector<int>{}}});
       }
-      js["layers"].push_back(jl);
+      spriteJson["layers"].push_back(layerJson);
     }
-    if (!s.animations.empty()) {
-      js["animations"] = json::array();
-      for (auto& an : s.animations) {
-        json ja = {{"name", an.name}, {"loop", an.loop}};
-        ja["steps"] = json::array();
-        for (auto& st : an.steps) ja["steps"].push_back({st.frame, st.ticks});
-        if (!an.basicTimer.empty() || !an.basicStep.empty()) ja["basic_vars"] = {an.basicTimer, an.basicStep};
-        js["animations"].push_back(ja);
+    if (!sprite.animations.empty()) {
+      spriteJson["animations"] = json::array();
+      for (auto& animation : sprite.animations) {
+        json animationJson = {{"name", animation.name}, {"loop", animation.loop}};
+        animationJson["steps"] = json::array();
+        for (auto& step : animation.steps) animationJson["steps"].push_back({step.frame, step.ticks});
+        if (!animation.basicTimer.empty() || !animation.basicStep.empty()) animationJson["basic_vars"] = {animation.basicTimer, animation.basicStep};
+        spriteJson["animations"].push_back(animationJson);
       }
     }
-    j["sprites"].push_back(js);
+    document["sprites"].push_back(spriteJson);
   }
-  j["playfields"] = json::array();
-  for (auto& p : a.playfields) {
-    json jp = {{"name", p.name}, {"line_height", p.lineHeight}, {"pf", p.pfColour}, {"bk", p.bkColour}};
-    if (!p.group.empty()) jp["group"] = p.group;
-    jp["rows"] = json::array();
-    for (auto& r : p.rows) {
-      json jr = {{"bits", rowString(r.bits, r.asymmetric ? 40 : 20, false)}, {"mode", r.mode == PfMode::Mirror ? "mirror" : "repeat"}};
-      if (r.pf >= 0) jr["pf"] = r.pf;
-      if (r.bk >= 0) jr["bk"] = r.bk;
-      jp["rows"].push_back(jr);
+  document["playfields"] = json::array();
+  for (auto& playfield : asset.playfields) {
+    json playfieldJson = {{"name", playfield.name}, {"line_height", playfield.lineHeight}, {"pf", playfield.pfColour}, {"bk", playfield.bkColour}};
+    if (!playfield.group.empty()) playfieldJson["group"] = playfield.group;
+    playfieldJson["rows"] = json::array();
+    for (auto& row : playfield.rows) {
+      json rowJson = {{"bits", rowString(row.bits, row.asymmetric ? 40 : 20, false)}, {"mode", row.mode == PfMode::Mirror ? "mirror" : "repeat"}};
+      if (row.pf >= 0) rowJson["pf"] = row.pf;
+      if (row.bk >= 0) rowJson["bk"] = row.bk;
+      playfieldJson["rows"].push_back(rowJson);
     }
-    j["playfields"].push_back(jp);
+    document["playfields"].push_back(playfieldJson);
   }
-  return j.dump(1, ' ') + "\n";
+  return document.dump(1, ' ') + "\n";
 }
 
-bool fromJson(const std::string& text, Asset* a, std::string* error) {
+bool fromJson(const std::string& text, Asset* asset, std::string* error) {
   try {
-    json j = json::parse(text);
+    json document = json::parse(text);
     Asset out;
-    out.kernel = j.value("kernel", "");
-    std::string split = j.value("split", "");
+    out.kernel = document.value("kernel", "");
+    std::string split = document.value("split", "");
     out.split = split == "each" ? Asset::Split::Each : split == "group" ? Asset::Split::Group : Asset::Split::One;
-    for (auto& js : j.value("sprites", json::array())) {
-      Sprite s;
-      s.name = js.value("name", s.name);
-      s.group = js.value("group", "");
-      s.frames = std::max(1, js.value("frames", 1));
-      s.lineHeight = std::clamp(js.value("line_height", 2), 1, 8);
-      s.frameTicks = std::clamp(js.value("frame_ticks", 8), 1, 60);
-      s.background = js.value("background", 0) & 0xFE;
-      for (auto& jl : js.value("layers", json::array())) {
-        Layer l;
-        std::string o = jl.value("object", "P0");
-        for (int k = 0; k < kObjects; k++)
-          if (o == objName((Obj)k)) l.obj = (Obj)k;
-        l.name = jl.value("name", "");
-        l.dx = jl.value("dx", 0);
-        l.dy = jl.value("dy", 0);
-        l.size = jl.value("size", 1);
-        l.reflect = jl.value("reflect", false);
-        l.phase = std::clamp(jl.value("phase", 0), 0, 3);
-        l.resize(s.frames, std::clamp(jl.value("height", 8), 1, 255));
-        int f = 0;
-        for (auto& jf : jl.value("frames", json::array())) {
-          if (f >= s.frames) break;
-          int r = 0;
-          for (auto& row : jf.value("rows", json::array()))
-            if (r < l.height) l.bits[f][r++] = (uint8_t)rowBits(row.get<std::string>(), true);
-          r = 0;
-          for (auto& c : jf.value("colours", json::array()))
-            if (r < l.height) l.colours[f][r++] = c.get<int>();
-          f++;
+    for (auto& spriteJson : document.value("sprites", json::array())) {
+      Sprite sprite;
+      sprite.name = spriteJson.value("name", sprite.name);
+      sprite.group = spriteJson.value("group", "");
+      sprite.frames = std::max(1, spriteJson.value("frames", 1));
+      sprite.lineHeight = std::clamp(spriteJson.value("line_height", 2), 1, 8);
+      sprite.frameTicks = std::clamp(spriteJson.value("frame_ticks", 8), 1, 60);
+      sprite.background = spriteJson.value("background", 0) & 0xFE;
+      for (auto& layerJson : spriteJson.value("layers", json::array())) {
+        Layer layer;
+        std::string objectName = layerJson.value("object", "P0");
+        for (int objectIndex = 0; objectIndex < kObjects; objectIndex++)
+          if (objectName == objName((Obj)objectIndex)) layer.obj = (Obj)objectIndex;
+        layer.name = layerJson.value("name", "");
+        layer.dx = layerJson.value("dx", 0);
+        layer.dy = layerJson.value("dy", 0);
+        layer.size = layerJson.value("size", 1);
+        layer.reflect = layerJson.value("reflect", false);
+        layer.phase = std::clamp(layerJson.value("phase", 0), 0, 3);
+        layer.resize(sprite.frames, std::clamp(layerJson.value("height", 8), 1, 255));
+        int frameIndex = 0;
+        for (auto& frameJson : layerJson.value("frames", json::array())) {
+          if (frameIndex >= sprite.frames) break;
+          int rowIndex = 0;
+          for (auto& row : frameJson.value("rows", json::array()))
+            if (rowIndex < layer.height) layer.bits[frameIndex][rowIndex++] = (uint8_t)rowBits(row.get<std::string>(), true);
+          rowIndex = 0;
+          for (auto& colour : frameJson.value("colours", json::array()))
+            if (rowIndex < layer.height) layer.colours[frameIndex][rowIndex++] = colour.get<int>();
+          frameIndex++;
         }
-        s.layers.push_back(l);
+        sprite.layers.push_back(layer);
       }
-      for (auto& ja : js.value("animations", json::array())) {
-        Animation an;
-        an.name = ja.value("name", an.name);
-        an.loop = ja.value("loop", true);
-        for (auto& st : ja.value("steps", json::array()))
-          if (st.is_array() && st.size() == 2)
-            an.steps.push_back({std::clamp(st[0].get<int>(), 0, s.frames - 1), std::clamp(st[1].get<int>(), 1, 255)});
-        auto vars = ja.value("basic_vars", json::array());
-        if (vars.size() == 2) an.basicTimer = vars[0].get<std::string>(), an.basicStep = vars[1].get<std::string>();
-        s.animations.push_back(an);
+      for (auto& animationJson : spriteJson.value("animations", json::array())) {
+        Animation animation;
+        animation.name = animationJson.value("name", animation.name);
+        animation.loop = animationJson.value("loop", true);
+        for (auto& stepJson : animationJson.value("steps", json::array()))
+          if (stepJson.is_array() && stepJson.size() == 2)
+            animation.steps.push_back({std::clamp(stepJson[0].get<int>(), 0, sprite.frames - 1), std::clamp(stepJson[1].get<int>(), 1, 255)});
+        auto vars = animationJson.value("basic_vars", json::array());
+        if (vars.size() == 2) animation.basicTimer = vars[0].get<std::string>(), animation.basicStep = vars[1].get<std::string>();
+        sprite.animations.push_back(animation);
       }
-      out.sprites.push_back(s);
+      out.sprites.push_back(sprite);
     }
-    for (auto& jp : j.value("playfields", json::array())) {
-      Playfield p;
-      p.name = jp.value("name", p.name);
-      p.group = jp.value("group", "");
-      p.lineHeight = std::clamp(jp.value("line_height", 8), 1, 64);
-      p.pfColour = jp.value("pf", p.pfColour);
-      p.bkColour = jp.value("bk", p.bkColour);
-      p.rows.clear();
-      for (auto& jr : jp.value("rows", json::array())) {
-        PfRow r;
-        std::string b = jr.value("bits", "");
-        r.bits = rowBits(b, false);
-        r.asymmetric = b.size() > 20;
-        r.mode = jr.value("mode", "mirror") == "repeat" ? PfMode::Repeat : PfMode::Mirror;
-        r.pf = jr.value("pf", -1);
-        r.bk = jr.value("bk", -1);
-        p.rows.push_back(r);
+    for (auto& playfieldJson : document.value("playfields", json::array())) {
+      Playfield playfield;
+      playfield.name = playfieldJson.value("name", playfield.name);
+      playfield.group = playfieldJson.value("group", "");
+      playfield.lineHeight = std::clamp(playfieldJson.value("line_height", 8), 1, 64);
+      playfield.pfColour = playfieldJson.value("pf", playfield.pfColour);
+      playfield.bkColour = playfieldJson.value("bk", playfield.bkColour);
+      playfield.rows.clear();
+      for (auto& rowJson : playfieldJson.value("rows", json::array())) {
+        PfRow pfRow;
+        std::string bitsText = rowJson.value("bits", "");
+        pfRow.bits = rowBits(bitsText, false);
+        pfRow.asymmetric = bitsText.size() > 20;
+        pfRow.mode = rowJson.value("mode", "mirror") == "repeat" ? PfMode::Repeat : PfMode::Mirror;
+        pfRow.pf = rowJson.value("pf", -1);
+        pfRow.bk = rowJson.value("bk", -1);
+        playfield.rows.push_back(pfRow);
       }
-      if (p.rows.empty()) p.rows.resize(1);
-      out.playfields.push_back(p);
+      if (playfield.rows.empty()) playfield.rows.resize(1);
+      out.playfields.push_back(playfield);
     }
-    *a = out;
+    *asset = out;
     return true;
-  } catch (const std::exception& e) {
-    if (error) *error = e.what();
+  } catch (const std::exception& exception) {
+    if (error) *error = exception.what();
     return false;
   }
 }
@@ -377,12 +377,12 @@ bool fromJson(const std::string& text, Asset* a, std::string* error) {
 // with batari Basic 1.9 and run in Stella 7.0 (row order, columns, colours), and in the
 // kernels' sources (includes/*.asm, *.h).
 
-const char* kernelId(Kernel k) {
-  static const char* n[] = {"dasm", "standard", "multisprite", "dpc+", "pxe"};
-  return n[(int)k];
+const char* kernelId(Kernel kernel) {
+  static const char* ids[] = {"dasm", "standard", "multisprite", "dpc+", "pxe"};
+  return ids[(int)kernel];
 }
-const char* kernelName(Kernel k) {
-  switch (k) {
+const char* kernelName(Kernel kernel) {
+  switch (kernel) {
     case Kernel::Dasm: return T("assembly (a kernel of one's own)");
     case Kernel::Standard: return T("batari Basic, standard kernel");
     case Kernel::Multisprite: return T("batari Basic, multisprite kernel");
@@ -391,16 +391,16 @@ const char* kernelName(Kernel k) {
   }
   return "";
 }
-bool kernelFromId(const std::string& id, Kernel* k) {
+bool kernelFromId(const std::string& id, Kernel* kernel) {
   for (int i = 0; i < 5; i++)
-    if (id == kernelId((Kernel)i)) return *k = (Kernel)i, true;
+    if (id == kernelId((Kernel)i)) return *kernel = (Kernel)i, true;
   return false;
 }
 
 std::string KernelOptions::text() const {
-  std::string s;
-  auto add = [&](bool on, const char* n) {
-    if (on) s += (s.empty() ? "" : " ") + std::string(n);
+  std::string result;
+  auto add = [&](bool on, const char* name) {
+    if (on) result += (result.empty() ? "" : " ") + std::string(name);
   };
   add(player1colors, "player1colors");
   add(playercolors, "playercolors");
@@ -409,8 +409,8 @@ std::string KernelOptions::text() const {
   add(background, "background");
   add(noBlankLines, "no_blank_lines");
   add(readpaddle, "readpaddle");
-  if (pfres) s += (s.empty() ? "" : ", ") + std::string("pfres ") + std::to_string(pfres);
-  return s;
+  if (pfres) result += (result.empty() ? "" : ", ") + std::string("pfres ") + std::to_string(pfres);
+  return result;
 }
 
 int Profile::players() const {
@@ -422,27 +422,27 @@ int Profile::players() const {
   }
 }
 
-std::string Profile::missing(Obj o) const {
-  int n = playerNumber(o);
-  if (n >= 0) return n < players() ? "" : F("{0} draws {1} players (P0-P{2}).", {kernelName(kernel), std::to_string(players()), std::to_string(players() - 1)});
+std::string Profile::missing(Obj object) const {
+  int number = playerNumber(object);
+  if (number >= 0) return number < players() ? "" : F("{0} draws {1} players (P0-P{2}).", {kernelName(kernel), std::to_string(players()), std::to_string(players() - 1)});
   if (kernel != Kernel::Standard) return "";
   // the standard kernel spends the missiles' time on other things
-  if (o == Obj::M1 && (options.player1colors || options.playercolors)) return T("The kernel option player1colors (or playercolors) uses missile 1's time.");
-  if (o == Obj::M0 && options.playercolors) return T("The kernel option playercolors uses both missiles' time.");
-  if (o == Obj::M0 && (options.noBlankLines || options.readpaddle)) return T("The kernel options no_blank_lines and readpaddle use missile 0's time.");
+  if (object == Obj::M1 && (options.player1colors || options.playercolors)) return T("The kernel option player1colors (or playercolors) uses missile 1's time.");
+  if (object == Obj::M0 && options.playercolors) return T("The kernel option playercolors uses both missiles' time.");
+  if (object == Obj::M0 && (options.noBlankLines || options.readpaddle)) return T("The kernel options no_blank_lines and readpaddle use missile 0's time.");
   return "";
 }
-bool Profile::has(Obj o) const { return missing(o).empty(); }
+bool Profile::has(Obj object) const { return missing(object).empty(); }
 
-bool Profile::rowColours(Obj o) const {
+bool Profile::rowColours(Obj object) const {
   switch (kernel) {
     case Kernel::Dasm: return true;
     case Kernel::Standard:
-      if (o == Obj::P0) return options.playercolors;
-      if (o == Obj::P1) return options.player1colors || options.playercolors;
+      if (object == Obj::P0) return options.playercolors;
+      if (object == Obj::P1) return options.player1colors || options.playercolors;
       return false;
     case Kernel::Multisprite: return false;
-    default: return isPlayer(o);  // DPC+ and PXE: playerNcolor:
+    default: return isPlayer(object);  // DPC+ and PXE: playerNcolor:
   }
 }
 bool Profile::shapedMissiles() const { return kernel == Kernel::Dasm; }
@@ -475,222 +475,222 @@ int Profile::pfRowsMax() const {
   }
 }
 std::string Profile::describe() const {
-  if (kernel == Kernel::Dasm && c) return T("C (a kernel of one's own)");
-  std::string o = kernel == Kernel::Standard ? options.text() : "";
-  return o.empty() ? kernelName(kernel) : std::string(kernelName(kernel)) + " (" + o + ")";
+  if (kernel == Kernel::Dasm && usesC) return T("C (a kernel of one's own)");
+  std::string optionsText = kernel == Kernel::Standard ? options.text() : "";
+  return optionsText.empty() ? kernelName(kernel) : std::string(kernelName(kernel)) + " (" + optionsText + ")";
 }
 
 Profile profileFromBasic(const std::string& source) {
-  Profile p;
-  p.kernel = Kernel::Standard;
-  std::istringstream in(source);
-  for (std::string line; std::getline(in, line);) {
-    std::string l;
-    for (char c : line.substr(0, line.find(';'))) l += (char)std::tolower((unsigned char)c);
-    std::istringstream w(l);
-    std::string a, b;
-    w >> a >> b;
-    if (a == "rem") continue;
-    if (a == "set" && b == "kernel") {
-      std::string k;
-      w >> k;
-      if (k == "multisprite") p.kernel = Kernel::Multisprite;
-      else if (k == "dpc+") p.kernel = Kernel::DPCPlus;
-      else if (k == "pxe") p.kernel = Kernel::PXE;
-    } else if (a == "set" && b == "kernel_options") {
-      for (std::string o; w >> o;) {
-        p.options.player1colors |= o == "player1colors";
-        p.options.playercolors |= o == "playercolors";
-        p.options.pfcolors |= o == "pfcolors";
-        p.options.pfheights |= o == "pfheights";
-        p.options.background |= o == "background" || o == "backgroundchange";
-        p.options.noBlankLines |= o == "no_blank_lines";
-        p.options.readpaddle |= o == "readpaddle";
+  Profile profile;
+  profile.kernel = Kernel::Standard;
+  std::istringstream sourceStream(source);
+  for (std::string line; std::getline(sourceStream, line);) {
+    std::string lowered;
+    for (char character : line.substr(0, line.find(';'))) lowered += (char)std::tolower((unsigned char)character);
+    std::istringstream words(lowered);
+    std::string keyword, argument;
+    words >> keyword >> argument;
+    if (keyword == "rem") continue;
+    if (keyword == "set" && argument == "kernel") {
+      std::string kernelWord;
+      words >> kernelWord;
+      if (kernelWord == "multisprite") profile.kernel = Kernel::Multisprite;
+      else if (kernelWord == "dpc+") profile.kernel = Kernel::DPCPlus;
+      else if (kernelWord == "pxe") profile.kernel = Kernel::PXE;
+    } else if (keyword == "set" && argument == "kernel_options") {
+      for (std::string option; words >> option;) {
+        profile.options.player1colors |= option == "player1colors";
+        profile.options.playercolors |= option == "playercolors";
+        profile.options.pfcolors |= option == "pfcolors";
+        profile.options.pfheights |= option == "pfheights";
+        profile.options.background |= option == "background" || option == "backgroundchange";
+        profile.options.noBlankLines |= option == "no_blank_lines";
+        profile.options.readpaddle |= option == "readpaddle";
       }
-    } else if (a == "const" && b.rfind("pfres", 0) == 0) {
-      size_t eq = l.find('=');
-      if (eq != std::string::npos) p.options.pfres = std::atoi(l.c_str() + eq + 1);
+    } else if (keyword == "const" && argument.rfind("pfres", 0) == 0) {
+      size_t eq = lowered.find('=');
+      if (eq != std::string::npos) profile.options.pfres = std::atoi(lowered.c_str() + eq + 1);
     }
   }
-  return p;
+  return profile;
 }
 
 // ---------------------------------------------------------------------------
 // Warnings
 
 static std::string rowList(const std::vector<int>& rows) {
-  std::string s;
-  for (size_t i = 0; i < rows.size() && i < 8; i++) s += (i ? ", " : "") + std::to_string(rows[i]);
-  if (rows.size() > 8) s += ", …";
-  return s;
+  std::string text;
+  for (size_t i = 0; i < rows.size() && i < 8; i++) text += (i ? ", " : "") + std::to_string(rows[i]);
+  if (rows.size() > 8) text += ", …";
+  return text;
 }
 
-static bool rowHasPixels(const Layer& l, int frame, int row) {
-  return frame < (int)l.bits.size() && row >= 0 && row < (int)l.bits[frame].size() && l.bits[frame][row] != 0;
+static bool rowHasPixels(const Layer& layer, int frame, int row) {
+  return frame < (int)layer.bits.size() && row >= 0 && row < (int)layer.bits[frame].size() && layer.bits[frame][row] != 0;
 }
 
-static bool coloursVary(const Layer& l) {
-  for (int f = 0; f < (int)l.bits.size(); f++)
-    for (int r = 1; r < l.height; r++)
-      if (l.colour(f, r) != l.colour(f, 0)) return true;
+static bool coloursVary(const Layer& layer) {
+  for (int frame = 0; frame < (int)layer.bits.size(); frame++)
+    for (int row = 1; row < layer.height; row++)
+      if (layer.colour(frame, row) != layer.colour(frame, 0)) return true;
   return false;
 }
 
-std::vector<Issue> check(const Sprite& s, const Profile& k) {
+std::vector<Issue> check(const Sprite& sprite, const Profile& profile) {
   std::vector<Issue> out;
-  int phases = s.phases();
+  int phases = sprite.phases();
   // objects the kernel does not draw
   std::set<int> told;
-  for (auto& l : s.layers)
-    if (!k.has(l.obj) && told.insert((int)l.obj).second)
-      out.push_back({Issue::Error, F("{0} is not available: {1}", {objName(l.obj), k.missing(l.obj)})});
+  for (auto& layer : sprite.layers)
+    if (!profile.has(layer.obj) && told.insert((int)layer.obj).second)
+      out.push_back({Issue::Error, F("{0} is not available: {1}", {objName(layer.obj), profile.missing(layer.obj)})});
   // one object per phase
-  for (int p = 0; p < phases; p++) {
+  for (int phase = 0; phase < phases; phase++) {
     int used[kObjects] = {};
-    for (auto& l : s.layers)
-      if (l.phase == p) used[objIndex(l.obj)]++;
-    for (int o = 0; o < kObjects; o++)
-      if (used[o] > 1)
+    for (auto& layer : sprite.layers)
+      if (layer.phase == phase) used[objIndex(layer.obj)]++;
+    for (int objectIndex = 0; objectIndex < kObjects; objectIndex++)
+      if (used[objectIndex] > 1)
         out.push_back({Issue::Error, F("Phase {0} uses {1} in {2} layers: the TIA has only one {1}. Move one of them to another phase.",
-                                       {std::to_string(p + 1), objName((Obj)o), std::to_string(used[o])})});
+                                       {std::to_string(phase + 1), objName((Obj)objectIndex), std::to_string(used[objectIndex])})});
   }
   if (phases > 1) {
     std::vector<int> empty;
-    for (int p = 0; p < phases; p++)
-      if (std::none_of(s.layers.begin(), s.layers.end(), [&](const Layer& l) { return l.phase == p; })) empty.push_back(p + 1);
+    for (int phase = 0; phase < phases; phase++)
+      if (std::none_of(sprite.layers.begin(), sprite.layers.end(), [&](const Layer& layer) { return layer.phase == phase; })) empty.push_back(phase + 1);
     out.push_back({Issue::Warning, F("{0} flicker phases: each layer shows one frame in {0} ({1} Hz on NTSC, {2} Hz on PAL) and flickers.",
                                      {std::to_string(phases), std::to_string(60 / phases), std::to_string(50 / phases)})});
     if (!empty.empty()) out.push_back({Issue::Warning, F("Phases without layers: {0}. The other layers flicker more than they need to.", {rowList(empty)})});
   }
   // animations: names become labels
   std::set<std::string> animNames;
-  for (auto& an : s.animations) {
-    if (an.steps.empty()) out.push_back({Issue::Warning, F("The animation {0} has no steps.", {an.name})});
-    if (!animNames.insert(identifier(an.name)).second)
-      out.push_back({Issue::Error, F("Two animations are called {0}: their labels would clash.", {an.name})});
+  for (auto& animation : sprite.animations) {
+    if (animation.steps.empty()) out.push_back({Issue::Warning, F("The animation {0} has no steps.", {animation.name})});
+    if (!animNames.insert(identifier(animation.name)).second)
+      out.push_back({Issue::Error, F("Two animations are called {0}: their labels would clash.", {animation.name})});
   }
   // the kernels with more players draw them all with the TIA's player 1
-  if (k.players() > 2) {
+  if (profile.players() > 2) {
     bool shared = false;
-    for (size_t a = 0; a < s.layers.size() && !shared; a++)
-      for (size_t b = a + 1; b < s.layers.size() && !shared; b++) {
-        const Layer &la = s.layers[a], &lb = s.layers[b];
-        shared = la.phase == lb.phase && playerNumber(la.obj) >= 1 && playerNumber(lb.obj) >= 1 && la.obj != lb.obj &&
-                 la.dy < lb.dy + lb.height && lb.dy < la.dy + la.height;
+    for (size_t i = 0; i < sprite.layers.size() && !shared; i++)
+      for (size_t j = i + 1; j < sprite.layers.size() && !shared; j++) {
+        const Layer &earlier = sprite.layers[i], &later = sprite.layers[j];
+        shared = earlier.phase == later.phase && playerNumber(earlier.obj) >= 1 && playerNumber(later.obj) >= 1 && earlier.obj != later.obj &&
+                 earlier.dy < later.dy + later.height && later.dy < earlier.dy + earlier.height;
       }
     if (shared)
       out.push_back({Issue::Warning, F("P1 to P{0} are all drawn with the TIA's player 1: where two of them share lines the kernel shows them on alternate frames (they flicker). Put them in different rows, or combine P0 with one of them.",
-                                       {std::to_string(k.players() - 1)})});
+                                       {std::to_string(profile.players() - 1)})});
   }
   // a missile shares its player's colour register
-  for (auto& m : s.layers) {
-    if (m.obj != Obj::M0 && m.obj != Obj::M1) continue;
-    Obj pl = m.obj == Obj::M0 ? Obj::P0 : Obj::P1;
-    for (auto& p : s.layers) {
-      if (p.obj != pl || p.phase != m.phase) continue;
+  for (auto& missile : sprite.layers) {
+    if (missile.obj != Obj::M0 && missile.obj != Obj::M1) continue;
+    Obj playerObject = missile.obj == Obj::M0 ? Obj::P0 : Obj::P1;
+    for (auto& playerLayer : sprite.layers) {
+      if (playerLayer.obj != playerObject || playerLayer.phase != missile.phase) continue;
       std::vector<int> bad;
-      for (int f = 0; f < s.frames; f++)
-        for (int r = 0; r < m.height; r++) {
-          int pr = r + m.dy - p.dy;
-          if (rowHasPixels(m, f, r) && pr >= 0 && pr < p.height && m.colour(f, r) != p.colour(f, pr) &&
-              std::find(bad.begin(), bad.end(), r + m.dy + 1) == bad.end())
-            bad.push_back(r + m.dy + 1);
+      for (int frame = 0; frame < sprite.frames; frame++)
+        for (int row = 0; row < missile.height; row++) {
+          int playerRow = row + missile.dy - playerLayer.dy;
+          if (rowHasPixels(missile, frame, row) && playerRow >= 0 && playerRow < playerLayer.height && missile.colour(frame, row) != playerLayer.colour(frame, playerRow) &&
+              std::find(bad.begin(), bad.end(), row + missile.dy + 1) == bad.end())
+            bad.push_back(row + missile.dy + 1);
         }
       if (!bad.empty())
         out.push_back({Issue::Warning, F("{0} takes the colour of {1} ({2}). On rows {3} they differ: {0} will show {1}'s.",
-                                         {objName(m.obj), objName(pl), colourRegister(pl), rowList(bad)})});
+                                         {objName(missile.obj), objName(playerObject), colourRegister(playerObject), rowList(bad)})});
     }
   }
-  for (auto& b : s.layers)
-    if (b.obj == Obj::BL)
-      out.push_back({Issue::Info, coloursVary(b) ? T("The ball's colour is the playfield's (COLUPF): changing it per row recolours the playfield on those lines.")
+  for (auto& ball : sprite.layers)
+    if (ball.obj == Obj::BL)
+      out.push_back({Issue::Info, coloursVary(ball) ? T("The ball's colour is the playfield's (COLUPF): changing it per row recolours the playfield on those lines.")
                                                  : T("The ball's colour is the playfield's (COLUPF).")});
   // overlaps: the TIA's priority decides, not the layer order
-  for (int p = 0; p < phases; p++) {
+  for (int phase = 0; phase < phases; phase++) {
     bool overlap = false;
-    for (size_t a = 0; a < s.layers.size() && !overlap; a++)
-      for (size_t b = a + 1; b < s.layers.size() && !overlap; b++) {
-        const Layer &la = s.layers[a], &lb = s.layers[b];
-        if (la.phase != p || lb.phase != p || la.obj == lb.obj) continue;
-        for (int f = 0; f < s.frames && !overlap; f++)
-          for (int r = 0; r < la.height && !overlap; r++)
-            for (int x = 0; x < la.width() && !overlap; x++)
-              overlap = la.pixel(f, r, x) && lb.pixel(f, r + la.dy - lb.dy, x + la.dx - lb.dx);
+    for (size_t i = 0; i < sprite.layers.size() && !overlap; i++)
+      for (size_t j = i + 1; j < sprite.layers.size() && !overlap; j++) {
+        const Layer &earlier = sprite.layers[i], &later = sprite.layers[j];
+        if (earlier.phase != phase || later.phase != phase || earlier.obj == later.obj) continue;
+        for (int frame = 0; frame < sprite.frames && !overlap; frame++)
+          for (int row = 0; row < earlier.height && !overlap; row++)
+            for (int x = 0; x < earlier.width() && !overlap; x++)
+              overlap = earlier.pixel(frame, row, x) && later.pixel(frame, row + earlier.dy - later.dy, x + earlier.dx - later.dx);
       }
     if (overlap) {
       out.push_back({Issue::Info, T("Some layers overlap: the TIA draws P0 and M0 over P1 and M1, and those over the ball and playfield (the preview does the same).")});
       break;
     }
   }
-  if (!k.basic()) {
+  if (!profile.basic()) {
     // what the kernel has to write per line
-    for (int p = 0; p < phases; p++) {
+    for (int phase = 0; phase < phases; phase++) {
       int writes = 0;
-      std::set<std::string> regs;
-      for (auto& l : s.layers) {
-        if (l.phase != p) continue;
+      std::set<std::string> registers;
+      for (auto& layer : sprite.layers) {
+        if (layer.phase != phase) continue;
         writes++;
-        if (coloursVary(l) && regs.insert(colourRegister(l.obj)).second) writes++;
+        if (coloursVary(layer) && registers.insert(colourRegister(layer.obj)).second) writes++;
       }
       if (writes > 4)
         out.push_back({Issue::Warning, F("Phase {0} changes {1} registers on the same lines (graphics and colours): about {2} cycles of loads and stores of the 76 a line has. It may need a two-line kernel.",
-                                         {std::to_string(p + 1), std::to_string(writes), std::to_string(writes * 8)})});
+                                         {std::to_string(phase + 1), std::to_string(writes), std::to_string(writes * 8)})});
     }
     return out;
   }
-  for (auto& l : s.layers) {
-    if (isPlayer(l.obj) || !k.has(l.obj)) continue;
-    if (k.kernel == Kernel::Multisprite && l.obj != Obj::BL) {
-      out.push_back({Issue::Warning, F("The multisprite kernel draws {0} one line high: only its position is kept.", {objName(l.obj)})});
+  for (auto& layer : sprite.layers) {
+    if (isPlayer(layer.obj) || !profile.has(layer.obj)) continue;
+    if (profile.kernel == Kernel::Multisprite && layer.obj != Obj::BL) {
+      out.push_back({Issue::Warning, F("The multisprite kernel draws {0} one line high: only its position is kept.", {objName(layer.obj)})});
       continue;
     }
     // batari Basic's missiles and ball are a block: height and width
     bool block = true;
-    for (int f = 0; f < s.frames && block; f++) {
+    for (int frame = 0; frame < sprite.frames && block; frame++) {
       int first = -1, last = -1;
-      for (int r = 0; r < l.height; r++)
-        if (rowHasPixels(l, f, r)) {
-          if (first < 0) first = r;
-          if (last >= 0 && last != r - 1) block = false;
-          last = r;
+      for (int row = 0; row < layer.height; row++)
+        if (rowHasPixels(layer, frame, row)) {
+          if (first < 0) first = row;
+          if (last >= 0 && last != row - 1) block = false;
+          last = row;
         }
-      if (f > 0 && l.bits[f] != l.bits[0]) block = false;
+      if (frame > 0 && layer.bits[frame] != layer.bits[0]) block = false;
     }
     if (!block)
-      out.push_back({Issue::Warning, F("batari Basic draws {0} as a solid block (a height and a width): its shape here is not kept, only its height.", {objName(l.obj)})});
+      out.push_back({Issue::Warning, F("batari Basic draws {0} as a solid block (a height and a width): its shape here is not kept, only its height.", {objName(layer.obj)})});
   }
-  if (k.kernel == Kernel::Standard && k.options.playercolors && !k.options.player1colors)
+  if (profile.kernel == Kernel::Standard && profile.options.playercolors && !profile.options.player1colors)
     out.push_back({Issue::Warning, T("The kernel option playercolors works together with player1colors: `set kernel_options player1colors playercolors`.")});
   if (phases > 1)
     out.push_back({Issue::Warning, T("batari Basic does not alternate the phases by itself: each one is exported on its own, and the program has to switch them every frame.")});
-  for (auto& l : s.layers) {
-    if (!isPlayer(l.obj) || !k.has(l.obj) || !coloursVary(l) || k.rowColours(l.obj)) continue;
-    if (k.kernel == Kernel::Standard)
+  for (auto& layer : sprite.layers) {
+    if (!isPlayer(layer.obj) || !profile.has(layer.obj) || !coloursVary(layer) || profile.rowColours(layer.obj)) continue;
+    if (profile.kernel == Kernel::Standard)
       out.push_back({Issue::Warning, F("{0} changes colour per row, and the program does not set `set kernel_options {1}`: only the first row's colour is kept.",
-                                       {objName(l.obj), l.obj == Obj::P0 ? "playercolors" : "player1colors"})});
+                                       {objName(layer.obj), layer.obj == Obj::P0 ? "playercolors" : "player1colors"})});
     else
-      out.push_back({Issue::Warning, F("{0} changes colour per row, but this kernel gives each player one colour: only the first row's is kept.", {objName(l.obj)})});
+      out.push_back({Issue::Warning, F("{0} changes colour per row, but this kernel gives each player one colour: only the first row's is kept.", {objName(layer.obj)})});
   }
-  if (s.layers.size() > 1) out.push_back({Issue::Info, T("The layers' positions are exported as comments: the program places each object relative to the first one.")});
-  for (auto& an : s.animations)
-    if (an.basicTimer.empty() || an.basicStep.empty())
-      out.push_back({Issue::Warning, F("The animation {0} needs two batari Basic variables (its counter and its step): choose them in the animation.", {an.name})});
+  if (sprite.layers.size() > 1) out.push_back({Issue::Info, T("The layers' positions are exported as comments: the program places each object relative to the first one.")});
+  for (auto& animation : sprite.animations)
+    if (animation.basicTimer.empty() || animation.basicStep.empty())
+      out.push_back({Issue::Warning, F("The animation {0} needs two batari Basic variables (its counter and its step): choose them in the animation.", {animation.name})});
   return out;
 }
 
-std::vector<Issue> check(const Playfield& p, const Profile& k) {
+std::vector<Issue> check(const Playfield& playfield, const Profile& profile) {
   std::vector<Issue> out;
   std::vector<int> asym, modeChange, pfChange, bkChange;
-  for (int r = 0; r < (int)p.rows.size(); r++) {
-    if (p.rows[r].asymmetric) asym.push_back(r + 1);
-    if (r > 0 && p.rows[r].mode != p.rows[r - 1].mode) modeChange.push_back(r + 1);
-    if (r > 0 && p.pfAt(r) != p.pfAt(r - 1)) pfChange.push_back(r + 1);
-    if (r > 0 && p.bkAt(r) != p.bkAt(r - 1)) bkChange.push_back(r + 1);
+  for (int row = 0; row < (int)playfield.rows.size(); row++) {
+    if (playfield.rows[row].asymmetric) asym.push_back(row + 1);
+    if (row > 0 && playfield.rows[row].mode != playfield.rows[row - 1].mode) modeChange.push_back(row + 1);
+    if (row > 0 && playfield.pfAt(row) != playfield.pfAt(row - 1)) pfChange.push_back(row + 1);
+    if (row > 0 && playfield.bkAt(row) != playfield.bkAt(row - 1)) bkChange.push_back(row + 1);
   }
-  if (!k.basic()) {
+  if (!profile.basic()) {
     if (!asym.empty()) {
       out.push_back({Issue::Info, F("Asymmetric rows: {0}. On every line of them PF0, PF1 and PF2 are written again in the middle of the line, each one in its own window of cycles.", {rowList(asym)})});
-      bool mirrorAsym = std::any_of(p.rows.begin(), p.rows.end(), [](const PfRow& r) { return r.asymmetric && r.mode == PfMode::Mirror; });
+      bool mirrorAsym = std::any_of(playfield.rows.begin(), playfield.rows.end(), [](const PfRow& pfRow) { return pfRow.asymmetric && pfRow.mode == PfMode::Mirror; });
       if (mirrorAsym)
         out.push_back({Issue::Warning, T("An asymmetric row in mirror mode shows PF2 twice back to back in the middle of the line: its write has almost no margin. Repeat mode is easier.")});
     }
@@ -702,43 +702,43 @@ std::vector<Issue> check(const Playfield& p, const Profile& k) {
     return out;
   }
   // columns the kernel does not show
-  int first = k.pfFirst(), last = k.pfMirrorOnly() ? 19 : 39 - first;
+  int first = profile.pfFirst(), last = profile.pfMirrorOnly() ? 19 : 39 - first;
   std::vector<int> lost, notMirror;
-  for (int r = 0; r < (int)p.rows.size(); r++) {
-    bool l = false, m = false;
-    for (int c = 0; c < 40; c++) {
-      bool shown = c >= first && c <= last;
-      if (k.pfMirrorOnly() && c >= 20) shown = 39 - c >= first, m |= p.pixel(r, c) != p.pixel(r, 39 - c);
-      l |= !shown && p.pixel(r, c);
+  for (int row = 0; row < (int)playfield.rows.size(); row++) {
+    bool rowLost = false, rowNotMirrored = false;
+    for (int column = 0; column < 40; column++) {
+      bool shown = column >= first && column <= last;
+      if (profile.pfMirrorOnly() && column >= 20) shown = 39 - column >= first, rowNotMirrored |= playfield.pixel(row, column) != playfield.pixel(row, 39 - column);
+      rowLost |= !shown && playfield.pixel(row, column);
     }
-    if (l) lost.push_back(r + 1);
-    if (m) notMirror.push_back(r + 1);
+    if (rowLost) lost.push_back(row + 1);
+    if (rowNotMirrored) notMirror.push_back(row + 1);
   }
   if (!lost.empty())
     out.push_back({Issue::Warning, F("This kernel shows columns {0} to {1} only: what is outside them is lost (rows {2}).",
                                      {std::to_string(first + 1), std::to_string(40 - first), rowList(lost)})});
   if (!notMirror.empty())
     out.push_back({Issue::Warning, F("The multisprite kernel's playfield is mirrored (the right half is the left one reversed); these rows are not: {0}.", {rowList(notMirror)})});
-  int rows = (int)p.rows.size();
-  if (rows > k.pfRowsMax())
-    out.push_back({Issue::Error, F("{0} rows: this kernel shows {1} at most.", {std::to_string(rows), std::to_string(k.pfRowsMax())})});
-  else if (k.pfRowsDefault() && rows != k.pfRowsDefault()) {
-    if (k.kernel == Kernel::Standard)
+  int rows = (int)playfield.rows.size();
+  if (rows > profile.pfRowsMax())
+    out.push_back({Issue::Error, F("{0} rows: this kernel shows {1} at most.", {std::to_string(rows), std::to_string(profile.pfRowsMax())})});
+  else if (profile.pfRowsDefault() && rows != profile.pfRowsDefault()) {
+    if (profile.kernel == Kernel::Standard)
       out.push_back({Issue::Warning, F("{0} rows, and the program shows {1}: it needs `const pfres = {0}` (only some values are allowed, and more rows take more RAM).",
-                                       {std::to_string(rows), std::to_string(k.pfRowsDefault())})});
+                                       {std::to_string(rows), std::to_string(profile.pfRowsDefault())})});
     else
-      out.push_back({Issue::Warning, F("{0} rows: this kernel shows {1}.", {std::to_string(rows), std::to_string(k.pfRowsDefault())})});
+      out.push_back({Issue::Warning, F("{0} rows: this kernel shows {1}.", {std::to_string(rows), std::to_string(profile.pfRowsDefault())})});
   }
   out.push_back({Issue::Info, T("batari Basic sets the height of the rows itself; the line height here is only for the preview.")});
   bool pfVary = !pfChange.empty(), bkVary = !bkChange.empty();
-  if (pfVary && !k.pfRowColours()) {
-    if (k.kernel != Kernel::Standard) out.push_back({Issue::Warning, T("This kernel gives the playfield one colour: only the first row's is kept.")});
-    else if (k.options.background) out.push_back({Issue::Warning, T("With the kernel option background the table of colours goes to the background: the playfield keeps one colour.")});
+  if (pfVary && !profile.pfRowColours()) {
+    if (profile.kernel != Kernel::Standard) out.push_back({Issue::Warning, T("This kernel gives the playfield one colour: only the first row's is kept.")});
+    else if (profile.options.background) out.push_back({Issue::Warning, T("With the kernel option background the table of colours goes to the background: the playfield keeps one colour.")});
     else out.push_back({Issue::Warning, T("The rows have their own colours, and the program does not set `set kernel_options pfcolors`: only the first row's is kept.")});
   }
-  if (bkVary && !k.bkRowColours()) {
-    if (k.kernel == Kernel::Standard)
-      out.push_back({Issue::Warning, k.options.pfcolors ? T("The background changes per row: the kernel options would have to be pfcolors and background, and then the playfield keeps one colour.")
+  if (bkVary && !profile.bkRowColours()) {
+    if (profile.kernel == Kernel::Standard)
+      out.push_back({Issue::Warning, profile.options.pfcolors ? T("The background changes per row: the kernel options would have to be pfcolors and background, and then the playfield keeps one colour.")
                                                         : T("The background changes per row: it needs `set kernel_options pfcolors background` (and then the playfield keeps one colour).")});
     else out.push_back({Issue::Warning, T("This kernel does not change the background per row: only the first row's is kept.")});
   }
@@ -749,249 +749,249 @@ std::vector<Issue> check(const Playfield& p, const Profile& k) {
 // Export
 
 std::string identifier(const std::string& name) {
-  std::string s;
-  for (char c : name) s += std::isalnum((unsigned char)c) ? c : '_';
-  if (s.empty() || std::isdigit((unsigned char)s[0])) s = "g" + s;
-  return s;
+  std::string result;
+  for (char character : name) result += std::isalnum((unsigned char)character) ? character : '_';
+  if (result.empty() || std::isdigit((unsigned char)result[0])) result = "g" + result;
+  return result;
 }
 
 // "P0", "P0_helmet", "P0b" (a second P0 layer, in another phase)
-static std::string layerId(const Layer& l, const std::vector<Layer>& all) {
+static std::string layerId(const Layer& layer, const std::vector<Layer>& all) {
   int same = 0, mine = 0;
-  for (auto& o : all)
-    if (o.obj == l.obj) {
-      if (&o == &l) mine = same;
+  for (auto& other : all)
+    if (other.obj == layer.obj) {
+      if (&other == &layer) mine = same;
       same++;
     }
-  std::string id = objName(l.obj);
+  std::string id = objName(layer.obj);
   if (same > 1 && mine > 0) id += (char)('a' + std::min(mine, 25));
-  if (!l.name.empty()) id += "_" + identifier(l.name);
+  if (!layer.name.empty()) id += "_" + identifier(layer.name);
   return id;
 }
 
-static std::string bin8(int v) {
-  std::string s = "%";
-  for (int b = 7; b >= 0; b--) s += (v >> b) & 1 ? '1' : '0';
-  return s;
+static std::string bin8(int value) {
+  std::string result = "%";
+  for (int bit = 7; bit >= 0; bit--) result += (value >> bit) & 1 ? '1' : '0';
+  return result;
 }
 
-std::string exportDasm(const Sprite& s, const ExportOptions& o) {
+std::string exportDasm(const Sprite& sprite, const ExportOptions& options) {
   std::ostringstream out;
-  std::string n = identifier(s.name);
-  out << "; " << s.name << ": " << s.layers.size() << " layer(s), " << s.frames << " frame(s), " << s.phases()
-      << " phase(s). Rows: " << (o.upsideDown ? "bottom first" : "top first") << ".\n";
-  for (auto& l : s.layers) {
-    std::string id = n + "_" + layerId(l, s.layers);
-    out << "\n; " << objName(l.obj) << (l.name.empty() ? "" : " (" + l.name + ")") << ", phase " << l.phase + 1 << ", "
-        << colourRegister(l.obj) << "\n";
-    out << id << "_DX = " << l.dx << "\n" << id << "_DY = " << l.dy << "\n" << id << "_HEIGHT = " << l.height << "\n";
-    out << id << "_PHASE = " << l.phase << "\n";
-    if (isPlayer(l.obj)) {
-      out << id << "_NUSIZ = " << (l.size == 4 ? "$07" : l.size == 2 ? "$05" : "$00") << "\n";
-      if (l.reflect) out << id << "_REFP = $08\n";
+  std::string spriteName = identifier(sprite.name);
+  out << "; " << sprite.name << ": " << sprite.layers.size() << " layer(s), " << sprite.frames << " frame(s), " << sprite.phases()
+      << " phase(s). Rows: " << (options.upsideDown ? "bottom first" : "top first") << ".\n";
+  for (auto& layer : sprite.layers) {
+    std::string id = spriteName + "_" + layerId(layer, sprite.layers);
+    out << "\n; " << objName(layer.obj) << (layer.name.empty() ? "" : " (" + layer.name + ")") << ", phase " << layer.phase + 1 << ", "
+        << colourRegister(layer.obj) << "\n";
+    out << id << "_DX = " << layer.dx << "\n" << id << "_DY = " << layer.dy << "\n" << id << "_HEIGHT = " << layer.height << "\n";
+    out << id << "_PHASE = " << layer.phase << "\n";
+    if (isPlayer(layer.obj)) {
+      out << id << "_NUSIZ = " << (layer.size == 4 ? "$07" : layer.size == 2 ? "$05" : "$00") << "\n";
+      if (layer.reflect) out << id << "_REFP = $08\n";
     } else {
-      int bits = l.size >= 8 ? 3 : l.size >= 4 ? 2 : l.size >= 2 ? 1 : 0;
-      out << id << "_SIZE = $" << bits << "0" << (l.obj == Obj::BL ? "  ; CTRLPF bits 4-5\n" : "  ; NUSIZ bits 4-5\n");
+      int bits = layer.size >= 8 ? 3 : layer.size >= 4 ? 2 : layer.size >= 2 ? 1 : 0;
+      out << id << "_SIZE = $" << bits << "0" << (layer.obj == Obj::BL ? "  ; CTRLPF bits 4-5\n" : "  ; NUSIZ bits 4-5\n");
     }
-    for (int f = 0; f < s.frames; f++) {
-      out << id << "_Frame" << f << "\n";
-      for (int i = 0; i < l.height; i++) {
-        int r = o.upsideDown ? l.height - 1 - i : i;
-        int v = f < (int)l.bits.size() ? l.bits[f][r] : 0;
-        if (isPlayer(l.obj)) out << "        .byte #" << bin8(v) << ";" << hexColour(l.colour(f, r)) << "\n";
-        else out << "        .byte #" << bin8(v ? 2 : 0) << "\n";  // ENAMx/ENABL: bit 1
+    for (int frame = 0; frame < sprite.frames; frame++) {
+      out << id << "_Frame" << frame << "\n";
+      for (int i = 0; i < layer.height; i++) {
+        int row = options.upsideDown ? layer.height - 1 - i : i;
+        int value = frame < (int)layer.bits.size() ? layer.bits[frame][row] : 0;
+        if (isPlayer(layer.obj)) out << "        .byte #" << bin8(value) << ";" << hexColour(layer.colour(frame, row)) << "\n";
+        else out << "        .byte #" << bin8(value ? 2 : 0) << "\n";  // ENAMx/ENABL: bit 1
       }
     }
-    if (l.obj != Obj::M0 && l.obj != Obj::M1)
-      for (int f = 0; f < s.frames; f++) {
-        out << id << "_Colour" << f << "\n";
-        for (int i = 0; i < l.height; i++) out << "        .byte #" << hexColour(l.colour(f, o.upsideDown ? l.height - 1 - i : i)) << "\n";
+    if (layer.obj != Obj::M0 && layer.obj != Obj::M1)
+      for (int frame = 0; frame < sprite.frames; frame++) {
+        out << id << "_Colour" << frame << "\n";
+        for (int i = 0; i < layer.height; i++) out << "        .byte #" << hexColour(layer.colour(frame, options.upsideDown ? layer.height - 1 - i : i)) << "\n";
       }
-    if (s.frames > 1) {
+    if (sprite.frames > 1) {
       // the frames by number: lda Ptr,x
       auto pointers = [&](const char* table, const char* label) {
         for (const char* half : {"Lo", "Hi"}) {
           out << id << "_" << table << "Ptr" << half << "\n        .byte ";
-          for (int f = 0; f < s.frames; f++) out << (f ? "," : "") << (half[0] == 'L' ? "<" : ">") << id << "_" << label << f;
+          for (int frame = 0; frame < sprite.frames; frame++) out << (frame ? "," : "") << (half[0] == 'L' ? "<" : ">") << id << "_" << label << frame;
           out << "\n";
         }
       };
       pointers("Frame", "Frame");
-      if (l.obj != Obj::M0 && l.obj != Obj::M1) pointers("Colour", "Colour");
+      if (layer.obj != Obj::M0 && layer.obj != Obj::M1) pointers("Colour", "Colour");
     }
   }
-  out << "\n" << n << "_FRAMES = " << s.frames << "\n";
-  for (auto& an : s.animations) {
+  out << "\n" << spriteName << "_FRAMES = " << sprite.frames << "\n";
+  for (auto& animation : sprite.animations) {
     // steps: the frame and how many video frames it stays
-    std::string a = n + "_" + identifier(an.name);
-    out << "\n; animation " << an.name << ": " << an.steps.size() << " steps, " << an.length() << " video frames"
-        << (an.loop ? ", loops" : ", stops on the last step") << "\n";
-    out << a << "_STEPS = " << an.steps.size() << "\n" << a << "_LOOP = " << (an.loop ? 1 : 0) << "\n";
-    out << a << "_FRAME\n        .byte ";
-    for (size_t i = 0; i < an.steps.size(); i++) out << (i ? "," : "") << an.steps[i].frame;
-    out << "\n" << a << "_TICKS\n        .byte ";
-    for (size_t i = 0; i < an.steps.size(); i++) out << (i ? "," : "") << an.steps[i].ticks;
+    std::string prefix = spriteName + "_" + identifier(animation.name);
+    out << "\n; animation " << animation.name << ": " << animation.steps.size() << " steps, " << animation.length() << " video frames"
+        << (animation.loop ? ", loops" : ", stops on the last step") << "\n";
+    out << prefix << "_STEPS = " << animation.steps.size() << "\n" << prefix << "_LOOP = " << (animation.loop ? 1 : 0) << "\n";
+    out << prefix << "_FRAME\n        .byte ";
+    for (size_t i = 0; i < animation.steps.size(); i++) out << (i ? "," : "") << animation.steps[i].frame;
+    out << "\n" << prefix << "_TICKS\n        .byte ";
+    for (size_t i = 0; i < animation.steps.size(); i++) out << (i ? "," : "") << animation.steps[i].ticks;
     out << "\n";
   }
   return out.str();
 }
 
-std::string dasmInclude(const Asset& a, const std::string& sourceName) {
+std::string dasmInclude(const Asset& asset, const std::string& sourceName) {
   std::string out = "; Generated by VCSIDE from " + sourceName + ": edit that file, not this one.\n";
-  for (auto& s : a.sprites) out += "\n" + exportDasm(s);
-  for (auto& p : a.playfields) out += "\n" + exportDasm(p);
+  for (auto& sprite : asset.sprites) out += "\n" + exportDasm(sprite);
+  for (auto& playfield : asset.playfields) out += "\n" + exportDasm(playfield);
   return out;
 }
 
-std::string exportDasm(const Playfield& p, const ExportOptions& o) {
+std::string exportDasm(const Playfield& playfield, const ExportOptions& options) {
   std::ostringstream out;
-  std::string n = identifier(p.name);
-  int rows = (int)p.rows.size();
-  bool anyAsym = std::any_of(p.rows.begin(), p.rows.end(), [](const PfRow& r) { return r.asymmetric; });
-  bool modes = std::any_of(p.rows.begin(), p.rows.end(), [&](const PfRow& r) { return r.mode != p.rows[0].mode; });
+  std::string playfieldName = identifier(playfield.name);
+  int rows = (int)playfield.rows.size();
+  bool anyAsym = std::any_of(playfield.rows.begin(), playfield.rows.end(), [](const PfRow& row) { return row.asymmetric; });
+  bool modes = std::any_of(playfield.rows.begin(), playfield.rows.end(), [&](const PfRow& row) { return row.mode != playfield.rows[0].mode; });
   bool pfVary = false, bkVary = false;
-  for (int r = 1; r < rows; r++) pfVary |= p.pfAt(r) != p.pfAt(0), bkVary |= p.bkAt(r) != p.bkAt(0);
-  out << "; " << p.name << ": " << rows << " rows of " << p.lineHeight << " lines"
-      << (anyAsym ? ", asymmetric rows" : "") << ". Rows: " << (o.upsideDown ? "bottom first" : "top first") << ".\n";
-  out << n << "_ROWS = " << rows << "\n" << n << "_LINES = " << p.lineHeight << "\n";
-  out << n << "_CTRLPF = " << (p.rows[0].mode == PfMode::Mirror ? "$01" : "$00") << "  ; first row\n";
-  out << n << "_COLUPF = " << hexColour(p.pfAt(0)) << "\n" << n << "_COLUBK = " << hexColour(p.bkAt(0)) << "\n";
+  for (int row = 1; row < rows; row++) pfVary |= playfield.pfAt(row) != playfield.pfAt(0), bkVary |= playfield.bkAt(row) != playfield.bkAt(0);
+  out << "; " << playfield.name << ": " << rows << " rows of " << playfield.lineHeight << " lines"
+      << (anyAsym ? ", asymmetric rows" : "") << ". Rows: " << (options.upsideDown ? "bottom first" : "top first") << ".\n";
+  out << playfieldName << "_ROWS = " << rows << "\n" << playfieldName << "_LINES = " << playfield.lineHeight << "\n";
+  out << playfieldName << "_CTRLPF = " << (playfield.rows[0].mode == PfMode::Mirror ? "$01" : "$00") << "  ; first row\n";
+  out << playfieldName << "_COLUPF = " << hexColour(playfield.pfAt(0)) << "\n" << playfieldName << "_COLUBK = " << hexColour(playfield.bkAt(0)) << "\n";
   auto table = [&](const std::string& label, auto value, bool picture) {
-    out << n << "_" << label << "\n";
+    out << playfieldName << "_" << label << "\n";
     for (int i = 0; i < rows; i++) {
-      int r = o.upsideDown ? rows - 1 - i : i;
-      out << "        .byte " << value(r);
+      int row = options.upsideDown ? rows - 1 - i : i;
+      out << "        .byte " << value(row);
       if (picture) {
         out << "  ; |";
-        for (int c = 0; c < 40; c++) out << (p.pixel(r, c) ? 'X' : '.');
+        for (int column = 0; column < 40; column++) out << (playfield.pixel(row, column) ? 'X' : '.');
         out << "|";
       }
       out << "\n";
     }
   };
-  const char* reg[3] = {"PF0", "PF1", "PF2"};
-  for (int k = 0; k < 3; k++)
-    table(reg[k], [&](int r) { uint8_t L[3], R[3]; p.registers(r, L, R); return bin8(L[k]); }, k == 0);
+  const char* registerNames[3] = {"PF0", "PF1", "PF2"};
+  for (int i = 0; i < 3; i++)
+    table(registerNames[i], [&](int row) { uint8_t leftRegisters[3], rightRegisters[3]; playfield.registers(row, leftRegisters, rightRegisters); return bin8(leftRegisters[i]); }, i == 0);
   if (anyAsym)
-    for (int k = 0; k < 3; k++)
-      table(std::string(reg[k]) + "R", [&](int r) { uint8_t L[3], R[3]; p.registers(r, L, R); return bin8(R[k]); }, false);
-  if (modes) table("CTRLPF_ROWS", [&](int r) { return std::string(p.rows[r].mode == PfMode::Mirror ? "$01" : "$00"); }, false);
-  if (pfVary) table("COLUPF_ROWS", [&](int r) { return hexColour(p.pfAt(r)); }, false);
-  if (bkVary) table("COLUBK_ROWS", [&](int r) { return hexColour(p.bkAt(r)); }, false);
+    for (int i = 0; i < 3; i++)
+      table(std::string(registerNames[i]) + "R", [&](int row) { uint8_t leftRegisters[3], rightRegisters[3]; playfield.registers(row, leftRegisters, rightRegisters); return bin8(rightRegisters[i]); }, false);
+  if (modes) table("CTRLPF_ROWS", [&](int row) { return std::string(playfield.rows[row].mode == PfMode::Mirror ? "$01" : "$00"); }, false);
+  if (pfVary) table("COLUPF_ROWS", [&](int row) { return hexColour(playfield.pfAt(row)); }, false);
+  if (bkVary) table("COLUBK_ROWS", [&](int row) { return hexColour(playfield.bkAt(row)); }, false);
   return out.str();
 }
 
 // ---------------------------------------------------------------------------
 // C
 
-static std::string upper(std::string s) {
-  for (auto& c : s) c = (char)std::toupper((unsigned char)c);
-  return s;
+static std::string upper(std::string text) {
+  for (auto& character : text) character = (char)std::toupper((unsigned char)character);
+  return text;
 }
-static std::string hex2(int v) {
-  static const char* d = "0123456789ABCDEF";
-  return std::string("0x") + d[(v >> 4) & 15] + d[v & 15];
+static std::string hex2(int value) {
+  static const char* digits = "0123456789ABCDEF";
+  return std::string("0x") + digits[(value >> 4) & 15] + digits[value & 15];
 }
-static std::string picture8(int v) {
-  std::string s;
-  for (int b = 7; b >= 0; b--) s += (v >> b) & 1 ? 'X' : '.';
-  return s;
+static std::string picture8(int value) {
+  std::string result;
+  for (int bit = 7; bit >= 0; bit--) result += (value >> bit) & 1 ? 'X' : '.';
+  return result;
 }
 
-std::string exportC(const Sprite& s) {
+std::string exportC(const Sprite& sprite) {
   std::ostringstream out;
-  std::string n = identifier(s.name), N = upper(n);
-  out << "/* " << s.name << ": " << s.layers.size() << " layer(s), " << s.frames << " frame(s), " << s.phases()
+  std::string spriteName = identifier(sprite.name), upperName = upper(spriteName);
+  out << "/* " << sprite.name << ": " << sprite.layers.size() << " layer(s), " << sprite.frames << " frame(s), " << sprite.phases()
       << " phase(s). Rows: top first. */\n";
-  out << "#define " << N << "_FRAMES " << s.frames << "\n";
-  for (auto& l : s.layers) {
-    std::string id = n + "_" + layerId(l, s.layers), ID = upper(id);
-    out << "\n/* " << objName(l.obj) << (l.name.empty() ? "" : " (" + l.name + ")") << ", phase " << l.phase + 1 << ", "
-        << colourRegister(l.obj) << " */\n";
-    out << "#define " << ID << "_DX " << l.dx << "\n#define " << ID << "_DY " << l.dy << "\n#define " << ID << "_HEIGHT "
-        << l.height << "\n#define " << ID << "_PHASE " << l.phase << "\n";
-    if (isPlayer(l.obj)) {
-      out << "#define " << ID << "_NUSIZ " << (l.size == 4 ? "0x07" : l.size == 2 ? "0x05" : "0x00") << "\n";
-      out << "#define " << ID << "_REFP " << (l.reflect ? "0x08" : "0x00") << "\n";
+  out << "#define " << upperName << "_FRAMES " << sprite.frames << "\n";
+  for (auto& layer : sprite.layers) {
+    std::string id = spriteName + "_" + layerId(layer, sprite.layers), upperId = upper(id);
+    out << "\n/* " << objName(layer.obj) << (layer.name.empty() ? "" : " (" + layer.name + ")") << ", phase " << layer.phase + 1 << ", "
+        << colourRegister(layer.obj) << " */\n";
+    out << "#define " << upperId << "_DX " << layer.dx << "\n#define " << upperId << "_DY " << layer.dy << "\n#define " << upperId << "_HEIGHT "
+        << layer.height << "\n#define " << upperId << "_PHASE " << layer.phase << "\n";
+    if (isPlayer(layer.obj)) {
+      out << "#define " << upperId << "_NUSIZ " << (layer.size == 4 ? "0x07" : layer.size == 2 ? "0x05" : "0x00") << "\n";
+      out << "#define " << upperId << "_REFP " << (layer.reflect ? "0x08" : "0x00") << "\n";
     } else {
-      int bits = l.size >= 8 ? 3 : l.size >= 4 ? 2 : l.size >= 2 ? 1 : 0;
-      out << "#define " << ID << "_SIZE 0x" << bits << "0" << (l.obj == Obj::BL ? "  /* CTRLPF bits 4-5 */\n" : "  /* NUSIZ bits 4-5 */\n");
+      int bits = layer.size >= 8 ? 3 : layer.size >= 4 ? 2 : layer.size >= 2 ? 1 : 0;
+      out << "#define " << upperId << "_SIZE 0x" << bits << "0" << (layer.obj == Obj::BL ? "  /* CTRLPF bits 4-5 */\n" : "  /* NUSIZ bits 4-5 */\n");
     }
     // [frame][row]: GRPx for players, ENAMx/ENABL (bit 1) for missiles and ball
-    out << "static const uint8_t " << id << "_gfx[" << N << "_FRAMES][" << l.height << "] = {\n";
-    for (int f = 0; f < s.frames; f++) {
-      out << "    { /* frame " << f << " */\n";
-      for (int r = 0; r < l.height; r++) {
-        int v = f < (int)l.bits.size() ? l.bits[f][r] : 0;
-        if (isPlayer(l.obj)) out << "        " << hex2(v) << ",  /* " << picture8(v) << " " << hexColour(l.colour(f, r)) << " */\n";
-        else out << "        " << (v ? "0x02" : "0x00") << ",\n";
+    out << "static const uint8_t " << id << "_gfx[" << upperName << "_FRAMES][" << layer.height << "] = {\n";
+    for (int frame = 0; frame < sprite.frames; frame++) {
+      out << "    { /* frame " << frame << " */\n";
+      for (int row = 0; row < layer.height; row++) {
+        int value = frame < (int)layer.bits.size() ? layer.bits[frame][row] : 0;
+        if (isPlayer(layer.obj)) out << "        " << hex2(value) << ",  /* " << picture8(value) << " " << hexColour(layer.colour(frame, row)) << " */\n";
+        else out << "        " << (value ? "0x02" : "0x00") << ",\n";
       }
       out << "    },\n";
     }
     out << "};\n";
-    if (l.obj != Obj::M0 && l.obj != Obj::M1) {
-      out << "static const uint8_t " << id << "_colour[" << N << "_FRAMES][" << l.height << "] = {\n";
-      for (int f = 0; f < s.frames; f++) {
+    if (layer.obj != Obj::M0 && layer.obj != Obj::M1) {
+      out << "static const uint8_t " << id << "_colour[" << upperName << "_FRAMES][" << layer.height << "] = {\n";
+      for (int frame = 0; frame < sprite.frames; frame++) {
         out << "    {";
-        for (int r = 0; r < l.height; r++) out << (r ? ", " : "") << hex2(l.colour(f, r));
+        for (int row = 0; row < layer.height; row++) out << (row ? ", " : "") << hex2(layer.colour(frame, row));
         out << "},\n";
       }
       out << "};\n";
     }
   }
-  for (auto& an : s.animations) {
-    std::string a = n + "_" + identifier(an.name);
-    out << "\n/* animation " << an.name << ": " << an.steps.size() << " steps, " << an.length() << " video frames"
-        << (an.loop ? ", loops" : ", stops on the last step") << " */\n";
-    out << "static const vcsgfx_step " << a << "_steps[] = {";
-    for (size_t i = 0; i < an.steps.size(); i++) out << (i ? ", " : "") << "{" << an.steps[i].frame << ", " << std::clamp(an.steps[i].ticks, 1, 255) << "}";
-    if (an.steps.empty()) out << "{0, 0}";
+  for (auto& animation : sprite.animations) {
+    std::string prefix = spriteName + "_" + identifier(animation.name);
+    out << "\n/* animation " << animation.name << ": " << animation.steps.size() << " steps, " << animation.length() << " video frames"
+        << (animation.loop ? ", loops" : ", stops on the last step") << " */\n";
+    out << "static const vcsgfx_step " << prefix << "_steps[] = {";
+    for (size_t i = 0; i < animation.steps.size(); i++) out << (i ? ", " : "") << "{" << animation.steps[i].frame << ", " << std::clamp(animation.steps[i].ticks, 1, 255) << "}";
+    if (animation.steps.empty()) out << "{0, 0}";
     out << "};\n";
-    out << "static const vcsgfx_animation " << a << " = {" << a << "_steps, " << an.steps.size() << ", " << (an.loop ? 1 : 0)
+    out << "static const vcsgfx_animation " << prefix << " = {" << prefix << "_steps, " << animation.steps.size() << ", " << (animation.loop ? 1 : 0)
         << "};\n";
   }
   return out.str();
 }
 
-std::string exportC(const Playfield& p) {
+std::string exportC(const Playfield& playfield) {
   std::ostringstream out;
-  std::string n = identifier(p.name), N = upper(n);
-  int rows = (int)p.rows.size();
-  bool anyAsym = std::any_of(p.rows.begin(), p.rows.end(), [](const PfRow& r) { return r.asymmetric; });
-  bool modes = std::any_of(p.rows.begin(), p.rows.end(), [&](const PfRow& r) { return r.mode != p.rows[0].mode; });
+  std::string playfieldName = identifier(playfield.name), upperName = upper(playfieldName);
+  int rows = (int)playfield.rows.size();
+  bool anyAsym = std::any_of(playfield.rows.begin(), playfield.rows.end(), [](const PfRow& row) { return row.asymmetric; });
+  bool modes = std::any_of(playfield.rows.begin(), playfield.rows.end(), [&](const PfRow& row) { return row.mode != playfield.rows[0].mode; });
   bool pfVary = false, bkVary = false;
-  for (int r = 1; r < rows; r++) pfVary |= p.pfAt(r) != p.pfAt(0), bkVary |= p.bkAt(r) != p.bkAt(0);
-  out << "/* " << p.name << ": " << rows << " rows of " << p.lineHeight << " lines" << (anyAsym ? ", asymmetric rows" : "")
+  for (int row = 1; row < rows; row++) pfVary |= playfield.pfAt(row) != playfield.pfAt(0), bkVary |= playfield.bkAt(row) != playfield.bkAt(0);
+  out << "/* " << playfield.name << ": " << rows << " rows of " << playfield.lineHeight << " lines" << (anyAsym ? ", asymmetric rows" : "")
       << ". Rows: top first. */\n";
-  out << "#define " << N << "_ROWS " << rows << "\n#define " << N << "_LINES " << p.lineHeight << "\n";
-  out << "#define " << N << "_CTRLPF " << (p.rows[0].mode == PfMode::Mirror ? "0x01" : "0x00") << "  /* first row */\n";
-  out << "#define " << N << "_COLUPF " << hex2(p.pfAt(0)) << "\n#define " << N << "_COLUBK " << hex2(p.bkAt(0)) << "\n";
+  out << "#define " << upperName << "_ROWS " << rows << "\n#define " << upperName << "_LINES " << playfield.lineHeight << "\n";
+  out << "#define " << upperName << "_CTRLPF " << (playfield.rows[0].mode == PfMode::Mirror ? "0x01" : "0x00") << "  /* first row */\n";
+  out << "#define " << upperName << "_COLUPF " << hex2(playfield.pfAt(0)) << "\n#define " << upperName << "_COLUBK " << hex2(playfield.bkAt(0)) << "\n";
   auto table = [&](const std::string& label, auto value, bool picture) {
-    out << "static const uint8_t " << n << "_" << label << "[" << N << "_ROWS] = {\n";
-    for (int r = 0; r < rows; r++) {
-      out << "    " << value(r) << ",";
+    out << "static const uint8_t " << playfieldName << "_" << label << "[" << upperName << "_ROWS] = {\n";
+    for (int row = 0; row < rows; row++) {
+      out << "    " << value(row) << ",";
       if (picture) {
         out << "  /* |";
-        for (int c = 0; c < 40; c++) out << (p.pixel(r, c) ? 'X' : '.');
+        for (int column = 0; column < 40; column++) out << (playfield.pixel(row, column) ? 'X' : '.');
         out << "| */";
       }
       out << "\n";
     }
     out << "};\n";
   };
-  const char* reg[3] = {"pf0", "pf1", "pf2"};
-  for (int k = 0; k < 3; k++)
-    table(reg[k], [&](int r) { uint8_t L[3], R[3]; p.registers(r, L, R); return hex2(L[k]); }, k == 0);
+  const char* registerNames[3] = {"pf0", "pf1", "pf2"};
+  for (int i = 0; i < 3; i++)
+    table(registerNames[i], [&](int row) { uint8_t leftRegisters[3], rightRegisters[3]; playfield.registers(row, leftRegisters, rightRegisters); return hex2(leftRegisters[i]); }, i == 0);
   if (anyAsym)
-    for (int k = 0; k < 3; k++)
-      table(std::string(reg[k]) + "r", [&](int r) { uint8_t L[3], R[3]; p.registers(r, L, R); return hex2(R[k]); }, false);
-  if (modes) table("ctrlpf", [&](int r) { return std::string(p.rows[r].mode == PfMode::Mirror ? "0x01" : "0x00"); }, false);
-  if (pfVary) table("colupf", [&](int r) { return hex2(p.pfAt(r)); }, false);
-  if (bkVary) table("colubk", [&](int r) { return hex2(p.bkAt(r)); }, false);
+    for (int i = 0; i < 3; i++)
+      table(std::string(registerNames[i]) + "r", [&](int row) { uint8_t leftRegisters[3], rightRegisters[3]; playfield.registers(row, leftRegisters, rightRegisters); return hex2(rightRegisters[i]); }, false);
+  if (modes) table("ctrlpf", [&](int row) { return std::string(playfield.rows[row].mode == PfMode::Mirror ? "0x01" : "0x00"); }, false);
+  if (pfVary) table("colupf", [&](int row) { return hex2(playfield.pfAt(row)); }, false);
+  if (bkVary) table("colubk", [&](int row) { return hex2(playfield.bkAt(row)); }, false);
   return out.str();
 }
 
-static std::string cIncludeGuarded(const Asset& a, const std::string& sourceName, const std::string& fileName) {
+static std::string cIncludeGuarded(const Asset& asset, const std::string& sourceName, const std::string& fileName) {
   std::string guard = upper(identifier(fileName)) + "_H";
   std::string out = "/* Generated by VCSIDE from " + sourceName + ": edit that file, not this one. */\n";
   out += "#ifndef " + guard + "\n#define " + guard + "\n\n#include <stdint.h>\n\n";
@@ -1021,22 +1021,22 @@ static std::string cIncludeGuarded(const Asset& a, const std::string& sourceName
          "    return a->steps[p->step].frame;\n"
          "}\n"
          "#endif\n";
-  for (auto& s : a.sprites) out += "\n" + exportC(s);
-  for (auto& p : a.playfields) out += "\n" + exportC(p);
+  for (auto& sprite : asset.sprites) out += "\n" + exportC(sprite);
+  for (auto& playfield : asset.playfields) out += "\n" + exportC(playfield);
   out += "\n#endif\n";
   return out;
 }
 
-std::string cInclude(const Asset& a, const std::string& sourceName) { return cIncludeGuarded(a, sourceName, sourceName); }
+std::string cInclude(const Asset& asset, const std::string& sourceName) { return cIncludeGuarded(asset, sourceName, sourceName); }
 
 bool generatedFrom(const std::string& firstLine, const std::string& sourceName) {
   return firstLine == "; Generated by VCSIDE from " + sourceName + ": edit that file, not this one." ||
          firstLine == "/* Generated by VCSIDE from " + sourceName + ": edit that file, not this one. */";
 }
 
-std::vector<GeneratedFile> generatedFiles(const Asset& a, const std::string& sourceName, bool c) {
+std::vector<GeneratedFile> generatedFiles(const Asset& asset, const std::string& sourceName, bool forC) {
   std::string stem = sourceName.substr(0, sourceName.rfind('.'));
-  std::string ext = c ? ".gfx.h" : ".gfx.asm";
+  std::string ext = forC ? ".gfx.h" : ".gfx.asm";
   // the parts in the order of the asset; each its own file name
   std::vector<std::string> order;
   std::map<std::string, Asset> parts;
@@ -1045,19 +1045,19 @@ std::vector<GeneratedFile> generatedFiles(const Asset& a, const std::string& sou
     return parts[key];
   };
   auto keyOf = [&](const std::string& name, const std::string& group) -> std::string {
-    if (a.split == Asset::Split::Each) return identifier(name);
-    if (a.split == Asset::Split::Group && !group.empty()) return identifier(group);
+    if (asset.split == Asset::Split::Each) return identifier(name);
+    if (asset.split == Asset::Split::Group && !group.empty()) return identifier(group);
     return "";
   };
-  for (auto& s : a.sprites) part(keyOf(s.name, s.group)).sprites.push_back(s);
-  for (auto& p : a.playfields) part(keyOf(p.name, p.group)).playfields.push_back(p);
+  for (auto& sprite : asset.sprites) part(keyOf(sprite.name, sprite.group)).sprites.push_back(sprite);
+  for (auto& playfield : asset.playfields) part(keyOf(playfield.name, playfield.group)).playfields.push_back(playfield);
   if (order.empty()) part("");
   std::vector<GeneratedFile> out;
   for (auto& key : order) {
-    GeneratedFile f;
-    f.name = stem + (key.empty() ? "" : "." + key) + ext;
-    f.text = c ? cIncludeGuarded(parts[key], sourceName, f.name) : dasmInclude(parts[key], sourceName);
-    out.push_back(std::move(f));
+    GeneratedFile file;
+    file.name = stem + (key.empty() ? "" : "." + key) + ext;
+    file.text = forC ? cIncludeGuarded(parts[key], sourceName, file.name) : dasmInclude(parts[key], sourceName);
+    out.push_back(std::move(file));
   }
   return out;
 }
@@ -1065,161 +1065,161 @@ std::vector<GeneratedFile> generatedFiles(const Asset& a, const std::string& sou
 
 // The profile to use when the asset is for a kernel of one's own and still copied as
 // batari Basic: the standard kernel with the options the graphics need.
-static Profile basicFor(const Sprite& s, const Profile& k) {
-  if (k.basic()) return k;
-  Profile b;
-  b.kernel = Kernel::Standard;
-  for (auto& l : s.layers)
-    if (coloursVary(l)) (l.obj == Obj::P0 ? b.options.playercolors : b.options.player1colors) = true;
-  return b;
+static Profile basicFor(const Sprite& sprite, const Profile& profile) {
+  if (profile.basic()) return profile;
+  Profile basicProfile;
+  basicProfile.kernel = Kernel::Standard;
+  for (auto& layer : sprite.layers)
+    if (coloursVary(layer)) (layer.obj == Obj::P0 ? basicProfile.options.playercolors : basicProfile.options.player1colors) = true;
+  return basicProfile;
 }
-static Profile basicFor(const Playfield& p, const Profile& k) {
-  if (k.basic()) return k;
-  Profile b;
-  b.kernel = Kernel::Standard;
-  for (int r = 1; r < (int)p.rows.size(); r++) b.options.pfcolors |= p.pfAt(r) != p.pfAt(0);
-  b.options.pfcolors |= p.rows[0].pf >= 0;
-  return b;
+static Profile basicFor(const Playfield& playfield, const Profile& profile) {
+  if (profile.basic()) return profile;
+  Profile basicProfile;
+  basicProfile.kernel = Kernel::Standard;
+  for (int i = 1; i < (int)playfield.rows.size(); i++) basicProfile.options.pfcolors |= playfield.pfAt(i) != playfield.pfAt(0);
+  basicProfile.options.pfcolors |= playfield.rows[0].pf >= 0;
+  return basicProfile;
 }
 
-static std::string basicName(Obj o) {
-  int n = playerNumber(o);
-  if (n >= 0) return "player" + std::to_string(n);
-  return o == Obj::M0 ? "missile0" : o == Obj::M1 ? "missile1" : "ball";
+static std::string basicName(Obj object) {
+  int number = playerNumber(object);
+  if (number >= 0) return "player" + std::to_string(number);
+  return object == Obj::M0 ? "missile0" : object == Obj::M1 ? "missile1" : "ball";
 }
 
 // The variable for a player's colour or size: COLUP0, _COLUP1 in the kernels with more
 // players (their COLUP1 is the TIA's, rewritten down the screen), COLUP2...
-static std::string playerVar(const char* reg, int n, const Profile& k) {
-  if (n == 1 && k.players() > 2) return "_" + std::string(reg) + "1";
-  return reg + std::to_string(n);
+static std::string playerVar(const char* registerName, int number, const Profile& profile) {
+  if (number == 1 && profile.players() > 2) return "_" + std::string(registerName) + "1";
+  return registerName + std::to_string(number);
 }
 
-std::string exportBasic(const Sprite& whole, const Profile& in, int frame) {
-  Sprite s = whole;
+std::string exportBasic(const Sprite& whole, const Profile& requested, int frame) {
+  Sprite sprite = whole;
   if (frame >= 0 && frame < whole.frames) {
     // just that frame
-    for (auto& l : s.layers) {
-      l.bits = {l.bits[frame]};
-      l.colours = {l.colours[frame]};
+    for (auto& layer : sprite.layers) {
+      layer.bits = {layer.bits[frame]};
+      layer.colours = {layer.colours[frame]};
     }
-    s.frames = 1;
+    sprite.frames = 1;
   }
-  Profile k = basicFor(s, in);
+  Profile profile = basicFor(sprite, requested);
   std::ostringstream out;
   bool one = frame >= 0 && frame < whole.frames;
-  if (one) out << "  rem " << s.name << ", frame " << frame + 1 << "; " << k.describe() << "\n";
-  else out << "  rem " << s.name << ": " << s.frames << " frame(s), " << s.phases() << " phase(s); " << k.describe() << "\n";
+  if (one) out << "  rem " << sprite.name << ", frame " << frame + 1 << "; " << profile.describe() << "\n";
+  else out << "  rem " << sprite.name << ": " << sprite.frames << " frame(s), " << sprite.phases() << " phase(s); " << profile.describe() << "\n";
   const Layer* first = nullptr;
-  for (auto& l : s.layers)
-    if (isPlayer(l.obj) && k.has(l.obj) && !first) first = &l;
-  for (int ph = 0; ph < s.phases(); ph++)
-    for (int f = 0; f < s.frames; f++) {
-      if (!one || s.phases() > 1) out << "  rem frame " << (one ? frame : f) + 1 << (s.phases() > 1 ? ", phase " + std::to_string(ph + 1) : "") << "\n";
-      for (auto& l : s.layers) {
-        if (l.phase != ph || !isPlayer(l.obj) || !k.has(l.obj)) continue;
-        std::string pn = basicName(l.obj);
-        auto row = [&](int i) { return k.topFirst() ? i : l.height - 1 - i; };
-        out << "  " << pn << ":\n";
-        for (int i = 0; i < l.height; i++) out << "  " << bin8(l.bits[f][row(i)]) << "\n";
+  for (auto& layer : sprite.layers)
+    if (isPlayer(layer.obj) && profile.has(layer.obj) && !first) first = &layer;
+  for (int phase = 0; phase < sprite.phases(); phase++)
+    for (int frameIndex = 0; frameIndex < sprite.frames; frameIndex++) {
+      if (!one || sprite.phases() > 1) out << "  rem frame " << (one ? frame : frameIndex) + 1 << (sprite.phases() > 1 ? ", phase " + std::to_string(phase + 1) : "") << "\n";
+      for (auto& layer : sprite.layers) {
+        if (layer.phase != phase || !isPlayer(layer.obj) || !profile.has(layer.obj)) continue;
+        std::string playerName = basicName(layer.obj);
+        auto row = [&](int i) { return profile.topFirst() ? i : layer.height - 1 - i; };
+        out << "  " << playerName << ":\n";
+        for (int i = 0; i < layer.height; i++) out << "  " << bin8(layer.bits[frameIndex][row(i)]) << "\n";
         out << "end\n";
-        if (k.rowColours(l.obj)) {
-          out << "  " << pn << "color:\n";
-          for (int i = 0; i < l.height; i++) out << "  " << hexColour(l.colour(f, row(i))) << "\n";
+        if (profile.rowColours(layer.obj)) {
+          out << "  " << playerName << "color:\n";
+          for (int i = 0; i < layer.height; i++) out << "  " << hexColour(layer.colour(frameIndex, row(i))) << "\n";
           out << "end\n";
         } else {
           // the kernel and the score reload the colour registers: set them before every drawscreen
-          out << "  " << playerVar("COLUP", playerNumber(l.obj), k) << " = " << hexColour(l.colour(f, 0)) << " : rem every frame\n";
+          out << "  " << playerVar("COLUP", playerNumber(layer.obj), profile) << " = " << hexColour(layer.colour(frameIndex, 0)) << " : rem every frame\n";
         }
       }
     }
-  for (auto& l : s.layers) {
-    std::string o = basicName(l.obj);
-    if (!k.has(l.obj)) {
-      out << "  rem " << objName(l.obj) << ": not drawn by this kernel\n";
+  for (auto& layer : sprite.layers) {
+    std::string objectName = basicName(layer.obj);
+    if (!profile.has(layer.obj)) {
+      out << "  rem " << objName(layer.obj) << ": not drawn by this kernel\n";
       continue;
     }
-    int n = playerNumber(l.obj);
-    if (n >= 0) {
-      int nusiz = (l.size == 4 ? 7 : l.size == 2 ? 5 : 0);
-      bool refpInNusiz = k.kernel == Kernel::DPCPlus || k.kernel == Kernel::PXE;  // their NUSIZ bit 3 reflects
-      if (refpInNusiz && l.reflect) nusiz |= 8;
-      if (nusiz) out << "  " << playerVar("NUSIZ", n, k) << " = $" << std::hex << std::uppercase << nusiz << std::dec << "\n";
-      if (l.reflect && !refpInNusiz) {
-        if (n <= 1 && k.kernel == Kernel::Standard) out << "  REFP" << n << " = 8\n";
-        else out << "  rem " << o << ": reflected\n";
+    int number = playerNumber(layer.obj);
+    if (number >= 0) {
+      int nusiz = (layer.size == 4 ? 7 : layer.size == 2 ? 5 : 0);
+      bool refpInNusiz = profile.kernel == Kernel::DPCPlus || profile.kernel == Kernel::PXE;  // their NUSIZ bit 3 reflects
+      if (refpInNusiz && layer.reflect) nusiz |= 8;
+      if (nusiz) out << "  " << playerVar("NUSIZ", number, profile) << " = $" << std::hex << std::uppercase << nusiz << std::dec << "\n";
+      if (layer.reflect && !refpInNusiz) {
+        if (number <= 1 && profile.kernel == Kernel::Standard) out << "  REFP" << number << " = 8\n";
+        else out << "  rem " << objectName << ": reflected\n";
       }
-    } else if (k.kernel != Kernel::Multisprite || l.obj == Obj::BL) {
-      int h = 0;
-      for (int r = 0; r < l.height; r++) h += rowHasPixels(l, 0, r);
-      out << "  " << o << "height = " << h << "\n";
+    } else if (profile.kernel != Kernel::Multisprite || layer.obj == Obj::BL) {
+      int blockHeight = 0;
+      for (int i = 0; i < layer.height; i++) blockHeight += rowHasPixels(layer, 0, i);
+      out << "  " << objectName << "height = " << blockHeight << "\n";
     }
-    if (first && &l != first)
-      out << "  rem " << o << "x = " << basicName(first->obj) << "x + " << l.dx - first->dx << " : " << o << "y = "
-          << basicName(first->obj) << "y + " << l.dy - first->dy << "\n";
+    if (first && &layer != first)
+      out << "  rem " << objectName << "x = " << basicName(first->obj) << "x + " << layer.dx - first->dx << " : " << objectName << "y = "
+          << basicName(first->obj) << "y + " << layer.dy - first->dy << "\n";
   }
   return out.str();
 }
 
-std::string exportBasicAnimation(const Sprite& s, const Animation& an, const Profile& in) {
-  Profile k = basicFor(s, in);
+std::string exportBasicAnimation(const Sprite& sprite, const Animation& animation, const Profile& requested) {
+  Profile profile = basicFor(sprite, requested);
   std::ostringstream out;
-  std::string a = identifier(s.name) + "_" + identifier(an.name), t = a + "_t", st = a + "_s";
-  int n = (int)an.steps.size();
-  out << "  rem " << s.name << ", animation " << an.name << ": " << n << " steps" << (an.loop ? ", loops" : "")
-      << ". gosub " << a << " once per frame; gosub " << a << "_reset restarts it\n";
-  if (n == 0) return out.str() + "  rem (no steps)\n";
-  if (!an.basicTimer.empty() && !an.basicStep.empty())
-    out << "  dim " << t << " = " << an.basicTimer << "\n  dim " << st << " = " << an.basicStep << "\n";
+  std::string prefix = identifier(sprite.name) + "_" + identifier(animation.name), timerName = prefix + "_t", stepName = prefix + "_s";
+  int stepCount = (int)animation.steps.size();
+  out << "  rem " << sprite.name << ", animation " << animation.name << ": " << stepCount << " steps" << (animation.loop ? ", loops" : "")
+      << ". gosub " << prefix << " once per frame; gosub " << prefix << "_reset restarts it\n";
+  if (stepCount == 0) return out.str() + "  rem (no steps)\n";
+  if (!animation.basicTimer.empty() && !animation.basicStep.empty())
+    out << "  dim " << timerName << " = " << animation.basicTimer << "\n  dim " << stepName << " = " << animation.basicStep << "\n";
   else
-    out << "  rem dim " << t << " and " << st << " to two free variables (the animation's batari Basic variables)\n";
-  out << "  data " << a << "_ticks\n  ";
-  for (int i = 0; i < n; i++) out << (i ? ", " : "") << std::clamp(an.steps[i].ticks, 1, 255);
-  out << "\nend\n  goto " << a << "_end\n";
-  out << a << "_reset\n  " << t << " = 0 : " << st << " = 0\n  return\n";
-  out << a << "\n  " << t << " = " << t << " + 1\n  temp1 = " << a << "_ticks[" << st << "]\n";
-  out << "  if " << t << " < temp1 then goto " << a << "_show\n  " << t << " = 0\n  " << st << " = " << st << " + 1\n";
-  out << "  if " << st << " >= " << n << " then " << st << " = " << (an.loop ? 0 : n - 1) << "\n";
-  out << a << "_show\n  on " << st << " goto";
-  for (auto& step : an.steps) out << " " << a << "_f" << step.frame;
+    out << "  rem dim " << timerName << " and " << stepName << " to two free variables (the animation's batari Basic variables)\n";
+  out << "  data " << prefix << "_ticks\n  ";
+  for (int i = 0; i < stepCount; i++) out << (i ? ", " : "") << std::clamp(animation.steps[i].ticks, 1, 255);
+  out << "\nend\n  goto " << prefix << "_end\n";
+  out << prefix << "_reset\n  " << timerName << " = 0 : " << stepName << " = 0\n  return\n";
+  out << prefix << "\n  " << timerName << " = " << timerName << " + 1\n  temp1 = " << prefix << "_ticks[" << stepName << "]\n";
+  out << "  if " << timerName << " < temp1 then goto " << prefix << "_show\n  " << timerName << " = 0\n  " << stepName << " = " << stepName << " + 1\n";
+  out << "  if " << stepName << " >= " << stepCount << " then " << stepName << " = " << (animation.loop ? 0 : stepCount - 1) << "\n";
+  out << prefix << "_show\n  on " << stepName << " goto";
+  for (auto& step : animation.steps) out << " " << prefix << "_f" << step.frame;
   out << "\n";
   std::set<int> frames;
-  for (auto& step : an.steps) frames.insert(std::clamp(step.frame, 0, s.frames - 1));
-  for (int f : frames) out << a << "_f" << f << "\n" << exportBasic(s, k, f) << "  return\n";
-  out << a << "_end\n";
+  for (auto& step : animation.steps) frames.insert(std::clamp(step.frame, 0, sprite.frames - 1));
+  for (int frame : frames) out << prefix << "_f" << frame << "\n" << exportBasic(sprite, profile, frame) << "  return\n";
+  out << prefix << "_end\n";
   return out.str();
 }
 
-std::string exportBasic(const Playfield& p, const Profile& in) {
-  Profile k = basicFor(p, in);
+std::string exportBasic(const Playfield& playfield, const Profile& requested) {
+  Profile profile = basicFor(playfield, requested);
   std::ostringstream out;
-  int rows = (int)p.rows.size();
-  out << "  rem " << p.name << "; " << k.describe() << "\n  playfield:\n";
-  int c0 = k.pfFirst(), c1 = c0 + k.pfColumns();
-  for (int r = 0; r < rows; r++) {
+  int rows = (int)playfield.rows.size();
+  out << "  rem " << playfield.name << "; " << profile.describe() << "\n  playfield:\n";
+  int firstColumn = profile.pfFirst(), endColumn = firstColumn + profile.pfColumns();
+  for (int row = 0; row < rows; row++) {
     out << "  ";
-    for (int c = c0; c < c1; c++) out << (p.pixel(r, c) ? 'X' : '.');
+    for (int column = firstColumn; column < endColumn; column++) out << (playfield.pixel(row, column) ? 'X' : '.');
     out << "\n";
   }
   out << "end\n";
   auto table = [&](const char* block, auto colour) {
     out << "  " << block << ":\n";
-    for (int r = 0; r < rows; r++) out << "  " << hexColour(colour(r)) << "\n";
+    for (int row = 0; row < rows; row++) out << "  " << hexColour(colour(row)) << "\n";
     out << "end\n";
   };
   bool bkVary = false;
-  for (int r = 1; r < rows; r++) bkVary |= p.bkAt(r) != p.bkAt(0);
-  if (k.pfRowColours()) table("pfcolors", [&](int r) { return p.pfAt(r); });
-  else out << "  COLUPF = " << hexColour(p.pfAt(0)) << "\n";
-  if (k.kernel == Kernel::Standard && k.bkRowColours()) table("pfcolors", [&](int r) { return p.bkAt(r); });  // option background: to COLUBK
-  else if (k.bkRowColours() && bkVary) table("bkcolors", [&](int r) { return p.bkAt(r); });
-  else out << "  COLUBK = " << hexColour(p.bkAt(0)) << "\n";
-  if (k.kernel == Kernel::DPCPlus || k.kernel == Kernel::PXE) {
+  for (int row = 1; row < rows; row++) bkVary |= playfield.bkAt(row) != playfield.bkAt(0);
+  if (profile.pfRowColours()) table("pfcolors", [&](int row) { return playfield.pfAt(row); });
+  else out << "  COLUPF = " << hexColour(playfield.pfAt(0)) << "\n";
+  if (profile.kernel == Kernel::Standard && profile.bkRowColours()) table("pfcolors", [&](int row) { return playfield.bkAt(row); });  // option background: to COLUBK
+  else if (profile.bkRowColours() && bkVary) table("bkcolors", [&](int row) { return playfield.bkAt(row); });
+  else out << "  COLUBK = " << hexColour(playfield.bkAt(0)) << "\n";
+  if (profile.kernel == Kernel::DPCPlus || profile.kernel == Kernel::PXE) {
     // the height of the rows: the data fetchers advance FRACINC/256 rows a line, over 176 lines
     int inc = std::clamp((int)std::lround(rows * 256.0 / 176), 1, 255);
-    std::string n = std::to_string(inc);
-    out << "  rem row height (" << rows << " rows), before every drawscreen:\n  DF0FRACINC = " << n << " : DF1FRACINC = " << n
-        << " : DF2FRACINC = " << n << " : DF3FRACINC = " << n << " : DF4FRACINC = " << n << " : DF6FRACINC = " << n << "\n";
+    std::string incrementText = std::to_string(inc);
+    out << "  rem row height (" << rows << " rows), before every drawscreen:\n  DF0FRACINC = " << incrementText << " : DF1FRACINC = " << incrementText
+        << " : DF2FRACINC = " << incrementText << " : DF3FRACINC = " << incrementText << " : DF4FRACINC = " << incrementText << " : DF6FRACINC = " << incrementText << "\n";
   }
   return out.str();
 }
@@ -1227,13 +1227,13 @@ std::string exportBasic(const Playfield& p, const Profile& in) {
 // ---------------------------------------------------------------------------
 // Regions of a batari Basic program kept up to date
 
-static std::string trimmed(const std::string& s) {
-  size_t a = s.find_first_not_of(" \t\r"), b = s.find_last_not_of(" \t\r");
-  return a == std::string::npos ? "" : s.substr(a, b - a + 1);
+static std::string trimmed(const std::string& text) {
+  size_t first = text.find_first_not_of(" \t\r"), last = text.find_last_not_of(" \t\r");
+  return first == std::string::npos ? "" : text.substr(first, last - first + 1);
 }
-static std::string lowered(std::string s) {
-  for (auto& c : s) c = (char)std::tolower((unsigned char)c);
-  return s;
+static std::string lowered(std::string text) {
+  for (auto& character : text) character = (char)std::tolower((unsigned char)character);
+  return text;
 }
 
 // "rem vcsgfx art.vcsgfx hero frame 2" -> file, item, frame (-1); "rem vcsgfx end" -> end
@@ -1243,109 +1243,109 @@ struct Marker {
   int frame = -1;
 };
 static Marker marker(const std::string& line) {
-  Marker m;
-  std::istringstream in(trimmed(line));
+  Marker result;
+  std::istringstream stream(trimmed(line));
   std::string rem, tag;
-  in >> rem >> tag;
-  if (lowered(rem) != "rem" || lowered(tag) != "vcsgfx") return m;
-  m.is = true;
-  std::vector<std::string> w;
-  for (std::string t; in >> t;) w.push_back(t);
-  if (w.size() == 1 && lowered(w[0]) == "end") return m.end = true, m;
-  if (w.empty()) return m;
-  m.file = w[0];
-  size_t n = w.size();
-  if (n >= 3 && lowered(w[n - 2]) == "frame") m.frame = std::atoi(w[n - 1].c_str()) - 1, n -= 2;
-  for (size_t i = 2; i < n; i++)
-    if (lowered(w[i]) == "animation") {
-      for (size_t j = i + 1; j < n; j++) m.animation += (j > i + 1 ? " " : "") + w[j];
-      n = i;
+  stream >> rem >> tag;
+  if (lowered(rem) != "rem" || lowered(tag) != "vcsgfx") return result;
+  result.is = true;
+  std::vector<std::string> words;
+  for (std::string word; stream >> word;) words.push_back(word);
+  if (words.size() == 1 && lowered(words[0]) == "end") return result.end = true, result;
+  if (words.empty()) return result;
+  result.file = words[0];
+  size_t wordCount = words.size();
+  if (wordCount >= 3 && lowered(words[wordCount - 2]) == "frame") result.frame = std::atoi(words[wordCount - 1].c_str()) - 1, wordCount -= 2;
+  for (size_t i = 2; i < wordCount; i++)
+    if (lowered(words[i]) == "animation") {
+      for (size_t j = i + 1; j < wordCount; j++) result.animation += (j > i + 1 ? " " : "") + words[j];
+      wordCount = i;
       break;
     }
-  for (size_t i = 1; i < n; i++) m.item += (i > 1 ? " " : "") + w[i];
-  return m;
+  for (size_t i = 1; i < wordCount; i++) result.item += (i > 1 ? " " : "") + words[i];
+  return result;
 }
 
-static std::string regionBody(const Asset& a, const std::string& item, int frame, const std::string& animation, const Profile& k,
+static std::string regionBody(const Asset& asset, const std::string& item, int frame, const std::string& animation, const Profile& profile,
                               bool* found) {
   *found = true;
-  for (auto& s : a.sprites)
-    if (s.name == item) {
-      if (animation.empty()) return exportBasic(s, k, frame);
-      for (auto& an : s.animations)
-        if (an.name == animation) return exportBasicAnimation(s, an, k);
+  for (auto& sprite : asset.sprites)
+    if (sprite.name == item) {
+      if (animation.empty()) return exportBasic(sprite, profile, frame);
+      for (auto& candidate : sprite.animations)
+        if (candidate.name == animation) return exportBasicAnimation(sprite, candidate, profile);
       *found = false;
       return "";
     }
-  for (auto& p : a.playfields)
-    if (p.name == item) return exportBasic(p, k);
+  for (auto& playfield : asset.playfields)
+    if (playfield.name == item) return exportBasic(playfield, profile);
   *found = false;
   return "";
 }
 
-std::string basicRegion(const std::string& file, const Asset& a, int item, const Profile& k) {
+std::string basicRegion(const std::string& file, const Asset& asset, int item, const Profile& profile) {
   std::string out;
   bool found;
-  if (item < (int)a.sprites.size()) {
-    const Sprite& s = a.sprites[item];
-    if (!s.animations.empty()) {
-      for (size_t i = 0; i < s.animations.size(); i++)
-        out += (i ? "\n" : "") + std::string("  rem vcsgfx ") + file + " " + s.name + " animation " + s.animations[i].name + "\n" +
-               exportBasicAnimation(s, s.animations[i], k) + "  rem vcsgfx end\n";
+  if (item < (int)asset.sprites.size()) {
+    const Sprite& sprite = asset.sprites[item];
+    if (!sprite.animations.empty()) {
+      for (size_t i = 0; i < sprite.animations.size(); i++)
+        out += (i ? "\n" : "") + std::string("  rem vcsgfx ") + file + " " + sprite.name + " animation " + sprite.animations[i].name + "\n" +
+               exportBasicAnimation(sprite, sprite.animations[i], profile) + "  rem vcsgfx end\n";
       return out;
     }
-    for (int f = 0; f < s.frames; f++) {
-      if (f) out += "\n";
-      std::string frame = s.frames > 1 ? " frame " + std::to_string(f + 1) : "";
-      out += "  rem vcsgfx " + file + " " + s.name + frame + "\n" + regionBody(a, s.name, s.frames > 1 ? f : -1, "", k, &found) + "  rem vcsgfx end\n";
+    for (int frameIndex = 0; frameIndex < sprite.frames; frameIndex++) {
+      if (frameIndex) out += "\n";
+      std::string frame = sprite.frames > 1 ? " frame " + std::to_string(frameIndex + 1) : "";
+      out += "  rem vcsgfx " + file + " " + sprite.name + frame + "\n" + regionBody(asset, sprite.name, sprite.frames > 1 ? frameIndex : -1, "", profile, &found) + "  rem vcsgfx end\n";
     }
-  } else if (item - a.sprites.size() < a.playfields.size()) {
-    const Playfield& p = a.playfields[item - a.sprites.size()];
-    out = "  rem vcsgfx " + file + " " + p.name + "\n" + regionBody(a, p.name, -1, "", k, &found) + "  rem vcsgfx end\n";
+  } else if (item - asset.sprites.size() < asset.playfields.size()) {
+    const Playfield& playfield = asset.playfields[item - asset.sprites.size()];
+    out = "  rem vcsgfx " + file + " " + playfield.name + "\n" + regionBody(asset, playfield.name, -1, "", profile, &found) + "  rem vcsgfx end\n";
   }
   return out;
 }
 
-std::string updateBasicRegions(const std::string& source, const std::string& file, const Asset& a, const Profile& k,
+std::string updateBasicRegions(const std::string& source, const std::string& file, const Asset& asset, const Profile& profile,
                                int* updated, std::vector<std::string>* problems) {
   if (updated) *updated = 0;
   bool crlf = source.find("\r\n") != std::string::npos;
   std::vector<std::string> lines;
   {
-    std::string cur;
-    for (char c : source) {
-      if (c == '\n') lines.push_back(cur), cur.clear();
-      else cur += c;
+    std::string current;
+    for (char character : source) {
+      if (character == '\n') lines.push_back(current), current.clear();
+      else current += character;
     }
-    lines.push_back(cur);  // what follows the last newline ("" if the text ends with one)
+    lines.push_back(current);  // what follows the last newline ("" if the text ends with one)
   }
   std::vector<std::string> out;
   for (size_t i = 0; i < lines.size(); i++) {
     out.push_back(lines[i]);
-    Marker m = marker(lines[i]);
-    if (!m.is || m.end || lowered(m.file) != lowered(file)) continue;
+    Marker region = marker(lines[i]);
+    if (!region.is || region.end || lowered(region.file) != lowered(file)) continue;
     size_t end = i + 1;
     while (end < lines.size() && !marker(lines[end]).end) end++;
     if (end >= lines.size()) {
-      if (problems) problems->push_back(F("Line {0}: `rem vcsgfx {1}` has no `rem vcsgfx end`.", {std::to_string(i + 1), m.file + " " + m.item}));
+      if (problems) problems->push_back(F("Line {0}: `rem vcsgfx {1}` has no `rem vcsgfx end`.", {std::to_string(i + 1), region.file + " " + region.item}));
       continue;
     }
-    auto sp = std::find_if(a.sprites.begin(), a.sprites.end(), [&](const Sprite& s) { return s.name == m.item; });
-    if (sp != a.sprites.end() && m.frame >= sp->frames) {
-      if (problems) problems->push_back(F("Line {0}: {1} has {2} frames.", {std::to_string(i + 1), m.item, std::to_string(sp->frames)}));
+    auto foundSprite = std::find_if(asset.sprites.begin(), asset.sprites.end(), [&](const Sprite& sprite) { return sprite.name == region.item; });
+    if (foundSprite != asset.sprites.end() && region.frame >= foundSprite->frames) {
+      if (problems) problems->push_back(F("Line {0}: {1} has {2} frames.", {std::to_string(i + 1), region.item, std::to_string(foundSprite->frames)}));
       continue;
     }
     bool found;
-    std::string body = regionBody(a, m.item, m.frame, m.animation, k, &found);
+    std::string body = regionBody(asset, region.item, region.frame, region.animation, profile, &found);
     if (!found) {
       if (problems)
-        problems->push_back(m.animation.empty() || sp == a.sprites.end()
-                                ? F("Line {0}: {1} has no sprite or playfield called {2}.", {std::to_string(i + 1), file, m.item})
-                                : F("Line {0}: {1} has no animation called {2}.", {std::to_string(i + 1), m.item, m.animation}));
+        problems->push_back(region.animation.empty() || foundSprite == asset.sprites.end()
+                                ? F("Line {0}: {1} has no sprite or playfield called {2}.", {std::to_string(i + 1), file, region.item})
+                                : F("Line {0}: {1} has no animation called {2}.", {std::to_string(i + 1), region.item, region.animation}));
       continue;
     }
-    std::istringstream b(body);
-    for (std::string l; std::getline(b, l);) out.push_back(crlf ? l + "\r" : l);
+    std::istringstream bodyStream(body);
+    for (std::string bodyLine; std::getline(bodyStream, bodyLine);) out.push_back(crlf ? bodyLine + "\r" : bodyLine);
     i = end - 1;  // the end marker is copied on the next turn
     if (updated) ++*updated;
   }
@@ -1365,14 +1365,14 @@ struct Block {
   std::vector<int> comments;   // ";$xx" after a value, -1 if none
 };
 
-int parseValue(const std::string& t) {
-  std::string v = t;
-  while (!v.empty() && (v[0] == '#' || std::isspace((unsigned char)v[0]))) v.erase(0, 1);
+int parseValue(const std::string& text) {
+  std::string trimmed = text;
+  while (!trimmed.empty() && (trimmed[0] == '#' || std::isspace((unsigned char)trimmed[0]))) trimmed.erase(0, 1);
   try {
-    if (!v.empty() && v[0] == '%') return std::stoi(v.substr(1), nullptr, 2);
-    if (!v.empty() && v[0] == '$') return std::stoi(v.substr(1), nullptr, 16);
-    if (v.rfind("0x", 0) == 0) return std::stoi(v.substr(2), nullptr, 16);
-    if (!v.empty() && std::isdigit((unsigned char)v[0])) return std::stoi(v);
+    if (!trimmed.empty() && trimmed[0] == '%') return std::stoi(trimmed.substr(1), nullptr, 2);
+    if (!trimmed.empty() && trimmed[0] == '$') return std::stoi(trimmed.substr(1), nullptr, 16);
+    if (trimmed.rfind("0x", 0) == 0) return std::stoi(trimmed.substr(2), nullptr, 16);
+    if (!trimmed.empty() && std::isdigit((unsigned char)trimmed[0])) return std::stoi(trimmed);
   } catch (...) {}
   return -1;
 }
@@ -1392,217 +1392,217 @@ bool importText(const std::string& text, Asset* out, std::string* what, const Pr
   static const std::regex colourComment(R"(;\s*\$([0-9A-Fa-f]{2}))");
   std::vector<Block> blocks;
   bool topFirst = false, sawRowsNote = false;
-  std::istringstream in(text);
+  std::istringstream lineStream(text);
   std::string line;
-  Block* bb = nullptr;
-  while (std::getline(in, line)) {
+  Block* openBlock = nullptr;
+  while (std::getline(lineStream, line)) {
     if (!line.empty() && line.back() == '\r') line.pop_back();
-    std::smatch m;
+    std::smatch match;
     if (line.find("Rows: top first") != std::string::npos) topFirst = true, sawRowsNote = true;
-    if (!bb && std::regex_match(line, m, modeHeader)) {
-      std::string o = m[1].str();
-      for (auto& c : o) c = (char)std::tolower((unsigned char)c);
+    if (!openBlock && std::regex_match(line, match, modeHeader)) {
+      std::string modeText = match[1].str();
+      for (auto& character : modeText) character = (char)std::tolower((unsigned char)character);
       static const std::regex word(R"([a-z]+(?:-?height)?:?\s*\d*)");
-      for (auto it = std::sregex_iterator(o.begin(), o.end(), word); it != std::sregex_iterator(); ++it) {
-        std::string w = it->str();
-        if (w.rfind("asym", 0) == 0) mode.asym = true;
-        else if (w.rfind("repeat", 0) == 0) mode.repeat = true;
-        else if (w.rfind("line", 0) == 0 && w.find_first_of("0123456789") != std::string::npos)
-          mode.lineHeight = std::stoi(w.substr(w.find_first_of("0123456789")));
+      for (auto tokenIt = std::sregex_iterator(modeText.begin(), modeText.end(), word); tokenIt != std::sregex_iterator(); ++tokenIt) {
+        std::string token = tokenIt->str();
+        if (token.rfind("asym", 0) == 0) mode.asym = true;
+        else if (token.rfind("repeat", 0) == 0) mode.repeat = true;
+        else if (token.rfind("line", 0) == 0 && token.find_first_of("0123456789") != std::string::npos)
+          mode.lineHeight = std::stoi(token.substr(token.find_first_of("0123456789")));
       }
       mode.seen = true;
       continue;
     }
     if (line.find("Rows: bottom first") != std::string::npos) topFirst = false, sawRowsNote = true;
-    if (bb) {
-      std::string t = line;
-      t.erase(0, t.find_first_not_of(" \t"));
-      if (t.rfind("end", 0) == 0 && (t.size() == 3 || std::isspace((unsigned char)t[3]))) { bb = nullptr; continue; }
-      if (t.empty()) continue;
-      if (bb->kind == "playfield") bb->rows.push_back(t.substr(0, t.find_first_of(" \t")));
-      else if (int v = parseValue(t.substr(0, t.find_first_of(" \t;"))); v >= 0) bb->values.push_back(v), bb->comments.push_back(-1);
+    if (openBlock) {
+      std::string trimmedLine = line;
+      trimmedLine.erase(0, trimmedLine.find_first_not_of(" \t"));
+      if (trimmedLine.rfind("end", 0) == 0 && (trimmedLine.size() == 3 || std::isspace((unsigned char)trimmedLine[3]))) { openBlock = nullptr; continue; }
+      if (trimmedLine.empty()) continue;
+      if (openBlock->kind == "playfield") openBlock->rows.push_back(trimmedLine.substr(0, trimmedLine.find_first_of(" \t")));
+      else if (int value = parseValue(trimmedLine.substr(0, trimmedLine.find_first_of(" \t;"))); value >= 0) openBlock->values.push_back(value), openBlock->comments.push_back(-1);
       continue;
     }
-    if (std::regex_match(line, m, bbStart)) {
-      Block b;
-      b.kind = m[1].str();
-      for (auto& c : b.kind) c = (char)std::tolower((unsigned char)c);
-      blocks.push_back(b);
-      bb = &blocks.back();
+    if (std::regex_match(line, match, bbStart)) {
+      Block block;
+      block.kind = match[1].str();
+      for (auto& character : block.kind) character = (char)std::tolower((unsigned char)character);
+      blocks.push_back(block);
+      openBlock = &blocks.back();
       continue;
     }
-    if (std::regex_match(line, m, asmData)) {
+    if (std::regex_match(line, match, asmData)) {
       if (blocks.empty() || !blocks.back().kind.empty()) blocks.push_back(Block{});
-      Block& b = blocks.back();
-      std::string data = m[1].str();
-      std::smatch c;
-      int comment = std::regex_search(data, c, colourComment) ? std::stoi(c[1].str(), nullptr, 16) : -1;
+      Block& block = blocks.back();
+      std::string data = match[1].str();
+      std::smatch colourMatch;
+      int comment = std::regex_search(data, colourMatch, colourComment) ? std::stoi(colourMatch[1].str(), nullptr, 16) : -1;
       data = data.substr(0, data.find(';'));
-      std::istringstream vs(data);
-      for (std::string v; std::getline(vs, v, ',');)
-        if (int x = parseValue(v); x >= 0) b.values.push_back(x), b.comments.push_back(comment);
+      std::istringstream valueStream(data);
+      for (std::string piece; std::getline(valueStream, piece, ',');)
+        if (int byteValue = parseValue(piece); byteValue >= 0) block.values.push_back(byteValue), block.comments.push_back(comment);
       continue;
     }
-    if (std::regex_match(line, m, label) && line.find('=') == std::string::npos) {
-      Block b;
-      b.label = m[1].str();
-      blocks.push_back(b);
+    if (std::regex_match(line, match, label) && line.find('=') == std::string::npos) {
+      Block block;
+      block.label = match[1].str();
+      blocks.push_back(block);
     }
   }
-  blocks.erase(std::remove_if(blocks.begin(), blocks.end(), [](const Block& b) { return b.values.empty() && b.rows.empty(); }), blocks.end());
+  blocks.erase(std::remove_if(blocks.begin(), blocks.end(), [](const Block& block) { return block.values.empty() && block.rows.empty(); }), blocks.end());
   if (blocks.empty()) {
     if (what) what->clear();
     return false;
   }
-  auto lower = [](std::string s) {
-    for (auto& c : s) c = (char)std::tolower((unsigned char)c);
-    return s;
+  auto lower = [](std::string text) {
+    for (auto& character : text) character = (char)std::tolower((unsigned char)character);
+    return text;
   };
-  auto endsWith = [](const std::string& s, const std::string& e) { return s.size() >= e.size() && s.compare(s.size() - e.size(), e.size(), e) == 0; };
+  auto endsWith = [](const std::string& text, const std::string& suffix) { return text.size() >= suffix.size() && text.compare(text.size() - suffix.size(), suffix.size(), suffix) == 0; };
   std::vector<std::string> found;
 
   // batari Basic playfield
-  for (auto& b : blocks)
-    if (b.kind == "playfield") {
-      Playfield p;
-      p.rows.assign(b.rows.size(), PfRow{});
-      for (size_t r = 0; r < b.rows.size(); r++) {
-        if (b.rows[r].size() <= 16) {  // the multisprite kernel: the left half from column 4, mirrored
-          p.rows[r].bits = (rowBits(b.rows[r], false) & 0xFFFF) << 4;
-          p.rows[r].mode = PfMode::Mirror;
+  for (auto& block : blocks)
+    if (block.kind == "playfield") {
+      Playfield playfield;
+      playfield.rows.assign(block.rows.size(), PfRow{});
+      for (size_t i = 0; i < block.rows.size(); i++) {
+        if (block.rows[i].size() <= 16) {  // the multisprite kernel: the left half from column 4, mirrored
+          playfield.rows[i].bits = (rowBits(block.rows[i], false) & 0xFFFF) << 4;
+          playfield.rows[i].mode = PfMode::Mirror;
           continue;
         }
-        p.rows[r].asymmetric = true;
-        p.rows[r].bits = rowBits(b.rows[r], false) << 4;  // bB columns are the screen's 4-35
+        playfield.rows[i].asymmetric = true;
+        playfield.rows[i].bits = rowBits(block.rows[i], false) << 4;  // bB columns are the screen's 4-35
       }
-      for (auto& c : blocks) {
-        if (c.kind != "pfcolors" && c.kind != "bkcolors") continue;
-        for (size_t r = 0; r < c.values.size() && r < p.rows.size(); r++) (c.kind == "pfcolors" ? p.rows[r].pf : p.rows[r].bk) = c.values[r];
+      for (auto& other : blocks) {
+        if (other.kind != "pfcolors" && other.kind != "bkcolors") continue;
+        for (size_t i = 0; i < other.values.size() && i < playfield.rows.size(); i++) (other.kind == "pfcolors" ? playfield.rows[i].pf : playfield.rows[i].bk) = other.values[i];
       }
       // rows whose right half is what a mirror or a repeat would give are symmetric again
-      for (int r = 0; r < (int)p.rows.size(); r++)
-        for (PfMode mode : {PfMode::Mirror, PfMode::Repeat}) {
-          Playfield t = p;
-          t.rows[r].asymmetric = false;
-          t.rows[r].mode = mode;
-          t.rows[r].bits &= 0xFFFFFull;
+      for (int row = 0; row < (int)playfield.rows.size(); row++)
+        for (PfMode symmetricMode : {PfMode::Mirror, PfMode::Repeat}) {
+          Playfield candidate = playfield;
+          candidate.rows[row].asymmetric = false;
+          candidate.rows[row].mode = symmetricMode;
+          candidate.rows[row].bits &= 0xFFFFFull;
           bool same = true;
-          for (int c = 20; c < 40; c++) same &= t.pixel(r, c) == p.pixel(r, c);
-          if (same) { p.rows[r] = t.rows[r]; break; }
+          for (int column = 20; column < 40; column++) same &= candidate.pixel(row, column) == playfield.pixel(row, column);
+          if (same) { playfield.rows[row] = candidate.rows[row]; break; }
         }
-      p.name = "playfield";
-      out->playfields.push_back(p);
-      found.push_back(F("a playfield of {0} rows", {std::to_string(p.rows.size())}));
+      playfield.name = "playfield";
+      out->playfields.push_back(playfield);
+      found.push_back(F("a playfield of {0} rows", {std::to_string(playfield.rows.size())}));
       break;
     }
 
   // batari Basic players: each block is a frame, colours pair in order. The standard and
   // multisprite kernels read the rows bottom first, DPC+ and PXE top first.
   {
-    Sprite s;
-    s.name = "sprite";
+    Sprite sprite;
+    sprite.name = "sprite";
     bool top = kernel.topFirst() && kernel.basic();
-    for (int pn = 0; pn < 17; pn++) {
-      Obj o = playerObj(pn);
-      std::string k = "player" + std::to_string(pn);
-      std::vector<const Block*> g, c;
-      for (auto& b : blocks) {
-        std::string kind = b.kind;
-        if (size_t d = kind.find('-'); d != std::string::npos) kind.erase(d, kind.find_first_not_of("0123456789", d + 1) - d);  // player1-3: the first
-        if (kind == k) g.push_back(&b);
-        if (kind == k + "color") c.push_back(&b);
+    for (int number = 0; number < 17; number++) {
+      Obj object = playerObj(number);
+      std::string kindName = "player" + std::to_string(number);
+      std::vector<const Block*> dataBlocks, colourBlocks;
+      for (auto& block : blocks) {
+        std::string kind = block.kind;
+        if (size_t dash = kind.find('-'); dash != std::string::npos) kind.erase(dash, kind.find_first_not_of("0123456789", dash + 1) - dash);  // player1-3: the first
+        if (kind == kindName) dataBlocks.push_back(&block);
+        if (kind == kindName + "color") colourBlocks.push_back(&block);
       }
-      if (g.empty()) continue;
-      Layer l;
-      l.obj = o;
-      int h = 0;
-      for (auto* b : g) h = std::max(h, (int)b->values.size());
-      s.frames = std::max(s.frames, (int)g.size());
-      l.resize((int)g.size(), h);
-      for (size_t f = 0; f < g.size(); f++) {
-        int n = (int)g[f]->values.size();
-        for (int i = 0; i < n; i++) l.bits[f][top ? i : h - 1 - i] = (uint8_t)g[f]->values[i];
-        if (f < c.size())
-          for (int i = 0; i < (int)c[f]->values.size() && i < h; i++) l.colours[f][top ? i : h - 1 - i] = c[f]->values[i];
+      if (dataBlocks.empty()) continue;
+      Layer layer;
+      layer.obj = object;
+      int rowCount = 0;
+      for (auto* block : dataBlocks) rowCount = std::max(rowCount, (int)block->values.size());
+      sprite.frames = std::max(sprite.frames, (int)dataBlocks.size());
+      layer.resize((int)dataBlocks.size(), rowCount);
+      for (size_t frame = 0; frame < dataBlocks.size(); frame++) {
+        int count = (int)dataBlocks[frame]->values.size();
+        for (int i = 0; i < count; i++) layer.bits[frame][top ? i : rowCount - 1 - i] = (uint8_t)dataBlocks[frame]->values[i];
+        if (frame < colourBlocks.size())
+          for (int i = 0; i < (int)colourBlocks[frame]->values.size() && i < rowCount; i++) layer.colours[frame][top ? i : rowCount - 1 - i] = colourBlocks[frame]->values[i];
       }
-      s.layers.push_back(l);
+      sprite.layers.push_back(layer);
     }
-    if (!s.layers.empty()) {
-      s.setFrames(s.frames);
-      out->sprites.push_back(s);
-      found.push_back(F("{0} player(s), {1} frame(s)", {std::to_string(s.layers.size()), std::to_string(s.frames)}));
+    if (!sprite.layers.empty()) {
+      sprite.setFrames(sprite.frames);
+      out->sprites.push_back(sprite);
+      found.push_back(F("{0} player(s), {1} frame(s)", {std::to_string(sprite.layers.size()), std::to_string(sprite.frames)}));
     }
   }
 
   // assembly playfield tables: labels ending in PF0, PF1, PF2 (and PF0R... for the right half)
   {
-    std::map<std::string, const Block*> pf;
-    for (auto& b : blocks) {
-      if (!b.kind.empty()) continue;
-      std::string l = lower(b.label);
-      for (const char* k : {"pf0r", "pf1r", "pf2r", "pf0", "pf1", "pf2", "colupf_rows", "colubk_rows", "ctrlpf_rows"})
-        if (endsWith(l, k) && !pf.count(k)) { pf[k] = &b; break; }
+    std::map<std::string, const Block*> registerTables;
+    for (auto& block : blocks) {
+      if (!block.kind.empty()) continue;
+      std::string lowerLabel = lower(block.label);
+      for (const char* suffix : {"pf0r", "pf1r", "pf2r", "pf0", "pf1", "pf2", "colupf_rows", "colubk_rows", "ctrlpf_rows"})
+        if (endsWith(lowerLabel, suffix) && !registerTables.count(suffix)) { registerTables[suffix] = &block; break; }
     }
     // the registers of each row: PF0-PF2 and, for asymmetric rows, PF0R-PF2R
-    std::vector<int> reg6[6];
+    std::vector<int> registerValues[6];
     bool hasRight = false;
     std::string name;
-    if (pf.count("pf0") && pf.count("pf1") && pf.count("pf2")) {
+    if (registerTables.count("pf0") && registerTables.count("pf1") && registerTables.count("pf2")) {
       const char* keys[6] = {"pf0", "pf1", "pf2", "pf0r", "pf1r", "pf2r"};
-      hasRight = pf.count("pf0r") && pf.count("pf1r") && pf.count("pf2r");
-      for (int k = 0; k < (hasRight ? 6 : 3); k++) reg6[k] = pf[keys[k]]->values;
+      hasRight = registerTables.count("pf0r") && registerTables.count("pf1r") && registerTables.count("pf2r");
+      for (int registerIndex = 0; registerIndex < (hasRight ? 6 : 3); registerIndex++) registerValues[registerIndex] = registerTables[keys[registerIndex]]->values;
       if (mode.asym && !hasRight)  // one table per register, left and right halves of each row in turn
-        for (int k = 0; k < 3; k++) {
-          std::vector<int> both = reg6[k];
-          reg6[k].clear();
-          for (size_t i = 0; i + 1 < both.size(); i += 2) reg6[k].push_back(both[i]), reg6[k + 3].push_back(both[i + 1]);
+        for (int registerIndex = 0; registerIndex < 3; registerIndex++) {
+          std::vector<int> both = registerValues[registerIndex];
+          registerValues[registerIndex].clear();
+          for (size_t i = 0; i + 1 < both.size(); i += 2) registerValues[registerIndex].push_back(both[i]), registerValues[registerIndex + 3].push_back(both[i + 1]);
           hasRight = true;
         }
-      name = pf["pf0"]->label;
+      name = registerTables["pf0"]->label;
       name = name.substr(0, name.size() - 3);
     } else if (mode.seen) {
       // one line per row: PF0, PF1, PF2 (and the right half's three)
-      for (auto& b : blocks) {
-        if (!b.kind.empty() || !b.rows.empty()) continue;
-        size_t n = mode.asym ? 6 : 3;
-        if (b.values.size() < n || b.values.size() % n) continue;
-        for (size_t i = 0; i < b.values.size(); i++) reg6[i % n].push_back(b.values[i]);
+      for (auto& block : blocks) {
+        if (!block.kind.empty() || !block.rows.empty()) continue;
+        size_t perRow = mode.asym ? 6 : 3;
+        if (block.values.size() < perRow || block.values.size() % perRow) continue;
+        for (size_t i = 0; i < block.values.size(); i++) registerValues[i % perRow].push_back(block.values[i]);
         hasRight = mode.asym;
-        name = b.label;
+        name = block.label;
         break;
       }
     }
-    if (!reg6[0].empty()) {
-      Playfield p;
-      int rows = (int)std::min({reg6[0].size(), reg6[1].size(), reg6[2].size()});
-      p.rows.assign(rows, PfRow{});
-      if (mode.lineHeight > 0) p.lineHeight = std::clamp(mode.lineHeight, 1, 64);
+    if (!registerValues[0].empty()) {
+      Playfield playfield;
+      int rows = (int)std::min({registerValues[0].size(), registerValues[1].size(), registerValues[2].size()});
+      playfield.rows.assign(rows, PfRow{});
+      if (mode.lineHeight > 0) playfield.lineHeight = std::clamp(mode.lineHeight, 1, 64);
       bool flip = sawRowsNote && !topFirst;
       for (int i = 0; i < rows; i++) {
-        int r = flip ? rows - 1 - i : i;
-        PfRow& row = p.rows[r];
+        int rowIndex = flip ? rows - 1 - i : i;
+        PfRow& row = playfield.rows[rowIndex];
         if (mode.seen) row.mode = mode.repeat ? PfMode::Repeat : PfMode::Mirror;
-        if (pf.count("ctrlpf_rows") && i < (int)pf["ctrlpf_rows"]->values.size())
-          row.mode = pf["ctrlpf_rows"]->values[i] & 1 ? PfMode::Mirror : PfMode::Repeat;
-        int L[3] = {reg6[0][i], reg6[1][i], reg6[2][i]}, reg, bit;
+        if (registerTables.count("ctrlpf_rows") && i < (int)registerTables["ctrlpf_rows"]->values.size())
+          row.mode = registerTables["ctrlpf_rows"]->values[i] & 1 ? PfMode::Mirror : PfMode::Repeat;
+        int leftRegisters[3] = {registerValues[0][i], registerValues[1][i], registerValues[2][i]}, registerIndex, bitIndex;
         for (int j = 0; j < 20; j++)
-          if (pfBit(j, &reg, &bit), (L[reg] >> bit) & 1) row.bits |= 1ull << j;
-        if (hasRight && i < (int)std::min({reg6[3].size(), reg6[4].size(), reg6[5].size()})) {
-          int R[3] = {reg6[3][i], reg6[4][i], reg6[5][i]};
-          if (R[0] != L[0] || R[1] != L[1] || R[2] != L[2]) {
+          if (pfBit(j, &registerIndex, &bitIndex), (leftRegisters[registerIndex] >> bitIndex) & 1) row.bits |= 1ull << j;
+        if (hasRight && i < (int)std::min({registerValues[3].size(), registerValues[4].size(), registerValues[5].size()})) {
+          int rightRegisters[3] = {registerValues[3][i], registerValues[4][i], registerValues[5][i]};
+          if (rightRegisters[0] != leftRegisters[0] || rightRegisters[1] != leftRegisters[1] || rightRegisters[2] != leftRegisters[2]) {
             row.asymmetric = true;
-            for (int c = 20; c < 40; c++) {
-              int j = row.mode == PfMode::Mirror ? 39 - c : c - 20;
-              if (pfBit(j, &reg, &bit), (R[reg] >> bit) & 1) row.bits |= 1ull << c;
+            for (int column = 20; column < 40; column++) {
+              int sourceColumn = row.mode == PfMode::Mirror ? 39 - column : column - 20;
+              if (pfBit(sourceColumn, &registerIndex, &bitIndex), (rightRegisters[registerIndex] >> bitIndex) & 1) row.bits |= 1ull << column;
             }
           }
         }
-        if (pf.count("colupf_rows") && i < (int)pf["colupf_rows"]->values.size()) row.pf = pf["colupf_rows"]->values[i];
-        if (pf.count("colubk_rows") && i < (int)pf["colubk_rows"]->values.size()) row.bk = pf["colubk_rows"]->values[i];
+        if (registerTables.count("colupf_rows") && i < (int)registerTables["colupf_rows"]->values.size()) row.pf = registerTables["colupf_rows"]->values[i];
+        if (registerTables.count("colubk_rows") && i < (int)registerTables["colubk_rows"]->values.size()) row.bk = registerTables["colubk_rows"]->values[i];
       }
       while (!name.empty() && (name.back() == '_' || name.back() == '.')) name.pop_back();
-      p.name = name.empty() ? "playfield" : name;
-      out->playfields.push_back(p);
+      playfield.name = name.empty() ? "playfield" : name;
+      out->playfields.push_back(playfield);
       found.push_back(F("a playfield of {0} rows", {std::to_string(rows)}));
     }
   }
@@ -1616,97 +1616,97 @@ bool importText(const std::string& text, Asset* out, std::string* what, const Pr
     std::vector<std::string> order;
     static const std::regex ours(R"(^(.*)_(?:Frame|Colour)\d+$)");
     static const std::regex colourLabel("colou?r", std::regex::icase);
-    for (auto& b : blocks) {
-      if (!b.kind.empty() || mode.seen) continue;  // a "; mode:" export holds a playfield only
-      std::string l = lower(b.label);
+    for (auto& block : blocks) {
+      if (!block.kind.empty() || mode.seen) continue;  // a "; mode:" export holds a playfield only
+      std::string lowerLabel = lower(block.label);
       bool isPf = false;
-      for (const char* k : {"pf0r", "pf1r", "pf2r", "pf0", "pf1", "pf2", "colupf_rows", "colubk_rows", "ctrlpf_rows"}) isPf |= endsWith(l, k);
+      for (const char* suffix : {"pf0r", "pf1r", "pf2r", "pf0", "pf1", "pf2", "colupf_rows", "colubk_rows", "ctrlpf_rows"}) isPf |= endsWith(lowerLabel, suffix);
       if (isPf) continue;
       // frame pointers are not frames; animation tables are read below
       static const std::regex pointers(R"(_(?:Frame|Colour)Ptr(?:Lo|Hi)$)");
       static const std::regex animTable(R"(^(.*)_(FRAME|TICKS)$)");
-      std::smatch am;
-      if (std::regex_search(b.label, pointers)) continue;
-      if (std::regex_match(b.label, am, animTable)) {
-        (am[2] == "FRAME" ? animFrames : animTicks)[am[1].str()] = &b;
+      std::smatch animationMatch;
+      if (std::regex_search(block.label, pointers)) continue;
+      if (std::regex_match(block.label, animationMatch, animTable)) {
+        (animationMatch[2] == "FRAME" ? animFrames : animTicks)[animationMatch[1].str()] = &block;
         continue;
       }
-      std::smatch m;
-      std::string key = std::regex_match(b.label, m, ours) && m[1].str().find('_') != std::string::npos ? m[1].str() : "";
-      bool colour = std::regex_search(b.label, colourLabel);
+      std::smatch match;
+      std::string key = std::regex_match(block.label, match, ours) && match[1].str().find('_') != std::string::npos ? match[1].str() : "";
+      bool colour = std::regex_search(block.label, colourLabel);
       if (std::find(order.begin(), order.end(), key) == order.end()) order.push_back(key);
-      (colour ? colours : frames)[key].push_back(&b);
+      (colour ? colours : frames)[key].push_back(&block);
     }
-    Sprite s;
-    s.name.clear();
+    Sprite sprite;
+    sprite.name.clear();
     for (auto& key : order) {
-      auto& g = frames[key];
-      if (g.empty()) continue;
-      Layer l;
-      std::smatch m;
+      auto& frameBlocks = frames[key];
+      if (frameBlocks.empty()) continue;
+      Layer layer;
+      std::smatch match;
       static const std::regex obj(R"(^(.*?)_(P1[0-6]|P[0-9]|M0|M1|BL)[b-z]?(?:_(\w+))?$)");
-      if (std::regex_match(key, m, obj)) {
-        for (int k = 0; k < kObjects; k++)
-          if (m[2].str() == objName((Obj)k)) l.obj = (Obj)k;
-        l.name = m[3].str();
-        if (s.name.empty()) s.name = m[1].str();
+      if (std::regex_match(key, match, obj)) {
+        for (int objectIndex = 0; objectIndex < kObjects; objectIndex++)
+          if (match[2].str() == objName((Obj)objectIndex)) layer.obj = (Obj)objectIndex;
+        layer.name = match[3].str();
+        if (sprite.name.empty()) sprite.name = match[1].str();
       }
-      int h = 0;
-      for (auto* b : g) h = std::max(h, (int)b->values.size());
-      l.resize((int)g.size(), h);
+      int rowCount = 0;
+      for (auto* block : frameBlocks) rowCount = std::max(rowCount, (int)block->values.size());
+      layer.resize((int)frameBlocks.size(), rowCount);
       bool flip = !sawRowsNote || !topFirst;  // assembly tables are bottom first unless they say otherwise
-      for (size_t f = 0; f < g.size(); f++) {
-        int n = (int)g[f]->values.size();
-        for (int i = 0; i < n; i++) {
-          int r = flip ? h - 1 - i : i;
-          int v = g[f]->values[i];
-          l.bits[f][r] = (uint8_t)(isPlayer(l.obj) ? v : (v & 2) != 0);
-          if (g[f]->comments[i] >= 0) l.colours[f][r] = g[f]->comments[i];
+      for (size_t frameIndex = 0; frameIndex < frameBlocks.size(); frameIndex++) {
+        int count = (int)frameBlocks[frameIndex]->values.size();
+        for (int i = 0; i < count; i++) {
+          int row = flip ? rowCount - 1 - i : i;
+          int value = frameBlocks[frameIndex]->values[i];
+          layer.bits[frameIndex][row] = (uint8_t)(isPlayer(layer.obj) ? value : (value & 2) != 0);
+          if (frameBlocks[frameIndex]->comments[i] >= 0) layer.colours[frameIndex][row] = frameBlocks[frameIndex]->comments[i];
         }
-        auto& c = colours[key];
-        if (f < c.size())
-          for (int i = 0; i < (int)c[f]->values.size() && i < h; i++) l.colours[f][flip ? h - 1 - i : i] = c[f]->values[i];
+        auto& colourBlocks = colours[key];
+        if (frameIndex < colourBlocks.size())
+          for (int i = 0; i < (int)colourBlocks[frameIndex]->values.size() && i < rowCount; i++) layer.colours[frameIndex][flip ? rowCount - 1 - i : i] = colourBlocks[frameIndex]->values[i];
       }
       // the equates of an exported sprite give the position, size and phase back
       if (!key.empty()) {
         std::istringstream again(text);
-        for (std::string t; std::getline(again, t);) {
-          if (t.rfind(key + "_", 0) != 0) continue;
-          std::string rest = t.substr(key.size() + 1);
-          std::smatch e;
+        for (std::string equateLine; std::getline(again, equateLine);) {
+          if (equateLine.rfind(key + "_", 0) != 0) continue;
+          std::string rest = equateLine.substr(key.size() + 1);
+          std::smatch equate;
           static const std::regex eq(R"(^(DX|DY|PHASE)\s*=\s*(-?\d+))");
-          if (std::regex_search(rest, e, eq)) {
-            int v = std::stoi(e[2]);
-            (e[1] == "DX" ? l.dx : e[1] == "DY" ? l.dy : l.phase) = e[1] == "PHASE" ? std::clamp(v, 0, 3) : v;
+          if (std::regex_search(rest, equate, eq)) {
+            int value = std::stoi(equate[2]);
+            (equate[1] == "DX" ? layer.dx : equate[1] == "DY" ? layer.dy : layer.phase) = equate[1] == "PHASE" ? std::clamp(value, 0, 3) : value;
           }
-          if (rest.rfind("NUSIZ", 0) == 0) l.size = rest.find("$07") != std::string::npos ? 4 : rest.find("$05") != std::string::npos ? 2 : 1;
-          if (rest.rfind("REFP", 0) == 0) l.reflect = true;
-          if (rest.rfind("SIZE", 0) == 0) l.size = rest.find("$30") != std::string::npos ? 8 : rest.find("$20") != std::string::npos ? 4 : rest.find("$10") != std::string::npos ? 2 : 1;
+          if (rest.rfind("NUSIZ", 0) == 0) layer.size = rest.find("$07") != std::string::npos ? 4 : rest.find("$05") != std::string::npos ? 2 : 1;
+          if (rest.rfind("REFP", 0) == 0) layer.reflect = true;
+          if (rest.rfind("SIZE", 0) == 0) layer.size = rest.find("$30") != std::string::npos ? 8 : rest.find("$20") != std::string::npos ? 4 : rest.find("$10") != std::string::npos ? 2 : 1;
         }
       }
-      s.frames = std::max(s.frames, (int)g.size());
-      s.layers.push_back(l);
+      sprite.frames = std::max(sprite.frames, (int)frameBlocks.size());
+      sprite.layers.push_back(layer);
     }
-    if (!s.layers.empty()) {
-      if (s.name.empty()) s.name = "sprite";
-      s.setFrames(s.frames);
-      for (auto& [prefix, fb] : animFrames) {
-        if (prefix.rfind(s.name + "_", 0) != 0) continue;
-        Animation an;
-        an.name = prefix.substr(s.name.size() + 1);
-        const Block* tb = animTicks.count(prefix) ? animTicks[prefix] : nullptr;
-        for (size_t i = 0; i < fb->values.size(); i++)
-          an.steps.push_back({std::clamp(fb->values[i], 0, s.frames - 1), tb && i < tb->values.size() ? std::clamp(tb->values[i], 1, 255) : 8});
-        an.loop = text.find(prefix + "_LOOP = 0") == std::string::npos;
-        s.animations.push_back(an);
+    if (!sprite.layers.empty()) {
+      if (sprite.name.empty()) sprite.name = "sprite";
+      sprite.setFrames(sprite.frames);
+      for (auto& [prefix, frameBlock] : animFrames) {
+        if (prefix.rfind(sprite.name + "_", 0) != 0) continue;
+        Animation animation;
+        animation.name = prefix.substr(sprite.name.size() + 1);
+        const Block* tickBlock = animTicks.count(prefix) ? animTicks[prefix] : nullptr;
+        for (size_t i = 0; i < frameBlock->values.size(); i++)
+          animation.steps.push_back({std::clamp(frameBlock->values[i], 0, sprite.frames - 1), tickBlock && i < tickBlock->values.size() ? std::clamp(tickBlock->values[i], 1, 255) : 8});
+        animation.loop = text.find(prefix + "_LOOP = 0") == std::string::npos;
+        sprite.animations.push_back(animation);
       }
-      out->sprites.push_back(s);
-      found.push_back(F("{0} layer(s), {1} frame(s)", {std::to_string(s.layers.size()), std::to_string(s.frames)}));
+      out->sprites.push_back(sprite);
+      found.push_back(F("{0} layer(s), {1} frame(s)", {std::to_string(sprite.layers.size()), std::to_string(sprite.frames)}));
     }
   }
   if (what) {
     what->clear();
-    for (auto& f : found) *what += (what->empty() ? "" : "; ") + f;
+    for (auto& item : found) *what += (what->empty() ? "" : "; ") + item;
   }
   return !found.empty();
 }

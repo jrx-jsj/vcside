@@ -41,7 +41,7 @@ class AddressMap {
   void resolveFiles(const std::function<std::string(const std::string&)>& resolve);
   bool empty() const { return lines_.empty(); }
   int banks() const { return banks_; }
-  int bankOf(const ListedLine& l) const { return bankSize_ > 0 ? (int)((l.phys - base_) / bankSize_) : 0; }
+  int bankOf(const ListedLine& listed) const { return bankSize_ > 0 ? (int)((listed.phys - base_) / bankSize_) : 0; }
 
   // Breakpoint for a source line: the first line with code at or after it, in the
   // same file and before the next line with code of another file position (so a

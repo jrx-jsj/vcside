@@ -56,13 +56,13 @@ struct Match {
 struct FindOptions {
   bool matchCase = false, wholeWord = false;
 };
-std::vector<Match> findMatches(const std::vector<std::string>& lines, const std::string& query, FindOptions opt);
+std::vector<Match> findMatches(const std::vector<std::string>& lines, const std::string& query, FindOptions options);
 
 struct Coord {
   int line = 0, col = 0;  // col = byte offset
-  bool operator==(const Coord& o) const { return line == o.line && col == o.col; }
-  bool operator!=(const Coord& o) const { return !(*this == o); }
-  bool operator<(const Coord& o) const { return line < o.line || (line == o.line && col < o.col); }
+  bool operator==(const Coord& other) const { return line == other.line && col == other.col; }
+  bool operator!=(const Coord& other) const { return !(*this == other); }
+  bool operator<(const Coord& other) const { return line < other.line || (line == other.line && col < other.col); }
 };
 
 class TextEditor {
@@ -74,9 +74,9 @@ class TextEditor {
   void replaceText(const std::string& text);
   const std::vector<std::string>& lines() const { return lines_; }
 
-  void setHooks(EditorHooks h) { hooks_ = std::move(h); }
-  void setMarkers(std::map<int, std::pair<bool, std::string>> m) { markers_ = std::move(m); }  // line -> (error?, msg)
-  void setGutterWidthChars(int n) { gutterChars_ = n; }
+  void setHooks(EditorHooks hooks) { hooks_ = std::move(hooks); }
+  void setMarkers(std::map<int, std::pair<bool, std::string>> markers) { markers_ = std::move(markers); }  // line -> (error?, msg)
+  void setGutterWidthChars(int chars) { gutterChars_ = chars; }
 
   // Draws the editor filling the available region. Returns true if the text changed.
   bool render(const char* id, ImFont* font);
@@ -98,7 +98,7 @@ class TextEditor {
   void selectLines(int first, int last);  // 0-based, inclusive
 
   // Line editing
-  void setCommentPrefix(const std::string& p) { commentPrefix_ = p; }
+  void setCommentPrefix(const std::string& prefix) { commentPrefix_ = prefix; }
   void toggleComment();
   void duplicateLines();
   void moveLines(int delta);  // -1 up, +1 down
@@ -110,8 +110,8 @@ class TextEditor {
   void findNext(bool backwards = false);
   int replaceAll();
   bool replaceCurrent();
-  void setFindQuery(const std::string& q) { findText_ = q; }
-  void setReplaceText(const std::string& r) { replaceText_ = r; }
+  void setFindQuery(const std::string& query) { findText_ = query; }
+  void setReplaceText(const std::string& replacement) { replaceText_ = replacement; }
   const std::vector<Match>& matches() const { return matches_; }
   // Word under the cursor (for F12 / F1).
   std::string wordAtCursor() const;
@@ -122,11 +122,11 @@ class TextEditor {
   void setBreakpoints(const std::set<int>& lines);
   const std::set<int>& breakpoints();
   // True once after the breakpoints changed (toggled, or moved by an edit).
-  bool takeBreakpointsChanged() { bool c = bpChanged_; bpChanged_ = false; return c; }
+  bool takeBreakpointsChanged() { bool changed = bpChanged_; bpChanged_ = false; return changed; }
   // Folding: the regions come from the text (folding.h); a folded region shows only its
   // first line. Folds follow the text when lines are inserted or deleted above them, and
   // a region opens when the cursor goes into it.
-  void setFoldSyntax(FoldSyntax s) { foldSyntax_ = s, regionsVersion_ = 0; }
+  void setFoldSyntax(FoldSyntax syntax) { foldSyntax_ = syntax, regionsVersion_ = 0; }
   // Indentation: a level is what most of the file uses (indentation.h); `fallback` for a file
   // with no indented line yet. In C (FoldSyntax::C), Enter and braces indent as the code goes.
   void setDefaultIndent(IndentStyle fallback) { defaultIndent_ = fallback; }
@@ -143,7 +143,7 @@ class TextEditor {
   bool folded(int line);    // the line starts a folded region
   bool hiddenLine(int line);
   // Ctrl (Cmd) + mouse wheel over the editor: zoom steps asked for since the last call.
-  int takeZoomSteps() { int z = zoomSteps_; zoomSteps_ = 0; return z; }
+  int takeZoomSteps() { int steps = zoomSteps_; zoomSteps_ = 0; return steps; }
 
  private:
   struct Snapshot {
@@ -151,15 +151,15 @@ class TextEditor {
     Coord cursor;
   };
   void pushUndo(bool mergeTyping);
-  void insertText(const std::string& s);
+  void insertText(const std::string& inserted);
   void deleteSelection();
   void del();
-  void moveCursor(Coord c, bool select);
+  void moveCursor(Coord target, bool select);
   std::string selectedText() const;
-  Coord clamp(Coord c) const;
+  Coord clamp(Coord coord) const;
   int visualCol(int line, int byteCol) const;
   int byteCol(int line, int visCol) const;
-  std::string wordAt(Coord c, int* start = nullptr, int* end = nullptr) const;
+  std::string wordAt(Coord coord, int* start = nullptr, int* end = nullptr) const;
   // The word last checked for a definition under Ctrl/Cmd, and the answer.
   std::string linkWord_;
   int linkLine_ = -1;
@@ -167,7 +167,7 @@ class TextEditor {
   void handleKeyboard();
   void renderFindBar();
   void refreshMatches();
-  void setSelection(Coord a, Coord b);
+  void setSelection(Coord start, Coord end);
   void updateCompletion();
   void acceptCompletion();
   void syncBreakpoints();
@@ -200,11 +200,11 @@ class TextEditor {
   enum class Bar { None, Find, Replace, Goto } bar_ = Bar::None;
   bool focusBar_ = false, focusEditor_ = false;
   std::string findText_, replaceText_, gotoText_;
-  FindOptions findOpt_;
+  FindOptions findOptions_;
   std::vector<Match> matches_;
   size_t matchesVersion_ = 0, textVersion_ = 1;
   std::string matchesQuery_;
-  FindOptions matchesOpt_;
+  FindOptions matchesOptions_;
   int currentMatch_ = -1;
 
   FoldSyntax foldSyntax_ = FoldSyntax::None;

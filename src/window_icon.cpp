@@ -22,13 +22,13 @@ SDL_Surface* loadIconSurface() {
   SDL_Surface* icon = SDL_LoadPNG(path.c_str());
 #else
   SDL_Surface* icon = nullptr;
-  int w = 0, h = 0, n = 0;
-  if (unsigned char* px = stbi_load(path.c_str(), &w, &h, &n, 4)) {
-    if (SDL_Surface* view = SDL_CreateSurfaceFrom(w, h, SDL_PIXELFORMAT_RGBA32, px, w * 4)) {
+  int width = 0, height = 0, channels = 0;
+  if (unsigned char* pixelData = stbi_load(path.c_str(), &width, &height, &channels, 4)) {
+    if (SDL_Surface* view = SDL_CreateSurfaceFrom(width, height, SDL_PIXELFORMAT_RGBA32, pixelData, width * 4)) {
       icon = SDL_DuplicateSurface(view);
       SDL_DestroySurface(view);
     }
-    stbi_image_free(px);
+    stbi_image_free(pixelData);
   }
 #endif
   if (!icon) {

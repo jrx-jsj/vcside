@@ -34,24 +34,24 @@ MODES = {
 # Read-type group: imm zp zpx abs absx absy indx indy (with page penalty on absx/absy/indy).
 def alu(ops):
     modes = ["imm", "zp", "zpx", "abs", "absx", "absy", "indx", "indy"]
-    cyc = [2, 3, 4, 4, 4, 4, 6, 5]
+    cycles = [2, 3, 4, 4, 4, 4, 6, 5]
     page = [0, 0, 0, 0, 1, 1, 0, 1]
-    return [(o, m, c, p) for o, m, c, p in zip(ops, modes, cyc, page) if o is not None]
+    return [(opcode, mode, count, penalty) for opcode, mode, count, penalty in zip(ops, modes, cycles, page) if opcode is not None]
 
 # Read-modify-write: acc zp zpx abs absx
 def rmw(ops):
     modes = ["acc", "zp", "zpx", "abs", "absx"]
-    cyc = [2, 5, 6, 6, 7]
-    return [(o, m, c, 0) for o, m, c in zip(ops, modes, cyc) if o is not None]
+    cycles = [2, 5, 6, 6, 7]
+    return [(opcode, mode, count, 0) for opcode, mode, count in zip(ops, modes, cycles) if opcode is not None]
 
 # Illegal RMW+ALU combos: zp zpx abs absx absy indx indy
 def rmw_alu(ops):
     modes = ["zp", "zpx", "abs", "absx", "absy", "indx", "indy"]
-    cyc = [5, 6, 6, 7, 7, 8, 8]
-    return [(o, m, c, 0) for o, m, c in zip(ops, modes, cyc)]
+    cycles = [5, 6, 6, 7, 7, 8, 8]
+    return [(opcode, mode, count, 0) for opcode, mode, count in zip(ops, modes, cycles)]
 
-def imp(op, c=2):
-    return [(op, "imp", c, 0)]
+def imp(op, cycles=2):
+    return [(op, "imp", cycles, 0)]
 
 OFFICIAL = {
     "ADC": alu([0x69, 0x65, 0x75, 0x6D, 0x7D, 0x79, 0x61, 0x71]),
@@ -110,12 +110,12 @@ ILLEGAL = {
     "ARR": ([(0x6B, "imm", 2, 0)], True),
     "SBX": ([(0xCB, "imm", 2, 0)], True),
     "USBC": ([(0xEB, "imm", 2, 0)], True),
-    "NOP*": ([(o, "imp", 2, 0) for o in (0x1A, 0x3A, 0x5A, 0x7A, 0xDA, 0xFA)] +
-             [(o, "imm", 2, 0) for o in (0x80, 0x82, 0x89, 0xC2, 0xE2)] +
-             [(o, "zp", 3, 0) for o in (0x04, 0x44, 0x64)] +
-             [(o, "zpx", 4, 0) for o in (0x14, 0x34, 0x54, 0x74, 0xD4, 0xF4)] +
+    "NOP*": ([(opcode, "imp", 2, 0) for opcode in (0x1A, 0x3A, 0x5A, 0x7A, 0xDA, 0xFA)] +
+             [(opcode, "imm", 2, 0) for opcode in (0x80, 0x82, 0x89, 0xC2, 0xE2)] +
+             [(opcode, "zp", 3, 0) for opcode in (0x04, 0x44, 0x64)] +
+             [(opcode, "zpx", 4, 0) for opcode in (0x14, 0x34, 0x54, 0x74, 0xD4, 0xF4)] +
              [(0x0C, "abs", 4, 0)] +
-             [(o, "absx", 4, 1) for o in (0x1C, 0x3C, 0x5C, 0x7C, 0xDC, 0xFC)], True),
+             [(opcode, "absx", 4, 1) for opcode in (0x1C, 0x3C, 0x5C, 0x7C, 0xDC, 0xFC)], True),
     "LAS": ([(0xBB, "absy", 4, 1)], True),
     "ANE": ([(0x8B, "imm", 2, 0)], False),
     "LXA": ([(0xAB, "imm", 2, 0)], False),
@@ -123,7 +123,7 @@ ILLEGAL = {
     "SHS": ([(0x9B, "absy", 5, 0)], False),
     "SHX": ([(0x9E, "absy", 5, 0)], False),
     "SHY": ([(0x9C, "absx", 5, 0)], False),
-    "JAM": ([(o, "imp", 0, 0) for o in (0x02, 0x12, 0x22, 0x32, 0x42, 0x52, 0x62, 0x72, 0x92, 0xB2, 0xD2, 0xF2)], False),
+    "JAM": ([(opcode, "imp", 0, 0) for opcode in (0x02, 0x12, 0x22, 0x32, 0x42, 0x52, 0x62, 0x72, 0x92, 0xB2, 0xD2, 0xF2)], False),
 }
 
 # Shared source list (also used, with the same ids, by the other data/kb files).
@@ -242,41 +242,41 @@ OFFICIAL_SRC = ["mcs6500-manual", "masswerk", "nms", "gopher-src", "dasm", "clar
 
 def main(out):
     opcodes = []
-    for table, illegal in ((OFFICIAL, False), ({k: v[0] for k, v in ILLEGAL.items()}, True)):
-        for mn, ops in table.items():
-            for op, mode, cyc, page in ops:
-                stable = True if not illegal else ILLEGAL[mn][1]
+    for table, illegal in ((OFFICIAL, False), ({mnemonic: entry[0] for mnemonic, entry in ILLEGAL.items()}, True)):
+        for mnemonic, ops in table.items():
+            for op, mode, cycles, page in ops:
+                stable = True if not illegal else ILLEGAL[mnemonic][1]
                 entry = {
-                    "op": f"${op:02X}", "mnemonic": mn.rstrip("*"), "mode": mode,
+                    "op": f"${op:02X}", "mnemonic": mnemonic.rstrip("*"), "mode": mode,
                     "bytes": MODES[mode]["bytes"],
-                    "cycles": cyc, "page_penalty": bool(page), "branch": mode == "rel",
+                    "cycles": cycles, "page_penalty": bool(page), "branch": mode == "rel",
                     "illegal": illegal, "stable": stable,
                     # False = DASM cannot assemble this opcode from a mnemonic: emit it with .byte
                     "dasm": op not in DASM_BYTE_ONLY,
                 }
-                if mn == "JAM":
+                if mnemonic == "JAM":
                     entry["hangs"] = True
                 opcodes.append(entry)
-    opcodes.sort(key=lambda o: int(o["op"][1:], 16))
-    ops_seen = [o["op"] for o in opcodes]
+    opcodes.sort(key=lambda entry: int(entry["op"][1:], 16))
+    ops_seen = [entry["op"] for entry in opcodes]
     assert len(ops_seen) == len(set(ops_seen)) == 256, len(set(ops_seen))
     instructions = {}
-    for mn, (summary, flags, desc) in DOCS.items():
-        name = mn.rstrip("*")
+    for mnemonic, (summary, flags, description) in DOCS.items():
+        name = mnemonic.rstrip("*")
         if name in instructions:
             continue
-        ill = mn in ILLEGAL
-        e = {"summary": summary, "flags": flags, "description": desc, "illegal": ill,
-             "verified": True, "sources": ILLEGAL_SRC if ill else OFFICIAL_SRC}
+        illegal = mnemonic in ILLEGAL
+        instruction = {"summary": summary, "flags": flags, "description": description, "illegal": illegal,
+                       "verified": True, "sources": ILLEGAL_SRC if illegal else OFFICIAL_SRC}
         if name in ALIASES:
-            e["aliases"] = ALIASES[name]
-        if ill:
-            e["dasm_name"] = DASM_NAME.get(name)
-        instructions[name] = e
+            instruction["aliases"] = ALIASES[name]
+        if illegal:
+            instruction["dasm_name"] = DASM_NAME.get(name)
+        instructions[name] = instruction
     data = {
         "cpu": "6502/6507",
         "sources": SOURCES,
-        "instruction_sources": OFFICIAL_SRC + [x for x in ILLEGAL_SRC if x not in OFFICIAL_SRC],
+        "instruction_sources": OFFICIAL_SRC + [source for source in ILLEGAL_SRC if source not in OFFICIAL_SRC],
         "notes": [
             "The 6507 in the 2600 is a 6502 with 13 address lines (8 KB space, cartridge at $1000-$1FFF) and no IRQ/NMI pins.",
             "CPU clock is the colour clock / 3: 76 CPU cycles per scanline (228 colour clocks).",
@@ -288,9 +288,9 @@ def main(out):
         ],
         "modes": MODES, "instructions": instructions, "opcodes": opcodes,
     }
-    with open(out, "w") as f:
-        json.dump(data, f, indent=1, ensure_ascii=False)
-        f.write("\n")
+    with open(out, "w") as output:
+        json.dump(data, output, indent=1, ensure_ascii=False)
+        output.write("\n")
     print(f"{out}: {len(opcodes)} opcodes, {len(instructions)} instructions")
 
 if __name__ == "__main__":

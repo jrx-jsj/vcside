@@ -47,37 +47,37 @@ struct Project {
   std::string toJson() const;
   bool fromJson(const std::string& text, const std::string& path, std::string* error);
 
-  std::string abs(const std::string& rel) const;
+  std::string abs(const std::string& relativePath) const;
   std::string outputPath() const { return abs(output); }
   std::string stem() const;  // output path without extension (for .lst/.sym)
 
   // DASM run that writes the emitted blocks (-f2) to <stem>.ras, for the space report.
-  std::vector<std::string> rasArgs(Toolchain& tc) const;
+  std::vector<std::string> rasArgs(Toolchain& toolchain) const;
   // Command lines; empty vector + error when a tool is missing. workDir and env, when
   // given, receive where to run it and the variables it needs (project folder, none).
   // Toolchain ids the build needs (dasm; bb and, for 1.9, wasmtime; arm-gcc and make).
-  std::vector<std::string> buildTools(Toolchain& tc) const;
-  std::vector<std::string> buildArgs(Toolchain& tc, std::string* error, std::string* workDir = nullptr,
+  std::vector<std::string> buildTools(Toolchain& toolchain) const;
+  std::vector<std::string> buildArgs(Toolchain& toolchain, std::string* error, std::string* workDir = nullptr,
                                      EnvVars* env = nullptr) const;
   // batari Basic writes <main>.bin, .asm, .list.txt (.lst before 1.9) and .symbol.txt (.sym)
   // next to the source; these are the paths.
   std::string basicOutput(const std::string& suffix) const { return abs(main) + suffix; }
-  std::vector<std::string> runArgs(Toolchain& tc, bool debug, std::string* error) const;
+  std::vector<std::string> runArgs(Toolchain& toolchain, bool debug, std::string* error) const;
 
   // The tool this project uses: its own path if it has one and it exists, else the one
   // VCSIDE found; "" if neither.
-  std::string toolPath(Toolchain& tc, const std::string& id) const;
+  std::string toolPath(Toolchain& toolchain, const std::string& id) const;
 
   // A folder that builds by itself (Makefile, build.sh, build.bat, make.bat): a project for
   // it, with that command, the main source and the ROM it seems to write. False if none.
-  static bool detect(const std::string& dir, Project* out);
+  static bool detect(const std::string& directory, Project* result);
 
   // Creates a new project folder with a template for the language.
-  // example: "" for the empty template, or one of exampleIds(lang).
-  static bool create(const std::string& dir, const std::string& name, Language lang, const std::string& tv,
-                     Project* out, std::string* error, const std::string& example = "");
+  // example: "" for the empty template, or one of examples(language).
+  static bool create(const std::string& directory, const std::string& projectName, Language projectLanguage, const std::string& tvStandard,
+                     Project* result, std::string* error, const std::string& example = "");
   // Examples a new project can start from: id and name (for people, to translate).
-  static std::vector<std::pair<std::string, const char*>> examples(Language lang);
+  static std::vector<std::pair<std::string, const char*>> examples(Language language);
 };
 
 // TV standards a project can choose, and whether an emulator has each one.
@@ -85,17 +85,17 @@ const std::vector<std::string>& tvStandardIds();
 // The ones a language can build for (AUTO not included): batari Basic has `set tv ntsc|pal`
 // (PAL60 is its NTSC timing with PAL colours) and vcsLib detects NTSC, PAL and PAL60;
 // a DASM kernel is the programmer's, so any.
-std::vector<std::string> tvStandardsFor(Language lang);
+std::vector<std::string> tvStandardsFor(Language language);
 std::string tvLabel(const std::string& tv);  // for people: AUTO is "Multiple (in the code)"
 // AUTO in a project: it runs on several systems, handled in its code (a DASM template
 // chooses with -DPAL=1, vcsLib detects it); the emulator is not told one and detects it.
 bool tvSupported(const std::string& emulator, const std::string& tv);
 bool tvIs50Hz(const std::string& tv);
-std::vector<std::string> splitCommand(const std::string& s);  // "a \"b c\"" -> a, b c
+std::vector<std::string> splitCommand(const std::string& command);  // "a \"b c\"" -> a, b c
 std::string stellaFormat(const std::string& formatId);  // value for Stella's -bs
-const char* languageId(Language l);
-Language languageFromId(const std::string& s);
-const char* illegalId(IllegalOpcodes i);
-IllegalOpcodes illegalFromId(const std::string& s);
+const char* languageId(Language language);
+Language languageFromId(const std::string& id);
+const char* illegalId(IllegalOpcodes policy);
+IllegalOpcodes illegalFromId(const std::string& id);
 
 }  // namespace vcs

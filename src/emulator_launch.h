@@ -34,18 +34,18 @@ struct EmulatorLaunch {
 
 // The arguments the project's options add for an emulator (shown in the options
 // dialog) and the Gopher2600 preferences they set.
-std::vector<std::string> emulatorOptionArgs(const Project& p, const EmulatorInfo& emu,
-                                            std::map<std::string, std::string>* prefs = nullptr);
+std::vector<std::string> emulatorOptionArgs(const Project& project, const EmulatorInfo& emulator,
+                                            std::map<std::string, std::string>* preferences = nullptr);
 
 // Inserts the options and the extra arguments before the ROM and prepares the
 // private settings folder under profileRoot (configDir()/emulators). The user's
 // own settings are looked for where each emulator keeps them; userHome replaces
 // the home folder (HOME, or %APPDATA% on Windows) for tests.
-bool prepareEmulatorLaunch(const Project& p, const KnowledgeBase& kb, const std::string& profileRoot,
+bool prepareEmulatorLaunch(const Project& project, const KnowledgeBase& knowledgeBase, const std::string& profileRoot,
                            EmulatorLaunch& launch, std::string* error, const std::string& userHome = {});
 
 // "key :: value" lines of a Gopher2600 preferences file with some keys replaced
 // (or added); the header line is kept.
-std::string mergeGopherPreferences(const std::string& text, const std::map<std::string, std::string>& prefs);
+std::string mergeGopherPreferences(const std::string& text, const std::map<std::string, std::string>& preferences);
 
 }  // namespace vcs

@@ -47,7 +47,7 @@ $(GAME): $(OBJS)
 		for s in $$bad; do for o in $$(arm-none-eabi-nm -A $(OBJS) | grep " U $$s$$" | cut -d: -f1); do \
 			echo "$$o" | sed "s|^$(OUT)/\(.*\)\.o$$|src/\1.c: error: undefined symbol '$$s' (only vcsLib functions may be left undefined)|"; \
 		done; done; rm -f $@; exit 1; fi
-	@# Calls to the loader must be long (vcs.h between #pragma long_calls ... long_calls_off).
+	@# Calls to the loader must be long (vcsLib.h between #pragma long_calls ... long_calls_off).
 	@if arm-none-eabi-readelf -r -W $@ | awk '$$3 ~ /THM_CALL|THM_JUMP24/' | grep -E ' (vcs[A-Za-z0-9]+|memset|memcpy|randint)$$'; then \
 		echo "$@: error: short calls to the loader (above): declare them between #pragma long_calls and long_calls_off"; rm -f $@; exit 1; fi
 

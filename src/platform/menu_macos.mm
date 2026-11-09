@@ -25,8 +25,8 @@ static std::vector<std::function<void()>> gPending;
 
 @implementation VCSMainMenu
 - (BOOL)performKeyEquivalent:(NSEvent*)event {
-  for (NSMenu* m in self.systemMenus)
-    if ([m performKeyEquivalent:event]) return YES;
+  for (NSMenu* systemMenu in self.systemMenus)
+    if ([systemMenu performKeyEquivalent:event]) return YES;
   return NO;  // our menus: let the key go to the window (SDL -> ImGui)
 }
 @end
@@ -39,79 +39,79 @@ static std::vector<std::function<void()>> gPending;
 
 static VCSMenuTarget* gTarget = nil;
 
-static NSString* ns(const std::string& s) { return [NSString stringWithUTF8String:s.c_str()]; }
+static NSString* ns(const std::string& text) { return [NSString stringWithUTF8String:text.c_str()]; }
 
 // "Ctrl+Shift+S" -> key equivalent + modifier mask.
-static void applyShortcut(NSMenuItem* item, const std::string& sc) {
-  if (sc.empty()) return;
+static void applyShortcut(NSMenuItem* item, const std::string& shortcut) {
+  if (shortcut.empty()) return;
   NSEventModifierFlags mask = 0;
   std::string key;
   size_t start = 0;
-  while (start <= sc.size()) {
-    size_t plus = sc.find('+', start);
-    if (plus == start) plus = sc.find('+', start + 1);  // "Ctrl++"
-    std::string tok = sc.substr(start, plus == std::string::npos ? std::string::npos : plus - start);
-    if (tok == "Ctrl") mask |= NSEventModifierFlagCommand;
-    else if (tok == "Shift") mask |= NSEventModifierFlagShift;
-    else if (tok == "Alt") mask |= NSEventModifierFlagOption;
-    else key = tok;
+  while (start <= shortcut.size()) {
+    size_t plus = shortcut.find('+', start);
+    if (plus == start) plus = shortcut.find('+', start + 1);  // "Ctrl++"
+    std::string token = shortcut.substr(start, plus == std::string::npos ? std::string::npos : plus - start);
+    if (token == "Ctrl") mask |= NSEventModifierFlagCommand;
+    else if (token == "Shift") mask |= NSEventModifierFlagShift;
+    else if (token == "Alt") mask |= NSEventModifierFlagOption;
+    else key = token;
     if (plus == std::string::npos) break;
     start = plus + 1;
   }
-  NSString* k = nil;
+  NSString* keyText = nil;
   if (key.size() == 1) {
-    k = [ns(key) lowercaseString];
+    keyText = [ns(key) lowercaseString];
   } else if (key.size() >= 2 && key[0] == 'F' && isdigit((unsigned char)key[1])) {
-    unichar c = (unichar)(NSF1FunctionKey + std::stoi(key.substr(1)) - 1);
-    k = [NSString stringWithCharacters:&c length:1];
+    unichar keyChar = (unichar)(NSF1FunctionKey + std::stoi(key.substr(1)) - 1);
+    keyText = [NSString stringWithCharacters:&keyChar length:1];
   } else if (key == "Up" || key == "Down" || key == "Left" || key == "Right") {
-    unichar c = key == "Up" ? NSUpArrowFunctionKey : key == "Down" ? NSDownArrowFunctionKey
-              : key == "Left" ? NSLeftArrowFunctionKey : NSRightArrowFunctionKey;
-    k = [NSString stringWithCharacters:&c length:1];
+    unichar keyChar = key == "Up" ? NSUpArrowFunctionKey : key == "Down" ? NSDownArrowFunctionKey
+                    : key == "Left" ? NSLeftArrowFunctionKey : NSRightArrowFunctionKey;
+    keyText = [NSString stringWithCharacters:&keyChar length:1];
   }
-  if (!k) return;
-  item.keyEquivalent = k;
+  if (!keyText) return;
+  item.keyEquivalent = keyText;
   item.keyEquivalentModifierMask = mask;
 }
 
 static void fill(NSMenu* menu, const std::vector<MenuItem>& items, NSInteger top, bool parentEnabled) {
-  auto& acts = gTarget->actions[top];
-  for (auto& m : items) {
-    if (m.separator) {
+  auto& menuActions = gTarget->actions[top];
+  for (auto& item : items) {
+    if (item.separator) {
       [menu addItem:[NSMenuItem separatorItem]];
       continue;
     }
-    std::string label = m.label + (m.hint.empty() ? "" : "  (" + m.hint + ")");
-    NSMenuItem* it = [[NSMenuItem alloc] initWithTitle:ns(label) action:nil keyEquivalent:@""];
-    it.enabled = parentEnabled && m.enabled;
-    if (m.checked) it.state = NSControlStateValueOn;
-    if (!m.children.empty()) {
-      NSMenu* sub = [[NSMenu alloc] initWithTitle:ns(m.label)];
+    std::string label = item.label + (item.hint.empty() ? "" : "  (" + item.hint + ")");
+    NSMenuItem* menuItem = [[NSMenuItem alloc] initWithTitle:ns(label) action:nil keyEquivalent:@""];
+    menuItem.enabled = parentEnabled && item.enabled;
+    if (item.checked) menuItem.state = NSControlStateValueOn;
+    if (!item.children.empty()) {
+      NSMenu* sub = [[NSMenu alloc] initWithTitle:ns(item.label)];
       sub.autoenablesItems = NO;
-      fill(sub, m.children, top, it.enabled);
-      it.submenu = sub;
+      fill(sub, item.children, top, menuItem.enabled);
+      menuItem.submenu = sub;
     } else {
-      applyShortcut(it, m.shortcut);
-      if (m.action) {
-        it.target = gTarget;
-        it.action = @selector(chosen:);
-        it.tag = top * 100000 + (NSInteger)acts.size();
-        acts.push_back(m.action);
+      applyShortcut(menuItem, item.shortcut);
+      if (item.action) {
+        menuItem.target = gTarget;
+        menuItem.action = @selector(chosen:);
+        menuItem.tag = top * 100000 + (NSInteger)menuActions.size();
+        menuActions.push_back(item.action);
       }
     }
-    [menu addItem:it];
+    [menu addItem:menuItem];
   }
 }
 
 static NSMenuItem* systemItem(NSString* title, SEL action, NSString* key, NSEventModifierFlags mask = NSEventModifierFlagCommand) {
-  NSMenuItem* it = [[NSMenuItem alloc] initWithTitle:title action:action keyEquivalent:key];
-  it.keyEquivalentModifierMask = mask;
-  return it;
+  NSMenuItem* menuItem = [[NSMenuItem alloc] initWithTitle:title action:action keyEquivalent:key];
+  menuItem.keyEquivalentModifierMask = mask;
+  return menuItem;
 }
 
 static NSString* appName() {
-  NSString* n = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleName"];
-  return n.length ? n : @"VCSIDE";
+  NSString* name = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleName"];
+  return name.length ? name : @"VCSIDE";
 }
 
 static void fillAppMenu(NSMenu* menu, const MenuItem& own) {
@@ -151,8 +151,8 @@ static void fillWindowMenu(NSMenu* menu) {
 @implementation VCSMenuTarget
 - (void)chosen:(NSMenuItem*)item {
   NSInteger top = item.tag / 100000, i = item.tag % 100000;
-  auto it = actions.find(top);
-  if (it != actions.end() && i < (NSInteger)it->second.size()) gPending.push_back(it->second[i]);
+  auto found = actions.find(top);
+  if (found != actions.end() && i < (NSInteger)found->second.size()) gPending.push_back(found->second[i]);
 }
 - (void)about:(id)sender {
   if (gCallbacks.about) gPending.push_back(gCallbacks.about);
@@ -223,8 +223,8 @@ void nativeMenuRefresh() {
   NSApp.helpMenu = [main itemAtIndex:main.numberOfItems - 1].submenu;
 }
 
-void nativeMenuInstall(const NativeMenuCallbacks& cb) {
-  gCallbacks = cb;
+void nativeMenuInstall(const NativeMenuCallbacks& callbacks) {
+  gCallbacks = callbacks;
   if (!gTarget) gTarget = [[VCSMenuTarget alloc] init];
   nativeMenuRefresh();
 }
@@ -237,29 +237,29 @@ std::vector<std::function<void()>> nativeMenuTakeActions() {
 
 static void dumpMenu(NSMenu* menu, int depth, std::string& out) {
   if (menu.delegate == gTarget) [gTarget menuNeedsUpdate:menu];
-  for (NSMenuItem* it in menu.itemArray) {
+  for (NSMenuItem* menuItem in menu.itemArray) {
     out += std::string(depth * 2, ' ');
-    if (it.isSeparatorItem) {
+    if (menuItem.isSeparatorItem) {
       out += "----\n";
       continue;
     }
-    out += it.title.UTF8String;
-    if (it.keyEquivalent.length) {
+    out += menuItem.title.UTF8String;
+    if (menuItem.keyEquivalent.length) {
       std::string mods;
-      NSEventModifierFlags f = it.keyEquivalentModifierMask;
-      if (f & NSEventModifierFlagCommand) mods += "Cmd+";
-      if (f & NSEventModifierFlagOption) mods += "Opt+";
-      if (f & NSEventModifierFlagShift) mods += "Shift+";
-      unichar c = [it.keyEquivalent characterAtIndex:0];
-      std::string key = c >= NSF1FunctionKey && c <= NSF35FunctionKey ? "F" + std::to_string(c - NSF1FunctionKey + 1)
-                        : c == NSUpArrowFunctionKey ? "Up" : c == NSDownArrowFunctionKey ? "Down"
-                        : it.keyEquivalent.uppercaseString.UTF8String;
+      NSEventModifierFlags flags = menuItem.keyEquivalentModifierMask;
+      if (flags & NSEventModifierFlagCommand) mods += "Cmd+";
+      if (flags & NSEventModifierFlagOption) mods += "Opt+";
+      if (flags & NSEventModifierFlagShift) mods += "Shift+";
+      unichar keyChar = [menuItem.keyEquivalent characterAtIndex:0];
+      std::string key = keyChar >= NSF1FunctionKey && keyChar <= NSF35FunctionKey ? "F" + std::to_string(keyChar - NSF1FunctionKey + 1)
+                        : keyChar == NSUpArrowFunctionKey ? "Up" : keyChar == NSDownArrowFunctionKey ? "Down"
+                        : menuItem.keyEquivalent.uppercaseString.UTF8String;
       out += "  [" + mods + key + "]";
     }
-    if (it.state == NSControlStateValueOn) out += "  (checked)";
-    if (!it.isEnabled && !it.hasSubmenu) out += "  (disabled)";
+    if (menuItem.state == NSControlStateValueOn) out += "  (checked)";
+    if (!menuItem.isEnabled && !menuItem.hasSubmenu) out += "  (disabled)";
     out += "\n";
-    if (it.hasSubmenu) dumpMenu(it.submenu, depth + 1, out);
+    if (menuItem.hasSubmenu) dumpMenu(menuItem.submenu, depth + 1, out);
   }
 }
 
@@ -281,9 +281,9 @@ bool nativeMenuPerform(const std::string& path) {
     std::string part = path.substr(start, slash == std::string::npos ? std::string::npos : slash - start);
     if (menu.delegate == gTarget) [gTarget menuNeedsUpdate:menu];
     found = nil;
-    for (NSMenuItem* it in menu.itemArray)
-      if (!it.isSeparatorItem && std::string(it.title.UTF8String).rfind(part, 0) == 0) {
-        found = it;
+    for (NSMenuItem* menuItem in menu.itemArray)
+      if (!menuItem.isSeparatorItem && std::string(menuItem.title.UTF8String).rfind(part, 0) == 0) {
+        found = menuItem;
         break;
       }
     if (!found) return false;
@@ -292,8 +292,8 @@ bool nativeMenuPerform(const std::string& path) {
     start = slash + 1;
   }
   if (!found || !found.isEnabled || !found.action) return false;
-  NSInteger idx = [found.menu indexOfItem:found];
-  [found.menu performActionForItemAtIndex:idx];
+  NSInteger index = [found.menu indexOfItem:found];
+  [found.menu performActionForItemAtIndex:index];
   return true;
 }
 
@@ -330,18 +330,18 @@ bool vcs::nativeShowAbout(const vcs::AboutInfo& info) {
     };
     add(info.tagline + "\n", body);
     add(info.credit + "\n", dim);
-    for (auto& sec : info.sections) {
-      add("\n" + sec.title + "\n", head);
-      if (!sec.note.empty()) add(sec.note + "\n", dim);
-      for (auto& l : sec.lines) {
-        if (!l.url.empty()) {
+    for (auto& section : info.sections) {
+      add("\n" + section.title + "\n", head);
+      if (!section.note.empty()) add(section.note + "\n", dim);
+      for (auto& line : section.lines) {
+        if (!line.url.empty()) {
           NSMutableDictionary* link = [body mutableCopy];
-          link[NSLinkAttributeName] = [NSURL URLWithString:ns(l.url)];
-          [credits appendAttributedString:[[NSAttributedString alloc] initWithString:ns(l.name) attributes:link]];
+          link[NSLinkAttributeName] = [NSURL URLWithString:ns(line.url)];
+          [credits appendAttributedString:[[NSAttributedString alloc] initWithString:ns(line.name) attributes:link]];
         } else {
-          add(l.name, body);
+          add(line.name, body);
         }
-        add(l.detail.empty() ? "\n" : " — " + l.detail + "\n", l.detail.empty() ? body : dim);
+        add(line.detail.empty() ? "\n" : " — " + line.detail + "\n", line.detail.empty() ? body : dim);
       }
     }
     add("\n" + vcs::F("Data: {0}", {info.dataDir}) + "\n", dim);
@@ -350,8 +350,8 @@ bool vcs::nativeShowAbout(const vcs::AboutInfo& info) {
     static VCSAboutTarget* target = nil;
     if (!target) target = [[VCSAboutTarget alloc] init];
     if (panel) [panel close];
-    const CGFloat W = 440, M = 24, inner = W - 2 * M;
-    panel = [[NSPanel alloc] initWithContentRect:NSMakeRect(0, 0, W, 600)
+    const CGFloat panelWidth = 440, margin = 24, inner = panelWidth - 2 * margin;
+    panel = [[NSPanel alloc] initWithContentRect:NSMakeRect(0, 0, panelWidth, 600)
                                        styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable
                                          backing:NSBackingStoreBuffered
                                            defer:NO];
@@ -360,12 +360,12 @@ bool vcs::nativeShowAbout(const vcs::AboutInfo& info) {
     target->panel = panel;
 
     auto label = [&](NSString* text, NSFont* font, NSColor* color) {
-      NSTextField* f = [NSTextField wrappingLabelWithString:text];
-      f.font = font;
-      f.textColor = color;
-      f.alignment = NSTextAlignmentCenter;
-      f.preferredMaxLayoutWidth = inner;
-      return f;
+      NSTextField* field = [NSTextField wrappingLabelWithString:text];
+      field.font = font;
+      field.textColor = color;
+      field.alignment = NSTextAlignmentCenter;
+      field.preferredMaxLayoutWidth = inner;
+      return field;
     };
     NSImageView* icon = [NSImageView imageViewWithImage:NSApp.applicationIconImage];
     [icon.widthAnchor constraintEqualToConstant:112].active = YES;
@@ -401,7 +401,7 @@ bool vcs::nativeShowAbout(const vcs::AboutInfo& info) {
     stack.spacing = 8;
     [stack setCustomSpacing:14 afterView:version];
     [stack setCustomSpacing:14 afterView:scroll];
-    stack.edgeInsets = NSEdgeInsetsMake(M, M, M, M);
+    stack.edgeInsets = NSEdgeInsetsMake(margin, margin, margin, margin);
     stack.translatesAutoresizingMaskIntoConstraints = NO;
     NSView* content = panel.contentView;
     [content addSubview:stack];

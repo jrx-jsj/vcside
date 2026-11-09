@@ -14,95 +14,95 @@ namespace fs = std::filesystem;
 namespace vcs {
 
 static std::string env(const char* name) {
-  const char* v = std::getenv(name);
-  return v ? v : "";
+  const char* value = std::getenv(name);
+  return value ? value : "";
 }
 
-static std::string readAll(const fs::path& p) {
-  std::ifstream f(p, std::ios::binary);
-  std::stringstream ss;
-  ss << f.rdbuf();
-  return ss.str();
+static std::string readAll(const fs::path& path) {
+  std::ifstream file(path, std::ios::binary);
+  std::stringstream stream;
+  stream << file.rdbuf();
+  return stream.str();
 }
 
-static std::string buildDir(const Project& p) {
-  return (fs::path(p.outputPath()).parent_path() / "").string();  // with the separator, as Stella keeps it
+static std::string buildDir(const Project& project) {
+  return (fs::path(project.outputPath()).parent_path() / "").string();  // with the separator, as Stella keeps it
 }
 
-std::vector<std::string> emulatorOptionArgs(const Project& p, const EmulatorInfo& emu,
-                                            std::map<std::string, std::string>* prefs) {
-  std::vector<std::string> a;
-  auto it = p.emulatorOptions.find(emu.id);
+std::vector<std::string> emulatorOptionArgs(const Project& project, const EmulatorInfo& emulator,
+                                            std::map<std::string, std::string>* preferences) {
+  std::vector<std::string> arguments;
+  auto found = project.emulatorOptions.find(emulator.id);
   static const std::map<std::string, std::string> none;
-  const auto& set = it == p.emulatorOptions.end() ? none : it->second;
+  const auto& set = found == project.emulatorOptions.end() ? none : found->second;
   bool developer = false;
-  for (auto& o : emu.options) {  // in the knowledge base's order, so the command line is stable
-    auto v = set.find(o.id);
-    if (v == set.end() || v->second.empty()) continue;
-    if (!o.arg.empty()) {
-      if (o.noValue) {
-        if (v->second == "1") a.push_back(o.arg);
+  for (auto& emulatorOption : emulator.options) {  // in the knowledge base's order, so the command line is stable
+    auto configured = set.find(emulatorOption.id);
+    if (configured == set.end() || configured->second.empty()) continue;
+    if (!emulatorOption.arg.empty()) {
+      if (emulatorOption.noValue) {
+        if (configured->second == "1") arguments.push_back(emulatorOption.arg);
       } else {
-        a.insert(a.end(), {o.arg, v->second});
+        arguments.insert(arguments.end(), {emulatorOption.arg, configured->second});
       }
-      developer |= o.developer;
-    } else if (!o.flag.empty()) {
-      if (o.type == "bool") a.push_back(o.flag + "=" + v->second);  // Go's flag package: -swap=false
-      else a.insert(a.end(), {o.flag, v->second});
-    } else if (!o.pref.empty() && prefs) {
-      (*prefs)[o.pref] = v->second;
+      developer |= emulatorOption.developer;
+    } else if (!emulatorOption.flag.empty()) {
+      if (emulatorOption.type == "bool") arguments.push_back(emulatorOption.flag + "=" + configured->second);  // Go's flag package: -swap=false
+      else arguments.insert(arguments.end(), {emulatorOption.flag, configured->second});
+    } else if (!emulatorOption.pref.empty() && preferences) {
+      (*preferences)[emulatorOption.pref] = configured->second;
     }
   }
-  if (emu.id == "stella") {
-    if (developer && !set.count("dev.settings")) a.insert(a.end(), {"-dev.settings", "1"});
-    if (!set.count("snapsavedir")) a.insert(a.end(), {"-snapsavedir", buildDir(p)});
+  if (emulator.id == "stella") {
+    if (developer && !set.count("dev.settings")) arguments.insert(arguments.end(), {"-dev.settings", "1"});
+    if (!set.count("snapsavedir")) arguments.insert(arguments.end(), {"-snapsavedir", buildDir(project)});
   }
-  return a;
+  return arguments;
 }
 
-std::string mergeGopherPreferences(const std::string& text, const std::map<std::string, std::string>& prefs) {
-  std::istringstream in(text);
-  std::string out, line;
-  std::map<std::string, std::string> left = prefs;
+std::string mergeGopherPreferences(const std::string& text, const std::map<std::string, std::string>& preferences) {
+  std::istringstream stream(text);
+  std::string merged, line;
+  std::map<std::string, std::string> left = preferences;
   bool header = false;
-  while (std::getline(in, line)) {
+  while (std::getline(stream, line)) {
     if (!line.empty() && line.back() == '\r') line.pop_back();
     if (line.rfind("***", 0) == 0) header = true;
     size_t sep = line.find(" :: ");
     if (sep != std::string::npos) {
-      auto k = left.find(line.substr(0, sep));
-      if (k != left.end()) {
-        line = k->first + " :: " + k->second;
-        left.erase(k);
+      auto key = left.find(line.substr(0, sep));
+      if (key != left.end()) {
+        line = key->first + " :: " + key->second;
+        left.erase(key);
       }
     }
-    out += line + "\n";
+    merged += line + "\n";
   }
-  if (!header) out = "*** do not edit this file by hand ***\n" + out;
-  for (auto& [k, v] : left) out += k + " :: " + v + "\n";
-  return out;
+  if (!header) merged = "*** do not edit this file by hand ***\n" + merged;
+  for (auto& [key, value] : left) merged += key + " :: " + value + "\n";
+  return merged;
 }
 
 // Copies a file over another; a missing source only removes the old copy.
 static bool copyOver(const fs::path& from, const fs::path& to, std::string* error) {
-  std::error_code ec;
-  fs::remove(to, ec);
-  if (!fs::exists(from, ec)) return true;
-  fs::copy_file(from, to, fs::copy_options::overwrite_existing, ec);
-  if (ec && error) *error = F("Cannot copy {0} to {1}: {2}", {from.string(), to.string(), ec.message()});
-  return !ec;
+  std::error_code errorCode;
+  fs::remove(to, errorCode);
+  if (!fs::exists(from, errorCode)) return true;
+  fs::copy_file(from, to, fs::copy_options::overwrite_existing, errorCode);
+  if (errorCode && error) *error = F("Cannot copy {0} to {1}: {2}", {from.string(), to.string(), errorCode.message()});
+  return !errorCode;
 }
 
-static bool prepareStella(const Project& p, const fs::path& root, const std::string& home, EmulatorLaunch& l,
+static bool prepareStella(const Project& project, const fs::path& root, const std::string& home, EmulatorLaunch& launch,
                           std::string* error) {
-  const std::string& exe = l.args.front();
-  bool macApp = exe.find(".app/Contents/MacOS/") != std::string::npos;
+  const std::string& executable = launch.args.front();
+  bool macApp = executable.find(".app/Contents/MacOS/") != std::string::npos;
   fs::path user, profile;
   if (macApp) {
     // its -basedir is compiled out on macOS; it finds ~ through HOME
     user = fs::path(home) / "Library" / "Application Support" / "Stella";
     profile = root / "stella-home" / "Library" / "Application Support" / "Stella";
-    l.env.push_back({"HOME", (root / "stella-home").string()});
+    launch.env.push_back({"HOME", (root / "stella-home").string()});
   } else {
 #ifdef _WIN32
     user = fs::path(home) / "Stella";
@@ -112,24 +112,24 @@ static bool prepareStella(const Project& p, const fs::path& root, const std::str
 #endif
     profile = root / "stella";
   }
-  std::error_code ec;
-  fs::create_directories(profile, ec);
-  if (ec) {
-    if (error) *error = F("Cannot create {0}: {1}", {profile.string(), ec.message()});
+  std::error_code errorCode;
+  fs::create_directories(profile, errorCode);
+  if (errorCode) {
+    if (error) *error = F("Cannot create {0}: {1}", {profile.string(), errorCode.message()});
     return false;
   }
-  for (const char* f : {"stella.sqlite3", "stella.sqlite3-wal", "stella.sqlite3-shm"})
-    if (!copyOver(user / f, profile / f, error)) return false;
-  std::vector<std::string> a;
-  if (!macApp) a = {"-basedir", profile.string()};
+  for (const char* fileName : {"stella.sqlite3", "stella.sqlite3-wal", "stella.sqlite3-shm"})
+    if (!copyOver(user / fileName, profile / fileName, error)) return false;
+  std::vector<std::string> arguments;
+  if (!macApp) arguments = {"-basedir", profile.string()};
   // the debugger runs <userdir>/<rom name>.script when it opens: the breakpoints
-  a.insert(a.end(), {"-userdir", buildDir(p)});
-  l.args.insert(l.args.end() - 1, a.begin(), a.end());
+  arguments.insert(arguments.end(), {"-userdir", buildDir(project)});
+  launch.args.insert(launch.args.end() - 1, arguments.begin(), arguments.end());
   return true;
 }
 
 static bool prepareGopher(const fs::path& root, const std::string& home,
-                          const std::map<std::string, std::string>& prefs, EmulatorLaunch& l, std::string* error) {
+                          const std::map<std::string, std::string>& preferences, EmulatorLaunch& launch, std::string* error) {
 #if defined(_WIN32)
   fs::path user = fs::path(home) / "gopher2600";
 #elif defined(__APPLE__)
@@ -139,43 +139,43 @@ static bool prepareGopher(const fs::path& root, const std::string& home,
   fs::path user = (!xdg.empty() && home == env("HOME") ? fs::path(xdg) : fs::path(home) / ".config") / "gopher2600";
 #endif
   fs::path work = root / "gopher2600", data = work / "Gopher2600_UserData";
-  std::error_code ec;
-  fs::create_directories(data, ec);
-  if (ec) {
-    if (error) *error = F("Cannot create {0}: {1}", {data.string(), ec.message()});
+  std::error_code errorCode;
+  fs::create_directories(data, errorCode);
+  if (errorCode) {
+    if (error) *error = F("Cannot create {0}: {1}", {data.string(), errorCode.message()});
     return false;
   }
-  if (fs::is_directory(user, ec))
-    for (auto& e : fs::directory_iterator(user, ec))
-      if (e.is_regular_file() && !copyOver(e.path(), data / e.path().filename(), error)) return false;
-  std::string merged = mergeGopherPreferences(readAll(data / "preferences"), prefs);  // read before truncating it
+  if (fs::is_directory(user, errorCode))
+    for (auto& entry : fs::directory_iterator(user, errorCode))
+      if (entry.is_regular_file() && !copyOver(entry.path(), data / entry.path().filename(), error)) return false;
+  std::string merged = mergeGopherPreferences(readAll(data / "preferences"), preferences);  // read before truncating it
   std::ofstream(data / "preferences", std::ios::binary) << merged;
   std::ofstream(work / "portable.txt") << "VCSIDE: Gopher2600 keeps its settings in Gopher2600_UserData next to this file.\n";
-  l.workDir = work.string();
+  launch.workDir = work.string();
   return true;
 }
 
-bool prepareEmulatorLaunch(const Project& p, const KnowledgeBase& kb, const std::string& profileRoot,
-                           EmulatorLaunch& l, std::string* error, const std::string& userHome) {
-  if (l.args.size() < 2) return false;
-  if (l.workDir.empty()) l.workDir = p.dir;
+bool prepareEmulatorLaunch(const Project& project, const KnowledgeBase& knowledgeBase, const std::string& profileRoot,
+                           EmulatorLaunch& launch, std::string* error, const std::string& userHome) {
+  if (launch.args.size() < 2) return false;
+  if (launch.workDir.empty()) launch.workDir = project.dir;
   std::string home = userHome;
 #ifdef _WIN32
   if (home.empty()) home = env("APPDATA");
 #else
   if (home.empty()) home = env("HOME");
 #endif
-  std::map<std::string, std::string> prefs;
-  std::vector<std::string> opts;
-  if (const EmulatorInfo* emu = kb.emulator(p.emulator)) opts = emulatorOptionArgs(p, *emu, &prefs);
-  if (auto it = p.emulatorArgs.find(p.emulator); it != p.emulatorArgs.end())
-    for (auto& a : splitCommand(it->second)) opts.push_back(a);
-  l.args.insert(l.args.end() - 1, opts.begin(), opts.end());
-  if (!tvSupported(p.emulator, p.tv))
-    l.notes.push_back(F("{0} has no {1} TV standard: it chooses one itself.", {p.emulator == "stella" ? "Stella" : "Gopher2600", p.tv}));
+  std::map<std::string, std::string> preferences;
+  std::vector<std::string> optionArguments;
+  if (const EmulatorInfo* emulator = knowledgeBase.emulator(project.emulator)) optionArguments = emulatorOptionArgs(project, *emulator, &preferences);
+  if (auto found = project.emulatorArgs.find(project.emulator); found != project.emulatorArgs.end())
+    for (auto& arguments : splitCommand(found->second)) optionArguments.push_back(arguments);
+  launch.args.insert(launch.args.end() - 1, optionArguments.begin(), optionArguments.end());
+  if (!tvSupported(project.emulator, project.tv))
+    launch.notes.push_back(F("{0} has no {1} TV standard: it chooses one itself.", {project.emulator == "stella" ? "Stella" : "Gopher2600", project.tv}));
   fs::path root(profileRoot);
-  if (p.emulator == "stella") return prepareStella(p, root, home, l, error);
-  if (p.emulator == "gopher2600" && !prefs.empty()) return prepareGopher(root, home, prefs, l, error);
+  if (project.emulator == "stella") return prepareStella(project, root, home, launch, error);
+  if (project.emulator == "gopher2600" && !preferences.empty()) return prepareGopher(root, home, preferences, launch, error);
   return true;
 }
 

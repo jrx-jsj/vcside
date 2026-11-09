@@ -17,7 +17,7 @@ class Job {
  public:
   ~Job();
   bool start(const std::vector<std::string>& args, const std::string& workDir,
-             const std::vector<std::pair<std::string, std::string>>& env = {});
+             const std::vector<std::pair<std::string, std::string>>& environment = {});
   bool running() const { return running_; }
   bool finished() const { return started_ && !running_; }
   int exitCode() const { return exitCode_; }
@@ -33,10 +33,10 @@ class Job {
 };
 
 // Starts a program and forgets it (emulators). Returns false and an error if it fails.
-// env: variables to set or replace in the program's environment (the rest is inherited).
+// environment: variables to set or replace in the program's environment (the rest is inherited).
 using EnvVars = std::vector<std::pair<std::string, std::string>>;
 bool launchDetached(const std::vector<std::string>& args, const std::string& workDir, std::string* error,
-                    const EnvVars& env = {});
+                    const EnvVars& environment = {});
 
 // Looks for an executable in PATH. Adds ".exe" on Windows.
 std::string findInPath(const std::string& name);

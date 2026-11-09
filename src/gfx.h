@@ -28,13 +28,13 @@ std::string hexColour(int colour);  // "$1E"
 // TIA's player 1 down the screen (batari Basic's multisprite, DPC+ and PXE): P2-P16.
 enum class Obj { P0, P1, M0, M1, BL, P2, P3, P4, P5, P6, P7, P8, P9, P10, P11, P12, P13, P14, P15, P16 };
 constexpr int kObjects = 20;
-const char* objName(Obj o);
-bool isPlayer(Obj o);
-int playerNumber(Obj o);  // 0-16, -1 for missiles and ball
-Obj playerObj(int n);
+const char* objName(Obj object);
+bool isPlayer(Obj object);
+int playerNumber(Obj object);  // 0-16, -1 for missiles and ball
+Obj playerObj(int number);
 // The register a colour goes to: COLUP0 for P0 and M0, COLUP1 for P1, M1 and the extra
 // players (the kernel rewrites it), COLUPF for BL.
-const char* colourRegister(Obj o);
+const char* colourRegister(Obj object);
 
 struct Layer {
   Obj obj = Obj::P0;
@@ -52,7 +52,7 @@ struct Layer {
   int width() const { return isPlayer(obj) ? 8 * size : size; }  // in colour clocks
   bool pixel(int frame, int row, int x) const;                     // x in colour clocks from dx
   int colour(int frame, int row) const;                            // resolved, never -1
-  void resize(int frames, int height);
+  void resize(int frames, int newHeight);
 };
 
 // An animation: steps that each show a frame for some video frames (1/60 s on NTSC).
@@ -79,12 +79,12 @@ struct Sprite {
   std::vector<Animation> animations;
 
   int phases() const;      // flicker phases in use (1 = no flicker)
-  void setFrames(int n);
+  void setFrames(int count);
   void insertFrame(int at, int copyOf);  // copyOf -1 = blank; the animations' steps follow
   void removeFrame(int at);              // steps that showed it go
-  void swapFrames(int a, int b);
+  void swapFrames(int first, int second);
   // The frame an animation shows at a video frame (counted from its start).
-  int frameAt(const Animation& a, int tick) const;
+  int frameAt(const Animation& animation, int tick) const;
 };
 
 // ---------------------------------------------------------------------------
@@ -106,8 +106,8 @@ struct Playfield {
   std::string group;       // as Sprite::group
   std::vector<PfRow> rows = std::vector<PfRow>(24);
 
-  bool pixel(int row, int col) const;    // what the screen shows (symmetric rows: from the left half)
-  void setPixel(int row, int col, bool on);  // in a symmetric row the other half follows; editing the
+  bool pixel(int row, int column) const;    // what the screen shows (symmetric rows: from the left half)
+  void setPixel(int row, int column, bool on);  // in a symmetric row the other half follows; editing the
                                              // right half of one makes it asymmetric
   void setAsymmetric(int row, bool on);  // off: the right half goes back to the left's copy
   int pfAt(int row) const;
@@ -116,7 +116,7 @@ struct Playfield {
   void registers(int row, uint8_t left[3], uint8_t right[3]) const;
 };
 // The playfield bit behind screen column 0-19 (left half): register 0-2 and bit 0-7.
-void pfBit(int col, int* reg, int* bit);
+void pfBit(int column, int* registerIndex, int* bit);
 
 // ---------------------------------------------------------------------------
 // The asset: one file holds sprites and playfields.
@@ -129,16 +129,16 @@ struct Asset {
   enum class Split { One, Each, Group } split = Split::One;
 };
 
-std::string toJson(const Asset& a);
-bool fromJson(const std::string& text, Asset* a, std::string* error);
+std::string toJson(const Asset& asset);
+bool fromJson(const std::string& text, Asset* asset, std::string* error);
 
 // ---------------------------------------------------------------------------
 // Kernels: what the program that draws the graphics can show.
 
 enum class Kernel { Dasm, Standard, Multisprite, DPCPlus, PXE };
-const char* kernelId(Kernel k);    // "dasm", "standard", "multisprite", "dpc+", "pxe"
-const char* kernelName(Kernel k);  // for people
-bool kernelFromId(const std::string& id, Kernel* k);
+const char* kernelId(Kernel kernel);    // "dasm", "standard", "multisprite", "dpc+", "pxe"
+const char* kernelName(Kernel kernel);  // for people
+bool kernelFromId(const std::string& id, Kernel* kernel);
 
 // batari Basic's `set kernel_options` and constants that change the standard kernel.
 struct KernelOptions {
@@ -152,13 +152,13 @@ struct Profile {
   Kernel kernel = Kernel::Dasm;
   KernelOptions options;
 
-  bool c = false;  // a kernel of one's own written in C (ELF projects): the tables go to <name>.gfx.h
+  bool usesC = false;  // a kernel of one's own written in C (ELF projects): the tables go to <name>.gfx.h
 
   bool basic() const { return kernel != Kernel::Dasm; }
   int players() const;                  // 2, 6, 10 or 17
-  bool has(Obj o) const;                // the kernel draws it (with these options)
-  std::string missing(Obj o) const;     // why not, if it does not
-  bool rowColours(Obj o) const;         // a colour per row
+  bool has(Obj object) const;                // the kernel draws it (with these options)
+  std::string missing(Obj object) const;     // why not, if it does not
+  bool rowColours(Obj object) const;         // a colour per row
   bool shapedMissiles() const;          // missiles and ball keep their shape (DASM) or are blocks
   bool topFirst() const;                // player data: top row first in the source
   int pfFirst() const;                  // first screen column the kernel shows (0 or 4)
@@ -179,41 +179,41 @@ struct Issue {
   enum Severity { Info, Warning, Error } severity = Warning;
   std::string text;
 };
-std::vector<Issue> check(const Sprite& s, const Profile& k);
-std::vector<Issue> check(const Playfield& p, const Profile& k);
+std::vector<Issue> check(const Sprite& sprite, const Profile& profile);
+std::vector<Issue> check(const Playfield& playfield, const Profile& profile);
 
 struct ExportOptions {
   bool upsideDown = true;  // tables bottom row first, as most kernels read them (and PlayerPal)
 };
 // DASM: labelled .byte tables. A player row carries its colour as a ";$xx" comment,
 // so the table can be read back (and pasted into PlayerPal).
-std::string exportDasm(const Sprite& s, const ExportOptions& o = {});
-std::string exportDasm(const Playfield& p, const ExportOptions& o = {});
+std::string exportDasm(const Sprite& sprite, const ExportOptions& options = {});
+std::string exportDasm(const Playfield& playfield, const ExportOptions& options = {});
 // The file a program includes (<name>.gfx.asm): every item's tables, under a header that
 // names the .vcsgfx they come from.
-std::string dasmInclude(const Asset& a, const std::string& sourceName);
+std::string dasmInclude(const Asset& asset, const std::string& sourceName);
 // C (ELF projects, whose ARM feeds the TIA): const arrays, top row first, with #defines for
 // sizes and positions and the animations as step arrays; vcsgfx_animate() plays them.
-std::string exportC(const Sprite& s);
-std::string exportC(const Playfield& p);
+std::string exportC(const Sprite& sprite);
+std::string exportC(const Playfield& playfield);
 // <name>.gfx.h: every item, under the header that names the .vcsgfx and an include guard.
-std::string cInclude(const Asset& a, const std::string& sourceName);
+std::string cInclude(const Asset& asset, const std::string& sourceName);
 // The files generated from <stem>.vcsgfx, by the asset's split: name and contents.
 // One: <stem>.gfx.asm. Each: <stem>.<item>.gfx.asm. Group: <stem>.<group>.gfx.asm, and the
 // items with no group in <stem>.gfx.asm. C: .gfx.h instead.
 struct GeneratedFile {
   std::string name, text;
 };
-std::vector<GeneratedFile> generatedFiles(const Asset& a, const std::string& sourceName, bool c);
+std::vector<GeneratedFile> generatedFiles(const Asset& asset, const std::string& sourceName, bool forC);
 // A file VCSIDE generated from that source (it says so in its first line).
 bool generatedFrom(const std::string& firstLine, const std::string& sourceName);
 // batari Basic: playerN: blocks with their colours, playfield:, pfcolors:, bkcolors:, as the
 // kernel of the profile reads them (row order, width, which blocks exist).
-std::string exportBasic(const Sprite& s, const Profile& k, int frame = -1);  // frame -1: all of them
+std::string exportBasic(const Sprite& sprite, const Profile& profile, int frame = -1);  // frame -1: all of them
 // A subroutine that plays an animation: `gosub <sprite>_<animation>` once per frame (before
 // drawscreen) advances it and sets the frame's blocks. `<sprite>_<animation>_reset` restarts it.
-std::string exportBasicAnimation(const Sprite& s, const Animation& a, const Profile& k);
-std::string exportBasic(const Playfield& p, const Profile& k);
+std::string exportBasicAnimation(const Sprite& sprite, const Animation& animation, const Profile& profile);
+std::string exportBasic(const Playfield& playfield, const Profile& profile);
 std::string identifier(const std::string& name);  // "my hero" -> "my_hero"
 
 // A batari Basic program can hold graphics that VCSIDE keeps up to date: the lines between
@@ -222,10 +222,10 @@ std::string identifier(const std::string& name);  // "my hero" -> "my_hero"
 // are the item's export (one animation frame, if given) for the asset's kernel.
 // basicRegion: the region for an item (sprites first, then playfields), ready to paste;
 // a sprite of several frames gives one region per frame, or one per animation if it has them.
-std::string basicRegion(const std::string& file, const Asset& a, int item, const Profile& k);
+std::string basicRegion(const std::string& file, const Asset& asset, int item, const Profile& profile);
 // Rewrites the regions of `file` in a program. *updated counts them; *problems gets a
 // line for each region that names an item the asset does not have or has no end.
-std::string updateBasicRegions(const std::string& source, const std::string& file, const Asset& a, const Profile& k,
+std::string updateBasicRegions(const std::string& source, const std::string& file, const Asset& asset, const Profile& profile,
                                int* updated, std::vector<std::string>* problems);
 
 // ---------------------------------------------------------------------------

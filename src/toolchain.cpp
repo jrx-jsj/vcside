@@ -37,119 +37,119 @@ Toolchain::Toolchain() {
 }
 
 const std::vector<ToolGroup>& Toolchain::groups() {
-  static const std::vector<ToolGroup> g = {
+  static const std::vector<ToolGroup> group = {
       {N_("Compilers and assemblers"), {"assembler", "compiler"}},
       {N_("Emulators"), {"emulator"}},
       {N_("Build helpers"), {"runtime", "build tool"}},
   };
-  return g;
+  return group;
 }
 
-std::vector<Tool*> Toolchain::inGroup(const ToolGroup& g) {
-  std::vector<Tool*> out;
-  for (auto& t : tools_)
-    for (auto& r : g.roles)
-      if (t.role == r) out.push_back(&t);
-  return out;
+std::vector<Tool*> Toolchain::inGroup(const ToolGroup& group) {
+  std::vector<Tool*> groupTools;
+  for (auto& tool : tools_)
+    for (auto& role : group.roles)
+      if (tool.role == role) groupTools.push_back(&tool);
+  return groupTools;
 }
 
 std::string Toolchain::toolsDir() {
-  char* p = SDL_GetPrefPath("vcside", "VCSIDE");
-  std::string s = p ? p : "";
-  SDL_free(p);
-  return s + "tools";
+  char* prefPath = SDL_GetPrefPath("vcside", "VCSIDE");
+  std::string folder = prefPath ? prefPath : "";
+  SDL_free(prefPath);
+  return folder + "tools";
 }
 
-std::vector<std::string> Toolchain::candidates(const Tool& t) const {
-  std::vector<std::string> c;
-  const std::string own = toolsDir();
+std::vector<std::string> Toolchain::candidates(const Tool& tool) const {
+  std::vector<std::string> paths;
+  const std::string toolsFolder = toolsDir();
   const char* home = std::getenv("HOME");
-  std::string h = home ? home : "";
+  std::string homeDir = home ? home : "";
 #ifdef _WIN32
-  std::string pf = std::getenv("ProgramFiles") ? std::getenv("ProgramFiles") : "C:\\Program Files";
-  std::string lad = std::getenv("LOCALAPPDATA") ? std::getenv("LOCALAPPDATA") : "";
+  std::string programFiles = std::getenv("ProgramFiles") ? std::getenv("ProgramFiles") : "C:\\Program Files";
+  std::string localAppData = std::getenv("LOCALAPPDATA") ? std::getenv("LOCALAPPDATA") : "";
 #endif
-  auto add = [&](const std::string& s) { c.push_back(s); };
-  if (t.id == "dasm") {
-    for (auto n : {"dasm"}) {
-      add(findInPath(n));
-      add(own + "/dasm/dasm");
+  auto add = [&](const std::string& path) { paths.push_back(path); };
+  if (tool.id == "dasm") {
+    for (auto name : {"dasm"}) {
+      add(findInPath(name));
+      add(toolsFolder + "/dasm/dasm");
 #ifdef _WIN32
-      add(own + "\\dasm\\dasm.exe");
+      add(toolsFolder + "\\dasm\\dasm.exe");
 #endif
     }
     add("/opt/homebrew/bin/dasm");
     add("/usr/local/bin/dasm");
-  } else if (t.id == "stella") {
+  } else if (tool.id == "stella") {
     add(findInPath("stella"));
 #if defined(__APPLE__)
     add("/Applications/Stella.app/Contents/MacOS/Stella");
-    add(h + "/Applications/Stella.app/Contents/MacOS/Stella");
+    add(homeDir + "/Applications/Stella.app/Contents/MacOS/Stella");
 #elif defined(_WIN32)
-    add(pf + "\\Stella\\Stella.exe");
-    add(lad + "\\Programs\\Stella\\Stella.exe");
+    add(programFiles + "\\Stella\\Stella.exe");
+    add(localAppData + "\\Programs\\Stella\\Stella.exe");
 #else
     add("/usr/games/stella");
     add("/usr/bin/stella");
     add("/usr/local/bin/stella");
 #endif
-    add(own + "/stella/stella");
-  } else if (t.id == "gopher2600") {
+    add(toolsFolder + "/stella/stella");
+  } else if (tool.id == "gopher2600") {
     add(findInPath("gopher2600"));
 #if defined(__APPLE__)
     for (auto bin : {"gopher2600_darwin_arm64", "gopher2600_darwin_amd64", "gopher2600"}) {
       add(std::string("/Applications/Gopher2600.app/Contents/MacOS/") + bin);
-      add(h + "/Applications/Gopher2600.app/Contents/MacOS/" + bin);
+      add(homeDir + "/Applications/Gopher2600.app/Contents/MacOS/" + bin);
     }
 #elif defined(_WIN32)
-    add(own + "\\gopher2600\\gopher2600.exe");
-    add(own + "\\gopher2600\\gopher2600_windows_amd64.exe");
+    add(toolsFolder + "\\gopher2600\\gopher2600.exe");
+    add(toolsFolder + "\\gopher2600\\gopher2600_windows_amd64.exe");
 #else
-    add(own + "/gopher2600/gopher2600_linux_amd64");
+    add(toolsFolder + "/gopher2600/gopher2600_linux_amd64");
 #endif
-    add(own + "/gopher2600/gopher2600");
-  } else if (t.id == "wasmtime") {
+    add(toolsFolder + "/gopher2600/gopher2600");
+  } else if (tool.id == "wasmtime") {
     add(findInPath("wasmtime"));
 #ifdef _WIN32
-    std::string up = std::getenv("USERPROFILE") ? std::getenv("USERPROFILE") : "";
-    add(up + "\\.wasmtime\\bin\\wasmtime.exe");
-    add(lad + "\\Microsoft\\WinGet\\Links\\wasmtime.exe");
+    std::string userProfile = std::getenv("USERPROFILE") ? std::getenv("USERPROFILE") : "";
+    add(userProfile + "\\.wasmtime\\bin\\wasmtime.exe");
+    add(localAppData + "\\Microsoft\\WinGet\\Links\\wasmtime.exe");
 #else
-    add(h + "/.wasmtime/bin/wasmtime");  // its install script
+    add(homeDir + "/.wasmtime/bin/wasmtime");  // its install script
     add("/opt/homebrew/bin/wasmtime");
     add("/usr/local/bin/wasmtime");
 #endif
-  } else if (t.id == "bb") {
+  } else if (tool.id == "bb") {
 #ifdef _WIN32
     add(findInPath("2600bas.bat"));
-    add(own + "\\bb\\2600bas.bat");
+    add(toolsFolder + "\\bb\\2600bas.bat");
 #else
     add(findInPath("2600basic.sh"));
-    add(own + "/bb/2600basic.sh");
+    add(toolsFolder + "/bb/2600basic.sh");
     if (const char* bb = std::getenv("bB")) add(std::string(bb) + "/2600basic.sh");
 #endif
-  } else if (t.id == "arm-gcc") {
+  } else if (tool.id == "arm-gcc") {
     add(findInPath("arm-none-eabi-gcc"));
     add("/opt/homebrew/bin/arm-none-eabi-gcc");
     add("/usr/local/bin/arm-none-eabi-gcc");
     add("/usr/bin/arm-none-eabi-gcc");
     // Arm's own installers: <folder>/<version>/... (the newest version first)
     auto versions = [&](const std::string& root, const std::string& rest) {
-      std::error_code ec;
+      std::error_code errorCode;
       std::vector<std::string> found;
-      for (auto& e : fs::directory_iterator(root, ec))
-        if (e.is_directory()) found.push_back((e.path() / rest).string());
+      for (auto& entry : fs::directory_iterator(root, errorCode))
+        if (entry.is_directory()) found.push_back((entry.path() / rest).string());
       std::sort(found.rbegin(), found.rend());
-      for (auto& f : found) add(f);
+      for (auto& candidate : found) add(candidate);
     };
 #if defined(__APPLE__)
     versions("/Applications/ArmGNUToolchain", "arm-none-eabi/bin/arm-none-eabi-gcc");
 #elif defined(_WIN32)
     std::string pf86 = std::getenv("ProgramFiles(x86)") ? std::getenv("ProgramFiles(x86)") : "C:\\Program Files (x86)";
     versions(pf86 + "\\Arm GNU Toolchain arm-none-eabi", "bin\\arm-none-eabi-gcc.exe");
-    versions(pf + "\\Arm GNU Toolchain arm-none-eabi", "bin\\arm-none-eabi-gcc.exe");
+    versions(programFiles + "\\Arm GNU Toolchain arm-none-eabi", "bin\\arm-none-eabi-gcc.exe");
 #endif
-  } else if (t.id == "make") {
+  } else if (tool.id == "make") {
     add(findInPath("make"));
     add("/usr/bin/make");
     add("/opt/homebrew/bin/gmake");
@@ -158,42 +158,42 @@ std::vector<std::string> Toolchain::candidates(const Tool& t) const {
     add("C:\\msys64\\usr\\bin\\make.exe");
 #endif
   }
-  return c;
+  return paths;
 }
 
 void Toolchain::detect() {
-  for (auto& t : tools_) {
-    t.path.clear();
-    if (fileExists(t.userPath)) {
-      t.path = t.userPath;
+  for (auto& tool : tools_) {
+    tool.path.clear();
+    if (fileExists(tool.userPath)) {
+      tool.path = tool.userPath;
       continue;
     }
-    for (auto& c : candidates(t))
-      if (fileExists(c)) {
-        t.path = c;
+    for (auto& candidatePath : candidates(tool))
+      if (fileExists(candidatePath)) {
+        tool.path = candidatePath;
         break;
       }
   }
 }
 
 Tool* Toolchain::get(const std::string& id) {
-  for (auto& t : tools_)
-    if (t.id == id) return &t;
+  for (auto& tool : tools_)
+    if (tool.id == id) return &tool;
   return nullptr;
 }
 
 void Toolchain::loadSettings(const std::map<std::string, std::string>& userPaths) {
-  for (auto& t : tools_) {
-    auto it = userPaths.find(t.id);
-    t.userPath = it == userPaths.end() ? "" : it->second;
+  for (auto& tool : tools_) {
+    auto found = userPaths.find(tool.id);
+    tool.userPath = found == userPaths.end() ? "" : found->second;
   }
 }
 
 std::map<std::string, std::string> Toolchain::userPaths() const {
-  std::map<std::string, std::string> m;
-  for (auto& t : tools_)
-    if (!t.userPath.empty()) m[t.id] = t.userPath;
-  return m;
+  std::map<std::string, std::string> paths;
+  for (auto& tool : tools_)
+    if (!tool.userPath.empty()) paths[tool.id] = tool.userPath;
+  return paths;
 }
 
 }  // namespace vcs

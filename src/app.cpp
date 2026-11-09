@@ -34,21 +34,21 @@ static const char* kLangIds[] = {"dasm", "batari-basic", "elf-c"};
 static const char* kTvMultipleHelp = N_("The program runs on more than one system and handles it in its code: the DASM template chooses with -DPAL=1, batari Basic with set tv, C detects it when it starts. The emulator is not told one: it detects it from the frame.");
 static const char* kLangNames[] = {N_("Assembler (DASM)"), N_("batari Basic"), N_("C for ELF (vcsLib)")};
 
-static std::string readFile(const std::string& p) {
-  std::ifstream f(p, std::ios::binary);
-  std::stringstream ss;
-  ss << f.rdbuf();
-  return ss.str();
+static std::string readFile(const std::string& path) {
+  std::ifstream file(path, std::ios::binary);
+  std::stringstream stream;
+  stream << file.rdbuf();
+  return stream.str();
 }
 
 static bool isAsmFile(const std::string& path) {
-  std::string e = upper(fs::path(path).extension().string());
-  return e == ".ASM" || e == ".S" || e == ".H" || e == ".INC" || e == ".A" || e == ".65S";
+  std::string extension = upper(fs::path(path).extension().string());
+  return extension == ".ASM" || extension == ".S" || extension == ".H" || extension == ".INC" || extension == ".A" || extension == ".65S";
 }
 
-static std::string lower(std::string s) {
-  for (auto& c : s) c = (char)std::tolower((unsigned char)c);
-  return s;
+static std::string lower(std::string text) {
+  for (auto& character : text) character = (char)std::tolower((unsigned char)character);
+  return text;
 }
 
 // ---------------------------------------------------------------------------
@@ -71,66 +71,66 @@ bool App::init(SDL_Window* window, ImFont* mono, bool imguiMenu) {
 void App::shutdown() { saveSettings(); }
 
 void App::loadSettings() {
-  json j;
+  json settings;
   try {
-    std::ifstream f(configDir() + "settings.json");
-    if (f) j = json::parse(f);
+    std::ifstream file(configDir() + "settings.json");
+    if (file) settings = json::parse(file);
   } catch (...) {
   }
-  if (!j.is_object()) j = json::object();
+  if (!settings.is_object()) settings = json::object();
   loadLanguages(dataDir() + "/i18n");
-  std::string code = j.value("language", "");
+  std::string code = settings.value("language", "");
   setLanguage(code.empty() ? systemLanguage() : code);
-  recent_ = j.value("recent", std::vector<std::string>{});
+  recent_ = settings.value("recent", std::vector<std::string>{});
   themes_.load(dataDir() + "/themes", configDir() + "themes");
-  useTheme(j.value("theme", std::string("dark")), false);
-  showCycles_ = j.value("show_cycles", true);
-  zoom_ = std::clamp(j.value("zoom", j.value("editor_zoom", 1.0f)), 0.5f, 3.0f);
-  tools_.loadSettings(j.value("tools", std::map<std::string, std::string>{}));
+  useTheme(settings.value("theme", std::string("dark")), false);
+  showCycles_ = settings.value("show_cycles", true);
+  zoom_ = std::clamp(settings.value("zoom", settings.value("editor_zoom", 1.0f)), 0.5f, 3.0f);
+  tools_.loadSettings(settings.value("tools", std::map<std::string, std::string>{}));
   // A new docked panel needs the default layout once (imgui.ini would keep it floating).
-  if (j.value("layout_version", 0) < kLayoutVersion) {
+  if (settings.value("layout_version", 0) < kLayoutVersion) {
     resetLayout_ = true;
     saveSettings();
   }
 }
 
 void App::saveSettings() {
-  json j = {{"language", currentLanguage()},
+  json settings = {{"language", currentLanguage()},
             {"recent", recent_},
             {"show_cycles", showCycles_},
             {"zoom", zoom_},
             {"theme", themeId_},
             {"tools", tools_.userPaths()},
             {"layout_version", kLayoutVersion}};
-  std::ofstream(configDir() + "settings.json") << j.dump(2) << "\n";
+  std::ofstream(configDir() + "settings.json") << settings.dump(2) << "\n";
   settingsSeen_ = ++gSettingsSaved;
 }
 
 void App::syncSettings() {
   if (settingsSeen_ == gSettingsSaved) return;
   settingsSeen_ = gSettingsSaved;
-  json j;
+  json settings;
   try {
-    std::ifstream f(configDir() + "settings.json");
-    if (f) j = json::parse(f);
+    std::ifstream file(configDir() + "settings.json");
+    if (file) settings = json::parse(file);
   } catch (...) {
   }
-  if (!j.is_object()) return;
-  recent_ = j.value("recent", recent_);
-  showCycles_ = j.value("show_cycles", showCycles_);
-  zoom_ = std::clamp(j.value("zoom", zoom_), 0.5f, 3.0f);
+  if (!settings.is_object()) return;
+  recent_ = settings.value("recent", recent_);
+  showCycles_ = settings.value("show_cycles", showCycles_);
+  zoom_ = std::clamp(settings.value("zoom", zoom_), 0.5f, 3.0f);
   themes_.load(dataDir() + "/themes", configDir() + "themes");
-  useTheme(j.value("theme", themeId_), false);  // this window's ImGui style
-  tools_.loadSettings(j.value("tools", std::map<std::string, std::string>{}));
-  for (auto& f : files_) f->editor.setGutterWidthChars(showCycles_ && f->asmSyntax ? 5 : 0);
+  useTheme(settings.value("theme", themeId_), false);  // this window's ImGui style
+  tools_.loadSettings(settings.value("tools", std::map<std::string, std::string>{}));
+  for (auto& file : files_) file->editor.setGutterWidthChars(showCycles_ && file->asmSyntax ? 5 : 0);
 }
 
 void App::useTheme(const std::string& id, bool save) {
   themeId_ = themes_.find(id) ? id : "dark";
-  theme::Resolved r = themes_.resolve(themeId_);
-  for (auto& p : r.problems) SDL_Log("Theme %s: %s", themeId_.c_str(), p.c_str());
-  theme::setCurrent(r);
-  theme::applyImGui(r);
+  theme::Resolved resolved = themes_.resolve(themeId_);
+  for (auto& problem : resolved.problems) SDL_Log("Theme %s: %s", themeId_.c_str(), problem.c_str());
+  theme::setCurrent(resolved);
+  theme::applyImGui(resolved);
   if (save) saveSettings();
 }
 
@@ -150,9 +150,9 @@ struct DialogCtx {
 };
 
 void SDLCALL App::dialogCallback(void* userdata, const char* const* files, int) {
-  auto* ctx = static_cast<DialogCtx*>(userdata);
-  if (files && files[0]) ctx->app->pushDialogResult(ctx->kind, files[0]);
-  delete ctx;
+  auto* dialogContext = static_cast<DialogCtx*>(userdata);
+  if (files && files[0]) dialogContext->app->pushDialogResult(dialogContext->kind, files[0]);
+  delete dialogContext;
 }
 
 void App::pushDialogResult(const std::string& kind, const std::string& path) {
@@ -164,73 +164,73 @@ void App::pushDialogResult(const std::string& kind, const std::string& path) {
 // Projects and files
 
 void App::openPath(const std::string& path) {
-  std::error_code ec;
-  if (fs::is_directory(path, ec)) {
-    for (auto& e : fs::directory_iterator(path, ec))
-      if (e.path().extension() == ".vcsproj") return openProject(e.path().string());
+  std::error_code errorCode;
+  if (fs::is_directory(path, errorCode)) {
+    for (auto& entry : fs::directory_iterator(path, errorCode))
+      if (entry.path().extension() == ".vcsproj") return openProject(entry.path().string());
     openFolder(path);
   } else if (fs::path(path).extension() == ".vcsproj") {
     openProject(path);
-  } else if (fs::exists(path, ec)) {
+  } else if (fs::exists(path, errorCode)) {
     openFile(path);
   }
 }
 
 std::string App::linkedFile(const std::string& name, const std::string& fromFile) const {
   if (name.empty()) return {};
-  std::vector<fs::path> where;
-  fs::path n(name);
-  if (n.is_absolute()) where.push_back(n);
+  std::vector<fs::path> searchPaths;
+  fs::path namePath(name);
+  if (namePath.is_absolute()) searchPaths.push_back(namePath);
   else {
-    where.push_back(fs::path(fromFile).parent_path() / n);
-    if (!folder_.empty()) where.push_back(fs::path(folder_) / n);
+    searchPaths.push_back(fs::path(fromFile).parent_path() / namePath);
+    if (!folder_.empty()) searchPaths.push_back(fs::path(folder_) / namePath);
     if (project_)
-      for (auto& d : project_->includeDirs) where.push_back(fs::path(project_->abs(d)) / n);
-    if (!folder_.empty()) where.push_back(fs::path(folder_) / "include" / n);
+      for (auto& includeDir : project_->includeDirs) searchPaths.push_back(fs::path(project_->abs(includeDir)) / namePath);
+    if (!folder_.empty()) searchPaths.push_back(fs::path(folder_) / "include" / namePath);
   }
-  std::error_code ec;
-  for (auto& p : where)
-    if (fs::is_regular_file(p, ec) && files::kindOf(p.filename().string(), false) != files::Kind::Rom)
-      return fs::weakly_canonical(p, ec).string();
+  std::error_code errorCode;
+  for (auto& candidate : searchPaths)
+    if (fs::is_regular_file(candidate, errorCode) && files::kindOf(candidate.filename().string(), false) != files::Kind::Rom)
+      return fs::weakly_canonical(candidate, errorCode).string();
   return {};
 }
 
 void App::projectSettings() {
   if (!project_) return;
-  if (OpenFile* f = openFile(project_->file); f && f->form && !f->dirty()) f->form->showText(f->editor, false);
+  if (OpenFile* file = openFile(project_->file); file && file->form && !file->dirty()) file->form->showText(file->editor, false);
 }
 
 void App::projectFileSaved() {
-  Project p;
-  std::string err;
-  if (!p.load(project_->file, &err)) {
-    output_ += err + "\n";
+  Project loadedProject;
+  std::string error;
+  if (!loadedProject.load(project_->file, &error)) {
+    output_ += error + "\n";
     return;
   }
-  project_ = p;
-  SDL_SetWindowTitle(window_, ("VCSIDE - " + p.name).c_str());
+  project_ = loadedProject;
+  SDL_SetWindowTitle(window_, ("VCSIDE - " + loadedProject.name).c_str());
   for (auto& file : files_) lint(*file);
 }
 
 void App::openProject(const std::string& file) {
   if (hooks.raiseIfOpen && hooks.raiseIfOpen(fs::path(file).parent_path().string(), this)) return;
-  Project p;
-  std::string err;
-  if (!p.load(file, &err)) {
-    output_ += err + "\n";
+  Project loadedProject;
+  std::string error;
+  if (!loadedProject.load(file, &error)) {
+    output_ += error + "\n";
     return;
   }
-  project_ = p;
-  folder_ = p.dir;
+  project_ = loadedProject;
+  folder_ = loadedProject.dir;
   symbols_.clear();
   builtFiles_.clear();
   diskSymbols_.clear();
   diagnostics_.clear();
   loadSymbols();
   loadUserState();
-  addRecent(p.file);
-  openFile(p.abs(p.main));
-  SDL_SetWindowTitle(window_, ("VCSIDE - " + p.name).c_str());
+  addRecent(loadedProject.file);
+  openFile(loadedProject.abs(loadedProject.main));
+  SDL_SetWindowTitle(window_, ("VCSIDE - " + loadedProject.name).c_str());
 }
 
 void App::openFolder(const std::string& dir) {
@@ -243,7 +243,7 @@ void App::openFolder(const std::string& dir) {
 
 OpenFile* App::openFile(const std::string& pathIn, int line) {
   std::string path = fs::weakly_canonical(pathIn).string();
-  for (auto& o : files_) o->requestFocus = false;  // the file opened last is the one shown
+  for (auto& openedFile : files_) openedFile->requestFocus = false;  // the file opened last is the one shown
   for (size_t i = 0; i < files_.size(); i++)
     if (files_[i]->path == path) {
       activeFile_ = (int)i;
@@ -251,179 +251,179 @@ OpenFile* App::openFile(const std::string& pathIn, int line) {
       if (line > 0) files_[i]->editor.goTo(line - 1);
       return files_[i].get();
     }
-  std::error_code ec;
-  if (!fs::exists(path, ec)) return nullptr;
-  auto f = std::make_unique<OpenFile>();
-  f->path = path;
+  std::error_code errorCode;
+  if (!fs::exists(path, errorCode)) return nullptr;
+  auto newFile = std::make_unique<OpenFile>();
+  newFile->path = path;
   if (ImageViewer::handles(path)) {
-    f->asmSyntax = false;
-    f->image = std::make_unique<ImageViewer>();
-    std::string err;
-    if (!f->image->load(path, &err)) {
-      output_ += F("Cannot read {0}: {1}", {path, err}) + "\n";
+    newFile->asmSyntax = false;
+    newFile->image = std::make_unique<ImageViewer>();
+    std::string error;
+    if (!newFile->image->load(path, &error)) {
+      output_ += F("Cannot read {0}: {1}", {path, error}) + "\n";
       return nullptr;
     }
-    f->requestFocus = true;
-    files_.push_back(std::move(f));
+    newFile->requestFocus = true;
+    files_.push_back(std::move(newFile));
     activeFile_ = (int)files_.size() - 1;
     return files_.back().get();
   }
   if (lower(fs::path(path).extension().string()) == ".vcsproj") {
-    f->asmSyntax = false;
-    f->form = std::make_unique<ProjectForm>();
-    std::string err;
-    if (!f->form->load(path, f->editor, &err)) {
-      output_ += err + "\n";
+    newFile->asmSyntax = false;
+    newFile->form = std::make_unique<ProjectForm>();
+    std::string error;
+    if (!newFile->form->load(path, newFile->editor, &error)) {
+      output_ += error + "\n";
       return nullptr;
     }
-    f->requestFocus = true;
-    files_.push_back(std::move(f));
+    newFile->requestFocus = true;
+    files_.push_back(std::move(newFile));
     activeFile_ = (int)files_.size() - 1;
     return files_.back().get();
   }
   if (lower(fs::path(path).extension().string()) == ".vcsgfx") {
-    f->asmSyntax = false;
-    f->gfx = std::make_unique<GfxEditor>();
-    std::string err;
-    if (!f->gfx->load(path, &err)) {
-      output_ += F("Cannot read {0}: {1}", {path, err}) + "\n";
+    newFile->asmSyntax = false;
+    newFile->gfx = std::make_unique<GfxEditor>();
+    std::string error;
+    if (!newFile->gfx->load(path, &error)) {
+      output_ += F("Cannot read {0}: {1}", {path, error}) + "\n";
       return nullptr;
     }
-    f->requestFocus = true;
-    files_.push_back(std::move(f));
+    newFile->requestFocus = true;
+    files_.push_back(std::move(newFile));
     activeFile_ = (int)files_.size() - 1;
     return files_.back().get();
   }
-  f->asmSyntax = isAsmFile(path);
-  f->editor.setText(readFile(path));
-  f->editor.setGutterWidthChars(showCycles_ && f->asmSyntax ? 5 : 0);
+  newFile->asmSyntax = isAsmFile(path);
+  newFile->editor.setText(readFile(path));
+  newFile->editor.setGutterWidthChars(showCycles_ && newFile->asmSyntax ? 5 : 0);
   std::string ext = lower(fs::path(path).extension().string());
   bool cLike = ext == ".c" || ext == ".cpp" || ext == ".hpp" || (ext == ".h" && project_ && project_->language == Language::ElfC);
-  if (cLike) f->asmSyntax = false;
-  f->editor.setCommentPrefix(cLike ? "//" : ext == ".bas" ? "rem" : ";");
-  f->editor.setFoldSyntax(cLike ? FoldSyntax::C : ext == ".bas" ? FoldSyntax::Basic : f->asmSyntax ? FoldSyntax::Asm : FoldSyntax::None);
-  f->editor.setDefaultIndent(cLike ? IndentStyle{false, 4} : IndentStyle{true, 4});  // as the templates
+  if (cLike) newFile->asmSyntax = false;
+  newFile->editor.setCommentPrefix(cLike ? "//" : ext == ".bas" ? "rem" : ";");
+  newFile->editor.setFoldSyntax(cLike ? FoldSyntax::C : ext == ".bas" ? FoldSyntax::Basic : newFile->asmSyntax ? FoldSyntax::Asm : FoldSyntax::None);
+  newFile->editor.setDefaultIndent(cLike ? IndentStyle{false, 4} : IndentStyle{true, 4});  // as the templates
   {
-    EditorHooks h = f->asmSyntax ? asmHooks() : ext == ".bas" ? basicHooks() : EditorHooks{};
-    OpenFile* self = f.get();
+    EditorHooks editorHooks = newFile->asmSyntax ? asmHooks() : ext == ".bas" ? basicHooks() : EditorHooks{};
+    OpenFile* self = newFile.get();
     // the files a line names (include, incbin, #include...)
-    h.hasFile = [this, self](const std::string& name) { return !linkedFile(name, self->path).empty(); };
-    h.openFile = [this, self](const std::string& name) {
-      std::string p = linkedFile(name, self->path);
-      if (!p.empty()) openFile(p);
+    editorHooks.hasFile = [this, self](const std::string& name) { return !linkedFile(name, self->path).empty(); };
+    editorHooks.openFile = [this, self](const std::string& name) {
+      std::string linkedPath = linkedFile(name, self->path);
+      if (!linkedPath.empty()) openFile(linkedPath);
     };
-    if (f->asmSyntax || ext == ".bas") {
-    h.gotoDefinition = [this, self](const std::string& w) { return gotoDefinition(w, self->path, self->editor.cursor().line); };
-    h.hasDefinition = [this, self](const std::string& w, int line) {
+    if (newFile->asmSyntax || ext == ".bas") {
+    editorHooks.gotoDefinition = [this, self](const std::string& word) { return gotoDefinition(word, self->path, self->editor.cursor().line); };
+    editorHooks.hasDefinition = [this, self](const std::string& word, int line) {
       std::string path;
-      int at = 0;
-      return findDefinition(w, self->path, line, path, at);
+      int foundLine = 0;
+      return findDefinition(word, self->path, line, path, foundLine);
     };
     }
-    f->editor.setHooks(h);
+    newFile->editor.setHooks(editorHooks);
   }
-  f->requestFocus = true;
-  if (line > 0) f->editor.goTo(line - 1);
-  if (auto it = breakpoints_.find(path); it != breakpoints_.end()) f->editor.setBreakpoints(it->second);
-  lint(*f);
-  files_.push_back(std::move(f));
+  newFile->requestFocus = true;
+  if (line > 0) newFile->editor.goTo(line - 1);
+  if (auto found = breakpoints_.find(path); found != breakpoints_.end()) newFile->editor.setBreakpoints(found->second);
+  lint(*newFile);
+  files_.push_back(std::move(newFile));
   activeFile_ = (int)files_.size() - 1;
   return files_.back().get();
 }
 
 gfx::Profile App::gfxProfile() {
   if (!project_ || project_->language != Language::BatariBasic) {
-    gfx::Profile k;
-    k.c = project_ && project_->language == Language::ElfC;
-    return k;
+    gfx::Profile profile;
+    profile.usesC = project_ && project_->language == Language::ElfC;
+    return profile;
   }
   std::string main = project_->abs(project_->main);
-  std::error_code ec;
-  auto t = fs::last_write_time(main, ec);
-  if (main != gfxProfileFile_ || t != gfxProfileTime_) {
+  std::error_code errorCode;
+  auto writeTime = fs::last_write_time(main, errorCode);
+  if (main != gfxProfileFile_ || writeTime != gfxProfileTime_) {
     gfxProfileFile_ = main;
-    gfxProfileTime_ = t;
-    gfxProfile_ = gfx::profileFromBasic(ec ? std::string() : readFile(main));
+    gfxProfileTime_ = writeTime;
+    gfxProfile_ = gfx::profileFromBasic(errorCode ? std::string() : readFile(main));
   }
   return gfxProfile_;
 }
 gfx::Tv App::gfxTv() const { return gfx::tvFromProject(project_ ? project_->tv : "NTSC"); }
 
-bool App::saveFile(OpenFile& f) {
-  if (f.image) return true;  // nothing to save: the viewer never changes it
-  if (f.form) {
-    std::string text, err;
-    if (!f.form->contents(f.editor, &text, &err)) {
-      output_ += F("Not saved: {0}", {err}) + "\n";
-      lastStatus_ = F("Not saved: {0}", {err});
+bool App::saveFile(OpenFile& file) {
+  if (file.image) return true;  // nothing to save: the viewer never changes it
+  if (file.form) {
+    std::string text, error;
+    if (!file.form->contents(file.editor, &text, &error)) {
+      output_ += F("Not saved: {0}", {error}) + "\n";
+      lastStatus_ = F("Not saved: {0}", {error});
       return false;
     }
-    std::ofstream out(f.path, std::ios::binary);
+    std::ofstream out(file.path, std::ios::binary);
     if (!out) {
-      output_ += F("Cannot write {0}", {f.path}) + "\n";
+      output_ += F("Cannot write {0}", {file.path}) + "\n";
       return false;
     }
     out << text;
     out.close();
-    f.form->saved(f.editor, text);
-    if (project_ && fs::weakly_canonical(project_->file) == fs::weakly_canonical(f.path)) projectFileSaved();
+    file.form->saved(file.editor, text);
+    if (project_ && fs::weakly_canonical(project_->file) == fs::weakly_canonical(file.path)) projectFileSaved();
     return true;
   }
-  if (f.gfx) {
-    std::string err, generated;
-    if (!f.gfx->save(f.path, gfxProfile(), &err, &generated)) {
-      output_ += err + "\n";
+  if (file.gfx) {
+    std::string error, generated;
+    if (!file.gfx->save(file.path, gfxProfile(), &error, &generated)) {
+      output_ += error + "\n";
       return false;
     }
     if (!generated.empty()) {
       lastStatus_ = F("Saved; the tables are in {0}", {fs::path(generated).filename().string()});
       // an open copy of the generated file shows the new tables
       std::string canon = fs::weakly_canonical(generated).string();
-      for (auto& o : files_)
-        if (o->path == canon && !o->gfx && !o->editor.dirty()) o->editor.setText(readFile(canon)), o->editor.markSaved();
+      for (auto& openedFile : files_)
+        if (openedFile->path == canon && !openedFile->gfx && !openedFile->editor.dirty()) openedFile->editor.setText(readFile(canon)), openedFile->editor.markSaved();
     }
-    updateBasicRegions(f);
+    updateBasicRegions(file);
     return true;
   }
-  std::ofstream out(f.path, std::ios::binary);
+  std::ofstream out(file.path, std::ios::binary);
   if (!out) {
-    output_ += F("Cannot write {0}", {f.path}) + "\n";
+    output_ += F("Cannot write {0}", {file.path}) + "\n";
     return false;
   }
-  out << f.editor.text() << "\n";
-  f.editor.markSaved();
+  out << file.editor.text() << "\n";
+  file.editor.markSaved();
   return true;
 }
 
 // The batari Basic programs of the project that hold regions of this graphics file
 // (`rem vcsgfx <file> <item>` ... `rem vcsgfx end`) get the new blocks: in the editor if
 // the program is open (saved too, unless it had changes of its own), on disk if not.
-void App::updateBasicRegions(OpenFile& g) {
-  std::string name = fs::path(g.path).filename().string();
-  gfx::Profile k = g.gfx->profile(gfxProfile());
-  fs::path root = project_ ? fs::path(project_->dir) : fs::path(g.path).parent_path();
-  std::error_code ec;
+void App::updateBasicRegions(OpenFile& graphicsFile) {
+  std::string name = fs::path(graphicsFile.path).filename().string();
+  gfx::Profile profile = graphicsFile.gfx->profile(gfxProfile());
+  fs::path root = project_ ? fs::path(project_->dir) : fs::path(graphicsFile.path).parent_path();
+  std::error_code errorCode;
   std::vector<std::string> programs;
-  for (auto it = fs::recursive_directory_iterator(root, fs::directory_options::skip_permission_denied, ec);
-       !ec && it != fs::recursive_directory_iterator(); it.increment(ec)) {
-    std::string fn = it->path().filename().string();
-    if (it->is_directory(ec) && (fn.empty() || fn[0] == '.' || fn == "build" || it.depth() >= 3)) {
-      it.disable_recursion_pending();
+  for (auto iterator = fs::recursive_directory_iterator(root, fs::directory_options::skip_permission_denied, errorCode);
+       !errorCode && iterator != fs::recursive_directory_iterator(); iterator.increment(errorCode)) {
+    std::string fileName = iterator->path().filename().string();
+    if (iterator->is_directory(errorCode) && (fileName.empty() || fileName[0] == '.' || fileName == "build" || iterator.depth() >= 3)) {
+      iterator.disable_recursion_pending();
       continue;
     }
-    if (lower(it->path().extension().string()) == ".bas") programs.push_back(fs::weakly_canonical(it->path(), ec).string());
+    if (lower(iterator->path().extension().string()) == ".bas") programs.push_back(fs::weakly_canonical(iterator->path(), errorCode).string());
   }
   std::vector<std::string> touched;
   for (auto& path : programs) {
     OpenFile* open = nullptr;
-    for (auto& o : files_)
-      if (o->path == path && !o->gfx) open = o.get();
+    for (auto& openedFile : files_)
+      if (openedFile->path == path && !openedFile->gfx) open = openedFile.get();
     std::string text = open ? open->editor.text() : readFile(path);
     if (text.find("vcsgfx") == std::string::npos) continue;
-    int n = 0;
+    int regionCount = 0;
     std::vector<std::string> problems;
-    std::string updated = gfx::updateBasicRegions(text, name, g.gfx->asset(), k, &n, &problems);
-    for (auto& p : problems) output_ += fs::path(path).filename().string() + ": " + p + "\n";
+    std::string updated = gfx::updateBasicRegions(text, name, graphicsFile.gfx->asset(), profile, &regionCount, &problems);
+    for (auto& problem : problems) output_ += fs::path(path).filename().string() + ": " + problem + "\n";
     if (updated == text) continue;
     touched.push_back(fs::path(path).filename().string());
     if (open) {
@@ -438,14 +438,14 @@ void App::updateBasicRegions(OpenFile& g) {
   }
   if (!touched.empty()) {
     std::string list;
-    for (auto& t : touched) list += (list.empty() ? "" : ", ") + t;
+    for (auto& touchedName : touched) list += (list.empty() ? "" : ", ") + touchedName;
     lastStatus_ = F("Saved; graphics updated in {0}", {list});
   }
 }
 
 void App::saveAll() {
-  for (auto& f : files_)
-    if (f->dirty()) saveFile(*f);
+  for (auto& file : files_)
+    if (file->dirty()) saveFile(*file);
 }
 
 // ---------------------------------------------------------------------------
@@ -459,16 +459,16 @@ void App::build(int thenRun) {
   }
   saveAll();
   for (auto& id : project_->buildTools(tools_))
-    if (Tool* t = tools_.get(id); t && !t->found()) {
+    if (Tool* tool = tools_.get(id); tool && !tool->found()) {
       askForTool(id, T("build this project"), [this, thenRun] { build(thenRun); });
       return;
     }
-  std::string err, workDir;
+  std::string error, workDir;
   EnvVars env;
-  auto args = project_->buildArgs(tools_, &err, &workDir, &env);
+  auto args = project_->buildArgs(tools_, &error, &workDir, &env);
   if (args.empty()) {
-    output_ += err + "\n";
-    lastStatus_ = err;
+    output_ += error + "\n";
+    lastStatus_ = error;
     outputScroll_ = true;
     return;
   }
@@ -482,9 +482,9 @@ void App::build(int thenRun) {
   lastStatus_ = T("Building...");
   if (project_->language == Language::BatariBasic && project_->buildCommand.empty()) {
     // its script ends with 0 even when it fails: whatever is left from the last build must go
-    std::error_code ec;
+    std::error_code errorCode;
     for (auto suffix : {".bin", ".asm", ".list.txt", ".symbol.txt", ".lst", ".sym"})
-      fs::remove(project_->basicOutput(suffix), ec);
+      fs::remove(project_->basicOutput(suffix), errorCode);
   }
   job_.start(args, workDir, env);
 }
@@ -502,26 +502,26 @@ void App::pollBuild() {
   if (basic) diagnostics_ = parseBasicOutput(printed, project_->main, readFile(project_->basicOutput(".asm")));
   else diagnostics_ = gcc ? parseGccOutput(printed) : parseDasmOutput(printed);
   if (gcc) {
-    auto d = parseDasmOutput(printed);
-    diagnostics_.insert(diagnostics_.end(), d.begin(), d.end());
+    auto dasmDiagnostics = parseDasmOutput(printed);
+    diagnostics_.insert(diagnostics_.end(), dasmDiagnostics.begin(), dasmDiagnostics.end());
   }
   bool ok = job_.exitCode() == 0;
   // batari Basic's script ends with 0 even when it fails: the ROM and no errors tell
   if (basic) ok = ok && finishBasicBuild();
-  std::string buf = F(ok ? "Build succeeded (exit {0})" : "Build failed (exit {0})", {std::to_string(job_.exitCode())});
-  output_ += "\n" + buf + "\n";
-  lastStatus_ = buf;
+  std::string message = F(ok ? "Build succeeded (exit {0})" : "Build failed (exit {0})", {std::to_string(job_.exitCode())});
+  output_ += "\n" + message + "\n";
+  lastStatus_ = message;
   outputScroll_ = true;
   if (ok) {
-    std::error_code ec;
-    auto size = fs::file_size(project_->outputPath(), ec);
-    if (!ec) output_ += F("{0}: {1} bytes", {project_->outputPath(), std::to_string(size)}) + "\n";
+    std::error_code errorCode;
+    auto size = fs::file_size(project_->outputPath(), errorCode);
+    if (!errorCode) output_ += F("{0}: {1} bytes", {project_->outputPath(), std::to_string(size)}) + "\n";
     loadSymbols();
     if (project_->language == Language::ElfC) measureElf();
-    else if (basic) measureBasic(ec ? 0 : (long)size);
+    else if (basic) measureBasic(errorCode ? 0 : (long)size);
     else startSpace();
   }
-  for (auto& f : files_) lint(*f);
+  for (auto& file : files_) lint(*file);
   if (ok && runAfterBuild_) run(runAfterBuild_ == 2);
   runAfterBuild_ = 0;
 }
@@ -530,20 +530,20 @@ void App::pollBuild() {
 // ROM goes where the project says and the listing and symbols get the names Stella and
 // VCSIDE look for (<rom stem>.lst and .sym).
 bool App::finishBasicBuild() {
-  std::error_code ec;
-  std::string bin = project_->basicOutput(".bin");
-  bool errors = std::any_of(diagnostics_.begin(), diagnostics_.end(), [](auto& d) { return d.severity == Diagnostic::Error; });
-  if (errors || !fs::exists(bin, ec)) {
+  std::error_code errorCode;
+  std::string romPath = project_->basicOutput(".bin");
+  bool errors = std::any_of(diagnostics_.begin(), diagnostics_.end(), [](auto& diagnostic) { return diagnostic.severity == Diagnostic::Error; });
+  if (errors || !fs::exists(romPath, errorCode)) {
     if (!errors) diagnostics_.push_back({Diagnostic::Error, project_->main, 0, T("batari Basic did not write the ROM (see Output).")});
     return false;
   }
   auto copy = [&](const std::string& from, const std::string& to) {
-    if (fs::equivalent(from, to, ec)) return true;
-    fs::create_directories(fs::path(to).parent_path(), ec);
-    return fs::copy_file(from, to, fs::copy_options::overwrite_existing, ec);
+    if (fs::equivalent(from, to, errorCode)) return true;
+    fs::create_directories(fs::path(to).parent_path(), errorCode);
+    return fs::copy_file(from, to, fs::copy_options::overwrite_existing, errorCode);
   };
-  if (!copy(bin, project_->outputPath())) {
-    output_ += F("Cannot copy {0} to {1}: {2}", {bin, project_->outputPath(), ec.message()}) + "\n";
+  if (!copy(romPath, project_->outputPath())) {
+    output_ += F("Cannot copy {0} to {1}: {2}", {romPath, project_->outputPath(), errorCode.message()}) + "\n";
     return false;
   }
   copy(project_->basicOutput(".list.txt"), project_->stem() + ".lst");
@@ -552,17 +552,17 @@ bool App::finishBasicBuild() {
 }
 
 void App::measureBasic(long romSize) {
-  SpaceOptions opt;
-  opt.warnPercent = project_->spaceWarnPercent;
-  space_ = parseBasicSpace(output_, romSize, opt);
+  SpaceOptions options;
+  options.warnPercent = project_->spaceWarnPercent;
+  space_ = parseBasicSpace(output_, romSize, options);
   if (space_->banks.empty()) {
     space_.reset();
     spaceNote_ = T("batari Basic did not say how much ROM is left.");
     return;
   }
-  for (auto d : space_->diagnostics) {
-    d.message = T("Space") + std::string(": ") + d.message;
-    diagnostics_.push_back(d);
+  for (auto diagnostic : space_->diagnostics) {
+    diagnostic.message = T("Space") + std::string(": ") + diagnostic.message;
+    diagnostics_.push_back(diagnostic);
   }
   output_ += space_->summary() + "\n";
 }
@@ -579,20 +579,20 @@ void App::startSpace() {
 
 // ELF: the ROM's sections and, if it is up to date, the Chameleon image linked with the firmware.
 void App::measureElf() {
-  std::string rom = project_->outputPath(), cc = project_->stem() + "-chameleon.elf";
-  ElfFile r, c;
-  std::string err;
-  if (!readElf(readFile(rom), r, &err) || r.type != 1) {
-    spaceNote_ = F("Cannot measure {0}: {1}", {rom, err.empty() ? T("it is not a relocatable ELF object") : err});
+  std::string rom = project_->outputPath(), chameleonPath = project_->stem() + "-chameleon.elf";
+  ElfFile romElf, chameleonElf;
+  std::string error;
+  if (!readElf(readFile(rom), romElf, &error) || romElf.type != 1) {
+    spaceNote_ = F("Cannot measure {0}: {1}", {rom, error.empty() ? T("it is not a relocatable ELF object") : error});
     return;
   }
-  std::error_code ec;
-  bool useCc = fs::exists(cc, ec) && fs::last_write_time(cc, ec) >= fs::last_write_time(rom, ec) &&
-               readElf(readFile(cc), c, &err) && c.type == 2;
-  elfSpace_ = analyzeElfSpace(r, (long)fs::file_size(rom, ec), useCc ? &c : nullptr, project_->spaceWarnPercent);
-  for (auto d : elfSpace_->diagnostics) {
-    d.message = T("Space") + std::string(": ") + d.message;
-    diagnostics_.push_back(d);
+  std::error_code errorCode;
+  bool useChameleon = fs::exists(chameleonPath, errorCode) && fs::last_write_time(chameleonPath, errorCode) >= fs::last_write_time(rom, errorCode) &&
+               readElf(readFile(chameleonPath), chameleonElf, &error) && chameleonElf.type == 2;
+  elfSpace_ = analyzeElfSpace(romElf, (long)fs::file_size(rom, errorCode), useChameleon ? &chameleonElf : nullptr, project_->spaceWarnPercent);
+  for (auto diagnostic : elfSpace_->diagnostics) {
+    diagnostic.message = T("Space") + std::string(": ") + diagnostic.message;
+    diagnostics_.push_back(diagnostic);
   }
   output_ += elfSpace_->summary() + "\n";
 }
@@ -604,91 +604,91 @@ void App::pollSpace() {
     spaceNote_ = T("Could not measure the space: DASM failed writing the block file.");
     return;
   }
-  std::error_code ec;
-  long romSize = (long)fs::file_size(project_->outputPath(), ec);
-  if (ec) romSize = 0;
+  std::error_code errorCode;
+  long romSize = (long)fs::file_size(project_->outputPath(), errorCode);
+  if (errorCode) romSize = 0;
   std::string rasPath = project_->stem() + ".ras";
   auto rom = parseDasmRas(readFile(rasPath));
-  fs::remove(rasPath, ec);
-  std::string lst = readFile(project_->stem() + ".lst");
+  fs::remove(rasPath, errorCode);
+  std::string listing = readFile(project_->stem() + ".lst");
   // Listing file names are as DASM opened them: absolute, or relative to the project or an include folder.
   auto readSource = [this](const std::string& name) {
     std::vector<std::string> dirs = {project_->dir};
-    for (auto& d : project_->includeDirs) dirs.push_back(project_->abs(d));
-    fs::path p(name);
-    std::error_code e;
-    if (!p.is_absolute())
-      for (auto& d : dirs)
-        if (fs::exists(fs::path(d) / name, e)) {
-          p = fs::path(d) / name;
+    for (auto& dir : project_->includeDirs) dirs.push_back(project_->abs(dir));
+    fs::path path(name);
+    std::error_code existsCode;
+    if (!path.is_absolute())
+      for (auto& dir : dirs)
+        if (fs::exists(fs::path(dir) / name, existsCode)) {
+          path = fs::path(dir) / name;
           break;
         }
     std::vector<std::string> lines;
-    std::istringstream in(readFile(p.string()));
-    for (std::string l; std::getline(in, l);) lines.push_back(l);
+    std::istringstream stream(readFile(path.string()));
+    for (std::string line; std::getline(stream, line);) lines.push_back(line);
     return lines;
   };
-  auto ram = parseDasmListingRam(lst, readSource, [this](const std::string& s) { return lookupSymbol(s); });
-  auto code = parseDasmListingCode(lst);
-  FormatSpace fmt;
-  if (const CartFormat* f = kb_.format(project_->format)) fmt = f->space;
-  SpaceOptions opt;
-  opt.warnPercent = project_->spaceWarnPercent;
-  opt.stackReserve = project_->stackReserve;
-  space_ = analyzeSpace(rom, romSize, ram, code, fmt, opt);
-  if (!fmt.known) spaceNote_ = F("The {0} format has no space data yet: 4 KB banks assumed.", {project_->format});
-  for (auto d : space_->diagnostics) {
-    d.message = T("Space") + std::string(": ") + d.message;
-    diagnostics_.push_back(d);
+  auto ram = parseDasmListingRam(listing, readSource, [this](const std::string& name) { return lookupSymbol(name); });
+  auto code = parseDasmListingCode(listing);
+  FormatSpace formatSpace;
+  if (const CartFormat* cartFormat = kb_.format(project_->format)) formatSpace = cartFormat->space;
+  SpaceOptions options;
+  options.warnPercent = project_->spaceWarnPercent;
+  options.stackReserve = project_->stackReserve;
+  space_ = analyzeSpace(rom, romSize, ram, code, formatSpace, options);
+  if (!formatSpace.known) spaceNote_ = F("The {0} format has no space data yet: 4 KB banks assumed.", {project_->format});
+  for (auto diagnostic : space_->diagnostics) {
+    diagnostic.message = T("Space") + std::string(": ") + diagnostic.message;
+    diagnostics_.push_back(diagnostic);
   }
   output_ += space_->summary() + "\n";
   outputScroll_ = true;
-  for (auto& f : files_) lint(*f);
+  for (auto& file : files_) lint(*file);
 }
 
 void App::run(bool debug) {
   if (!project_) return;
-  if (Tool* t = tools_.get(project_->emulator); t && !t->found()) {
-    askForTool(t->id, T("run the game"), [this, debug] { run(debug); });
+  if (Tool* tool = tools_.get(project_->emulator); tool && !tool->found()) {
+    askForTool(tool->id, T("run the game"), [this, debug] { run(debug); });
     return;
   }
-  std::string err;
-  auto args = project_->runArgs(tools_, debug, &err);
+  std::string error;
+  auto args = project_->runArgs(tools_, debug, &error);
   if (debug && !args.empty()) {
     auto extra = debugArgs(project_->emulator);
     args.insert(args.end() - 1, extra.begin(), extra.end());  // before the ROM
   }
-  EmulatorLaunch l;
-  l.args = args;
-  if (!args.empty() && !prepareEmulatorLaunch(*project_, kb_, (fs::path(configDir()) / "emulators").string(), l, &err))
+  EmulatorLaunch launch;
+  launch.args = args;
+  if (!args.empty() && !prepareEmulatorLaunch(*project_, kb_, (fs::path(configDir()) / "emulators").string(), launch, &error))
     args.clear();
-  for (auto& n : l.notes) output_ += n + "\n";
-  if (args.empty() || !launchDetached(l.args, l.workDir, &err, l.env)) {
-    output_ += err + "\n";
-    lastStatus_ = err;
+  for (auto& note : launch.notes) output_ += note + "\n";
+  if (args.empty() || !launchDetached(launch.args, launch.workDir, &error, launch.env)) {
+    output_ += error + "\n";
+    lastStatus_ = error;
   } else {
     std::string envText;
-    for (auto& [k, v] : l.env) envText += k + "=" + quoteArgs({v}) + " ";
-    output_ += "> " + envText + quoteArgs(l.args) + "\n";
+    for (auto& [key, value] : launch.env) envText += key + "=" + quoteArgs({value}) + " ";
+    output_ += "> " + envText + quoteArgs(launch.args) + "\n";
   }
   outputScroll_ = true;
 }
 
 void App::loadSymbols() {
   if (!project_) return;
-  std::string sym = project_->stem() + ".sym";
-  std::error_code ec;
-  if (fs::exists(sym, ec)) symbols_ = parseDasmSymbols(readFile(sym));
+  std::string symbolFile = project_->stem() + ".sym";
+  std::error_code errorCode;
+  if (fs::exists(symbolFile, errorCode)) symbols_ = parseDasmSymbols(readFile(symbolFile));
   builtFiles_.clear();
   liveReady_ = false;  // the next scan includes these sources
-  if (fs::exists(project_->stem() + ".lst", ec)) {
+  if (fs::exists(project_->stem() + ".lst", errorCode)) {
     std::istringstream in(readFile(project_->stem() + ".lst"));
     std::set<std::string> seen;
-    for (std::string l; std::getline(in, l);) {
-      if (l.rfind("------- FILE ", 0) != 0) continue;
-      std::string name = l.substr(13, l.find(" LEVEL ") == std::string::npos ? std::string::npos : l.find(" LEVEL ") - 13);
+    for (std::string line; std::getline(in, line);) {
+      if (line.rfind("------- FILE ", 0) != 0) continue;
+      std::string name = line.substr(13, line.find(" LEVEL ") == std::string::npos ? std::string::npos : line.find(" LEVEL ") - 13);
       std::string path = resolveSource(name);
-      if (!fs::is_regular_file(path, ec)) {  // a source that cannot be read: hide nothing
+      if (!fs::is_regular_file(path, errorCode)) {  // a source that cannot be read: hide nothing
         builtFiles_.clear();
         break;
       }
@@ -696,33 +696,33 @@ void App::loadSymbols() {
     }
   }
   addresses_ = AddressMap();
-  std::string lst = project_->stem() + ".lst";
+  std::string listingPath = project_->stem() + ".lst";
   bool basic = project_->language == Language::BatariBasic;
-  if ((project_->language == Language::Dasm || basic) && fs::exists(lst, ec)) {
+  if ((project_->language == Language::Dasm || basic) && fs::exists(listingPath, errorCode)) {
     long bank = 4096;
-    if (const CartFormat* f = kb_.format(project_->format); f && f->space.known) bank = f->space.bankSize;
-    addresses_.load(readFile(lst), [this](const std::string& s) { return lookupSymbol(s); }, bank);
+    if (const CartFormat* cartFormat = kb_.format(project_->format); cartFormat && cartFormat->space.known) bank = cartFormat->space.bankSize;
+    addresses_.load(readFile(listingPath), [this](const std::string& name) { return lookupSymbol(name); }, bank);
     // the listing is of the generated .asm: its ";;line N;;" marks give the lines of the .bas
     if (basic)
       addresses_.remap(fs::path(project_->main).filename().string() + ".asm",
                        basicLineMap(readFile(project_->basicOutput(".asm"))), project_->abs(project_->main));
-    addresses_.resolveFiles([this](const std::string& n) { return resolveSource(n); });
+    addresses_.resolveFiles([this](const std::string& name) { return resolveSource(name); });
   }
 }
 
 std::string App::resolveSource(const std::string& name) const {
-  fs::path p(name);
-  std::error_code ec;
-  if (!p.is_absolute() && project_) {
+  fs::path resolved(name);
+  std::error_code errorCode;
+  if (!resolved.is_absolute() && project_) {
     std::vector<std::string> dirs = {project_->dir};
-    for (auto& d : project_->includeDirs) dirs.push_back(project_->abs(d));
-    for (auto& d : dirs)
-      if (fs::exists(fs::path(d) / name, ec)) {
-        p = fs::path(d) / name;
+    for (auto& dir : project_->includeDirs) dirs.push_back(project_->abs(dir));
+    for (auto& dir : dirs)
+      if (fs::exists(fs::path(dir) / name, errorCode)) {
+        resolved = fs::path(dir) / name;
         break;
       }
   }
-  return fs::weakly_canonical(p, ec).string();
+  return fs::weakly_canonical(resolved, errorCode).string();
 }
 
 // ---------------------------------------------------------------------------
@@ -731,108 +731,108 @@ std::string App::resolveSource(const std::string& name) const {
 void App::loadUserState() {
   breakpoints_.clear();
   if (!project_) return;
-  json j;
+  json state;
   try {
-    std::ifstream f(project_->file + ".user");
-    if (f) j = json::parse(f);
+    std::ifstream stream(project_->file + ".user");
+    if (stream) state = json::parse(stream);
   } catch (...) {
   }
-  if (!j.is_object() || !j.contains("breakpoints")) return;
-  for (auto& [file, lines] : j["breakpoints"].items()) {
-    std::set<int> s;
-    for (auto& l : lines)
-      if (l.is_number_integer() && l.get<int>() > 0) s.insert(l.get<int>() - 1);
-    std::error_code ec;
-    if (!s.empty()) breakpoints_[fs::weakly_canonical(fs::path(project_->dir) / file, ec).string()] = s;
+  if (!state.is_object() || !state.contains("breakpoints")) return;
+  for (auto& [file, lines] : state["breakpoints"].items()) {
+    std::set<int> breakpointLines;
+    for (auto& number : lines)
+      if (number.is_number_integer() && number.get<int>() > 0) breakpointLines.insert(number.get<int>() - 1);
+    std::error_code errorCode;
+    if (!breakpointLines.empty()) breakpoints_[fs::weakly_canonical(fs::path(project_->dir) / file, errorCode).string()] = breakpointLines;
   }
 }
 
 void App::saveUserState() {
   if (!project_) return;
-  json bps = json::object();
+  json breakpointsJson = json::object();
   for (auto& [file, lines] : breakpoints_) {
     if (lines.empty()) continue;
-    std::error_code ec;
-    auto rel = fs::relative(file, project_->dir, ec);
-    json arr = json::array();
-    for (int l : lines) arr.push_back(l + 1);
-    bps[ec ? file : rel.generic_string()] = arr;
+    std::error_code errorCode;
+    auto relative = fs::relative(file, project_->dir, errorCode);
+    json array = json::array();
+    for (int line : lines) array.push_back(line + 1);
+    breakpointsJson[errorCode ? file : relative.generic_string()] = array;
   }
-  std::ofstream(project_->file + ".user") << json{{"breakpoints", bps}}.dump(2) << "\n";
+  std::ofstream(project_->file + ".user") << json{{"breakpoints", breakpointsJson}}.dump(2) << "\n";
 }
 
 // Sends the editor's breakpoints to the emulator: Gopher2600 reads a script given
 // with -script, Stella the one named after the ROM in its user folder.
 std::vector<std::string> App::debugArgs(const std::string& emulator) {
-  for (auto& f : files_)
-    if (!f->editor.breakpoints().empty() || breakpoints_.count(f->path)) breakpoints_[f->path] = f->editor.breakpoints();
+  for (auto& openedFile : files_)
+    if (!openedFile->editor.breakpoints().empty() || breakpoints_.count(openedFile->path)) breakpoints_[openedFile->path] = openedFile->editor.breakpoints();
   if (project_->language == Language::ElfC) {
     // C on the ARM: the emulators have no breakpoints by source line for it
-    bool any = std::any_of(breakpoints_.begin(), breakpoints_.end(), [](auto& b) { return !b.second.empty(); });
+    bool any = std::any_of(breakpoints_.begin(), breakpoints_.end(), [](auto& breakpoint) { return !breakpoint.second.empty(); });
     if (any) output_ += std::string(T("Breakpoints are not passed for ELF projects: the emulators cannot stop on a line of C.")) + "\n";
     return {};
   }
-  std::vector<Breakpoint> bps;
+  std::vector<Breakpoint> placed;
   for (auto& [file, lines] : breakpoints_)
-    for (int l : lines) {
-      auto isCode = [this](const ListedLine& ll) {
+    for (int lineIndex : lines) {
+      auto isCode = [this](const ListedLine& listedLine) {
         // the listing keeps the label in its own column: look for a word that is an instruction
-        std::istringstream w(ll.source);
-        for (std::string t; w >> t;) {
-          if (t[0] == ';') break;
-          std::string m = upper(t.substr(0, t.find('.')));
-          if (kb_.instruction(m)) return true;
+        std::istringstream words(listedLine.source);
+        for (std::string word; words >> word;) {
+          if (word[0] == ';') break;
+          std::string mnemonic = upper(word.substr(0, word.find('.')));
+          if (kb_.instruction(mnemonic)) return true;
         }
         return false;
       };
-      std::string rel = fs::path(file).filename().string();
+      std::string fileName = fs::path(file).filename().string();
       if (addresses_.empty()) {
-        output_ += F("{0}:{1}: no listing to place the breakpoint: build first.", {rel, std::to_string(l + 1)}) + "\n";
+        output_ += F("{0}:{1}: no listing to place the breakpoint: build first.", {fileName, std::to_string(lineIndex + 1)}) + "\n";
         continue;
       }
-      auto bp = addresses_.breakpointAt(file, l + 1, isCode);
-      if (!bp) {
-        output_ += F("{0}:{1}: no code at or after this line; breakpoint ignored.", {rel, std::to_string(l + 1)}) + "\n";
+      auto resolved = addresses_.breakpointAt(file, lineIndex + 1, isCode);
+      if (!resolved) {
+        output_ += F("{0}:{1}: no code at or after this line; breakpoint ignored.", {fileName, std::to_string(lineIndex + 1)}) + "\n";
         continue;
       }
       char where[48];
-      snprintf(where, sizeof where, "$%04lX", bp->cpu);
-      std::string bank = addresses_.banks() > 1 ? " " + F("(bank {0})", {std::to_string(bp->bank)}) : "";
-      if (bp->at->line != l + 1)
-        output_ += F("{0}:{1}: breakpoint at {2}{3}, the code of line {4}.", {rel, std::to_string(l + 1), where, bank, std::to_string(bp->at->line)}) + "\n";
+      snprintf(where, sizeof where, "$%04lX", resolved->cpu);
+      std::string bank = addresses_.banks() > 1 ? " " + F("(bank {0})", {std::to_string(resolved->bank)}) : "";
+      if (resolved->at->line != lineIndex + 1)
+        output_ += F("{0}:{1}: breakpoint at {2}{3}, the code of line {4}.", {fileName, std::to_string(lineIndex + 1), where, bank, std::to_string(resolved->at->line)}) + "\n";
       else
-        output_ += F("{0}:{1}: breakpoint at {2}{3}.", {rel, std::to_string(l + 1), where, bank}) + "\n";
-      bps.push_back(*bp);
+        output_ += F("{0}:{1}: breakpoint at {2}{3}.", {fileName, std::to_string(lineIndex + 1), where, bank}) + "\n";
+      placed.push_back(*resolved);
     }
   std::vector<std::string> args;
-  std::error_code ec;
+  std::error_code errorCode;
   if (emulator == "gopher2600") {
     std::string path = project_->stem() + ".gopher2600.script";
-    if (bps.empty()) {
-      fs::remove(path, ec);
+    if (placed.empty()) {
+      fs::remove(path, errorCode);
       return args;
     }
     std::ofstream out(path);
-    for (auto& b : bps) {
+    for (auto& breakpoint : placed) {
       char line[64];
-      if (addresses_.banks() > 1) snprintf(line, sizeof line, "BREAK PC $%04lX & BANK %d\n", b.cpu, b.bank);
-      else snprintf(line, sizeof line, "BREAK PC $%04lX\n", b.cpu);
+      if (addresses_.banks() > 1) snprintf(line, sizeof line, "BREAK PC $%04lX & BANK %d\n", breakpoint.cpu, breakpoint.bank);
+      else snprintf(line, sizeof line, "BREAK PC $%04lX\n", breakpoint.cpu);
       out << line;
     }
     args = {"-script", path};
   } else if (emulator == "stella") {
     // Stella's debugger runs <userdir>/<rom name>.script when it opens, and
     // VCSIDE launches it with -userdir set to the build folder.
-    fs::remove(project_->stem() + ".stella.script", ec);  // VCSIDE 0.1 wrote this one
+    fs::remove(project_->stem() + ".stella.script", errorCode);  // VCSIDE 0.1 wrote this one
     std::string path = project_->stem() + ".script";
-    if (bps.empty()) {
-      fs::remove(path, ec);
+    if (placed.empty()) {
+      fs::remove(path, errorCode);
       return args;
     }
     std::ofstream out(path);
-    for (auto& b : bps) {
+    for (auto& breakpoint : placed) {
       char line[64];
-      snprintf(line, sizeof line, "break $%04lX %d\n", b.cpu, b.bank);
+      snprintf(line, sizeof line, "break $%04lX %d\n", breakpoint.cpu, breakpoint.bank);
       out << line;
     }
   }
@@ -842,22 +842,22 @@ std::vector<std::string> App::debugArgs(const std::string& emulator) {
 
 std::optional<int> App::lookupSymbol(const std::string& name) const {
   // a constant as the source says it now goes before the last build's value
-  if (auto lv = liveValues_.find(name); lv != liveValues_.end()) return lv->second;
-  auto it = symbols_.find(name);
-  if (it != symbols_.end() && !builtGone(name)) return it->second;
-  if (const Register* r = kb_.reg(name)) {
-    int a = r->addr();
-    if (a >= 0) return r->access == "R" && a < 0x30 ? a + 0x30 : a;
+  if (auto liveValue = liveValues_.find(name); liveValue != liveValues_.end()) return liveValue->second;
+  auto found = symbols_.find(name);
+  if (found != symbols_.end() && !builtGone(name)) return found->second;
+  if (const Register* registerEntry = kb_.reg(name)) {
+    int address = registerEntry->addr();
+    if (address >= 0) return registerEntry->access == "R" && address < 0x30 ? address + 0x30 : address;
   }
   return std::nullopt;
 }
 
 static std::vector<std::string> splitLines(const std::string& text) {
   std::vector<std::string> lines;
-  std::istringstream in(text);
-  for (std::string l; std::getline(in, l);) {
-    if (!l.empty() && l.back() == '\r') l.pop_back();
-    lines.push_back(l);
+  std::istringstream stream(text);
+  for (std::string line; std::getline(stream, line);) {
+    if (!line.empty() && line.back() == '\r') line.pop_back();
+    lines.push_back(line);
   }
   return lines;
 }
@@ -869,38 +869,38 @@ void App::refreshLiveSymbols(bool force) {
   force |= !liveReady_;
   liveTicks_ = now;
   std::map<std::string, LiveSymbol> live;
-  auto add = [&](const std::string& file, const std::vector<SourceSymbol>& syms) {
-    for (auto& sym : syms)
-      if (sym.name[0] != '.') live.emplace(sym.name, LiveSymbol{sym, file});  // the first definition wins
+  auto add = [&](const std::string& file, const std::vector<SourceSymbol>& symbols) {
+    for (auto& symbol : symbols)
+      if (symbol.name[0] != '.') live.emplace(symbol.name, LiveSymbol{symbol, file});  // the first definition wins
   };
   std::set<std::string> open;
-  for (auto& f : files_)
-    if (f->asmSyntax) {
-      add(f->path, scanAsmSymbols(f->editor.lines()));
-      open.insert(f->path);
+  for (auto& openedFile : files_)
+    if (openedFile->asmSyntax) {
+      add(openedFile->path, scanAsmSymbols(openedFile->editor.lines()));
+      open.insert(openedFile->path);
     }
   // the other sources of the folder, read again only when their date changes
   if ((!folder_.empty() || !builtFiles_.empty()) && (force || now - diskTicks_ > 3000)) {
     diskTicks_ = now;
     bool cHeaders = project_ && project_->language == Language::ElfC;
     std::map<std::string, ScannedFile> seen;
-    std::error_code ec;
+    std::error_code errorCode;
     if (!folder_.empty()) {
-      for (auto it = fs::recursive_directory_iterator(folder_, fs::directory_options::skip_permission_denied, ec);
-           it != fs::recursive_directory_iterator(); it.increment(ec)) {
-        if (ec) break;
-        std::string name = it->path().filename().string();
-        if (it->is_directory(ec) && (name == "build" || (!name.empty() && name[0] == '.'))) {
-          it.disable_recursion_pending();
+      for (auto iterator = fs::recursive_directory_iterator(folder_, fs::directory_options::skip_permission_denied, errorCode);
+           iterator != fs::recursive_directory_iterator(); iterator.increment(errorCode)) {
+        if (errorCode) break;
+        std::string name = iterator->path().filename().string();
+        if (iterator->is_directory(errorCode) && (name == "build" || (!name.empty() && name[0] == '.'))) {
+          iterator.disable_recursion_pending();
           continue;
         }
-        if (!it->is_regular_file(ec) || !isAsmFile(it->path().string()) || it->file_size(ec) > 4 * 1024 * 1024) continue;
-        if (cHeaders && lower(it->path().extension().string()) == ".h") continue;  // C, not assembly
-        std::string path = fs::weakly_canonical(it->path(), ec).string();  // as the open files have it
-        long long mtime = (long long)it->last_write_time(ec).time_since_epoch().count();
-        auto old = diskSymbols_.find(path);
-        if (old != diskSymbols_.end() && old->second.mtime == mtime) {
-          seen[path] = std::move(old->second);
+        if (!iterator->is_regular_file(errorCode) || !isAsmFile(iterator->path().string()) || iterator->file_size(errorCode) > 4 * 1024 * 1024) continue;
+        if (cHeaders && lower(iterator->path().extension().string()) == ".h") continue;  // C, not assembly
+        std::string path = fs::weakly_canonical(iterator->path(), errorCode).string();  // as the open files have it
+        long long mtime = (long long)iterator->last_write_time(errorCode).time_since_epoch().count();
+        auto previous = diskSymbols_.find(path);
+        if (previous != diskSymbols_.end() && previous->second.mtime == mtime) {
+          seen[path] = std::move(previous->second);
           continue;
         }
         seen[path] = {mtime, scanAsmSymbols(splitLines(readFile(path)))};
@@ -908,175 +908,175 @@ void App::refreshLiveSymbols(bool force) {
     }
     for (auto& path : builtFiles_) {
       if (seen.count(path)) continue;
-      long long mtime = (long long)fs::last_write_time(path, ec).time_since_epoch().count();
-      if (ec) continue;
-      auto old = diskSymbols_.find(path);
-      if (old != diskSymbols_.end() && old->second.mtime == mtime) {
-        seen[path] = std::move(old->second);
+      long long mtime = (long long)fs::last_write_time(path, errorCode).time_since_epoch().count();
+      if (errorCode) continue;
+      auto previous = diskSymbols_.find(path);
+      if (previous != diskSymbols_.end() && previous->second.mtime == mtime) {
+        seen[path] = std::move(previous->second);
         continue;
       }
       seen[path] = {mtime, scanAsmSymbols(splitLines(readFile(path)))};
     }
     diskSymbols_ = std::move(seen);
   }
-  for (auto& [path, f] : diskSymbols_)
-    if (!open.count(path)) add(path, f.syms);
+  for (auto& [path, scanned] : diskSymbols_)
+    if (!open.count(path)) add(path, scanned.symbols);
   liveSymbols_ = std::move(live);
   liveReady_ = true;
   // constants that refer to other constants: a few passes
   liveValues_.clear();
   for (int pass = 0; pass < 6; pass++) {
     bool more = false;
-    for (auto& [name, l] : liveSymbols_) {
-      if (l.sym.kind != SourceSymbol::Constant || liveValues_.count(name)) continue;
+    for (auto& [name, liveSymbol] : liveSymbols_) {
+      if (liveSymbol.symbol.kind != SourceSymbol::Constant || liveValues_.count(name)) continue;
       const std::string& self = name;
-      auto v = evalExpr(l.sym.value, [this, &self](const std::string& x) -> std::optional<int> {
-        if (x == self) return std::nullopt;
-        return lookupSymbol(x);
+      auto value = evalExpr(liveSymbol.symbol.value, [this, &self](const std::string& symbolName) -> std::optional<int> {
+        if (symbolName == self) return std::nullopt;
+        return lookupSymbol(symbolName);
       });
-      if (v) liveValues_[name] = *v, more = true;
+      if (value) liveValues_[name] = *value, more = true;
     }
     if (!more) break;
   }
 }
 
 // "label (main.asm:12)", "constant = $80 + 2" or "macro (kernel.h:40)"; full = for the tooltip
-std::string App::liveSymbolText(const LiveSymbol& l, bool full) const {
-  std::string where = fs::path(l.file).filename().string() + ":" + std::to_string(l.sym.line + 1);
-  bool here = activeFile_ >= 0 && files_[activeFile_]->path == l.file;
-  if (l.sym.kind == SourceSymbol::Macro) return full ? F("{0}: macro ({1})", {l.sym.name, where}) : T("macro") + (here ? "" : " · " + where);
-  if (l.sym.kind == SourceSymbol::Constant) {
-    std::string s = full ? l.sym.name + " = " + l.sym.value : "= " + l.sym.value;
-    if (auto v = liveValues_.find(l.sym.name); v != liveValues_.end() && full) {
-      char b[40];
-      snprintf(b, sizeof b, "  ($%04X, %d)", v->second & 0xFFFF, v->second);
-      s += b;
+std::string App::liveSymbolText(const LiveSymbol& liveSymbol, bool full) const {
+  std::string where = fs::path(liveSymbol.file).filename().string() + ":" + std::to_string(liveSymbol.symbol.line + 1);
+  bool here = activeFile_ >= 0 && files_[activeFile_]->path == liveSymbol.file;
+  if (liveSymbol.symbol.kind == SourceSymbol::Macro) return full ? F("{0}: macro ({1})", {liveSymbol.symbol.name, where}) : T("macro") + (here ? "" : " · " + where);
+  if (liveSymbol.symbol.kind == SourceSymbol::Constant) {
+    std::string text = full ? liveSymbol.symbol.name + " = " + liveSymbol.symbol.value : "= " + liveSymbol.symbol.value;
+    if (auto value = liveValues_.find(liveSymbol.symbol.name); value != liveValues_.end() && full) {
+      char buffer[40];
+      snprintf(buffer, sizeof buffer, "  ($%04X, %d)", value->second & 0xFFFF, value->second);
+      text += buffer;
     }
-    if (full) s += "\n" + where;
-    return s;
+    if (full) text += "\n" + where;
+    return text;
   }
-  if (full) return F("{0}: label ({1}). Build to get its address.", {l.sym.name, where});
+  if (full) return F("{0}: label ({1}). Build to get its address.", {liveSymbol.symbol.name, where});
   return T("label") + (here ? "" : " · " + where);
 }
 
 std::string App::testComplete(const std::string& word) {
   if (activeFile_ < 0) return "no file\n";
   refreshLiveSymbols(true);
-  EditorHooks h = files_[activeFile_]->asmSyntax ? asmHooks() : basicHooks();
-  std::string s;
-  for (auto& c : h.complete(word, "")) s += c.word + "\t" + c.detail + "\n";
-  return s + "hover: " + h.hover(word, "") + "\n";
+  EditorHooks editorHooks = files_[activeFile_]->asmSyntax ? asmHooks() : basicHooks();
+  std::string result;
+  for (auto& completion : editorHooks.complete(word, "")) result += completion.word + "\t" + completion.detail + "\n";
+  return result + "hover: " + editorHooks.hover(word, "") + "\n";
 }
 
 // A file named by a tool: absolute, relative to the project or an include folder, or
 // (ld gives just "main.c") the only file with that name in the project.
 std::string App::findProjectFile(const std::string& name) const {
-  std::error_code ec;
-  fs::path p(name);
-  if (p.is_absolute()) return fs::exists(p, ec) ? p.string() : "";
+  std::error_code errorCode;
+  fs::path candidate(name);
+  if (candidate.is_absolute()) return fs::exists(candidate, errorCode) ? candidate.string() : "";
   if (!project_) return "";
   std::vector<std::string> dirs = {project_->dir};
-  for (auto& d : project_->includeDirs) dirs.push_back(project_->abs(d));
-  for (auto& d : dirs)
-    if (fs::exists(fs::path(d) / p, ec)) return fs::weakly_canonical(fs::path(d) / p, ec).string();
-  if (p.has_parent_path()) return "";
-  for (auto it = fs::recursive_directory_iterator(project_->dir, fs::directory_options::skip_permission_denied, ec);
-       it != fs::recursive_directory_iterator(); it.increment(ec)) {
-    if (it->is_directory(ec) && (it->path().filename() == "build" || it->path().filename().string()[0] == '.')) {
-      it.disable_recursion_pending();
+  for (auto& dir : project_->includeDirs) dirs.push_back(project_->abs(dir));
+  for (auto& dir : dirs)
+    if (fs::exists(fs::path(dir) / candidate, errorCode)) return fs::weakly_canonical(fs::path(dir) / candidate, errorCode).string();
+  if (candidate.has_parent_path()) return "";
+  for (auto iterator = fs::recursive_directory_iterator(project_->dir, fs::directory_options::skip_permission_denied, errorCode);
+       iterator != fs::recursive_directory_iterator(); iterator.increment(errorCode)) {
+    if (iterator->is_directory(errorCode) && (iterator->path().filename() == "build" || iterator->path().filename().string()[0] == '.')) {
+      iterator.disable_recursion_pending();
       continue;
     }
-    if (it->path().filename() == p) return it->path().string();
+    if (iterator->path().filename() == candidate) return iterator->path().string();
   }
   return "";
 }
 
 // Build diagnostics for this file plus the illegal-opcode policy of the project.
-void App::lint(OpenFile& f) {
-  std::map<int, std::pair<bool, std::string>> m;
-  for (auto& d : diagnostics_) {
-    if (d.line <= 0) continue;
-    fs::path p(d.file);
-    if (!p.is_absolute() && project_) p = fs::path(project_->dir) / p;
-    std::error_code ec;
-    if (fs::weakly_canonical(p, ec).string() != f.path && fs::path(d.file).filename() != fs::path(f.path).filename()) continue;
-    auto& e = m[d.line];
-    e.first = e.first || d.severity == Diagnostic::Error;
-    e.second += (e.second.empty() ? "" : "\n") + d.message;
+void App::lint(OpenFile& file) {
+  std::map<int, std::pair<bool, std::string>> markers;
+  for (auto& diagnostic : diagnostics_) {
+    if (diagnostic.line <= 0) continue;
+    fs::path path(diagnostic.file);
+    if (!path.is_absolute() && project_) path = fs::path(project_->dir) / path;
+    std::error_code errorCode;
+    if (fs::weakly_canonical(path, errorCode).string() != file.path && fs::path(diagnostic.file).filename() != fs::path(file.path).filename()) continue;
+    auto& entry = markers[diagnostic.line];
+    entry.first = entry.first || diagnostic.severity == Diagnostic::Error;
+    entry.second += (entry.second.empty() ? "" : "\n") + diagnostic.message;
   }
-  if (f.asmSyntax) {
-    IllegalOpcodes pol = project_ ? project_->illegal : IllegalOpcodes::Warn;
-    const auto& lines = f.editor.lines();
-    for (int i = 0; i < (int)lines.size() && pol != IllegalOpcodes::Allow; i++) {
-      AsmLine a = splitAsmLine(lines[i]);
-      std::string mn = upper(a.mnemonic.substr(0, a.mnemonic.find('.')));
-      const Instruction* in = kb_.instruction(mn);
-      if (!in || !in->illegal) continue;
-      bool stable = !in->opcodes.empty() && in->opcodes[0]->stable;
+  if (file.asmSyntax) {
+    IllegalOpcodes policy = project_ ? project_->illegal : IllegalOpcodes::Warn;
+    const auto& lines = file.editor.lines();
+    for (int i = 0; i < (int)lines.size() && policy != IllegalOpcodes::Allow; i++) {
+      AsmLine asmLine = splitAsmLine(lines[i]);
+      std::string mnemonic = upper(asmLine.mnemonic.substr(0, asmLine.mnemonic.find('.')));
+      const Instruction* instruction = kb_.instruction(mnemonic);
+      if (!instruction || !instruction->illegal) continue;
+      bool stable = !instruction->opcodes.empty() && instruction->opcodes[0]->stable;
       // NOP is legal by name; its illegal forms only matter with operands.
-      if (pol == IllegalOpcodes::StableOnly && stable) continue;
-      bool error = pol == IllegalOpcodes::Forbid || (pol == IllegalOpcodes::StableOnly && !stable);
-      auto& e = m[i + 1];
-      e.first = e.first || error;
-      e.second += (e.second.empty() ? "" : "\n") + F(stable ? "Illegal opcode: {0}" : "Unstable illegal opcode: {0}", {mn});
+      if (policy == IllegalOpcodes::StableOnly && stable) continue;
+      bool error = policy == IllegalOpcodes::Forbid || (policy == IllegalOpcodes::StableOnly && !stable);
+      auto& entry = markers[i + 1];
+      entry.first = entry.first || error;
+      entry.second += (entry.second.empty() ? "" : "\n") + F(stable ? "Illegal opcode: {0}" : "Unstable illegal opcode: {0}", {mnemonic});
     }
   }
-  f.editor.setMarkers(std::move(m));
+  file.editor.setMarkers(std::move(markers));
 }
 
 // ---------------------------------------------------------------------------
 // Assembler syntax
 
-std::vector<Token> App::tokenizeAsm(const std::string& l) const {
-  std::vector<Token> t;
-  int n = (int)l.size(), i = 0;
+std::vector<Token> App::tokenizeAsm(const std::string& text) const {
+  std::vector<Token> tokens;
+  int length = (int)text.size(), i = 0;
   bool first = true;  // first word of the line (label if at column 0)
   bool sawMnemonic = false;
-  while (i < n) {
-    char c = l[i];
-    if (c == ';') {
-      t.push_back({i, n, TokenKind::Comment});
+  while (i < length) {
+    char character = text[i];
+    if (character == ';') {
+      tokens.push_back({i, length, TokenKind::Comment});
       break;
     }
-    if (std::isspace((unsigned char)c)) { i++; continue; }
-    int s = i;
-    if (c == '"') {
+    if (std::isspace((unsigned char)character)) { i++; continue; }
+    int tokenStart = i;
+    if (character == '"') {
       i++;
-      while (i < n && l[i] != '"') i++;
-      i = std::min(n, i + 1);
-      t.push_back({s, i, TokenKind::String});
-    } else if (c == '$' || c == '%' || c == '#' || std::isdigit((unsigned char)c)) {
-      if (c == '#') i++;
-      if (i < n && (l[i] == '<' || l[i] == '>')) i++;
-      int ns = i;
-      if (i < n && (l[i] == '$' || l[i] == '%')) i++;
-      while (i < n && std::isxdigit((unsigned char)l[i])) i++;
-      if (i == ns) {  // '#' followed by a symbol
-        t.push_back({s, i, TokenKind::Number});
+      while (i < length && text[i] != '"') i++;
+      i = std::min(length, i + 1);
+      tokens.push_back({tokenStart, i, TokenKind::String});
+    } else if (character == '$' || character == '%' || character == '#' || std::isdigit((unsigned char)character)) {
+      if (character == '#') i++;
+      if (i < length && (text[i] == '<' || text[i] == '>')) i++;
+      int numberStart = i;
+      if (i < length && (text[i] == '$' || text[i] == '%')) i++;
+      while (i < length && std::isxdigit((unsigned char)text[i])) i++;
+      if (i == numberStart) {  // '#' followed by a symbol
+        tokens.push_back({tokenStart, i, TokenKind::Number});
         continue;
       }
-      t.push_back({s, i, TokenKind::Number});
-    } else if (std::isalpha((unsigned char)c) || c == '_' || c == '.') {
-      while (i < n && (std::isalnum((unsigned char)l[i]) || l[i] == '_' || l[i] == '.')) i++;
-      std::string w = l.substr(s, i - s);
-      std::string u = upper(w);
-      std::string base = u.substr(0, u.find('.', 1));
-      TokenKind k = TokenKind::Symbol;
-      if (first && s == 0) k = TokenKind::Label;
+      tokens.push_back({tokenStart, i, TokenKind::Number});
+    } else if (std::isalpha((unsigned char)character) || character == '_' || character == '.') {
+      while (i < length && (std::isalnum((unsigned char)text[i]) || text[i] == '_' || text[i] == '.')) i++;
+      std::string word = text.substr(tokenStart, i - tokenStart);
+      std::string upperWord = upper(word);
+      std::string base = upperWord.substr(0, upperWord.find('.', 1));
+      TokenKind kind = TokenKind::Symbol;
+      if (first && tokenStart == 0) kind = TokenKind::Label;
       else if (!sawMnemonic) {
-        if (const Instruction* in = kb_.instruction(base)) {
-          k = !in->illegal ? TokenKind::Mnemonic
-              : (!in->opcodes.empty() && in->opcodes[0]->stable) ? TokenKind::IllegalMnemonic
+        if (const Instruction* instruction = kb_.instruction(base)) {
+          kind = !instruction->illegal ? TokenKind::Mnemonic
+              : (!instruction->opcodes.empty() && instruction->opcodes[0]->stable) ? TokenKind::IllegalMnemonic
                                                                  : TokenKind::UnstableMnemonic;
           sawMnemonic = true;
         } else {
-          for (auto& d : dasmDirectives())
-            if (u == d) { k = TokenKind::Directive; sawMnemonic = true; break; }
+          for (auto& directive : dasmDirectives())
+            if (upperWord == directive) { kind = TokenKind::Directive; sawMnemonic = true; break; }
         }
-      } else if (kb_.reg(w)) {
-        k = TokenKind::Register;
+      } else if (kb_.reg(word)) {
+        kind = TokenKind::Register;
       }
-      t.push_back({s, i, k});
+      tokens.push_back({tokenStart, i, kind});
       first = false;
       continue;
     } else {
@@ -1084,138 +1084,138 @@ std::vector<Token> App::tokenizeAsm(const std::string& l) const {
     }
     first = false;
   }
-  return t;
+  return tokens;
 }
 
 EditorHooks App::asmHooks() {
-  EditorHooks h;
-  h.tokenize = [this](const std::string& l) { return tokenizeAsm(l); };
-  h.gutter = [this](int, const std::string& l) -> std::string {
-    LineCycles c = countLine(kb_, l, [this](const std::string& s) { return lookupSymbol(s); });
-    if (!c.isCode) return {};
-    if (!c.known) return "?";
-    std::string s = std::to_string(c.min);
-    if (c.max != c.min) s += "/" + std::to_string(c.max);
-    if (c.guessed) s += "~";
-    return s;
+  EditorHooks editorHooks;
+  editorHooks.tokenize = [this](const std::string& lineText) { return tokenizeAsm(lineText); };
+  editorHooks.gutter = [this](int, const std::string& lineText) -> std::string {
+    LineCycles cycles = countLine(kb_, lineText, [this](const std::string& result) { return lookupSymbol(result); });
+    if (!cycles.isCode) return {};
+    if (!cycles.known) return "?";
+    std::string result = std::to_string(cycles.min);
+    if (cycles.max != cycles.min) result += "/" + std::to_string(cycles.max);
+    if (cycles.guessed) result += "~";
+    return result;
   };
-  h.hover = [this](const std::string& word, const std::string& line) -> std::string {
-    std::string u = upper(word.substr(0, word.find('.', 1)));
-    if (const Instruction* in = kb_.instruction(u)) {
-      std::string s = u + " - " + in->summary;
-      if (in->illegal) s += std::string("  ") + (in->opcodes.empty() || in->opcodes[0]->stable ? T("[ILLEGAL]") : T("[ILLEGAL, UNSTABLE]"));
-      if (!in->flags.empty()) s += "\n" + F("Flags: {0}", {in->flags});
-      s += "\n" + in->description;
-      LineCycles c = countLine(kb_, line, [this](const std::string& x) { return lookupSymbol(x); });
-      if (c.known && c.mnemonic == u) {
-        std::string cyc = std::to_string(c.min) + (c.max != c.min ? "-" + std::to_string(c.max) : "");
-        s += "\n\n" + F("This line: {0}, {1} bytes, {2} cycles", {c.mode, std::to_string(c.bytes), cyc});
-        if (c.guessed) s += " " + Ts("(zero page/absolute guessed: unknown symbol, build to resolve)");
+  editorHooks.hover = [this](const std::string& word, const std::string& line) -> std::string {
+    std::string upperWord = upper(word.substr(0, word.find('.', 1)));
+    if (const Instruction* instruction = kb_.instruction(upperWord)) {
+      std::string result = upperWord + " - " + instruction->summary;
+      if (instruction->illegal) result += std::string("  ") + (instruction->opcodes.empty() || instruction->opcodes[0]->stable ? T("[ILLEGAL]") : T("[ILLEGAL, UNSTABLE]"));
+      if (!instruction->flags.empty()) result += "\n" + F("Flags: {0}", {instruction->flags});
+      result += "\n" + instruction->description;
+      LineCycles cycles = countLine(kb_, line, [this](const std::string& name) { return lookupSymbol(name); });
+      if (cycles.known && cycles.mnemonic == upperWord) {
+        std::string cycleText = std::to_string(cycles.min) + (cycles.max != cycles.min ? "-" + std::to_string(cycles.max) : "");
+        result += "\n\n" + F("This line: {0}, {1} bytes, {2} cycles", {cycles.mode, std::to_string(cycles.bytes), cycleText});
+        if (cycles.guessed) result += " " + Ts("(zero page/absolute guessed: unknown symbol, build to resolve)");
       }
-      return s;
+      return result;
     }
-    if (const Register* r = kb_.reg(word)) return registerHelp(*r);
+    if (const Register* registerEntry = kb_.reg(word)) return registerHelp(*registerEntry);
     refreshLiveSymbols();
     auto live = liveSymbols_.find(word);
     // a macro, or a constant that evaluates now: the source says more than the last build
-    if (live != liveSymbols_.end() && (live->second.sym.kind == SourceSymbol::Macro ||
-                                       (live->second.sym.kind == SourceSymbol::Constant && liveValues_.count(word))))
+    if (live != liveSymbols_.end() && (live->second.symbol.kind == SourceSymbol::Macro ||
+                                       (live->second.symbol.kind == SourceSymbol::Constant && liveValues_.count(word))))
       return liveSymbolText(live->second, true);
-    auto it = symbols_.find(word);
-    if (it != symbols_.end() && !builtGone(word)) {
-      char b[48];
-      snprintf(b, sizeof b, "%s = $%04X (%d)", word.c_str(), it->second, it->second);
-      return b;
+    auto found = symbols_.find(word);
+    if (found != symbols_.end() && !builtGone(word)) {
+      char buffer[48];
+      snprintf(buffer, sizeof buffer, "%s = $%04X (%d)", word.c_str(), found->second, found->second);
+      return buffer;
     }
     if (live != liveSymbols_.end()) return liveSymbolText(live->second, true);
     if (!word.empty() && word[0] == '.' && activeFile_ >= 0)
-      for (auto& sym : scanAsmSymbols(files_[activeFile_]->editor.lines()))
-        if (sym.name == word) return liveSymbolText({sym, files_[activeFile_]->path}, true);
+      for (auto& symbol : scanAsmSymbols(files_[activeFile_]->editor.lines()))
+        if (symbol.name == word) return liveSymbolText({symbol, files_[activeFile_]->path}, true);
     return {};
   };
-  h.complete = [this](const std::string& prefix, const std::string&) {
-    std::vector<Completion> out;
-    for (auto& e : kb_.complete(prefix, 40)) {
-      TokenKind k = e.kind == KbEntry::Mnemonic ? TokenKind::Mnemonic
-                    : e.kind == KbEntry::Register ? TokenKind::Register
+  editorHooks.complete = [this](const std::string& prefix, const std::string&) {
+    std::vector<Completion> completions;
+    for (auto& entry : kb_.complete(prefix, 40)) {
+      TokenKind kind = entry.kind == KbEntry::Mnemonic ? TokenKind::Mnemonic
+                    : entry.kind == KbEntry::Register ? TokenKind::Register
                                                    : TokenKind::Directive;
-      if (e.kind == KbEntry::Mnemonic) {
-        const Instruction* in = kb_.instruction(e.word);
-        if (in && in->illegal) {
+      if (entry.kind == KbEntry::Mnemonic) {
+        const Instruction* instruction = kb_.instruction(entry.word);
+        if (instruction && instruction->illegal) {
           if (project_ && project_->illegal == IllegalOpcodes::Forbid) continue;
-          bool stable = !in->opcodes.empty() && in->opcodes[0]->stable;
+          bool stable = !instruction->opcodes.empty() && instruction->opcodes[0]->stable;
           if (!stable && project_ && project_->illegal == IllegalOpcodes::StableOnly) continue;
-          k = stable ? TokenKind::IllegalMnemonic : TokenKind::UnstableMnemonic;
+          kind = stable ? TokenKind::IllegalMnemonic : TokenKind::UnstableMnemonic;
         }
       }
-      out.push_back({e.word, e.summary, k});
+      completions.push_back({entry.word, entry.summary, kind});
     }
     // the sources as they are now (labels, constants and macros not built yet), then the
     // last build's symbols; the active file's .local labels too
-    std::string p = upper(prefix);
-    auto matches = [&](const std::string& name) { return name != prefix && upper(name).compare(0, p.size(), p) == 0; };
+    std::string upperPrefix = upper(prefix);
+    auto matches = [&](const std::string& name) { return name != prefix && upper(name).compare(0, upperPrefix.size(), upperPrefix) == 0; };
     refreshLiveSymbols();
     std::set<std::string> seen;
-    for (auto& o : out) seen.insert(o.word);
-    auto push = [&](const std::string& name, const std::string& detail, TokenKind k) {
-      if (out.size() < 60 && seen.insert(name).second) out.push_back({name, detail, k});
+    for (auto& completion : completions) seen.insert(completion.word);
+    auto push = [&](const std::string& name, const std::string& detail, TokenKind kind) {
+      if (completions.size() < 60 && seen.insert(name).second) completions.push_back({name, detail, kind});
     };
     if (activeFile_ >= 0 && !prefix.empty() && prefix[0] == '.')
-      for (auto& sym : scanAsmSymbols(files_[activeFile_]->editor.lines()))
-        if (sym.name[0] == '.' && matches(sym.name)) push(sym.name, T("local label"), TokenKind::Label);
-    for (auto& [name, l] : liveSymbols_)
+      for (auto& symbol : scanAsmSymbols(files_[activeFile_]->editor.lines()))
+        if (symbol.name[0] == '.' && matches(symbol.name)) push(symbol.name, T("local label"), TokenKind::Label);
+    for (auto& [name, liveSymbol] : liveSymbols_)
       if (matches(name))
-        push(name, liveSymbolText(l, false),
-             l.sym.kind == SourceSymbol::Macro ? TokenKind::Directive : l.sym.kind == SourceSymbol::Label ? TokenKind::Label : TokenKind::Symbol);
-    for (auto& [name, v] : symbols_)
+        push(name, liveSymbolText(liveSymbol, false),
+             liveSymbol.symbol.kind == SourceSymbol::Macro ? TokenKind::Directive : liveSymbol.symbol.kind == SourceSymbol::Label ? TokenKind::Label : TokenKind::Symbol);
+    for (auto& [name, value] : symbols_)
       if (matches(name) && !builtGone(name)) push(name, T("symbol"), TokenKind::Symbol);
-    return out;
+    return completions;
   };
-  return h;
+  return editorHooks;
 }
 
-std::string App::registerHelp(const Register& r) const {
-  std::string s = r.name + " (" + r.chip + " " + r.address + ", " + (r.access == "R" ? T("read") : T("write")) + ")  " + r.bits + "\n" + r.summary;
-  if (!r.timing.empty()) s += "\n" + F("Timing: {0}", {r.timing});
-  for (auto& i : r.issues) s += "\n! " + i;
-  return s;
+std::string App::registerHelp(const Register& reg) const {
+  std::string result = reg.name + " (" + reg.chip + " " + reg.address + ", " + (reg.access == "R" ? T("read") : T("write")) + ")  " + reg.bits + "\n" + reg.summary;
+  if (!reg.timing.empty()) result += "\n" + F("Timing: {0}", {reg.timing});
+  for (auto& issue : reg.issues) result += "\n! " + issue;
+  return result;
 }
 
 // batari Basic: its keywords and variables, the registers, and the labels of the file.
 EditorHooks App::basicHooks() {
-  EditorHooks h;
-  h.tokenize = [this](const std::string& l) { return tokenizeBasic(kb_, l); };
-  h.hover = [this](const std::string& word, const std::string& line) -> std::string {
-    std::string w = word;
-    size_t at = line.find(word);
-    if (at != std::string::npos && line.compare(at + word.size(), 1, ":") == 0 && kb_.basic(word + ":")) w += ":";
-    if (const BasicKeyword* b = kb_.basic(w)) return b->syntax + "\n" + b->summaryText();
-    if (const Register* r = kb_.reg(word)) return registerHelp(*r);
+  EditorHooks editorHooks;
+  editorHooks.tokenize = [this](const std::string& lineText) { return tokenizeBasic(kb_, lineText); };
+  editorHooks.hover = [this](const std::string& word, const std::string& line) -> std::string {
+    std::string keywordName = word;
+    size_t colonPos = line.find(word);
+    if (colonPos != std::string::npos && line.compare(colonPos + word.size(), 1, ":") == 0 && kb_.basic(word + ":")) keywordName += ":";
+    if (const BasicKeyword* keyword = kb_.basic(keywordName)) return keyword->syntax + "\n" + keyword->summaryText();
+    if (const Register* registerEntry = kb_.reg(word)) return registerHelp(*registerEntry);
     return {};
   };
-  h.complete = [this](const std::string& prefix, const std::string&) {
-    std::vector<Completion> out;
-    if (prefix.empty()) return out;
-    std::string p = lower(prefix);
-    for (auto& [w, b] : kb_.basicKeywords())
-      if (w.compare(0, p.size(), p) == 0 && out.size() < 40)
-        out.push_back({w, b.summaryText(), b.kind == "variable" ? TokenKind::Register
-                                           : b.kind == "directive" || b.kind == "block" ? TokenKind::Directive
+  editorHooks.complete = [this](const std::string& prefix, const std::string&) {
+    std::vector<Completion> completions;
+    if (prefix.empty()) return completions;
+    std::string lowerPrefix = lower(prefix);
+    for (auto& [keywordName, keyword] : kb_.basicKeywords())
+      if (keywordName.compare(0, lowerPrefix.size(), lowerPrefix) == 0 && completions.size() < 40)
+        completions.push_back({keywordName, keyword.summaryText(), keyword.kind == "variable" ? TokenKind::Register
+                                           : keyword.kind == "directive" || keyword.kind == "block" ? TokenKind::Directive
                                                                                          : TokenKind::Mnemonic});
-    std::string u = upper(prefix);
-    for (auto& r : kb_.registers())
-      if (r.name.compare(0, u.size(), u) == 0 && out.size() < 50) out.push_back({r.name, r.summary, TokenKind::Register});
+    std::string upperPrefix = upper(prefix);
+    for (auto& registerEntry : kb_.registers())
+      if (registerEntry.name.compare(0, upperPrefix.size(), upperPrefix) == 0 && completions.size() < 50) completions.push_back({registerEntry.name, registerEntry.summary, TokenKind::Register});
     if (activeFile_ >= 0) {
       std::set<std::string> seen;
-      for (auto& l : files_[activeFile_]->editor.lines()) {
-        std::string lab = basicLabelOf(l);
-        if (!lab.empty() && lab != prefix && lab.compare(0, prefix.size(), prefix) == 0 && seen.insert(lab).second && out.size() < 60)
-          out.push_back({lab, T("label"), TokenKind::Label});
+      for (auto& lineText : files_[activeFile_]->editor.lines()) {
+        std::string label = basicLabelOf(lineText);
+        if (!label.empty() && label != prefix && label.compare(0, prefix.size(), prefix) == 0 && seen.insert(label).second && completions.size() < 60)
+          completions.push_back({label, T("label"), TokenKind::Label});
       }
     }
-    return out;
+    return completions;
   };
-  return h;
+  return editorHooks;
 }
 
 bool App::testMenu(const std::string& path) {
@@ -1226,14 +1226,14 @@ bool App::testMenu(const std::string& path) {
   for (;;) {
     size_t slash = path.find('/', start);
     std::string name = path.substr(start, slash == std::string::npos ? std::string::npos : slash - start);
-    auto it = std::find_if(level->begin(), level->end(), [&](const MenuItem& m) { return !m.separator && m.label == name; });
-    if (it == level->end() || !it->enabled) return false;
+    auto found = std::find_if(level->begin(), level->end(), [&](const MenuItem& item) { return !item.separator && item.label == name; });
+    if (found == level->end() || !found->enabled) return false;
     if (slash == std::string::npos) {
-      if (!it->action) return false;
-      it->action();
+      if (!found->action) return false;
+      found->action();
       return true;
     }
-    level = &it->children;
+    level = &found->children;
     start = slash + 1;
   }
 }
@@ -1242,75 +1242,75 @@ bool App::testMenu(const std::string& path) {
 static const float kZoomSteps[] = {0.5f, 0.67f, 0.75f, 0.8f, 0.9f, 1.0f, 1.1f, 1.25f, 1.5f, 1.75f, 2.0f, 2.5f, 3.0f};
 
 void App::zoomEditor(int steps) {
-  float z = 1.0f;
+  float newZoom = 1.0f;
   if (steps != 0) {
-    int n = (int)(sizeof kZoomSteps / sizeof kZoomSteps[0]), at = 0;
-    for (int i = 0; i < n; i++)
-      if (std::fabs(kZoomSteps[i] - zoom_) < std::fabs(kZoomSteps[at] - zoom_)) at = i;
-    z = kZoomSteps[std::clamp(at + steps, 0, n - 1)];
+    int stepCount = (int)(sizeof kZoomSteps / sizeof kZoomSteps[0]), nearest = 0;
+    for (int i = 0; i < stepCount; i++)
+      if (std::fabs(kZoomSteps[i] - zoom_) < std::fabs(kZoomSteps[nearest] - zoom_)) nearest = i;
+    newZoom = kZoomSteps[std::clamp(nearest + steps, 0, stepCount - 1)];
   }
-  if (z == zoom_) return;
-  zoom_ = z;
-  lastStatus_ = F("Zoom: {0} %", {std::to_string((int)(z * 100 + 0.5f))});
+  if (newZoom == zoom_) return;
+  zoom_ = newZoom;
+  lastStatus_ = F("Zoom: {0} %", {std::to_string((int)(newZoom * 100 + 0.5f))});
   saveSettings();
 }
 
 ImFont* App::editorFont() const { return mono_; }
 
-void App::testSelect(int a, int b) {
+void App::testSelect(int firstLine, int lastLine) {
   if (activeFile_ < 0) return;
-  auto& ed = files_[activeFile_]->editor;
-  ed.goTo(a - 1);
-  ed.selectLines(a - 1, b - 1);
+  auto& textEditor = files_[activeFile_]->editor;
+  textEditor.goTo(firstLine - 1);
+  textEditor.selectLines(firstLine - 1, lastLine - 1);
 }
 
 // Is `line` the definition of `word`? (label at column 0, "word = x", "word equ x", "mac word")
 static bool definesWord(const std::string& line, const std::string& word) {
-  AsmLine a = splitAsmLine(line);
-  if (!a.label.empty()) return a.label == word;
-  if (upper(a.mnemonic) == "MAC" || upper(a.mnemonic) == "MACRO") {
-    std::string n = a.operand.substr(0, a.operand.find_first_of(" \t,"));
-    return n == word;
+  AsmLine asmLine = splitAsmLine(line);
+  if (!asmLine.label.empty()) return asmLine.label == word;
+  if (upper(asmLine.mnemonic) == "MAC" || upper(asmLine.mnemonic) == "MACRO") {
+    std::string macroName = asmLine.operand.substr(0, asmLine.operand.find_first_of(" \t,"));
+    return macroName == word;
   }
   return false;
 }
 
 bool App::findDefinition(const std::string& word, const std::string& fromFile, int fromLine, std::string& path, int& line) {
   if (word.empty()) return false;
-  bool bas = lower(fs::path(fromFile).extension().string()) == ".bas";
-  auto defines = [&](const std::string& line) { return bas ? basicLabelOf(line) == word : definesWord(line, word); };
-  auto searched = [&](const std::string& path) { return bas ? lower(fs::path(path).extension().string()) == ".bas" : isAsmFile(path); };
+  bool isBasic = lower(fs::path(fromFile).extension().string()) == ".bas";
+  auto defines = [&](const std::string& line) { return isBasic ? basicLabelOf(line) == word : definesWord(line, word); };
+  auto searched = [&](const std::string& path) { return isBasic ? lower(fs::path(path).extension().string()) == ".bas" : isAsmFile(path); };
   // 1. The open file: the closest definition above the cursor (local .labels repeat
   //    per SUBROUTINE), otherwise the first one below.
-  for (auto& f : files_) {
-    if (f->path != fromFile) continue;
-    const auto& lines = f->editor.lines();
+  for (auto& openedFile : files_) {
+    if (openedFile->path != fromFile) continue;
+    const auto& lines = openedFile->editor.lines();
     int best = -1;
     for (int i = 0; i < (int)lines.size(); i++)
       if (defines(lines[i]) && (best < 0 || i <= fromLine)) best = i;
     if (best >= 0) {
-      path = f->path, line = best + 1;
+      path = openedFile->path, line = best + 1;
       return true;
     }
   }
   // 2. Other source files of the project (not build output).
   if (folder_.empty()) return false;
-  std::error_code ec;
-  for (auto it = fs::recursive_directory_iterator(folder_, fs::directory_options::skip_permission_denied, ec);
-       it != fs::recursive_directory_iterator(); it.increment(ec)) {
-    if (ec) break;
-    std::string name = it->path().filename().string();
-    if (it->is_directory() && (name == "build" || (!name.empty() && name[0] == '.'))) {
-      it.disable_recursion_pending();
+  std::error_code errorCode;
+  for (auto iterator = fs::recursive_directory_iterator(folder_, fs::directory_options::skip_permission_denied, errorCode);
+       iterator != fs::recursive_directory_iterator(); iterator.increment(errorCode)) {
+    if (errorCode) break;
+    std::string name = iterator->path().filename().string();
+    if (iterator->is_directory() && (name == "build" || (!name.empty() && name[0] == '.'))) {
+      iterator.disable_recursion_pending();
       continue;
     }
-    if (!it->is_regular_file() || !searched(it->path().string()) || it->path().string() == fromFile) continue;
-    std::ifstream in(it->path());
+    if (!iterator->is_regular_file() || !searched(iterator->path().string()) || iterator->path().string() == fromFile) continue;
+    std::ifstream stream(iterator->path());
     std::string text;
-    for (int n = 1; std::getline(in, text); n++) {
+    for (int lineNumber = 1; std::getline(stream, text); lineNumber++) {
       if (!text.empty() && text.back() == '\r') text.pop_back();
       if (defines(text)) {
-        path = it->path().string(), line = n;
+        path = iterator->path().string(), line = lineNumber;
         return true;
       }
     }
@@ -1338,8 +1338,8 @@ void App::showDoc(const std::string& word) {
 // UI
 
 void App::closeProject() {
-  for (auto& f : files_)
-    if (f->dirty()) {
+  for (auto& file : files_)
+    if (file->dirty()) {
       quitConfirm_ = true, closeProjectAfterConfirm_ = true;
       return;
     }
@@ -1362,8 +1362,8 @@ void App::doCloseProject() {
 
 void App::requestQuit() {
   closeProjectAfterConfirm_ = false;
-  for (auto& f : files_)
-    if (f->dirty()) {
+  for (auto& file : files_)
+    if (file->dirty()) {
       quitConfirm_ = true;
       return;
     }
@@ -1382,27 +1382,27 @@ void App::frame() {
       else if (kind == "file") openFile(path);
       else if (kind == "newdir") npDir_ = path;
       else if (kind == "themeimport") {
-        std::string id, err;
-        if (themes_.import(path, &id, &err)) useTheme(id), themeEditor_.open = true;
-        else lastStatus_ = err;
+        std::string id, error;
+        if (themes_.import(path, &id, &error)) useTheme(id), themeEditor_.open = true;
+        else lastStatus_ = error;
       } else if (kind.rfind("themeexport:", 0) == 0) {
-        std::string p = path;
-        if (lower(fs::path(p).extension().string()) != ".vcstheme") p += ".vcstheme";
-        std::ofstream out(p, std::ios::binary);
-        if (out << themes_.exportJson(kind.substr(12))) lastStatus_ = F("Theme saved in {0}", {p});
-        else lastStatus_ = F("Cannot write {0}", {p});
+        std::string exportPath = path;
+        if (lower(fs::path(exportPath).extension().string()) != ".vcstheme") exportPath += ".vcstheme";
+        std::ofstream out(exportPath, std::ios::binary);
+        if (out << themes_.exportJson(kind.substr(12))) lastStatus_ = F("Theme saved in {0}", {exportPath});
+        else lastStatus_ = F("Cannot write {0}", {exportPath});
       }
       else if (kind == "newgfx") {
-        std::string p = path;
-        if (lower(fs::path(p).extension().string()) != ".vcsgfx") p += ".vcsgfx";
-        GfxEditor g;
-        std::string err;
-        g.asset() = GfxEditor::blank();
-        if (g.save(p, gfxProfile(), &err)) openFile(p);
-        else output_ += err + "\n";
+        std::string graphicsPath = path;
+        if (lower(fs::path(graphicsPath).extension().string()) != ".vcsgfx") graphicsPath += ".vcsgfx";
+        GfxEditor graphicsEditor;
+        std::string error;
+        graphicsEditor.asset() = GfxEditor::blank();
+        if (graphicsEditor.save(graphicsPath, gfxProfile(), &error)) openFile(graphicsPath);
+        else output_ += error + "\n";
       }
       else if (kind.rfind("tool:", 0) == 0) {
-        if (Tool* t = tools_.get(kind.substr(5))) t->userPath = path;
+        if (Tool* tool = tools_.get(kind.substr(5))) tool->userPath = path;
         tools_.detect();
         saveSettings();
       }
@@ -1418,12 +1418,12 @@ void App::frame() {
   if (ImGui::IsKeyPressed(ImGuiKey_F5)) build(1);
   if (ImGui::IsKeyPressed(ImGuiKey_F6)) build(2);
   if (ImGui::IsKeyPressed(ImGuiKey_F1) && activeFile_ >= 0) {
-    auto& ed = files_[activeFile_]->editor;
-    const std::string& l = ed.lines()[ed.cursor().line];
-    int s = ed.cursor().col, e = s;
-    while (s > 0 && (std::isalnum((unsigned char)l[s - 1]) || l[s - 1] == '_')) s--;
-    while (e < (int)l.size() && (std::isalnum((unsigned char)l[e]) || l[e] == '_')) e++;
-    if (e > s) showDoc(l.substr(s, e - s));
+    auto& textEditor = files_[activeFile_]->editor;
+    const std::string& lineText = textEditor.lines()[textEditor.cursor().line];
+    int wordStart = textEditor.cursor().col, wordEnd = wordStart;
+    while (wordStart > 0 && (std::isalnum((unsigned char)lineText[wordStart - 1]) || lineText[wordStart - 1] == '_')) wordStart--;
+    while (wordEnd < (int)lineText.size() && (std::isalnum((unsigned char)lineText[wordEnd]) || lineText[wordEnd] == '_')) wordEnd++;
+    if (wordEnd > wordStart) showDoc(lineText.substr(wordStart, wordEnd - wordStart));
   }
   if (io.KeyCtrl && io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_G, false) && !addresses_.empty()) showGoToAddress_ = true;
   if (io.KeyCtrl && io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_N, false) && hooks.newWindow) hooks.newWindow();
@@ -1438,11 +1438,11 @@ void App::frame() {
   {
     // the three stripes along the top of the window, as on the web and in the dialogs;
     // everything else goes under them
-    ImGuiViewport* vp = ImGui::GetMainViewport();
-    float h = theme::stripesHeight();
-    theme::drawStripes(ImGui::GetBackgroundDrawList(vp), vp->WorkPos, ImVec2(vp->WorkPos.x + vp->WorkSize.x, vp->WorkPos.y + h));
-    vp->WorkPos.y += h;
-    vp->WorkSize.y -= h;
+    ImGuiViewport* viewport = ImGui::GetMainViewport();
+    float stripeHeight = theme::stripesHeight();
+    theme::drawStripes(ImGui::GetBackgroundDrawList(viewport), viewport->WorkPos, ImVec2(viewport->WorkPos.x + viewport->WorkSize.x, viewport->WorkPos.y + stripeHeight));
+    viewport->WorkPos.y += stripeHeight;
+    viewport->WorkSize.y -= stripeHeight;
   }
   if (folder_.empty() && files_.empty()) {
     welcomeScreen();  // nothing open: only the welcome page, no panels
@@ -1469,8 +1469,8 @@ void App::frame() {
                        SDL_ShowSaveFileDialog(dialogCallback, new DialogCtx{this, "themeexport:" + id}, window_, filters, 1, where.c_str());
                      },
                      [](const std::string& dir) {
-                       std::error_code ec;
-                       fs::create_directories(dir, ec);
+                       std::error_code errorCode;
+                       fs::create_directories(dir, errorCode);
                        SDL_OpenURL(("file://" + fs::absolute(dir).string()).c_str());
                      }});
   aboutDialog();
@@ -1485,30 +1485,30 @@ void App::frame() {
 MenuBar App::buildMenuBar(bool native) {
   auto item = [](const std::string& label, const std::string& shortcut, std::function<void()> action,
                  bool enabled = true, bool checked = false) {
-    MenuItem m;
-    m.label = label, m.shortcut = shortcut, m.action = std::move(action), m.enabled = enabled, m.checked = checked;
-    return m;
+    MenuItem menuItem;
+    menuItem.label = label, menuItem.shortcut = shortcut, menuItem.action = std::move(action), menuItem.enabled = enabled, menuItem.checked = checked;
+    return menuItem;
   };
   auto sub = [](const std::string& label, std::vector<MenuItem> children, bool enabled = true) {
-    MenuItem m;
-    m.label = label, m.children = std::move(children), m.enabled = enabled;
-    return m;
+    MenuItem menuItem;
+    menuItem.label = label, menuItem.children = std::move(children), menuItem.enabled = enabled;
+    return menuItem;
   };
   auto editor = [this]() -> TextEditor* { return activeFile_ >= 0 ? &files_[activeFile_]->editor : nullptr; };
-  auto onEditor = [editor](void (*f)(TextEditor&)) { return [editor, f] { if (TextEditor* e = editor()) f(*e); }; };
+  auto onEditor = [editor](void (*action)(TextEditor&)) { return [editor, action] { if (TextEditor* textEditor = editor()) action(*textEditor); }; };
   bool hasFile = activeFile_ >= 0;
   MenuBar bar;
 
   // Settings: in the application menu on macOS, a menu of its own elsewhere.
   std::vector<MenuItem> langs;
-  for (auto& l : languages()) {
-    MenuItem m = item(l.name, "", [this, code = l.code] {
+  for (auto& language : languages()) {
+    MenuItem languageItem = item(language.name, "", [this, code = language.code] {
       setLanguage(code);
       saveSettings();
       if (nativeMenu_) nativeMenuRefresh();
-    }, true, currentLanguage() == l.code);
-    if (l.total > 0 && l.translated < l.total) m.hint = std::to_string(100 * l.translated / l.total) + " %";
-    langs.push_back(m);
+    }, true, currentLanguage() == language.code);
+    if (language.total > 0 && language.translated < language.total) languageItem.hint = std::to_string(100 * language.translated / language.total) + " %";
+    langs.push_back(languageItem);
   }
   std::vector<MenuItem> settings = {item(native ? T("Tools...") : T("Tools"), native ? "Ctrl+," : "", [this] { showTools_ = true; }),
                                     sub(T("Language"), langs)};
@@ -1516,7 +1516,7 @@ MenuBar App::buildMenuBar(bool native) {
 
   // File
   std::vector<MenuItem> recent;
-  for (auto& r : recent_) recent.push_back(item(r, "", [this, r] { openPath(r); }));
+  for (auto& recentPath : recent_) recent.push_back(item(recentPath, "", [this, recentPath] { openPath(recentPath); }));
   std::vector<MenuItem> file = {
       item(T("New project..."), "", [this] { showNewProject_ = true; }),
       item(T("Open project..."), "", [this] {
@@ -1553,136 +1553,136 @@ MenuBar App::buildMenuBar(bool native) {
   bar.push_back(sub(T("Edit"), {
       item(T("Undo"), "Ctrl+Z", [this, editor] {
         if (activeFile_ >= 0 && files_[activeFile_]->gfx) files_[activeFile_]->gfx->undo();
-        else if (TextEditor* e = editor()) e->undo();
+        else if (TextEditor* textEditor = editor()) textEditor->undo();
       }),
       item(T("Redo"), "Ctrl+Shift+Z", [this, editor] {
         if (activeFile_ >= 0 && files_[activeFile_]->gfx) files_[activeFile_]->gfx->redo();
-        else if (TextEditor* e = editor()) e->redo();
+        else if (TextEditor* textEditor = editor()) textEditor->redo();
       }),
       MenuItem::sep(),
-      item(T("Cut"), "Ctrl+X", onEditor([](TextEditor& e) { e.cut(); })),
-      item(T("Copy"), "Ctrl+C", onEditor([](TextEditor& e) { e.copy(); })),
-      item(T("Paste"), "Ctrl+V", onEditor([](TextEditor& e) { e.paste(); })),
-      item(T("Select all"), "Ctrl+A", onEditor([](TextEditor& e) { e.selectAll(); })),
+      item(T("Cut"), "Ctrl+X", onEditor([](TextEditor& textEditor) { textEditor.cut(); })),
+      item(T("Copy"), "Ctrl+C", onEditor([](TextEditor& textEditor) { textEditor.copy(); })),
+      item(T("Paste"), "Ctrl+V", onEditor([](TextEditor& textEditor) { textEditor.paste(); })),
+      item(T("Select all"), "Ctrl+A", onEditor([](TextEditor& textEditor) { textEditor.selectAll(); })),
       MenuItem::sep(),
-      item(T("Find..."), "Ctrl+F", onEditor([](TextEditor& e) { e.openFind(false); })),
-      item(T("Replace..."), replaceKey, onEditor([](TextEditor& e) { e.openFind(true); })),
-      item(T("Find next"), "F3", onEditor([](TextEditor& e) { e.findNext(false); })),
-      item(T("Find previous"), "Shift+F3", onEditor([](TextEditor& e) { e.findNext(true); })),
-      item(T("Go to line..."), "Ctrl+G", onEditor([](TextEditor& e) { e.openGoto(); })),
+      item(T("Find..."), "Ctrl+F", onEditor([](TextEditor& textEditor) { textEditor.openFind(false); })),
+      item(T("Replace..."), replaceKey, onEditor([](TextEditor& textEditor) { textEditor.openFind(true); })),
+      item(T("Find next"), "F3", onEditor([](TextEditor& textEditor) { textEditor.findNext(false); })),
+      item(T("Find previous"), "Shift+F3", onEditor([](TextEditor& textEditor) { textEditor.findNext(true); })),
+      item(T("Go to line..."), "Ctrl+G", onEditor([](TextEditor& textEditor) { textEditor.openGoto(); })),
       item(T("Go to address..."), "Ctrl+Shift+G", [this] { showGoToAddress_ = true; }, !addresses_.empty()),
       item(T("Go to definition"), "F12", [this] {
         if (activeFile_ < 0) return;
-        auto& f = *files_[activeFile_];
-        gotoDefinition(f.editor.wordAtCursor(), f.path, f.editor.cursor().line);
+        auto& openedFile = *files_[activeFile_];
+        gotoDefinition(openedFile.editor.wordAtCursor(), openedFile.path, openedFile.editor.cursor().line);
       }, asmFile),
       MenuItem::sep(),
-      item(T("Toggle comment"), "Ctrl+/", onEditor([](TextEditor& e) { e.toggleComment(); })),
-      item(T("Duplicate lines"), "Ctrl+D", onEditor([](TextEditor& e) { e.duplicateLines(); })),
-      item(T("Move lines up"), "Alt+Up", onEditor([](TextEditor& e) { e.moveLines(-1); })),
-      item(T("Move lines down"), "Alt+Down", onEditor([](TextEditor& e) { e.moveLines(1); })),
-      item(T("Delete lines"), "Ctrl+Shift+K", onEditor([](TextEditor& e) { e.deleteLines(); })),
+      item(T("Toggle comment"), "Ctrl+/", onEditor([](TextEditor& textEditor) { textEditor.toggleComment(); })),
+      item(T("Duplicate lines"), "Ctrl+D", onEditor([](TextEditor& textEditor) { textEditor.duplicateLines(); })),
+      item(T("Move lines up"), "Alt+Up", onEditor([](TextEditor& textEditor) { textEditor.moveLines(-1); })),
+      item(T("Move lines down"), "Alt+Down", onEditor([](TextEditor& textEditor) { textEditor.moveLines(1); })),
+      item(T("Delete lines"), "Ctrl+Shift+K", onEditor([](TextEditor& textEditor) { textEditor.deleteLines(); })),
       MenuItem::sep(),
-      item(T("Fold"), "Ctrl+Alt+Up", onEditor([](TextEditor& e) { e.foldAt(e.cursor().line); })),
-      item(T("Unfold"), "Ctrl+Alt+Down", onEditor([](TextEditor& e) { e.unfoldAt(e.cursor().line); })),
-      item(T("Fold all"), "", onEditor([](TextEditor& e) { e.foldAll(); })),
-      item(T("Unfold all"), "", onEditor([](TextEditor& e) { e.unfoldAll(); })),
+      item(T("Fold"), "Ctrl+Alt+Up", onEditor([](TextEditor& textEditor) { textEditor.foldAt(textEditor.cursor().line); })),
+      item(T("Unfold"), "Ctrl+Alt+Down", onEditor([](TextEditor& textEditor) { textEditor.unfoldAt(textEditor.cursor().line); })),
+      item(T("Fold all"), "", onEditor([](TextEditor& textEditor) { textEditor.foldAll(); })),
+      item(T("Unfold all"), "", onEditor([](TextEditor& textEditor) { textEditor.unfoldAll(); })),
   }, hasFile));
 
   // Build
-  bool p = project_.has_value() && !building_;
-  std::vector<MenuItem> b = {item(T("Build"), "F7", [this] { build(0); }, p),
-                             item(T("Build and run"), "F5", [this] { build(1); }, p),
-                             item(T("Build and debug"), "F6", [this] { build(2); }, p),
-                             item(T("Run"), "", [this] { run(false); }, p),
+  bool canBuild = project_.has_value() && !building_;
+  std::vector<MenuItem> buildMenu = {item(T("Build"), "F7", [this] { build(0); }, canBuild),
+                             item(T("Build and run"), "F5", [this] { build(1); }, canBuild),
+                             item(T("Build and debug"), "F6", [this] { build(2); }, canBuild),
+                             item(T("Run"), "", [this] { run(false); }, canBuild),
                              MenuItem::sep(),
-                             item(T("Toggle breakpoint"), "F9", onEditor([](TextEditor& e) { e.toggleBreakpoint(e.cursor().line); }), hasFile),
+                             item(T("Toggle breakpoint"), "F9", onEditor([](TextEditor& textEditor) { textEditor.toggleBreakpoint(textEditor.cursor().line); }), hasFile),
                              item(T("Clear all breakpoints"), "", [this] {
-                               for (auto& f : files_) f->editor.setBreakpoints({});
+                               for (auto& openedFile : files_) openedFile->editor.setBreakpoints({});
                                breakpoints_.clear();
                                saveUserState();
                              })};
   if (project_) {
-    auto set = [this](std::function<void(Project&)> f) {
-      return [this, f] {
+    auto set = [this](std::function<void(Project&)> change) {
+      return [this, change] {
         if (!project_) return;
-        f(*project_);
-        std::string err;
-        project_->save(&err);
+        change(*project_);
+        std::string error;
+        project_->save(&error);
         // an open settings tab with no changes of its own shows the new value
-        for (auto& o : files_)
-          if (o->form && !o->dirty() && fs::weakly_canonical(o->path) == fs::weakly_canonical(project_->file)) {
-            bool text = o->form->showingText();
-            o->form->load(o->path, o->editor, &err);
-            o->form->showText(o->editor, text);
+        for (auto& openedFile : files_)
+          if (openedFile->form && !openedFile->dirty() && fs::weakly_canonical(openedFile->path) == fs::weakly_canonical(project_->file)) {
+            bool text = openedFile->form->showingText();
+            openedFile->form->load(openedFile->path, openedFile->editor, &error);
+            openedFile->form->showText(openedFile->editor, text);
           }
         for (auto& file : files_) lint(*file);
       };
     };
-    std::vector<MenuItem> formats, tvs, emus, illegal;
+    std::vector<MenuItem> formats, tvItems, emulatorItems, illegal;
     // AUTO, then a submenu per category with its formats in name order (8K before 16K)
-    formats.push_back(item(T("Detected by the emulator (AUTO)"), "", set([](Project& pr) { pr.format = "AUTO"; }), true,
+    formats.push_back(item(T("Detected by the emulator (AUTO)"), "", set([](Project& project) { project.format = "AUTO"; }), true,
                            project_->format == "AUTO"));
     formats.push_back(MenuItem::sep());
-    for (auto& [cat, title] : formatCategories()) {
-      std::vector<const CartFormat*> in;
-      for (auto& f : kb_.formats())
-        if (f.category == cat) in.push_back(&f);
-      std::sort(in.begin(), in.end(), [](auto* a, auto* b) { return naturalLess(a->name, b->name); });
+    for (auto& [category, title] : formatCategories()) {
+      std::vector<const CartFormat*> categoryFormats;
+      for (auto& cartFormat : kb_.formats())
+        if (cartFormat.category == category) categoryFormats.push_back(&cartFormat);
+      std::sort(categoryFormats.begin(), categoryFormats.end(), [](auto* left, auto* right) { return naturalLess(left->name, right->name); });
       std::vector<MenuItem> items;
       bool current = false;
-      for (auto* f : in) {
-        MenuItem m = item(f->id, "", set([id = f->id](Project& pr) { pr.format = id; }), true, project_->format == f->id);
-        if (!native) m.hint = f->name;  // on the right
-        else m.label = f->name.find(f->id) != std::string::npos ? f->name : f->id + " — " + f->name;
-        current = current || m.checked;
-        items.push_back(m);
+      for (auto* cartFormat : categoryFormats) {
+        MenuItem formatItem = item(cartFormat->id, "", set([id = cartFormat->id](Project& project) { project.format = id; }), true, project_->format == cartFormat->id);
+        if (!native) formatItem.hint = cartFormat->name;  // on the right
+        else formatItem.label = cartFormat->name.find(cartFormat->id) != std::string::npos ? cartFormat->name : cartFormat->id + " — " + cartFormat->name;
+        current = current || formatItem.checked;
+        items.push_back(formatItem);
       }
       if (items.empty()) continue;
-      MenuItem s = sub(title, items);
-      s.checked = current;  // marks the category of the project's format
-      formats.push_back(s);
+      MenuItem categoryItem = sub(title, items);
+      categoryItem.checked = current;  // marks the category of the project's format
+      formats.push_back(categoryItem);
     }
     auto tvIds = tvStandardsFor(project_->language);
     tvIds.push_back("AUTO");
     if (std::find(tvIds.begin(), tvIds.end(), project_->tv) == tvIds.end()) tvIds.push_back(project_->tv);  // set by hand
     for (auto& tv : tvIds) {
-      MenuItem m = item(tvLabel(tv), "", set([tv](Project& pr) { pr.tv = tv; }), true, project_->tv == tv);
+      MenuItem tvItem = item(tvLabel(tv), "", set([tv](Project& project) { project.tv = tv; }), true, project_->tv == tv);
       if (!tvSupported(project_->emulator, tv)) {
-        Tool* t = tools_.get(project_->emulator);
-        m.hint = F("not in {0}", {t ? t->name : project_->emulator});
+        Tool* tool = tools_.get(project_->emulator);
+        tvItem.hint = F("not in {0}", {tool ? tool->name : project_->emulator});
       }
-      tvs.push_back(m);
+      tvItems.push_back(tvItem);
     }
-    for (auto e : {"gopher2600", "stella"}) {
-      Tool* t = tools_.get(e);
-      MenuItem m = item(t->name, "", set([e](Project& pr) { pr.emulator = e; }), true, project_->emulator == e);
-      m.hint = t->found() ? T("found") : T("not found");
-      emus.push_back(m);
+    for (auto emulatorId : {"gopher2600", "stella"}) {
+      Tool* tool = tools_.get(emulatorId);
+      MenuItem emulatorItem = item(tool->name, "", set([emulatorId](Project& project) { project.emulator = emulatorId; }), true, project_->emulator == emulatorId);
+      emulatorItem.hint = tool->found() ? T("found") : T("not found");
+      emulatorItems.push_back(emulatorItem);
     }
-    const IllegalOpcodes vals[] = {IllegalOpcodes::Allow, IllegalOpcodes::StableOnly, IllegalOpcodes::Warn, IllegalOpcodes::Forbid};
+    const IllegalOpcodes policies[] = {IllegalOpcodes::Allow, IllegalOpcodes::StableOnly, IllegalOpcodes::Warn, IllegalOpcodes::Forbid};
     const char* names[] = {N_("Allow"), N_("Stable only"), N_("Warn"), N_("Forbid")};
     for (int i = 0; i < 4; i++)
-      illegal.push_back(item(T(names[i]), "", set([v = vals[i]](Project& pr) { pr.illegal = v; }), true, project_->illegal == vals[i]));
-    b.push_back(MenuItem::sep());
-    b.push_back(sub(T("Format"), formats));
-    b.push_back(sub(T("TV standard"), tvs));
-    b.push_back(sub(T("Emulator"), emus));
-    b.push_back(item(T("Emulator options..."), "", [this] { showEmuOptions_ = true; }));
-    b.push_back(item(T("Project settings..."), "", [this] { projectSettings(); }));
-    b.push_back(sub(T("Illegal opcodes"), illegal));
+      illegal.push_back(item(T(names[i]), "", set([policy = policies[i]](Project& project) { project.illegal = policy; }), true, project_->illegal == policies[i]));
+    buildMenu.push_back(MenuItem::sep());
+    buildMenu.push_back(sub(T("Format"), formats));
+    buildMenu.push_back(sub(T("TV standard"), tvItems));
+    buildMenu.push_back(sub(T("Emulator"), emulatorItems));
+    buildMenu.push_back(item(T("Emulator options..."), "", [this] { showEmuOptions_ = true; }));
+    buildMenu.push_back(item(T("Project settings..."), "", [this] { projectSettings(); }));
+    buildMenu.push_back(sub(T("Illegal opcodes"), illegal));
   }
-  bar.push_back(sub(T("Build"), b));
+  bar.push_back(sub(T("Build"), buildMenu));
 
   // View
   std::vector<MenuItem> themeMenu;
   for (int pass = 0; pass < 2; pass++) {
     bool first = true;
-    for (auto& t : themes_.themes())
-      if (t.builtIn == (pass == 0)) {
+    for (auto& themeEntry : themes_.themes())
+      if (themeEntry.builtIn == (pass == 0)) {
         if (pass == 1 && first) themeMenu.push_back(MenuItem::sep());  // the user's themes after the built-in ones
         first = false;
-        themeMenu.push_back(item(theme::displayName(t), "", [this, id = t.id] { useTheme(id); }, true, t.id == themeId_));
+        themeMenu.push_back(item(theme::displayName(themeEntry), "", [this, id = themeEntry.id] { useTheme(id); }, true, themeEntry.id == themeId_));
       }
   }
   themeMenu.push_back(MenuItem::sep());
@@ -1690,7 +1690,7 @@ MenuBar App::buildMenuBar(bool native) {
   bar.push_back(sub(T("View"), {
       item(T("Show cycle column"), "", [this] {
         showCycles_ = !showCycles_;
-        for (auto& f : files_) f->editor.setGutterWidthChars(showCycles_ && f->asmSyntax ? 5 : 0);
+        for (auto& openedFile : files_) openedFile->editor.setGutterWidthChars(showCycles_ && openedFile->asmSyntax ? 5 : 0);
         saveSettings();
       }, true, showCycles_),
       MenuItem::sep(),
@@ -1714,27 +1714,27 @@ MenuBar App::buildMenuBar(bool native) {
 void App::menuBar() {
   if (nativeMenu_) {
     if (active_)
-      for (auto& a : nativeMenuTakeActions()) a();
+      for (auto& action : nativeMenuTakeActions()) action();
     return;
   }
   if (!ImGui::BeginMainMenuBar()) return;
   drawImGuiMenus(buildMenuBar(false));
   // status on the right of the menu bar
   if (!lastStatus_.empty()) {
-    float w = ImGui::CalcTextSize(lastStatus_.c_str()).x;
-    ImGui::SameLine(ImGui::GetWindowWidth() - w - 20);
+    float statusWidth = ImGui::CalcTextSize(lastStatus_.c_str()).x;
+    ImGui::SameLine(ImGui::GetWindowWidth() - statusWidth - 20);
     ImGui::TextDisabled("%s", lastStatus_.c_str());
   }
   ImGui::EndMainMenuBar();
 }
 
 void App::dockspace() {
-  ImGuiViewport* vp = ImGui::GetMainViewport();
+  ImGuiViewport* viewport = ImGui::GetMainViewport();
   // leave room for the status bar
   float statusH = ImGui::GetFrameHeight();
-  ImGui::SetNextWindowPos(vp->WorkPos);
-  ImGui::SetNextWindowSize(ImVec2(vp->WorkSize.x, vp->WorkSize.y - statusH));
-  ImGui::SetNextWindowViewport(vp->ID);
+  ImGui::SetNextWindowPos(viewport->WorkPos);
+  ImGui::SetNextWindowSize(ImVec2(viewport->WorkSize.x, viewport->WorkSize.y - statusH));
+  ImGui::SetNextWindowViewport(viewport->ID);
   ImGuiWindowFlags flags = ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse |
                            ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBringToFrontOnFocus |
                            ImGuiWindowFlags_NoNavFocus | ImGuiWindowFlags_NoBackground;
@@ -1766,10 +1766,10 @@ void App::dockspace() {
 }
 
 void App::statusBar() {
-  ImGuiViewport* vp = ImGui::GetMainViewport();
-  float h = ImGui::GetFrameHeight();
-  ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x, vp->WorkPos.y + vp->WorkSize.y - h));
-  ImGui::SetNextWindowSize(ImVec2(vp->WorkSize.x, h));
+  ImGuiViewport* viewport = ImGui::GetMainViewport();
+  float barHeight = ImGui::GetFrameHeight();
+  ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x, viewport->WorkPos.y + viewport->WorkSize.y - barHeight));
+  ImGui::SetNextWindowSize(ImVec2(viewport->WorkSize.x, barHeight));
   ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 3));
   ImGui::Begin("##status", nullptr,
                ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoSavedSettings |
@@ -1785,35 +1785,35 @@ void App::statusBar() {
     ImGui::SameLine();
   }
   if (activeFile_ >= 0) {
-    auto& f = *files_[activeFile_];
-    auto& ed = f.editor;
-    ImGui::Text("|  %s %d, %s %d", T("Line"), ed.cursor().line + 1, T("Col"), ed.cursor().col + 1);
-    if (f.asmSyntax && ed.hasSelection()) {
-      auto [a, b] = ed.selectedLines();
-      std::vector<std::string> sel(ed.lines().begin() + a, ed.lines().begin() + b + 1);
-      BlockCycles c = countBlock(kb_, sel, [this](const std::string& s) { return lookupSymbol(s); });
+    auto& openedFile = *files_[activeFile_];
+    auto& textEditor = openedFile.editor;
+    ImGui::Text("|  %s %d, %s %d", T("Line"), textEditor.cursor().line + 1, T("Col"), textEditor.cursor().col + 1);
+    if (openedFile.asmSyntax && textEditor.hasSelection()) {
+      auto [firstLine, lastLine] = textEditor.selectedLines();
+      std::vector<std::string> selectedLines(textEditor.lines().begin() + firstLine, textEditor.lines().begin() + lastLine + 1);
+      BlockCycles blockCycles = countBlock(kb_, selectedLines, [this](const std::string& name) { return lookupSymbol(name); });
       ImGui::SameLine();
-      std::string cyc = std::to_string(c.min) + (c.max != c.min ? "-" + std::to_string(c.max) : "");
-      std::string buf = "|  " + F("{0} lines: {1} cycles, {2} bytes", {std::to_string(c.lines), cyc, std::to_string(c.bytes)});
-      ImGui::TextColored(theme::colv(theme::Role::MsgHighlight), "%s", buf.c_str());
+      std::string cycleText = std::to_string(blockCycles.min) + (blockCycles.max != blockCycles.min ? "-" + std::to_string(blockCycles.max) : "");
+      std::string message = "|  " + F("{0} lines: {1} cycles, {2} bytes", {std::to_string(blockCycles.lines), cycleText, std::to_string(blockCycles.bytes)});
+      ImGui::TextColored(theme::colv(theme::Role::MsgHighlight), "%s", message.c_str());
       ImGui::SameLine();
-      char sl[48];
-      snprintf(sl, sizeof sl, "%.2f-%.2f", c.min / 76.0, c.max / 76.0);
-      std::string extra = F("({0} scanlines)", {sl});
-      if (c.unknown) extra += "  " + F("{0} unknown", {std::to_string(c.unknown)});
-      if (c.guessed) extra += "  " + F("{0} guessed (~)", {std::to_string(c.guessed)});
+      char scanlines[48];
+      snprintf(scanlines, sizeof scanlines, "%.2f-%.2f", blockCycles.min / 76.0, blockCycles.max / 76.0);
+      std::string extra = F("({0} scanlines)", {scanlines});
+      if (blockCycles.unknown) extra += "  " + F("{0} unknown", {std::to_string(blockCycles.unknown)});
+      if (blockCycles.guessed) extra += "  " + F("{0} guessed (~)", {std::to_string(blockCycles.guessed)});
       ImGui::TextDisabled("%s", extra.c_str());
     }
   }
   if (space_ || elfSpace_) {
-    std::string sum = space_ ? space_->summary() : elfSpace_->summary();
-    bool err = false, warn = false;
-    for (auto& d : space_ ? space_->diagnostics : elfSpace_->diagnostics)
-      err |= d.severity == Diagnostic::Error, warn |= d.severity == Diagnostic::Warning;
-    float w = ImGui::CalcTextSize(sum.c_str()).x;
-    ImGui::SameLine(std::max(ImGui::GetCursorPosX() + 20, ImGui::GetWindowWidth() - w - 12));
-    ImVec4 col = theme::colv(err ? theme::Role::MsgError : warn ? theme::Role::MsgWarning : theme::Role::UiTextDim);
-    ImGui::TextColored(col, "%s", sum.c_str());
+    std::string summary = space_ ? space_->summary() : elfSpace_->summary();
+    bool error = false, warn = false;
+    for (auto& diagnostic : space_ ? space_->diagnostics : elfSpace_->diagnostics)
+      error |= diagnostic.severity == Diagnostic::Error, warn |= diagnostic.severity == Diagnostic::Warning;
+    float summaryWidth = ImGui::CalcTextSize(summary.c_str()).x;
+    ImGui::SameLine(std::max(ImGui::GetCursorPosX() + 20, ImGui::GetWindowWidth() - summaryWidth - 12));
+    ImVec4 colour = theme::colv(error ? theme::Role::MsgError : warn ? theme::Role::MsgWarning : theme::Role::UiTextDim);
+    ImGui::TextColored(colour, "%s", summary.c_str());
   }
   ImGui::End();
 }
@@ -1835,7 +1835,7 @@ void App::projectPanel() {
     if (detectedFor_ != folder_) {
       detectedFor_ = folder_;
       detected_.reset();
-      if (Project d; Project::detect(folder_, &d)) detected_ = d;
+      if (Project candidate; Project::detect(folder_, &candidate)) detected_ = candidate;
     }
     if (detected_) {
       ImGui::PushTextWrapPos(0);
@@ -1843,13 +1843,13 @@ void App::projectPanel() {
       ImGui::TextDisabled("%s", F("A project lets F7 run it, and F5 open {0} in the emulator.", {detected_->output}).c_str());
       ImGui::PopTextWrapPos();
       if (ImGui::Button(T("Create a project for it"))) {
-        std::string err;
-        if (detected_->save(&err)) {
+        std::string error;
+        if (detected_->save(&error)) {
           std::string file = detected_->file;
           detectedFor_.clear(), detected_.reset();
           openProject(file);
         } else {
-          output_ += err + "\n";
+          output_ += error + "\n";
         }
       }
       if (ImGui::IsItemHovered())
@@ -1859,80 +1859,80 @@ void App::projectPanel() {
     }
   }
   // The tree, drawn row by row: chevron, icon, name; guides for each level.
-  ImDrawList* dl = ImGui::GetWindowDrawList();
+  ImDrawList* drawList = ImGui::GetWindowDrawList();
   float fontH = ImGui::GetTextLineHeight(), rowH = std::round(fontH * 1.45f), indentW = std::round(fontH * 0.9f);
-  float iconS = std::round(fontH * 0.95f);
+  float iconSize = std::round(fontH * 0.95f);
   float left = ImGui::GetWindowPos().x, right = left + ImGui::GetWindowWidth();
   ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
   ImGui::SetCursorPosY(ImGui::GetCursorPosY() - ImGui::GetStyle().WindowPadding.y * 0.5f);
-  auto isOpen = [&](const std::string& p, bool byDefault) { return treeToggled_.count(p) ? !byDefault : byDefault; };
-  auto toggle = [&](const std::string& p) {
-    if (!treeToggled_.erase(p)) treeToggled_.insert(p);
+  auto isOpen = [&](const std::string& path, bool byDefault) { return treeToggled_.count(path) ? !byDefault : byDefault; };
+  auto toggle = [&](const std::string& path) {
+    if (!treeToggled_.erase(path)) treeToggled_.insert(path);
   };
   // One row; true if clicked. `depth` 0 is the project's own row.
   auto row = [&](const std::string& id, int depth, const std::string& name, files::Kind kind, bool dir, bool open,
-                 bool active, bool dim) {
-    ImVec2 at = ImGui::GetCursorScreenPos();
+                 bool active, bool dimmed) {
+    ImVec2 rowOrigin = ImGui::GetCursorScreenPos();
     ImGui::PushID(id.c_str());
-    bool clicked = ImGui::InvisibleButton("row", ImVec2(std::max(1.0f, right - at.x), rowH));
+    bool clicked = ImGui::InvisibleButton("row", ImVec2(std::max(1.0f, right - rowOrigin.x), rowH));
     bool hover = ImGui::IsItemHovered();
     ImGui::PopID();
-    if (active) dl->AddRectFilled(ImVec2(left, at.y), ImVec2(right, at.y + rowH), theme::col(theme::Role::FilesRowSelected));
-    else if (hover) dl->AddRectFilled(ImVec2(left, at.y), ImVec2(right, at.y + rowH), theme::col(theme::Role::FilesRowHover));
-    float x = at.x + depth * indentW, cy = at.y + rowH * 0.5f;
-    for (int d = 1; d <= depth; d++) {  // a guide under each open folder above
-      float gx = std::round(at.x + (d - 1) * indentW + indentW * 0.5f) + 0.5f;
-      dl->AddLine(ImVec2(gx, at.y), ImVec2(gx, at.y + rowH), theme::col(theme::Role::FilesGuide));
+    if (active) drawList->AddRectFilled(ImVec2(left, rowOrigin.y), ImVec2(right, rowOrigin.y + rowH), theme::col(theme::Role::FilesRowSelected));
+    else if (hover) drawList->AddRectFilled(ImVec2(left, rowOrigin.y), ImVec2(right, rowOrigin.y + rowH), theme::col(theme::Role::FilesRowHover));
+    float x = rowOrigin.x + depth * indentW, cy = rowOrigin.y + rowH * 0.5f;
+    for (int level = 1; level <= depth; level++) {  // a guide under each open folder above
+      float gx = std::round(rowOrigin.x + (level - 1) * indentW + indentW * 0.5f) + 0.5f;
+      drawList->AddLine(ImVec2(gx, rowOrigin.y), ImVec2(gx, rowOrigin.y + rowH), theme::col(theme::Role::FilesGuide));
     }
-    ImU32 text = theme::col(dim ? theme::Role::UiTextDim : theme::Role::UiText);
+    ImU32 text = theme::col(dimmed ? theme::Role::UiTextDim : theme::Role::UiText);
     if (dir) {  // chevron: > closed, v open
-      float c = fontH * 0.22f, cx = x + indentW * 0.5f, t = std::max(1.0f, fontH * 0.09f);
-      ImU32 cc = theme::col(theme::Role::UiTextDim);
-      if (open) dl->AddPolyline(std::array<ImVec2, 3>{ImVec2(cx - c, cy - c * 0.5f), ImVec2(cx, cy + c * 0.5f), ImVec2(cx + c, cy - c * 0.5f)}.data(), 3, cc, 0, t);
-      else dl->AddPolyline(std::array<ImVec2, 3>{ImVec2(cx - c * 0.5f, cy - c), ImVec2(cx + c * 0.5f, cy), ImVec2(cx - c * 0.5f, cy + c)}.data(), 3, cc, 0, t);
+      float chevronSize = fontH * 0.22f, cx = x + indentW * 0.5f, thickness = std::max(1.0f, fontH * 0.09f);
+      ImU32 chevronColour = theme::col(theme::Role::UiTextDim);
+      if (open) drawList->AddPolyline(std::array<ImVec2, 3>{ImVec2(cx - chevronSize, cy - chevronSize * 0.5f), ImVec2(cx, cy + chevronSize * 0.5f), ImVec2(cx + chevronSize, cy - chevronSize * 0.5f)}.data(), 3, chevronColour, 0, thickness);
+      else drawList->AddPolyline(std::array<ImVec2, 3>{ImVec2(cx - chevronSize * 0.5f, cy - chevronSize), ImVec2(cx + chevronSize * 0.5f, cy), ImVec2(cx - chevronSize * 0.5f, cy + chevronSize)}.data(), 3, chevronColour, 0, thickness);
     }
     x += indentW;
     if (depth > 0 || !dir) {
-      files::drawIcon(dl, ImVec2(x, std::round(cy - iconS * 0.5f)), iconS, kind, open);
-      x += iconS + fontH * 0.4f;
+      files::drawIcon(drawList, ImVec2(x, std::round(cy - iconSize * 0.5f)), iconSize, kind, open);
+      x += iconSize + fontH * 0.4f;
     }
-    dl->AddText(ImVec2(x, std::round(cy - fontH * 0.5f)), text, name.c_str());
+    drawList->AddText(ImVec2(x, std::round(cy - fontH * 0.5f)), text, name.c_str());
     if (hover && ImGui::CalcTextSize(name.c_str()).x > right - x) ImGui::SetTooltip("%s", name.c_str());
     return clicked;
   };
-  std::function<void(const fs::path&, int, bool)> tree = [&](const fs::path& dir, int depth, bool dim) {
+  std::function<void(const fs::path&, int, bool)> tree = [&](const fs::path& dir, int depth, bool dimmed) {
     std::vector<fs::directory_entry> entries;
-    std::error_code ec;
-    for (auto& e : fs::directory_iterator(dir, ec)) {
-      std::string n = e.path().filename().string();
-      if (n.empty() || n[0] == '.') continue;
-      entries.push_back(e);
+    std::error_code errorCode;
+    for (auto& entry : fs::directory_iterator(dir, errorCode)) {
+      std::string name = entry.path().filename().string();
+      if (name.empty() || name[0] == '.') continue;
+      entries.push_back(entry);
     }
-    std::sort(entries.begin(), entries.end(), [](auto& a, auto& b) {
-      if (a.is_directory() != b.is_directory()) return a.is_directory();
-      return lower(a.path().filename().string()) < lower(b.path().filename().string());
+    std::sort(entries.begin(), entries.end(), [](auto& first, auto& second) {
+      if (first.is_directory() != second.is_directory()) return first.is_directory();
+      return lower(first.path().filename().string()) < lower(second.path().filename().string());
     });
-    for (auto& e : entries) {
-      std::string n = e.path().filename().string(), p = e.path().string();
-      bool d = e.is_directory();
-      if (d) {
-        bool sub = dim || n == "build";  // build output: shown dimmed
-        bool open = isOpen(p, false);
-        if (row(p, depth, n, files::Kind::Folder, true, open, false, sub)) toggle(p), open = !open;
-        if (open) tree(e.path(), depth + 1, sub);
+    for (auto& entry : entries) {
+      std::string name = entry.path().filename().string(), entryPath = entry.path().string();
+      bool isDirectory = entry.is_directory();
+      if (isDirectory) {
+        bool sub = dimmed || name == "build";  // build output: shown dimmed
+        bool open = isOpen(entryPath, false);
+        if (row(entryPath, depth, name, files::Kind::Folder, true, open, false, sub)) toggle(entryPath), open = !open;
+        if (open) tree(entry.path(), depth + 1, sub);
       } else {
-        bool active = activeFile_ >= 0 && files_[activeFile_]->path == p;
-        if (row(p, depth, n, files::kindOf(n, false), false, false, active, dim)) {
-          if (e.path().extension() == ".vcsproj" && !(project_ && fs::weakly_canonical(project_->file) == fs::weakly_canonical(p))) openProject(p);
-          else if (e.path().extension() == ".vcsproj") projectSettings();
-          else if (files::kindOf(n, false) != files::Kind::Rom) openFile(p);
+        bool active = activeFile_ >= 0 && files_[activeFile_]->path == entryPath;
+        if (row(entryPath, depth, name, files::kindOf(name, false), false, false, active, dimmed)) {
+          if (entry.path().extension() == ".vcsproj" && !(project_ && fs::weakly_canonical(project_->file) == fs::weakly_canonical(entryPath))) openProject(entryPath);
+          else if (entry.path().extension() == ".vcsproj") projectSettings();
+          else if (files::kindOf(name, false) != files::Kind::Rom) openFile(entryPath);
         }
       }
     }
   };
   // the project's row: its name in capitals, like a section title
   std::string rootName = fs::path(folder_).filename().string();
-  for (auto& c : rootName) c = (char)std::toupper((unsigned char)c);
+  for (auto& character : rootName) character = (char)std::toupper((unsigned char)character);
   bool rootOpen = isOpen(folder_, true);
   if (row(folder_, 0, rootName, files::Kind::Folder, true, rootOpen, false, false)) toggle(folder_), rootOpen = !rootOpen;
   if (rootOpen) tree(folder_, 1, false);
@@ -1942,10 +1942,10 @@ void App::projectPanel() {
 
 // The whole window, with no title or panels, for the welcome page.
 void App::welcomeScreen() {
-  ImGuiViewport* vp = ImGui::GetMainViewport();
-  ImGui::SetNextWindowPos(vp->WorkPos);
-  ImGui::SetNextWindowSize(vp->WorkSize);
-  ImGui::SetNextWindowViewport(vp->ID);
+  ImGuiViewport* viewport = ImGui::GetMainViewport();
+  ImGui::SetNextWindowPos(viewport->WorkPos);
+  ImGui::SetNextWindowSize(viewport->WorkSize);
+  ImGui::SetNextWindowViewport(viewport->ID);
   ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0);
   ImGui::PushStyleColor(ImGuiCol_WindowBg, theme::colv(theme::Role::UiBackground));
   ImGui::Begin("##welcome", nullptr,
@@ -1961,15 +1961,15 @@ void App::welcomeScreen() {
 void App::welcome() {
   using theme::em;
   ImVec2 avail = ImGui::GetContentRegionAvail();
-  float w = std::min(avail.x - em(48), em(420));
-  float x0 = std::max(em(24), (avail.x - w) * 0.5f);
+  float contentWidth = std::min(avail.x - em(48), em(420));
+  float x0 = std::max(em(24), (avail.x - contentWidth) * 0.5f);
   int shown = std::min((int)recent_.size(), 8);
   float rowH = ImGui::GetTextLineHeight() * 2.6f;
   float blockH = em(96) + em(150) + (shown ? em(44) + shown * rowH : 0);
   ImGui::SetCursorPos(ImVec2(x0, std::max(em(24), (avail.y - blockH) * 0.4f)));
   ImGui::BeginGroup();
-  if (unsigned tex = iconTexture()) {
-    ImGui::Image((ImTextureID)(intptr_t)tex, ImVec2(em(72), em(72)));
+  if (unsigned texture = iconTexture()) {
+    ImGui::Image((ImTextureID)(intptr_t)texture, ImVec2(em(72), em(72)));
     ImGui::SameLine(0, em(16));
   }
   ImGui::BeginGroup();
@@ -1984,10 +1984,10 @@ void App::welcome() {
   // the ways in: links, one per line
   auto link = [&](const char* label) {
     ImGui::PushStyleColor(ImGuiCol_Text, theme::colv(theme::Role::UiLink));
-    bool c = ImGui::Selectable(label, false, 0, ImVec2(w, 0));
+    bool clicked = ImGui::Selectable(label, false, 0, ImVec2(contentWidth, 0));
     ImGui::PopStyleColor();
     if (ImGui::IsItemHovered()) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-    return c;
+    return clicked;
   };
   if (link(T("New project..."))) showNewProject_ = true;
   if (link(T("Open project..."))) {
@@ -2004,41 +2004,41 @@ void App::welcome() {
     const char* home = std::getenv("HOME");
     std::string homeDir = home ? home : "";
     for (int i = 0; i < shown; i++) {
-      const std::string& r = recent_[i];
-      fs::path p(r);
-      bool isProject = lower(p.extension().string()) == ".vcsproj";
-      std::string name = isProject ? p.stem().string() : p.filename().string();
-      std::string where = (isProject ? p.parent_path() : p).string();
+      const std::string& recentPath = recent_[i];
+      fs::path recentFile(recentPath);
+      bool isProject = lower(recentFile.extension().string()) == ".vcsproj";
+      std::string name = isProject ? recentFile.stem().string() : recentFile.filename().string();
+      std::string where = (isProject ? recentFile.parent_path() : recentFile).string();
       if (!homeDir.empty() && where.rfind(homeDir, 0) == 0) where = "~" + where.substr(homeDir.size());
-      std::error_code ec;
-      bool exists = fs::exists(p, ec);
-      ImVec2 at = ImGui::GetCursorScreenPos();
+      std::error_code errorCode;
+      bool exists = fs::exists(recentFile, errorCode);
+      ImVec2 rowOrigin = ImGui::GetCursorScreenPos();
       ImGui::PushID(i);
       ImGui::BeginDisabled(!exists);
-      bool clicked = ImGui::Selectable("##recent", false, 0, ImVec2(w, rowH));
+      bool clicked = ImGui::Selectable("##recent", false, 0, ImVec2(contentWidth, rowH));
       ImGui::EndDisabled();
       ImGui::PopID();
       if (ImGui::IsItemHovered()) {
         ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-        ImGui::SetTooltip("%s", r.c_str());
+        ImGui::SetTooltip("%s", recentPath.c_str());
       }
-      ImDrawList* dl = ImGui::GetWindowDrawList();
-      float lh = ImGui::GetTextLineHeight(), iconS = std::round(lh * 1.1f);
-      files::drawIcon(dl, ImVec2(at.x + em(4), at.y + (rowH - iconS) * 0.5f), iconS,
+      ImDrawList* drawList = ImGui::GetWindowDrawList();
+      float lineHeight = ImGui::GetTextLineHeight(), iconSize = std::round(lineHeight * 1.1f);
+      files::drawIcon(drawList, ImVec2(rowOrigin.x + em(4), rowOrigin.y + (rowH - iconSize) * 0.5f), iconSize,
                       isProject ? files::Kind::Project : files::Kind::Folder);
-      float tx = at.x + em(4) + iconS + em(10), ty = at.y + (rowH - 2 * lh) * 0.5f;
-      dl->AddText(ImVec2(tx, ty), theme::col(exists ? theme::Role::UiText : theme::Role::UiTextDim), name.c_str());
-      std::string sub = exists ? where : where + "  " + T("(not found)");
+      float textX = rowOrigin.x + em(4) + iconSize + em(10), textY = rowOrigin.y + (rowH - 2 * lineHeight) * 0.5f;
+      drawList->AddText(ImVec2(textX, textY), theme::col(exists ? theme::Role::UiText : theme::Role::UiTextDim), name.c_str());
+      std::string subtitle = exists ? where : where + "  " + T("(not found)");
       // too long: keep its end, the part that tells projects apart
-      float room = at.x + w - tx - em(4);
-      while (sub.size() > 4 && ImGui::CalcTextSize(sub.c_str()).x > room) {
-        size_t cut = sub.rfind("\xE2\x80\xA6", 0) == 0 ? 3 : 0;
+      float room = rowOrigin.x + contentWidth - textX - em(4);
+      while (subtitle.size() > 4 && ImGui::CalcTextSize(subtitle.c_str()).x > room) {
+        size_t cut = subtitle.rfind("\xE2\x80\xA6", 0) == 0 ? 3 : 0;
         size_t next = cut + 1;
-        while (next < sub.size() && ((unsigned char)sub[next] & 0xC0) == 0x80) next++;
-        sub = "\xE2\x80\xA6" + sub.substr(next);
+        while (next < subtitle.size() && ((unsigned char)subtitle[next] & 0xC0) == 0x80) next++;
+        subtitle = "\xE2\x80\xA6" + subtitle.substr(next);
       }
-      dl->AddText(ImVec2(tx, ty + lh), theme::col(theme::Role::UiTextDim), sub.c_str());
-      if (clicked && exists) openPath(r);
+      drawList->AddText(ImVec2(textX, textY + lineHeight), theme::col(theme::Role::UiTextDim), subtitle.c_str());
+      if (clicked && exists) openPath(recentPath);
     }
   }
   ImGui::EndGroup();
@@ -2067,35 +2067,35 @@ void App::editorsPanel() {
   }
   if (ImGui::BeginTabBar("files", ImGuiTabBarFlags_Reorderable | ImGuiTabBarFlags_AutoSelectNewTabs | ImGuiTabBarFlags_FittingPolicyScroll)) {
     for (int i = 0; i < (int)files_.size(); i++) {
-      auto& f = *files_[i];
+      auto& openedFile = *files_[i];
       bool keep = true;
-      std::string label = fs::path(f.path).filename().string() + (f.dirty() ? " *" : "") + "###" + f.path;
-      ImGuiTabItemFlags fl = f.requestFocus ? ImGuiTabItemFlags_SetSelected : 0;
-      if (f.dirty()) fl |= ImGuiTabItemFlags_UnsavedDocument;
-      if (ImGui::BeginTabItem(label.c_str(), &keep, fl)) {
+      std::string label = fs::path(openedFile.path).filename().string() + (openedFile.dirty() ? " *" : "") + "###" + openedFile.path;
+      ImGuiTabItemFlags tabFlags = openedFile.requestFocus ? ImGuiTabItemFlags_SetSelected : 0;
+      if (openedFile.dirty()) tabFlags |= ImGuiTabItemFlags_UnsavedDocument;
+      if (ImGui::BeginTabItem(label.c_str(), &keep, tabFlags)) {
         activeFile_ = i;
-        if (f.requestFocus) {
+        if (openedFile.requestFocus) {
           ImGui::SetKeyboardFocusHere();
-          f.requestFocus = false;
+          openedFile.requestFocus = false;
         }
-        if (f.image) {
+        if (openedFile.image) {
           ImGui::BeginChild("##image", ImVec2(0, 0), 0, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-          f.image->render();
+          openedFile.image->render();
           ImGui::EndChild();
-        } else if (f.form) {
+        } else if (openedFile.form) {
           ImGui::BeginChild("##form", ImVec2(0, 0), 0, ImGuiWindowFlags_NoScrollbar);
-          f.form->render(f.editor, editorFont(), kb_, tools_);
+          openedFile.form->render(openedFile.editor, editorFont(), kb_, tools_);
           ImGui::EndChild();
-        } else if (f.gfx) {
+        } else if (openedFile.gfx) {
           ImGui::BeginChild("##gfx", ImVec2(0, 0), 0, ImGuiWindowFlags_NoScrollbar);
-          f.gfx->render(gfxTv(), gfxProfile());
+          openedFile.gfx->render(gfxTv(), gfxProfile());
           ImGui::EndChild();
-        } else if (f.editor.render("##code", editorFont())) {
-          lint(f);
+        } else if (openedFile.editor.render("##code", editorFont())) {
+          lint(openedFile);
         }
-        if (int z = f.editor.takeZoomSteps()) zoomEditor(z);
-        if (f.editor.takeBreakpointsChanged()) {
-          breakpoints_[f.path] = f.editor.breakpoints();
+        if (int zoomDelta = openedFile.editor.takeZoomSteps()) zoomEditor(zoomDelta);
+        if (openedFile.editor.takeBreakpointsChanged()) {
+          breakpoints_[openedFile.path] = openedFile.editor.breakpoints();
           saveUserState();
         }
         ImGui::EndTabItem();
@@ -2185,32 +2185,32 @@ void App::problemsPanel() {
       ImGui::TableSetupColumn(T("File"), ImGuiTableColumnFlags_WidthFixed, 200);
       ImGui::TableSetupColumn("");
       for (size_t i = 0; i < diagnostics_.size(); i++) {
-        auto& d = diagnostics_[i];
+        auto& diagnostic = diagnostics_[i];
         ImGui::TableNextRow();
         ImGui::TableNextColumn();
-        ImVec4 col = theme::colv(d.severity == Diagnostic::Error ? theme::Role::MsgError : d.severity == Diagnostic::Warning ? theme::Role::MsgWarning : theme::Role::MsgInfo);
+        ImVec4 colour = theme::colv(diagnostic.severity == Diagnostic::Error ? theme::Role::MsgError : diagnostic.severity == Diagnostic::Warning ? theme::Role::MsgWarning : theme::Role::MsgInfo);
         ImGui::PushID((int)i);
-        ImGui::PushStyleColor(ImGuiCol_Text, col);
-        bool clicked = ImGui::Selectable(d.severity == Diagnostic::Error ? T("error") : d.severity == Diagnostic::Warning ? T("warning") : T("info"), false,
+        ImGui::PushStyleColor(ImGuiCol_Text, colour);
+        bool clicked = ImGui::Selectable(diagnostic.severity == Diagnostic::Error ? T("error") : diagnostic.severity == Diagnostic::Warning ? T("warning") : T("info"), false,
                                          ImGuiSelectableFlags_SpanAllColumns);
         ImGui::PopStyleColor();
         ImGui::PopID();
         ImGui::TableNextColumn();
-        if (!d.file.empty()) {
-          std::string shown = d.file;
-          std::error_code ec;
-          if (project_ && fs::path(d.file).is_absolute()) {
-            auto rel = fs::relative(d.file, project_->dir, ec);
-            if (!ec && !rel.empty() && rel.native()[0] != '.') shown = rel.string();
+        if (!diagnostic.file.empty()) {
+          std::string shown = diagnostic.file;
+          std::error_code errorCode;
+          if (project_ && fs::path(diagnostic.file).is_absolute()) {
+            auto relative = fs::relative(diagnostic.file, project_->dir, errorCode);
+            if (!errorCode && !relative.empty() && relative.native()[0] != '.') shown = relative.string();
           }
-          if (d.line) ImGui::Text("%s:%d", shown.c_str(), d.line);
+          if (diagnostic.line) ImGui::Text("%s:%d", shown.c_str(), diagnostic.line);
           else ImGui::TextUnformatted(shown.c_str());
         }
         ImGui::TableNextColumn();
-        ImGui::TextUnformatted(d.message.c_str());
-        if (clicked && !d.file.empty() && project_) {
-          std::string p = findProjectFile(d.file);
-          if (!p.empty()) openFile(p, std::max(1, d.line));
+        ImGui::TextUnformatted(diagnostic.message.c_str());
+        if (clicked && !diagnostic.file.empty() && project_) {
+          std::string foundPath = findProjectFile(diagnostic.file);
+          if (!foundPath.empty()) openFile(foundPath, std::max(1, diagnostic.line));
         }
       }
       ImGui::EndTable();
@@ -2249,8 +2249,8 @@ void App::emulatorOptionsDialog() {
   }
   char title[96];
   snprintf(title, sizeof title, "%s###emuopts", T("Emulator options"));
-  float fs = ImGui::GetFontSize();
-  ImGui::SetNextWindowSize(ImVec2(fs * 50, fs * 42), ImGuiCond_Appearing);
+  float fontSize = ImGui::GetFontSize();
+  ImGui::SetNextWindowSize(ImVec2(fontSize * 50, fontSize * 42), ImGuiCond_Appearing);
   bool open = true;
   if (!theme::beginModal(title, &open)) return;
   if (!project_) {
@@ -2261,71 +2261,71 @@ void App::emulatorOptionsDialog() {
   bool changed = false;
   if (ImGui::BeginTabBar("emus")) {
     for (const char* id : {"gopher2600", "stella"}) {
-      const EmulatorInfo* emu = kb_.emulator(id);
-      if (!emu) continue;
+      const EmulatorInfo* emulator = kb_.emulator(id);
+      if (!emulator) continue;
       ImGuiTabItemFlags tabFlags = emuOptionsTab_ == id ? ImGuiTabItemFlags_SetSelected : 0;
-      if (!ImGui::BeginTabItem(emu->name.c_str(), nullptr, tabFlags)) continue;
-      auto& set = project_->emulatorOptions[id];
+      if (!ImGui::BeginTabItem(emulator->name.c_str(), nullptr, tabFlags)) continue;
+      auto& currentValues = project_->emulatorOptions[id];
       ImGui::BeginChild("opts", ImVec2(0, -ImGui::GetFrameHeightWithSpacing() * 6), ImGuiChildFlags_Borders);
       // groups in the order they first appear, each with all its options
       std::vector<const EmuOption*> ordered;
-      for (auto& g : emu->options)
-        if (std::none_of(ordered.begin(), ordered.end(), [&](const EmuOption* x) { return x->group == g.group; }))
-          for (auto& o : emu->options)
-            if (o.group == g.group) ordered.push_back(&o);
+      for (auto& groupOption : emulator->options)
+        if (std::none_of(ordered.begin(), ordered.end(), [&](const EmuOption* candidate) { return candidate->group == groupOption.group; }))
+          for (auto& option : emulator->options)
+            if (option.group == groupOption.group) ordered.push_back(&option);
       std::string group;
       bool table = false;
-      for (const EmuOption* op : ordered) {
-        const EmuOption& o = *op;
-        if (o.group != group || !table) {
+      for (const EmuOption* optionPointer : ordered) {
+        const EmuOption& option = *optionPointer;
+        if (option.group != group || !table) {
           if (table) ImGui::EndTable();
-          group = o.group;
+          group = option.group;
           ImGui::SeparatorText(T(group.c_str()));
           table = ImGui::BeginTable(group.c_str(), 2, ImGuiTableFlags_SizingStretchProp);
           if (!table) continue;
           ImGui::TableSetupColumn("label", ImGuiTableColumnFlags_WidthStretch, 3);
           ImGui::TableSetupColumn("value", ImGuiTableColumnFlags_WidthStretch, 2);
         }
-        ImGui::PushID(o.id.c_str());
+        ImGui::PushID(option.id.c_str());
         ImGui::TableNextRow();
         ImGui::TableNextColumn();
-        auto cur = set.find(o.id);
-        std::string value = cur == set.end() ? "" : cur->second;
-        if (value.empty()) ImGui::TextUnformatted(o.labelText().c_str());
-        else ImGui::TextColored(theme::colv(theme::Role::MsgInfo), "%s", o.labelText().c_str());
-        std::string tip = o.descriptionText() + "\n\n";
-        if (!o.arg.empty()) tip += o.arg + (o.noValue ? "" : " <" + o.type + ">");
-        else if (!o.flag.empty()) tip += o.flag;
-        else tip += F("Preference {0} (VCSIDE passes it through a copy of the preferences file)", {o.pref});
-        if (o.developer) tip += "\n" + std::string(T("Needs Stella's developer settings: VCSIDE turns them on."));
+        auto current = currentValues.find(option.id);
+        std::string value = current == currentValues.end() ? "" : current->second;
+        if (value.empty()) ImGui::TextUnformatted(option.labelText().c_str());
+        else ImGui::TextColored(theme::colv(theme::Role::MsgInfo), "%s", option.labelText().c_str());
+        std::string tip = option.descriptionText() + "\n\n";
+        if (!option.arg.empty()) tip += option.arg + (option.noValue ? "" : " <" + option.type + ">");
+        else if (!option.flag.empty()) tip += option.flag;
+        else tip += F("Preference {0} (VCSIDE passes it through a copy of the preferences file)", {option.pref});
+        if (option.developer) tip += "\n" + std::string(T("Needs Stella's developer settings: VCSIDE turns them on."));
         wrappedTooltip(tip);
         ImGui::TableNextColumn();
         ImGui::SetNextItemWidth(-1);
         std::string next = value;
-        if (o.type == "int" || o.type == "text") {
+        if (option.type == "int" || option.type == "text") {
           std::string hint = T("default");
-          if (o.max > 0) hint += " (" + std::to_string(o.min) + "-" + std::to_string(o.max) + ")";
-          ImGuiInputTextFlags fl = o.type == "int" ? ImGuiInputTextFlags_CharsDecimal : 0;
-          ImGui::InputTextWithHint("##v", hint.c_str(), &next, fl);
-          if (o.type == "int" && !next.empty() && o.max > 0) {
-            int n = std::atoi(next.c_str());
-            if (n < o.min || n > o.max) ImGui::TextColored(theme::colv(theme::Role::MsgError), "%s", T("out of range"));
+          if (option.max > 0) hint += " (" + std::to_string(option.min) + "-" + std::to_string(option.max) + ")";
+          ImGuiInputTextFlags flags = option.type == "int" ? ImGuiInputTextFlags_CharsDecimal : 0;
+          ImGui::InputTextWithHint("##v", hint.c_str(), &next, flags);
+          if (option.type == "int" && !next.empty() && option.max > 0) {
+            int number = std::atoi(next.c_str());
+            if (number < option.min || number > option.max) ImGui::TextColored(theme::colv(theme::Role::MsgError), "%s", T("out of range"));
           }
         } else {
           std::string preview = T("default");
-          for (auto& v : o.values)
-            if (v.value == value) preview = T(v.label.c_str());
+          for (auto& choice : option.values)
+            if (choice.value == value) preview = T(choice.label.c_str());
           if (ImGui::BeginCombo("##v", preview.c_str())) {
             if (ImGui::Selectable(T("default"), value.empty())) next.clear();
-            for (auto& v : o.values)
-              if (ImGui::Selectable(T(v.label.c_str()), v.value == value)) next = v.value;
+            for (auto& choice : option.values)
+              if (ImGui::Selectable(T(choice.label.c_str()), choice.value == value)) next = choice.value;
             ImGui::EndCombo();
           }
         }
         wrappedTooltip(tip);
         if (next != value) {
-          if (next.empty()) set.erase(o.id);
-          else set[o.id] = next;
+          if (next.empty()) currentValues.erase(option.id);
+          else currentValues[option.id] = next;
           changed = true;
         }
         ImGui::PopID();
@@ -2334,24 +2334,24 @@ void App::emulatorOptionsDialog() {
       ImGui::EndChild();
 
       std::string& extra = project_->emulatorArgs[id];
-      ImGui::SetNextItemWidth(-fs * 12);
+      ImGui::SetNextItemWidth(-fontSize * 12);
       if (ImGui::InputText(T("Extra arguments"), &extra)) changed = true;
-      std::map<std::string, std::string> prefs;
-      auto args = emulatorOptionArgs(*project_, *emu, &prefs);
-      for (auto& a : splitCommand(extra)) args.push_back(a);
+      std::map<std::string, std::string> preferences;
+      auto args = emulatorOptionArgs(*project_, *emulator, &preferences);
+      for (auto& argument : splitCommand(extra)) args.push_back(argument);
       std::string line = args.empty() ? T("(nothing)") : quoteArgs(args);
       ImGui::TextDisabled("%s", T("Added to the command line:"));
       ImGui::SameLine();
       ImGui::TextWrapped("%s", line.c_str());
-      if (!prefs.empty()) {
-        std::string p;
-        for (auto& [k, v] : prefs) p += (p.empty() ? "" : ", ") + k + " = " + v;
+      if (!preferences.empty()) {
+        std::string preferencesText;
+        for (auto& [key, value] : preferences) preferencesText += (preferencesText.empty() ? "" : ", ") + key + " = " + value;
         ImGui::TextDisabled("%s", T("Preferences:"));
         ImGui::SameLine();
-        ImGui::TextWrapped("%s", p.c_str());
+        ImGui::TextWrapped("%s", preferencesText.c_str());
       }
       if (theme::dialogButton(T("Reset to defaults"))) {
-        set.clear();
+        currentValues.clear();
         extra.clear();
         changed = true;
       }
@@ -2365,8 +2365,8 @@ void App::emulatorOptionsDialog() {
   ImGui::PopTextWrapPos();
   if (theme::primaryButton(T("Close")) || theme::dialogEscape()) ImGui::CloseCurrentPopup();
   if (changed) {
-    std::string err;
-    if (!project_->save(&err)) lastStatus_ = err;
+    std::string error;
+    if (!project_->save(&error)) lastStatus_ = error;
   }
   ImGui::EndPopup();
 }
@@ -2384,30 +2384,30 @@ void App::goToAddressDialog() {
   if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
   bool enter = ImGui::InputText("##addr", goToAddress_, sizeof goToAddress_, ImGuiInputTextFlags_EnterReturnsTrue);
   // parse "addr [bank]"
-  std::istringstream in(goToAddress_);
-  std::string a, b;
-  in >> a >> b;
-  std::optional<int> addr;
-  if (!a.empty()) {
-    std::string e = a;
-    if (e.size() > 2 && (e[0] == '0') && (e[1] == 'x' || e[1] == 'X')) e = "$" + e.substr(2);
-    else if (e[0] != '$' && std::all_of(e.begin(), e.end(), [](char c) { return std::isxdigit((unsigned char)c); })) e = "$" + e;
-    addr = evalExpr(e, [this](const std::string& s) { return lookupSymbol(s); });
-    if (!addr) addr = evalExpr(a, [this](const std::string& s) { return lookupSymbol(s); });
+  std::istringstream stream(goToAddress_);
+  std::string addressText, bankText;
+  stream >> addressText >> bankText;
+  std::optional<int> address;
+  if (!addressText.empty()) {
+    std::string expression = addressText;
+    if (expression.size() > 2 && (expression[0] == '0') && (expression[1] == 'x' || expression[1] == 'X')) expression = "$" + expression.substr(2);
+    else if (expression[0] != '$' && std::all_of(expression.begin(), expression.end(), [](char character) { return std::isxdigit((unsigned char)character); })) expression = "$" + expression;
+    address = evalExpr(expression, [this](const std::string& name) { return lookupSymbol(name); });
+    if (!address) address = evalExpr(addressText, [this](const std::string& name) { return lookupSymbol(name); });
   }
-  int bank = b.empty() ? -1 : std::atoi(b.c_str());
+  int bank = bankText.empty() ? -1 : std::atoi(bankText.c_str());
   std::vector<const ListedLine*> hits;
-  if (addr) hits = addresses_.linesAt(*addr, bank);
-  bool go = false;
+  if (address) hits = addresses_.linesAt(*address, bank);
+  bool shouldGo = false;
   const ListedLine* target = nullptr;
-  if (!a.empty() && hits.empty()) ImGui::TextDisabled("%s", T("No code at that address in the last build."));
+  if (!addressText.empty() && hits.empty()) ImGui::TextDisabled("%s", T("No code at that address in the last build."));
   for (size_t i = 0; i < hits.size() && i < 12; i++) {
     std::string label = fs::path(hits[i]->file).filename().string() + ":" + std::to_string(hits[i]->line);
     if (addresses_.banks() > 1) label += "  " + F("(bank {0})", {std::to_string(addresses_.bankOf(*hits[i]))});
-    if (ImGui::Selectable(label.c_str(), i == 0)) target = hits[i], go = true;
+    if (ImGui::Selectable(label.c_str(), i == 0)) target = hits[i], shouldGo = true;
   }
-  if (enter && !hits.empty()) target = hits[0], go = true;
-  if (go && target) {
+  if (enter && !hits.empty()) target = hits[0], shouldGo = true;
+  if (shouldGo && target) {
     openFile(target->file, target->line);
     ImGui::CloseCurrentPopup();
   }
@@ -2415,19 +2415,19 @@ void App::goToAddressDialog() {
   ImGui::EndPopup();
 }
 
-static void spaceBar(const SpaceReport::Area& a, int warnPercent) {
-  ImGui::TextUnformatted(a.name.c_str());
+static void spaceBar(const SpaceReport::Area& area, int warnPercent) {
+  ImGui::TextUnformatted(area.name.c_str());
   ImGui::SameLine(ImGui::GetFontSize() * 9);
-  if (!a.measured) {
-    ImGui::TextDisabled("%s", a.note.c_str());
+  if (!area.measured) {
+    ImGui::TextDisabled("%s", area.note.c_str());
     return;
   }
-  float frac = a.size > 0 ? (float)a.used / (float)a.size : 0;
-  int pct = a.size > 0 ? (int)((a.used * 100 + a.size - 1) / a.size) : 0;
-  ImVec4 col = theme::colv(a.used > a.size ? theme::Role::SpaceFull : pct >= warnPercent ? theme::Role::SpaceWarning : theme::Role::SpaceOk);
+  float frac = area.size > 0 ? (float)area.used / (float)area.size : 0;
+  int percent = area.size > 0 ? (int)((area.used * 100 + area.size - 1) / area.size) : 0;
+  ImVec4 colour = theme::colv(area.used > area.size ? theme::Role::SpaceFull : percent >= warnPercent ? theme::Role::SpaceWarning : theme::Role::SpaceOk);
   std::string label = F("{0} / {1} bytes ({2} %), {3} free",
-                        {std::to_string(a.used), std::to_string(a.size), std::to_string(pct), std::to_string(std::max(0L, a.size - a.used))});
-  ImGui::PushStyleColor(ImGuiCol_PlotHistogram, col);
+                        {std::to_string(area.used), std::to_string(area.size), std::to_string(percent), std::to_string(std::max(0L, area.size - area.used))});
+  ImGui::PushStyleColor(ImGuiCol_PlotHistogram, colour);
   ImGui::ProgressBar(std::min(frac, 1.0f), ImVec2(ImGui::GetFontSize() * 24, 0), label.c_str());
   ImGui::PopStyleColor();
 }
@@ -2440,28 +2440,28 @@ void App::spacePanel() {
     if (spaceRunning_) ImGui::TextDisabled("%s", T("Measuring..."));
     if (!spaceNote_.empty()) ImGui::TextWrapped("%s", spaceNote_.c_str());
     if (elfSpace_) {
-      int warn = project_ ? project_->spaceWarnPercent : 90;
-      auto& e = *elfSpace_;
-      ImGui::SeparatorText(F("ROM ({0} bytes)", {std::to_string(e.fileSize)}).c_str());
-      const std::pair<const char*, long> parts[] = {{N_("Code"), e.code}, {N_("Code in RAM (.RamFunc)"), e.ramCode},
-                                                    {N_("Constants"), e.constants}, {N_("Variables with a value"), e.data},
-                                                    {N_("Zeroed variables"), e.bss}};
+      int warnPercent = project_ ? project_->spaceWarnPercent : 90;
+      auto& elfReport = *elfSpace_;
+      ImGui::SeparatorText(F("ROM ({0} bytes)", {std::to_string(elfReport.fileSize)}).c_str());
+      const std::pair<const char*, long> parts[] = {{N_("Code"), elfReport.code}, {N_("Code in RAM (.RamFunc)"), elfReport.ramCode},
+                                                    {N_("Constants"), elfReport.constants}, {N_("Variables with a value"), elfReport.data},
+                                                    {N_("Zeroed variables"), elfReport.bss}};
       if (ImGui::BeginTable("elfparts", 2, ImGuiTableFlags_SizingFixedFit)) {
-        for (auto& [name, n] : parts) {
+        for (auto& [name, byteCount] : parts) {
           ImGui::TableNextRow();
           ImGui::TableNextColumn();
           ImGui::TextUnformatted(T(name));
           ImGui::TableNextColumn();
-          ImGui::Text("%s", F("{0} bytes", {std::to_string(n)}).c_str());
+          ImGui::Text("%s", F("{0} bytes", {std::to_string(byteCount)}).c_str());
         }
         ImGui::EndTable();
       }
       ImGui::SeparatorText(T("Chameleon Cart (STM32G070RB)"));
-      SpaceReport::Area fl{e.flash.name, e.flash.used, e.flash.size, true, ""}, ra{e.ram.name, e.ram.used, e.ram.size, true, ""};
-      spaceBar(fl, warn);
-      spaceBar(ra, warn);
+      SpaceReport::Area flashArea{elfReport.flash.name, elfReport.flash.used, elfReport.flash.size, true, ""}, ramArea{elfReport.ram.name, elfReport.ram.used, elfReport.ram.size, true, ""};
+      spaceBar(flashArea, warnPercent);
+      spaceBar(ramArea, warnPercent);
       ImGui::PushTextWrapPos(0);
-      if (e.exact)
+      if (elfReport.exact)
         ImGui::TextDisabled("%s", T("Measured on the Chameleon image (make chameleon), firmware included."));
       else
         ImGui::TextDisabled("%s", F("Estimate: the game plus about {0} bytes of flash and {1} of RAM for the firmware. Build the Chameleon image (make chameleon) for the exact figures.",
@@ -2472,16 +2472,16 @@ void App::spacePanel() {
     } else if (!space_) {
       if (!spaceRunning_ && spaceNote_.empty()) ImGui::TextDisabled("%s", T("Build the project (F7) to see the space used."));
     } else {
-      int warn = project_ ? project_->spaceWarnPercent : 90;
+      int warnPercent = project_ ? project_->spaceWarnPercent : 90;
       ImGui::SeparatorText(F("ROM ({0} bytes)", {std::to_string(space_->romFileSize)}).c_str());
-      for (auto& b : space_->banks) spaceBar(b, warn);
+      for (auto& bank : space_->banks) spaceBar(bank, warnPercent);
       ImGui::SeparatorText(T("RAM"));
-      spaceBar(space_->ram, warn);
+      spaceBar(space_->ram, warnPercent);
       if (space_->ram.measured)
         ImGui::TextDisabled("%s", F("{0} bytes above the variables for the stack (reserve: {1}).",
                                      {std::to_string(space_->stackRoom), std::to_string(project_ ? project_->stackReserve : 8)})
                                       .c_str());
-      if (space_->cartRam) spaceBar(*space_->cartRam, warn);
+      if (space_->cartRam) spaceBar(*space_->cartRam, warnPercent);
     }
   }
   ImGui::End();
@@ -2499,21 +2499,21 @@ static void provenance(const KnowledgeBase& kb, const std::vector<std::string>& 
   if (sources.empty()) return;
   ImGui::SeparatorText(T("Sources"));
   for (auto& id : sources) {
-    const Source* src = kb.source(id);
+    const Source* source = kb.source(id);
     ImGui::Bullet();
-    if (!src) {
+    if (!source) {
       ImGui::TextDisabled("%s", id.c_str());
       continue;
     }
-    std::string label = src->title + (src->author.empty() ? "" : " (" + src->author + ")");
-    if (src->url.rfind("http", 0) == 0) ImGui::TextLinkOpenURL(label.c_str(), src->url.c_str());
+    std::string label = source->title + (source->author.empty() ? "" : " (" + source->author + ")");
+    if (source->url.rfind("http", 0) == 0) ImGui::TextLinkOpenURL(label.c_str(), source->url.c_str());
     else ImGui::TextWrapped("%s", label.c_str());
   }
 }
 
-static void bullet(const std::string& s) {
+static void bullet(const std::string& text) {
   ImGui::Bullet();
-  ImGui::TextWrapped("%s", s.c_str());
+  ImGui::TextWrapped("%s", text.c_str());
 }
 
 void App::docsPanel() {
@@ -2528,8 +2528,8 @@ void App::docsPanel() {
   focusDocs_ = false;
   ImGui::SetNextItemWidth(-1);
   ImGui::InputTextWithHint("##q", T("Search"), &docQuery_);
-  std::string q = upper(docQuery_);
-  auto match = [&](const std::string& s) { return q.empty() || upper(s).find(q) != std::string::npos; };
+  std::string query = upper(docQuery_);
+  auto match = [&](const std::string& text) { return query.empty() || upper(text).find(query) != std::string::npos; };
 
   ImGui::BeginChild("list", ImVec2(0, ImGui::GetContentRegionAvail().y * 0.35f), ImGuiChildFlags_Borders | ImGuiChildFlags_ResizeY);
   auto item = [&](const std::string& id, const std::string& label, ImVec4 color) {
@@ -2549,13 +2549,13 @@ void App::docsPanel() {
   ImGui::SetNextItemOpen(true, ImGuiCond_Once);
   if (ImGui::TreeNode(T("Instructions"))) {
     const char* groups[] = {N_("Legal"), N_("Illegal (stable)"), N_("Illegal (unstable)")};
-    for (int g = 0; g < 3; g++) {
-      if (ImGui::TreeNodeEx(T(groups[g]), g == 0 ? ImGuiTreeNodeFlags_DefaultOpen : 0)) {
-        for (auto& [mn, in] : kb_.instructions()) {
-          bool stable = in.opcodes.empty() || in.opcodes[0]->stable;
-          int grp = !in.illegal ? 0 : stable ? 1 : 2;
-          if (grp != g || !(match(mn) || match(in.summary))) continue;
-          item("I:" + mn, mn + "  " + in.summary, g == 0 ? legal : g == 1 ? illegal : unstable);
+    for (int groupIndex = 0; groupIndex < 3; groupIndex++) {
+      if (ImGui::TreeNodeEx(T(groups[groupIndex]), groupIndex == 0 ? ImGuiTreeNodeFlags_DefaultOpen : 0)) {
+        for (auto& [mnemonic, instruction] : kb_.instructions()) {
+          bool stable = instruction.opcodes.empty() || instruction.opcodes[0]->stable;
+          int instructionGroup = !instruction.illegal ? 0 : stable ? 1 : 2;
+          if (instructionGroup != groupIndex || !(match(mnemonic) || match(instruction.summary))) continue;
+          item("I:" + mnemonic, mnemonic + "  " + instruction.summary, groupIndex == 0 ? legal : groupIndex == 1 ? illegal : unstable);
         }
         ImGui::TreePop();
       }
@@ -2563,24 +2563,24 @@ void App::docsPanel() {
     ImGui::TreePop();
   }
   if (ImGui::TreeNode(T("Registers"))) {
-    for (auto& r : kb_.registers())
-      if (match(r.name) || match(r.summary)) item("R:" + r.name, r.name + "  " + r.address + "  " + r.summary, plain);
+    for (auto& registerEntry : kb_.registers())
+      if (match(registerEntry.name) || match(registerEntry.summary)) item("R:" + registerEntry.name, registerEntry.name + "  " + registerEntry.address + "  " + registerEntry.summary, plain);
     ImGui::TreePop();
   }
   if (ImGui::TreeNode(T("Cartridge formats"))) {
-    for (auto& [cat, title] : formatCategories()) {
-      std::vector<const CartFormat*> in;
-      for (auto& f : kb_.formats())
-        if (f.category == cat && (match(f.id) || match(f.name))) in.push_back(&f);
-      if (in.empty()) continue;
-      std::sort(in.begin(), in.end(), [](auto* a, auto* b) { return naturalLess(a->name, b->name); });
-      ImGui::SeparatorText(title.c_str());
-      for (auto* f : in) item("F:" + f->id, f->id + "  " + f->name, plain);
+    for (auto& [category, categoryTitle] : formatCategories()) {
+      std::vector<const CartFormat*> categoryFormats;
+      for (auto& cartFormat : kb_.formats())
+        if (cartFormat.category == category && (match(cartFormat.id) || match(cartFormat.name))) categoryFormats.push_back(&cartFormat);
+      if (categoryFormats.empty()) continue;
+      std::sort(categoryFormats.begin(), categoryFormats.end(), [](auto* left, auto* right) { return naturalLess(left->name, right->name); });
+      ImGui::SeparatorText(categoryTitle.c_str());
+      for (auto* cartFormat : categoryFormats) item("F:" + cartFormat->id, cartFormat->id + "  " + cartFormat->name, plain);
     }
     ImGui::TreePop();
   }
   if (ImGui::TreeNode(T("TV standards"))) {
-    for (auto& t : kb_.tvStandards()) item("T:" + t.id, t.id, plain);
+    for (auto& tvStandard : kb_.tvStandards()) item("T:" + tvStandard.id, tvStandard.id, plain);
     ImGui::TreePop();
   }
   ImGui::TreePop();
@@ -2597,22 +2597,22 @@ void App::docsPanel() {
     docTopic_ = topic;
   }
   if (topic.rfind("I:", 0) == 0) {
-    if (const Instruction* in = kb_.instruction(topic.substr(2))) {
-      bool stable = in->opcodes.empty() || in->opcodes[0]->stable;
+    if (const Instruction* instruction = kb_.instruction(topic.substr(2))) {
+      bool stable = instruction->opcodes.empty() || instruction->opcodes[0]->stable;
       ImGui::PushFont(mono_);
-      ImGui::TextColored(!in->illegal ? legal : stable ? illegal : unstable, "%s", in->mnemonic.c_str());
+      ImGui::TextColored(!instruction->illegal ? legal : stable ? illegal : unstable, "%s", instruction->mnemonic.c_str());
       ImGui::PopFont();
       ImGui::SameLine();
-      ImGui::TextUnformatted(in->summary.c_str());
-      if (in->illegal) ImGui::TextColored(stable ? illegal : unstable, "%s", stable ? T("Illegal (stable)") : T("Illegal (unstable)"));
-      if (!in->flags.empty()) ImGui::Text("%s: %s", T("Flags"), in->flags.c_str());
-      unverifiedNotice(in->verified);
-      if (!in->aliases.empty()) {
-        std::string a;
-        for (auto& x : in->aliases) a += (a.empty() ? "" : ", ") + x;
-        ImGui::TextDisabled("%s", F("Also known as: {0}", {a}).c_str());
+      ImGui::TextUnformatted(instruction->summary.c_str());
+      if (instruction->illegal) ImGui::TextColored(stable ? illegal : unstable, "%s", stable ? T("Illegal (stable)") : T("Illegal (unstable)"));
+      if (!instruction->flags.empty()) ImGui::Text("%s: %s", T("Flags"), instruction->flags.c_str());
+      unverifiedNotice(instruction->verified);
+      if (!instruction->aliases.empty()) {
+        std::string aliasText;
+        for (auto& alias : instruction->aliases) aliasText += (aliasText.empty() ? "" : ", ") + alias;
+        ImGui::TextDisabled("%s", F("Also known as: {0}", {aliasText}).c_str());
       }
-      ImGui::TextWrapped("%s", in->description.c_str());
+      ImGui::TextWrapped("%s", instruction->description.c_str());
       if (ImGui::BeginTable("ops", 5, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_SizingFixedFit)) {
         ImGui::TableSetupColumn(T("Mode"));
         ImGui::TableSetupColumn(T("Opcode"));
@@ -2620,30 +2620,30 @@ void App::docsPanel() {
         ImGui::TableSetupColumn(T("Cycles"));
         ImGui::TableSetupColumn("");
         ImGui::TableHeadersRow();
-        for (auto* op : in->opcodes) {
+        for (auto* opcode : instruction->opcodes) {
           ImGui::TableNextRow();
           ImGui::TableNextColumn();
           ImGui::PushFont(mono_);
-          std::string syn = in->mnemonic;
-          auto& modes = op->mode;
+          std::string assembly = instruction->mnemonic;
+          auto& modes = opcode->mode;
           static const std::map<std::string, std::string> syntax = {
               {"imp", ""}, {"acc", " A"}, {"imm", " #$nn"}, {"zp", " $nn"}, {"zpx", " $nn,X"}, {"zpy", " $nn,Y"},
               {"abs", " $nnnn"}, {"absx", " $nnnn,X"}, {"absy", " $nnnn,Y"}, {"ind", " ($nnnn)"},
               {"indx", " ($nn,X)"}, {"indy", " ($nn),Y"}, {"rel", " label"}};
-          auto it = syntax.find(modes);
-          ImGui::TextUnformatted((syn + (it != syntax.end() ? it->second : "")).c_str());
+          auto found = syntax.find(modes);
+          ImGui::TextUnformatted((assembly + (found != syntax.end() ? found->second : "")).c_str());
           ImGui::TableNextColumn();
-          ImGui::Text("$%02X", op->code);
+          ImGui::Text("$%02X", opcode->code);
           ImGui::TableNextColumn();
-          ImGui::Text("%d", op->bytes);
+          ImGui::Text("%d", opcode->bytes);
           ImGui::TableNextColumn();
-          if (op->branch) ImGui::Text("%d (+1/+2)", op->cycles);
-          else if (op->pagePenalty) ImGui::Text("%d (+1)", op->cycles);
-          else ImGui::Text("%d", op->cycles);
+          if (opcode->branch) ImGui::Text("%d (+1/+2)", opcode->cycles);
+          else if (opcode->pagePenalty) ImGui::Text("%d (+1)", opcode->cycles);
+          else ImGui::Text("%d", opcode->cycles);
           ImGui::PopFont();
           ImGui::TableNextColumn();
-          if (op->illegal) ImGui::TextColored(op->stable ? illegal : unstable, "%s", op->stable ? T("illegal") : T("unstable"));
-          if (!op->dasm) {
+          if (opcode->illegal) ImGui::TextColored(opcode->stable ? illegal : unstable, "%s", opcode->stable ? T("illegal") : T("unstable"));
+          if (!opcode->dasm) {
             ImGui::SameLine();
             ImGui::TextDisabled("%s", T(".byte only"));
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", T("DASM has no mnemonic for this opcode: write it with .byte"));
@@ -2652,70 +2652,70 @@ void App::docsPanel() {
         ImGui::EndTable();
       }
       ImGui::TextDisabled("%s", T("(+1) page crossing; branches: +1 taken, +2 taken to another page"));
-      provenance(kb_, in->sources);
+      provenance(kb_, instruction->sources);
     }
   } else if (topic.rfind("R:", 0) == 0) {
-    if (const Register* r = kb_.reg(topic.substr(2))) {
+    if (const Register* reg = kb_.reg(topic.substr(2))) {
       ImGui::PushFont(mono_);
-      ImGui::TextColored(theme::colv(theme::Role::MsgName), "%s", r->name.c_str());
+      ImGui::TextColored(theme::colv(theme::Role::MsgName), "%s", reg->name.c_str());
       ImGui::PopFont();
       ImGui::SameLine();
-      ImGui::Text("%s %s  %s  bits %s", r->chip.c_str(), r->address.c_str(), r->access == "R" ? T("read") : T("write"), r->bits.c_str());
-      ImGui::TextWrapped("%s", r->summary.c_str());
-      unverifiedNotice(r->verified);
+      ImGui::Text("%s %s  %s  bits %s", reg->chip.c_str(), reg->address.c_str(), reg->access == "R" ? T("read") : T("write"), reg->bits.c_str());
+      ImGui::TextWrapped("%s", reg->summary.c_str());
+      unverifiedNotice(reg->verified);
       ImGui::Separator();
-      ImGui::TextWrapped("%s", r->description.c_str());
-      if (!r->timing.empty()) {
+      ImGui::TextWrapped("%s", reg->description.c_str());
+      if (!reg->timing.empty()) {
         ImGui::SeparatorText(T("Timing"));
-        ImGui::TextWrapped("%s", r->timing.c_str());
+        ImGui::TextWrapped("%s", reg->timing.c_str());
       }
-      if (!r->issues.empty()) {
+      if (!reg->issues.empty()) {
         ImGui::SeparatorText(T("Known issues"));
-        for (auto& i : r->issues) bullet(i);
+        for (auto& issue : reg->issues) bullet(issue);
       }
-      provenance(kb_, r->sources);
-      if (!r->example.empty()) {
+      provenance(kb_, reg->sources);
+      if (!reg->example.empty()) {
         ImGui::SeparatorText(T("Example"));
         ImGui::PushFont(mono_);
-        ImGui::TextUnformatted(r->example.c_str());
+        ImGui::TextUnformatted(reg->example.c_str());
         ImGui::PopFont();
       }
     }
   } else if (topic.rfind("F:", 0) == 0) {
-    if (const CartFormat* f = kb_.format(topic.substr(2))) {
-      ImGui::Text("%s - %s", f->id.c_str(), f->name.c_str());
-      unverifiedNotice(f->verified);
-      ImGui::Text("%s: %s", T("Size"), f->size.c_str());
-      if (!f->ram.empty()) ImGui::TextWrapped("RAM: %s", f->ram.c_str());
-      ImGui::TextWrapped("%s", f->description.c_str());
-      if (!f->hotspots.empty()) {
+    if (const CartFormat* cartFormat = kb_.format(topic.substr(2))) {
+      ImGui::Text("%s - %s", cartFormat->id.c_str(), cartFormat->name.c_str());
+      unverifiedNotice(cartFormat->verified);
+      ImGui::Text("%s: %s", T("Size"), cartFormat->size.c_str());
+      if (!cartFormat->ram.empty()) ImGui::TextWrapped("RAM: %s", cartFormat->ram.c_str());
+      ImGui::TextWrapped("%s", cartFormat->description.c_str());
+      if (!cartFormat->hotspots.empty()) {
         ImGui::SeparatorText(T("Hotspots"));
-        for (auto& h : f->hotspots) bullet(h);
+        for (auto& hotspot : cartFormat->hotspots) bullet(hotspot);
       }
-      if (!f->detection.empty()) {
+      if (!cartFormat->detection.empty()) {
         ImGui::SeparatorText(T("Detection"));
-        ImGui::TextWrapped("%s", f->detection.c_str());
+        ImGui::TextWrapped("%s", cartFormat->detection.c_str());
       }
       ImGui::SeparatorText(T("Emulator"));
-      ImGui::Text("Stella  -bs %s", f->stella.empty() ? "?" : f->stella.c_str());
-      ImGui::Text("Gopher2600 -mapping %s", f->gopher2600.empty() ? "?" : f->gopher2600.c_str());
-      if (!f->issues.empty()) {
+      ImGui::Text("Stella  -bs %s", cartFormat->stella.empty() ? "?" : cartFormat->stella.c_str());
+      ImGui::Text("Gopher2600 -mapping %s", cartFormat->gopher2600.empty() ? "?" : cartFormat->gopher2600.c_str());
+      if (!cartFormat->issues.empty()) {
         ImGui::SeparatorText(T("Known issues"));
-        for (auto& i : f->issues) bullet(i);
+        for (auto& issue : cartFormat->issues) bullet(issue);
       }
-      provenance(kb_, f->sources);
+      provenance(kb_, cartFormat->sources);
     }
   } else if (topic.rfind("T:", 0) == 0) {
-    if (const TvStandard* t = kb_.tv(topic.substr(2))) {
-      ImGui::Text("%s", t->id.c_str());
+    if (const TvStandard* tvStandard = kb_.tv(topic.substr(2))) {
+      ImGui::Text("%s", tvStandard->id.c_str());
       ImGui::TextUnformatted(F("{0} lines: VSYNC {1}, VBLANK {2}, visible {3}, overscan {4}",
-                               {std::to_string(t->linesTotal), std::to_string(t->vsync), std::to_string(t->vblank),
-                                std::to_string(t->visible), std::to_string(t->overscan)}).c_str());
-      ImGui::Text("%s Hz", t->fps.c_str());
-      unverifiedNotice(t->verified);
-      ImGui::TextWrapped("%s", t->palette.c_str());
-      for (auto& n : t->notes) bullet(n);
-      provenance(kb_, t->sources);
+                               {std::to_string(tvStandard->linesTotal), std::to_string(tvStandard->vsync), std::to_string(tvStandard->vblank),
+                                std::to_string(tvStandard->visible), std::to_string(tvStandard->overscan)}).c_str());
+      ImGui::Text("%s Hz", tvStandard->fps.c_str());
+      unverifiedNotice(tvStandard->verified);
+      ImGui::TextWrapped("%s", tvStandard->palette.c_str());
+      for (auto& note : tvStandard->notes) bullet(note);
+      provenance(kb_, tvStandard->sources);
     }
   } else {
     ImGui::PushFont(mono_);
@@ -2724,9 +2724,9 @@ void App::docsPanel() {
     ImGui::SameLine();
     ImGui::TextUnformatted(T("The Atari 2600: general notes"));
     ImGui::SeparatorText(T("6507 CPU"));
-    for (auto& n : kb_.cpuNotes()) bullet(n);
+    for (auto& note : kb_.cpuNotes()) bullet(note);
     ImGui::SeparatorText("TIA");
-    for (auto& n : kb_.tiaNotes()) bullet(n);
+    for (auto& note : kb_.tiaNotes()) bullet(note);
   }
   ImGui::EndChild();
   ImGui::End();
@@ -2778,13 +2778,13 @@ void App::newProjectDialog() {
       if (ImGui::BeginCombo("##tv", tvLabel(npTvId_).c_str())) {
         for (auto& tv : ids) {
           if (tv == "AUTO") ImGui::Separator();
-          bool sel = tv == npTvId_;
+          bool selected = tv == npTvId_;
           std::string label = tvLabel(tv);
           if (tv != "AUTO" && !tvSupported("gopher2600", tv)) label += "  " + F("(not in {0})", {"Gopher2600"});  // the default emulator
-          if (ImGui::Selectable(label.c_str(), sel)) npTvId_ = tv;
+          if (ImGui::Selectable(label.c_str(), selected)) npTvId_ = tv;
           if (ImGui::IsItemHovered()) {
             if (tv == "AUTO") ImGui::SetTooltip("%s", T(kTvMultipleHelp));
-            else if (const TvStandard* t = kb_.tv(tv)) ImGui::SetTooltip("%s", F("{0} lines, {1} Hz", {std::to_string(t->linesTotal), t->fps}).c_str());
+            else if (const TvStandard* tvStandard = kb_.tv(tv)) ImGui::SetTooltip("%s", F("{0} lines, {1} Hz", {std::to_string(tvStandard->linesTotal), tvStandard->fps}).c_str());
           }
         }
         ImGui::EndCombo();
@@ -2793,7 +2793,7 @@ void App::newProjectDialog() {
     npExample_ = std::clamp(npExample_, 0, (int)examples.size());
     if (!examples.empty()) {
       std::vector<const char*> names = {T("Empty project")};
-      for (auto& e : examples) names.push_back(T(e.second));
+      for (auto& exampleEntry : examples) names.push_back(T(exampleEntry.second));
       row(T("Start from"));
       ImGui::Combo("##example", &npExample_, names.data(), (int)names.size());
     }
@@ -2805,11 +2805,11 @@ void App::newProjectDialog() {
   if (!error.empty()) ImGui::TextColored(theme::colv(theme::Role::MsgError), "%s", error.c_str());
   ImGui::Dummy(ImVec2(0, 6 * em));
   if (theme::primaryButton(T("Create"))) {
-    Project p;
+    Project created;
     error.clear();
     std::string example = npExample_ > 0 && npExample_ <= (int)examples.size() ? examples[npExample_ - 1].first : "";
-    if (Project::create(target.string(), npName_, languageFromId(kLangIds[npLang_]), npTvId_, &p, &error, example)) {
-      openProject(p.file);
+    if (Project::create(target.string(), npName_, languageFromId(kLangIds[npLang_]), npTvId_, &created, &error, example)) {
+      openProject(created.file);
       ImGui::CloseCurrentPopup();
     }
   }
@@ -2832,38 +2832,38 @@ void App::toolsDialog() {
   bool open = true;
   if (!theme::beginModal(title, &open)) return;
   float em = ImGui::GetFontSize() / 15.0f;
-  for (auto& g : Toolchain::groups()) {
-    auto list = tools_.inGroup(g);
+  for (auto& group : Toolchain::groups()) {
+    auto list = tools_.inGroup(group);
     if (list.empty()) continue;
-    theme::dialogHeading(T(g.title));
-    if (!ImGui::BeginTable(g.title, 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp)) continue;
+    theme::dialogHeading(T(group.title));
+    if (!ImGui::BeginTable(group.title, 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp)) continue;
     ImGui::TableSetupColumn("name", ImGuiTableColumnFlags_WidthFixed, 180 * em);
     ImGui::TableSetupColumn("path");
     ImGui::TableSetupColumn("buttons", ImGuiTableColumnFlags_WidthFixed, 230 * em);
-    for (Tool* tp : list) {
-      Tool& t = *tp;
-      ImGui::PushID(t.id.c_str());
+    for (Tool* toolPointer : list) {
+      Tool& tool = *toolPointer;
+      ImGui::PushID(tool.id.c_str());
       ImGui::TableNextRow();
       ImGui::TableNextColumn();
-      ImGui::TextUnformatted(t.name.c_str());
-      ImGui::TextDisabled("%s", T(t.role.c_str()));
+      ImGui::TextUnformatted(tool.name.c_str());
+      ImGui::TextDisabled("%s", T(tool.role.c_str()));
       ImGui::TableNextColumn();
-      if (t.found()) {
-        ImGui::TextColored(theme::colv(theme::Role::MsgOk), "%s", t.path.c_str());
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", t.path.c_str());  // in full, when the column cuts it
+      if (tool.found()) {
+        ImGui::TextColored(theme::colv(theme::Role::MsgOk), "%s", tool.path.c_str());
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tool.path.c_str());  // in full, when the column cuts it
       }
       else {
         ImGui::TextColored(theme::colv(theme::Role::MsgError), "%s", T("not found"));
-        ImGui::TextWrapped("%s", T(t.note.c_str()));
+        ImGui::TextWrapped("%s", T(tool.note.c_str()));
       }
       ImGui::TableNextColumn();
       if (theme::dialogButton(T("Choose..."), ImVec2(0, 0), true))
-        SDL_ShowOpenFileDialog(dialogCallback, new DialogCtx{this, "tool:" + t.id}, window_, nullptr, 0, nullptr, false);
+        SDL_ShowOpenFileDialog(dialogCallback, new DialogCtx{this, "tool:" + tool.id}, window_, nullptr, 0, nullptr, false);
       ImGui::SameLine();
-      if (theme::dialogButton(T("Download page"), ImVec2(0, 0), true)) SDL_OpenURL(t.homepage.c_str());
-      if (!t.userPath.empty()) {
+      if (theme::dialogButton(T("Download page"), ImVec2(0, 0), true)) SDL_OpenURL(tool.homepage.c_str());
+      if (!tool.userPath.empty()) {
         ImGui::SameLine();
-        if (theme::dialogButton("x", ImVec2(0, 0), true)) t.userPath.clear(), tools_.detect(), saveSettings();
+        if (theme::dialogButton("x", ImVec2(0, 0), true)) tool.userPath.clear(), tools_.detect(), saveSettings();
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", T("Forget the chosen file and detect it again"));
       }
       ImGui::PopID();
@@ -2882,15 +2882,15 @@ void App::toolsDialog() {
 // A tool the project needs is missing: say what it is, how to get it, and let the user
 // point at it; then carry on with what was asked (build or run).
 void App::askForTool(const std::string& id, const std::string& why, std::function<void()> then) {
-  Tool* t = tools_.get(id);
-  if (!t) return;
+  Tool* tool = tools_.get(id);
+  if (!tool) return;
   missingTool_ = id;
   missingWhy_ = why;
   missingThen_ = std::move(then);
   showMissingTool_ = true;
-  std::string msg = F("{0} not found: it is needed to {1}.", {t->name, why});
-  output_ += msg + "\n";
-  lastStatus_ = msg;
+  std::string message = F("{0} not found: it is needed to {1}.", {tool->name, why});
+  output_ += message + "\n";
+  lastStatus_ = message;
   outputScroll_ = true;
 }
 
@@ -2899,37 +2899,37 @@ void App::missingToolDialog() {
     ImGui::OpenPopup("###missingtool");
     showMissingTool_ = false;
   }
-  Tool* t = tools_.get(missingTool_);
-  if (!t) return;
+  Tool* tool = tools_.get(missingTool_);
+  if (!tool) return;
   char title[128];
-  snprintf(title, sizeof title, "%s###missingtool", (t->found() ? F("{0} found", {t->name}) : F("{0} not found", {t->name})).c_str());
+  snprintf(title, sizeof title, "%s###missingtool", (tool->found() ? F("{0} found", {tool->name}) : F("{0} not found", {tool->name})).c_str());
   float em = ImGui::GetFontSize();
   ImGui::SetNextWindowSize(ImVec2(em * 36, 0), ImGuiCond_Appearing);
   if (!theme::beginModal(title, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) return;
   ImGui::PushTextWrapPos(em * 34);
-  if (!t->found()) {
-    ImGui::TextUnformatted(F("VCSIDE needs {0} ({1}) to {2}, and did not find it on this computer.", {t->name, T(t->role.c_str()), missingWhy_}).c_str());
+  if (!tool->found()) {
+    ImGui::TextUnformatted(F("VCSIDE needs {0} ({1}) to {2}, and did not find it on this computer.", {tool->name, T(tool->role.c_str()), missingWhy_}).c_str());
     ImGui::Spacing();
-    ImGui::TextUnformatted(T(t->note.c_str()));
+    ImGui::TextUnformatted(T(tool->note.c_str()));
     ImGui::Spacing();
     ImGui::TextDisabled("%s", F("Once installed, VCSIDE finds it in PATH, in the usual folders, or in {0}. You can also choose the file yourself.",
                                 {Toolchain::toolsDir()}).c_str());
   } else {
-    ImGui::TextColored(theme::colv(theme::Role::MsgOk), "%s", F("Found: {0}", {t->path}).c_str());
+    ImGui::TextColored(theme::colv(theme::Role::MsgOk), "%s", F("Found: {0}", {tool->path}).c_str());
   }
   ImGui::PopTextWrapPos();
   ImGui::Spacing();
   bool close = false;
-  if (t->found()) {
+  if (tool->found()) {
     if (theme::primaryButton(T("Continue"))) {
       close = true;
       if (missingThen_) missingThen_();
     }
   } else {
-    if (theme::dialogButton(T("Open download page"))) SDL_OpenURL(t->homepage.c_str());
+    if (theme::dialogButton(T("Open download page"))) SDL_OpenURL(tool->homepage.c_str());
     ImGui::SameLine();
     if (theme::dialogButton(T("Choose the file...")))
-      SDL_ShowOpenFileDialog(dialogCallback, new DialogCtx{this, "tool:" + t->id}, window_, nullptr, 0, nullptr, false);
+      SDL_ShowOpenFileDialog(dialogCallback, new DialogCtx{this, "tool:" + tool->id}, window_, nullptr, 0, nullptr, false);
     ImGui::SameLine();
     if (theme::dialogButton(T("Search again"))) tools_.detect();
   }
@@ -2946,15 +2946,15 @@ void App::missingToolDialog() {
 unsigned App::iconTexture() {
   if (!aboutTexture_) {
     if (SDL_Surface* icon = loadIconSurface()) {
-      GLuint tex = 0;
-      glGenTextures(1, &tex);
-      glBindTexture(GL_TEXTURE_2D, tex);
+      GLuint texture = 0;
+      glGenTextures(1, &texture);
+      glBindTexture(GL_TEXTURE_2D, texture);
       glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
       glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
       glPixelStorei(GL_UNPACK_ROW_LENGTH, icon->pitch / 4);
       glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, icon->w, icon->h, 0, GL_RGBA, GL_UNSIGNED_BYTE, icon->pixels);
       glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
-      aboutTexture_ = tex;
+      aboutTexture_ = texture;
       SDL_DestroySurface(icon);
     }
   }
@@ -2976,7 +2976,7 @@ void App::aboutDialog() {
   ImGui::SetNextWindowSize(ImVec2(em * 44, em * 38), ImGuiCond_Appearing);
   if (!theme::beginModal(title, nullptr, ImGuiWindowFlags_NoSavedSettings)) return;
   if (!about_) about_ = aboutInfo(kb_, tools_);
-  const AboutInfo& a = *about_;
+  const AboutInfo& info = *about_;
   if (aboutTexture_) {
     ImGui::Image((ImTextureID)(intptr_t)aboutTexture_, ImVec2(em * 6, em * 6));
     ImGui::SameLine(0, em);
@@ -2985,25 +2985,25 @@ void App::aboutDialog() {
   ImGui::SetWindowFontScale(1.6f);
   ImGui::TextUnformatted("VCSIDE");
   ImGui::SetWindowFontScale(1.0f);
-  ImGui::TextUnformatted(F("Version {0}", {a.version}).c_str());
-  ImGui::TextUnformatted(a.tagline.c_str());
-  ImGui::TextDisabled("%s", a.credit.c_str());
-  ImGui::TextDisabled("%s", a.copyright.c_str());
+  ImGui::TextUnformatted(F("Version {0}", {info.version}).c_str());
+  ImGui::TextUnformatted(info.tagline.c_str());
+  ImGui::TextDisabled("%s", info.credit.c_str());
+  ImGui::TextDisabled("%s", info.copyright.c_str());
   ImGui::EndGroup();
   if (!kbError_.empty()) ImGui::TextColored(theme::colv(theme::Role::MsgError), "%s", kbError_.c_str());
   ImGui::Spacing();
   ImGui::BeginChild("credits", ImVec2(0, -ImGui::GetFrameHeightWithSpacing() * 2.2f), ImGuiChildFlags_Borders);
   ImGui::PushTextWrapPos(0);
-  for (auto& sec : a.sections) {
-    ImGui::SeparatorText(sec.title.c_str());
-    if (!sec.note.empty()) ImGui::TextDisabled("%s", sec.note.c_str());
-    for (auto& l : sec.lines) {
-      ImGui::PushID(&l);
-      if (!l.url.empty()) ImGui::TextLinkOpenURL(l.name.c_str(), l.url.c_str());
-      else ImGui::TextUnformatted(l.name.c_str());
-      if (!l.detail.empty()) {
+  for (auto& section : info.sections) {
+    ImGui::SeparatorText(section.title.c_str());
+    if (!section.note.empty()) ImGui::TextDisabled("%s", section.note.c_str());
+    for (auto& line : section.lines) {
+      ImGui::PushID(&line);
+      if (!line.url.empty()) ImGui::TextLinkOpenURL(line.name.c_str(), line.url.c_str());
+      else ImGui::TextUnformatted(line.name.c_str());
+      if (!line.detail.empty()) {
         ImGui::Indent(em);
-        ImGui::TextDisabled("%s", l.detail.c_str());
+        ImGui::TextDisabled("%s", line.detail.c_str());
         ImGui::Unindent(em);
       }
       ImGui::PopID();
@@ -3011,7 +3011,7 @@ void App::aboutDialog() {
   }
   ImGui::PopTextWrapPos();
   ImGui::EndChild();
-  ImGui::TextDisabled("%s", F("Data: {0}", {a.dataDir}).c_str());
+  ImGui::TextDisabled("%s", F("Data: {0}", {info.dataDir}).c_str());
   if (theme::primaryButton(T("Close")) || theme::dialogEscape()) {
     ImGui::CloseCurrentPopup();
     about_.reset();

@@ -15,7 +15,7 @@ namespace vcs {
 static SDL_Process* create(const std::vector<std::string>& args, const std::string& workDir, bool pipe,
                            const EnvVars& vars = {}) {
   std::vector<const char*> argv;
-  for (auto& a : args) argv.push_back(a.c_str());
+  for (auto& arg : args) argv.push_back(arg.c_str());
   argv.push_back(nullptr);
   SDL_PropertiesID props = SDL_CreateProperties();
   SDL_SetPointerProperty(props, SDL_PROP_PROCESS_CREATE_ARGS_POINTER, argv.data());
@@ -25,16 +25,16 @@ static SDL_Process* create(const std::vector<std::string>& args, const std::stri
   // outer quotes and keeps the rest as it is).
   std::string cmdline;
   if (args.size() >= 3) {
-    auto lower = [](std::string s) {
-      for (auto& c : s) c = (char)std::tolower((unsigned char)c);
-      return s;
+    auto lower = [](std::string text) {
+      for (auto& character : text) character = (char)std::tolower((unsigned char)character);
+      return text;
     };
     std::string prog = lower(fs::path(args[0]).filename().string());
     if ((prog == "cmd" || prog == "cmd.exe") && lower(args[1]) == "/c") {
       cmdline = "cmd.exe /c \"";
       for (size_t i = 2; i < args.size(); i++) {
-        bool q = args[i].empty() || args[i].find_first_of(" \t&()^|<>,;=") != std::string::npos;
-        cmdline += (i > 2 ? " " : "") + (q ? "\"" + args[i] + "\"" : args[i]);
+        bool needsQuotes = args[i].empty() || args[i].find_first_of(" \t&()^|<>,;=") != std::string::npos;
+        cmdline += (i > 2 ? " " : "") + (needsQuotes ? "\"" + args[i] + "\"" : args[i]);
       }
       cmdline += "\"";
       SDL_SetStringProperty(props, SDL_PROP_PROCESS_CREATE_CMDLINE_STRING, cmdline.c_str());
@@ -46,11 +46,11 @@ static SDL_Process* create(const std::vector<std::string>& args, const std::stri
 #else
   (void)workDir;
 #endif
-  SDL_Environment* env = nullptr;
+  SDL_Environment* environment = nullptr;
   if (!vars.empty()) {
-    env = SDL_CreateEnvironment(true);  // a copy of ours
-    for (auto& [k, v] : vars) SDL_SetEnvironmentVariable(env, k.c_str(), v.c_str(), true);
-    SDL_SetPointerProperty(props, SDL_PROP_PROCESS_CREATE_ENVIRONMENT_POINTER, env);
+    environment = SDL_CreateEnvironment(true);  // a copy of ours
+    for (auto& [name, value] : vars) SDL_SetEnvironmentVariable(environment, name.c_str(), value.c_str(), true);
+    SDL_SetPointerProperty(props, SDL_PROP_PROCESS_CREATE_ENVIRONMENT_POINTER, environment);
   }
   if (pipe) {
     SDL_SetNumberProperty(props, SDL_PROP_PROCESS_CREATE_STDIN_NUMBER, SDL_PROCESS_STDIO_NULL);
@@ -62,49 +62,49 @@ static SDL_Process* create(const std::vector<std::string>& args, const std::stri
     SDL_SetNumberProperty(props, SDL_PROP_PROCESS_CREATE_STDERR_NUMBER, SDL_PROCESS_STDIO_NULL);
     SDL_SetBooleanProperty(props, SDL_PROP_PROCESS_CREATE_BACKGROUND_BOOLEAN, true);
   }
-  SDL_Process* p = SDL_CreateProcessWithProperties(props);
+  SDL_Process* process = SDL_CreateProcessWithProperties(props);
   SDL_DestroyProperties(props);
-  if (env) SDL_DestroyEnvironment(env);
-  return p;
+  if (environment) SDL_DestroyEnvironment(environment);
+  return process;
 }
 
 Job::~Job() {
   if (thread_.joinable()) thread_.join();
 }
 
-bool Job::start(const std::vector<std::string>& args, const std::string& workDir, const EnvVars& env) {
+bool Job::start(const std::vector<std::string>& args, const std::string& workDir, const EnvVars& environment) {
   if (running_) return false;
   if (thread_.joinable()) thread_.join();
   {
     std::lock_guard<std::mutex> lock(mutex_);
     output_ = "> " + quoteArgs(args) + "\n";
   }
-  SDL_Process* p = create(args, workDir, true, env);
+  SDL_Process* process = create(args, workDir, true, environment);
   started_ = true;
-  if (!p) {
+  if (!process) {
     std::lock_guard<std::mutex> lock(mutex_);
     output_ += std::string("Could not start the process: ") + SDL_GetError() + "\n";
     exitCode_ = -1;
     return false;
   }
   running_ = true;
-  thread_ = std::thread([this, p]() {
-    SDL_IOStream* out = SDL_GetProcessOutput(p);
-    char buf[4096];
+  thread_ = std::thread([this, process]() {
+    SDL_IOStream* stream = SDL_GetProcessOutput(process);
+    char buffer[4096];
     for (;;) {
-      size_t n = out ? SDL_ReadIO(out, buf, sizeof buf) : 0;
-      if (n > 0) {
+      size_t bytesRead = stream ? SDL_ReadIO(stream, buffer, sizeof buffer) : 0;
+      if (bytesRead > 0) {
         std::lock_guard<std::mutex> lock(mutex_);
-        output_.append(buf, n);
-      } else if (!out || SDL_GetIOStatus(out) != SDL_IO_STATUS_NOT_READY) {
+        output_.append(buffer, bytesRead);
+      } else if (!stream || SDL_GetIOStatus(stream) != SDL_IO_STATUS_NOT_READY) {
         break;
       } else {
         SDL_Delay(5);
       }
     }
     int code = -1;
-    SDL_WaitProcess(p, true, &code);
-    SDL_DestroyProcess(p);
+    SDL_WaitProcess(process, true, &code);
+    SDL_DestroyProcess(process);
     exitCode_ = code;
     running_ = false;
   });
@@ -117,19 +117,19 @@ std::string Job::output() {
 }
 
 bool launchDetached(const std::vector<std::string>& args, const std::string& workDir, std::string* error,
-                    const EnvVars& env) {
-  SDL_Process* p = create(args, workDir, false, env);
-  if (!p) {
+                    const EnvVars& environment) {
+  SDL_Process* process = create(args, workDir, false, environment);
+  if (!process) {
     if (error) *error = SDL_GetError();
     return false;
   }
-  SDL_DestroyProcess(p);  // does not kill it
+  SDL_DestroyProcess(process);  // does not kill it
   return true;
 }
 
 bool fileExists(const std::string& path) {
-  std::error_code ec;
-  return !path.empty() && fs::exists(path, ec);
+  std::error_code errorCode;
+  return !path.empty() && fs::exists(path, errorCode);
 }
 
 std::string findInPath(const std::string& name) {
@@ -142,17 +142,17 @@ std::string findInPath(const std::string& name) {
   const char sep = ':';
   std::vector<std::string> exts = {""};
 #endif
-  std::string p = path;
+  std::string pathVariable = path;
   size_t start = 0;
-  while (start <= p.size()) {
-    size_t end = p.find(sep, start);
-    if (end == std::string::npos) end = p.size();
-    std::string dir = p.substr(start, end - start);
+  while (start <= pathVariable.size()) {
+    size_t end = pathVariable.find(sep, start);
+    if (end == std::string::npos) end = pathVariable.size();
+    std::string dir = pathVariable.substr(start, end - start);
     if (!dir.empty())
-      for (auto& e : exts) {
-        fs::path f = fs::path(dir) / (name + e);
-        std::error_code ec;
-        if (fs::is_regular_file(f, ec)) return f.string();
+      for (auto& extension : exts) {
+        fs::path candidate = fs::path(dir) / (name + extension);
+        std::error_code errorCode;
+        if (fs::is_regular_file(candidate, errorCode)) return candidate.string();
       }
     start = end + 1;
   }
@@ -160,13 +160,13 @@ std::string findInPath(const std::string& name) {
 }
 
 std::string quoteArgs(const std::vector<std::string>& args) {
-  std::string s;
-  for (auto& a : args) {
-    if (!s.empty()) s += ' ';
-    if (a.find_first_of(" \t\"") != std::string::npos) s += "\"" + a + "\"";
-    else s += a;
+  std::string joined;
+  for (auto& arg : args) {
+    if (!joined.empty()) joined += ' ';
+    if (arg.find_first_of(" \t\"") != std::string::npos) joined += "\"" + arg + "\"";
+    else joined += arg;
   }
-  return s;
+  return joined;
 }
 
 }  // namespace vcs

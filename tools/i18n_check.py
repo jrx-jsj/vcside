@@ -25,23 +25,23 @@ TERNARY = re.compile(r'\b(?:T|Ts|F|N_)\(\s*[^"();]*\?\s*' + LIT + r'\s*:\s*' + L
 PLACEHOLDER = re.compile(r'\{(\d+)\}')
 
 
-def unescape(s):
-    return bytes(s, "utf-8").decode("unicode_escape").encode("latin-1").decode("utf-8")
+def unescape(literal):
+    return bytes(literal, "utf-8").decode("unicode_escape").encode("latin-1").decode("utf-8")
 
 
 def source_strings():
     found = {}
-    for d, _, files in os.walk(SRC):
-        for f in files:
-            if not f.endswith((".cpp", ".h", ".mm")):
+    for folder, _, files in os.walk(SRC):
+        for file_name in files:
+            if not file_name.endswith((".cpp", ".h", ".mm")):
                 continue
-            path = os.path.join(d, f)
+            path = os.path.join(folder, file_name)
             text = open(path, encoding="utf-8").read()
-            for m in CALL.finditer(text):
-                found.setdefault(unescape(m.group(1)), os.path.relpath(path, ROOT))
-            for m in TERNARY.finditer(text):
-                for g in (1, 2):
-                    found.setdefault(unescape(m.group(g)), os.path.relpath(path, ROOT))
+            for match in CALL.finditer(text):
+                found.setdefault(unescape(match.group(1)), os.path.relpath(path, ROOT))
+            for match in TERNARY.finditer(text):
+                for branch in (1, 2):
+                    found.setdefault(unescape(match.group(branch)), os.path.relpath(path, ROOT))
     found.pop("", None)
     return found
 
@@ -57,31 +57,32 @@ def main():
         sys.argv = [sys.argv[0], "--update"]
     update = "--update" in sys.argv
     status = 0
-    for f in sorted(os.listdir(I18N)):
-        if not f.endswith(".json"):
+    for file_name in sorted(os.listdir(I18N)):
+        if not file_name.endswith(".json"):
             continue
-        path = os.path.join(I18N, f)
-        cat = json.load(open(path, encoding="utf-8"))
-        tr = cat.get("strings", {})
-        missing = [s for s in strings if not tr.get(s)]
-        unused = [s for s in tr if s not in strings]
-        bad = [s for s, t in tr.items() if t and set(PLACEHOLDER.findall(s)) != set(PLACEHOLDER.findall(t))]
+        path = os.path.join(I18N, file_name)
+        catalog = json.load(open(path, encoding="utf-8"))
+        translations = catalog.get("strings", {})
+        missing = [text for text in strings if not translations.get(text)]
+        unused = [text for text in translations if text not in strings]
+        bad = [text for text, translation in translations.items()
+               if translation and set(PLACEHOLDER.findall(text)) != set(PLACEHOLDER.findall(translation))]
         done = len(strings) - len(missing)
-        print(f"{f}: {done}/{len(strings)} translated, {len(missing)} missing, {len(unused)} unused, {len(bad)} with wrong placeholders")
-        for s in bad:
-            print(f"  placeholders differ: {s!r} -> {tr[s]!r}")
+        print(f"{file_name}: {done}/{len(strings)} translated, {len(missing)} missing, {len(unused)} unused, {len(bad)} with wrong placeholders")
+        for text in bad:
+            print(f"  placeholders differ: {text!r} -> {translations[text]!r}")
         if not update:
-            for s in unused:
-                print(f"  unused: {s!r}")
+            for text in unused:
+                print(f"  unused: {text!r}")
             if unused:
                 status = 1
         if bad:
             status = 1
         if update:
-            cat["total"] = len(strings)
-            cat["strings"] = {s: tr.get(s, "") for s in sorted(strings, key=str.lower)}
+            catalog["total"] = len(strings)
+            catalog["strings"] = {text: translations.get(text, "") for text in sorted(strings, key=str.lower)}
             with open(path, "w", encoding="utf-8") as out:
-                json.dump(cat, out, ensure_ascii=False, indent=2)
+                json.dump(catalog, out, ensure_ascii=False, indent=2)
                 out.write("\n")
     return status
 

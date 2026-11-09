@@ -32,7 +32,7 @@ class Toolchain {
   Tool* get(const std::string& id);
   std::vector<Tool>& tools() { return tools_; }
   static const std::vector<ToolGroup>& groups();
-  std::vector<Tool*> inGroup(const ToolGroup& g);
+  std::vector<Tool*> inGroup(const ToolGroup& group);
 
   // ~/.vcside-like folder from SDL_GetPrefPath, where tools can be dropped.
   static std::string toolsDir();
@@ -41,7 +41,7 @@ class Toolchain {
   std::map<std::string, std::string> userPaths() const;
 
  private:
-  std::vector<std::string> candidates(const Tool& t) const;
+  std::vector<std::string> candidates(const Tool& tool) const;
   std::vector<Tool> tools_;
 };
 

@@ -19,9 +19,9 @@ struct MenuItem {
   std::vector<MenuItem> children;  // not empty: a submenu
 
   static MenuItem sep() {
-    MenuItem m;
-    m.separator = true;
-    return m;
+    MenuItem item;
+    item.separator = true;
+    return item;
   }
 };
 
@@ -39,7 +39,7 @@ struct NativeMenuCallbacks {
   std::function<void()> about;     // "About VCSIDE"
 };
 bool nativeMenuAvailable();
-void nativeMenuInstall(const NativeMenuCallbacks& cb);
+void nativeMenuInstall(const NativeMenuCallbacks& callbacks);
 void nativeMenuRefresh();  // after a language change (top-level titles)
 // Actions chosen in the system menu, to run at the start of the next frame.
 std::vector<std::function<void()>> nativeMenuTakeActions();

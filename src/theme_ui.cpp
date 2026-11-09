@@ -31,14 +31,14 @@ bool beginModal(const char* name, bool* open, ImGuiWindowFlags flags) {
   ImGui::PopStyleColor(6);
   if (!shown) return false;
   // the stripes, right under the title band, from border to border
-  ImGuiWindow* w = ImGui::GetCurrentWindow();
-  ImRect bar = w->TitleBarRect();
-  float b = w->WindowBorderSize * 0.5f, h = std::max(3.0f, em(4.5f));
-  ImDrawList* dl = w->DrawList;
-  dl->PushClipRect(w->Rect().Min, w->Rect().Max, false);
-  drawStripes(dl, ImVec2(bar.Min.x + b, bar.Max.y), ImVec2(bar.Max.x - b, bar.Max.y + h * 3));
-  dl->PopClipRect();
-  ImGui::Dummy(ImVec2(0, h * 3 - em(6)));  // the content starts under them
+  ImGuiWindow* window = ImGui::GetCurrentWindow();
+  ImRect bar = window->TitleBarRect();
+  float borderInset = window->WindowBorderSize * 0.5f, stripeHeight = std::max(3.0f, em(4.5f));
+  ImDrawList* drawList = window->DrawList;
+  drawList->PushClipRect(window->Rect().Min, window->Rect().Max, false);
+  drawStripes(drawList, ImVec2(bar.Min.x + borderInset, bar.Max.y), ImVec2(bar.Max.x - borderInset, bar.Max.y + stripeHeight * 3));
+  drawList->PopClipRect();
+  ImGui::Dummy(ImVec2(0, stripeHeight * 3 - em(6)));  // the content starts under them
   return true;
 }
 
@@ -46,11 +46,11 @@ bool dialogEscape() {
   return ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && ImGui::IsKeyPressed(ImGuiKey_Escape, false);
 }
 
-void drawStripes(ImDrawList* dl, const ImVec2& min, const ImVec2& max) {
+void drawStripes(ImDrawList* drawList, const ImVec2& min, const ImVec2& max) {
   Role stripes[3] = {Role::DlgStripe1, Role::DlgStripe2, Role::DlgStripe3};
-  float h = (max.y - min.y) / 3;
+  float stripeHeight = (max.y - min.y) / 3;
   for (int i = 0; i < 3; i++)
-    dl->AddRectFilled(ImVec2(min.x, min.y + h * i), ImVec2(max.x, i == 2 ? max.y : min.y + h * (i + 1)), col(stripes[i]));
+    drawList->AddRectFilled(ImVec2(min.x, min.y + stripeHeight * i), ImVec2(max.x, i == 2 ? max.y : min.y + stripeHeight * (i + 1)), col(stripes[i]));
 }
 
 float stripesHeight() { return std::max(3.0f, std::round(em(3) * 3)); }
@@ -61,10 +61,10 @@ bool primaryButton(const char* label, const ImVec2& size) {
   ImGui::PushStyleColor(ImGuiCol_ButtonActive, col(Role::DlgPrimaryHover));
   ImGui::PushStyleColor(ImGuiCol_Text, col(Role::DlgPrimaryText));
   ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(em(14), ImGui::GetStyle().FramePadding.y));  // as tall as the others
-  bool r = ImGui::Button(label, size);
+  bool pressed = ImGui::Button(label, size);
   ImGui::PopStyleVar();
   ImGui::PopStyleColor(4);
-  return r;
+  return pressed;
 }
 
 bool dialogButton(const char* label, const ImVec2& size, bool small) {
@@ -73,89 +73,89 @@ bool dialogButton(const char* label, const ImVec2& size, bool small) {
   ImGui::PushStyleColor(ImGuiCol_ButtonActive, col(Role::DlgButtonHover));
   ImGui::PushStyleColor(ImGuiCol_Text, col(Role::DlgButtonText));
   ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(em(small ? 8 : 14), small ? 0.0f : ImGui::GetStyle().FramePadding.y));
-  bool r = small ? ImGui::SmallButton(label) : ImGui::Button(label, size);
+  bool pressed = small ? ImGui::SmallButton(label) : ImGui::Button(label, size);
   ImGui::PopStyleVar();
   ImGui::PopStyleColor(4);
-  return r;
+  return pressed;
 }
 
 void dialogHeading(const char* text) {
-  ImVec2 p = ImGui::GetCursorScreenPos();
-  float w = ImGui::GetContentRegionAvail().x, pad = em(5), line = std::max(2.0f, em(3));
-  float h = ImGui::GetTextLineHeight() + pad * 2;
-  ImDrawList* dl = ImGui::GetWindowDrawList();
-  dl->AddRectFilled(p, ImVec2(p.x + w, p.y + h), col(Role::DlgTitle));
-  dl->AddRectFilled(ImVec2(p.x, p.y + h), ImVec2(p.x + w, p.y + h + line), col(Role::DlgStripe2));
-  dl->AddText(ImVec2(p.x + em(8), p.y + pad), col(Role::DlgTitleText), text);
-  ImGui::Dummy(ImVec2(w, h + line));
+  ImVec2 position = ImGui::GetCursorScreenPos();
+  float width = ImGui::GetContentRegionAvail().x, pad = em(5), line = std::max(2.0f, em(3));
+  float height = ImGui::GetTextLineHeight() + pad * 2;
+  ImDrawList* drawList = ImGui::GetWindowDrawList();
+  drawList->AddRectFilled(position, ImVec2(position.x + width, position.y + height), col(Role::DlgTitle));
+  drawList->AddRectFilled(ImVec2(position.x, position.y + height), ImVec2(position.x + width, position.y + height + line), col(Role::DlgStripe2));
+  drawList->AddText(ImVec2(position.x + em(8), position.y + pad), col(Role::DlgTitleText), text);
+  ImGui::Dummy(ImVec2(width, height + line));
 }
 
-void applyImGui(const Resolved& r) {
-  ImVec4* c = ImGui::GetStyle().Colors;
-  auto v = [&](Role role) { return vec(r.colour[(int)role]); };
-  auto alpha = [](ImVec4 x, float a) { return ImVec4(x.x, x.y, x.z, x.w * a); };
-  c[ImGuiCol_Text] = v(Role::UiText);
-  c[ImGuiCol_TextDisabled] = v(Role::UiTextDim);
-  c[ImGuiCol_WindowBg] = v(Role::UiBackground);
-  c[ImGuiCol_ChildBg] = v(Role::UiBackground);
-  c[ImGuiCol_PopupBg] = v(Role::UiPopup);
-  c[ImGuiCol_Border] = v(Role::UiBorder);
-  c[ImGuiCol_BorderShadow] = ImVec4(0, 0, 0, 0);
-  c[ImGuiCol_FrameBg] = v(Role::UiFrame);
-  c[ImGuiCol_FrameBgHovered] = v(Role::UiFrameHover);
-  c[ImGuiCol_FrameBgActive] = v(Role::UiFrameActive);
-  c[ImGuiCol_TitleBg] = v(Role::UiTitle);
-  c[ImGuiCol_TitleBgActive] = v(Role::UiTitleActive);
-  c[ImGuiCol_TitleBgCollapsed] = v(Role::UiTitle);
-  c[ImGuiCol_MenuBarBg] = v(Role::UiPanel);
-  c[ImGuiCol_ScrollbarBg] = v(Role::UiScrollbar);
-  c[ImGuiCol_ScrollbarGrab] = v(Role::UiScrollbarGrab);
-  c[ImGuiCol_ScrollbarGrabHovered] = v(Role::UiScrollbarGrabHover);
-  c[ImGuiCol_ScrollbarGrabActive] = v(Role::UiScrollbarGrabHover);
-  c[ImGuiCol_CheckMark] = v(Role::UiAccent);
-  c[ImGuiCol_SliderGrab] = v(Role::UiAccent);
-  c[ImGuiCol_SliderGrabActive] = v(Role::UiAccentHover);
-  c[ImGuiCol_Button] = v(Role::UiButton);
-  c[ImGuiCol_ButtonHovered] = v(Role::UiButtonHover);
-  c[ImGuiCol_ButtonActive] = v(Role::UiButtonActive);
-  c[ImGuiCol_Header] = v(Role::UiHeader);
-  c[ImGuiCol_HeaderHovered] = v(Role::UiHeaderHover);
-  c[ImGuiCol_HeaderActive] = v(Role::UiHeaderActive);
-  c[ImGuiCol_Separator] = v(Role::UiBorder);
-  c[ImGuiCol_SeparatorHovered] = alpha(v(Role::UiAccent), 0.78f);
-  c[ImGuiCol_SeparatorActive] = v(Role::UiAccent);
-  c[ImGuiCol_ResizeGrip] = alpha(v(Role::UiAccent), 0.2f);
-  c[ImGuiCol_ResizeGripHovered] = alpha(v(Role::UiAccent), 0.67f);
-  c[ImGuiCol_ResizeGripActive] = alpha(v(Role::UiAccent), 0.95f);
-  c[ImGuiCol_TabHovered] = v(Role::UiTabHover);
-  c[ImGuiCol_Tab] = v(Role::UiTab);
-  c[ImGuiCol_TabSelected] = v(Role::UiTabSelected);
-  c[ImGuiCol_TabSelectedOverline] = v(Role::UiAccent);
-  c[ImGuiCol_TabDimmed] = v(Role::UiTab);
-  c[ImGuiCol_TabDimmedSelected] = v(Role::UiTabSelected);
-  c[ImGuiCol_TabDimmedSelectedOverline] = alpha(v(Role::UiAccent), 0.0f);
-  c[ImGuiCol_DockingPreview] = v(Role::UiDockPreview);
-  c[ImGuiCol_DockingEmptyBg] = v(Role::UiPanel);
-  c[ImGuiCol_PlotLines] = v(Role::UiTextDim);
-  c[ImGuiCol_PlotLinesHovered] = v(Role::UiAccent);
-  c[ImGuiCol_PlotHistogram] = v(Role::UiAccent);
-  c[ImGuiCol_PlotHistogramHovered] = v(Role::UiAccentHover);
-  c[ImGuiCol_TableHeaderBg] = v(Role::UiTableHeader);
-  c[ImGuiCol_TableBorderStrong] = v(Role::UiBorder);
-  c[ImGuiCol_TableBorderLight] = alpha(v(Role::UiBorder), 0.6f);
-  c[ImGuiCol_TableRowBg] = ImVec4(0, 0, 0, 0);
-  c[ImGuiCol_TableRowBgAlt] = v(Role::UiTableRowAlt);
-  c[ImGuiCol_TextLink] = v(Role::UiLink);
-  c[ImGuiCol_TextSelectedBg] = v(Role::UiSelection);
-  c[ImGuiCol_DragDropTarget] = v(Role::UiAccent);
-  c[ImGuiCol_NavCursor] = v(Role::UiAccent);
-  c[ImGuiCol_NavWindowingHighlight] = alpha(v(Role::UiText), 0.7f);
-  c[ImGuiCol_NavWindowingDimBg] = v(Role::UiModalDim);
-  c[ImGuiCol_ModalWindowDimBg] = v(Role::UiModalDim);
+void applyImGui(const Resolved& resolved) {
+  ImVec4* colours = ImGui::GetStyle().Colors;
+  auto themeColour = [&](Role role) { return vec(resolved.colour[(int)role]); };
+  auto alpha = [](ImVec4 base, float factor) { return ImVec4(base.x, base.y, base.z, base.w * factor); };
+  colours[ImGuiCol_Text] = themeColour(Role::UiText);
+  colours[ImGuiCol_TextDisabled] = themeColour(Role::UiTextDim);
+  colours[ImGuiCol_WindowBg] = themeColour(Role::UiBackground);
+  colours[ImGuiCol_ChildBg] = themeColour(Role::UiBackground);
+  colours[ImGuiCol_PopupBg] = themeColour(Role::UiPopup);
+  colours[ImGuiCol_Border] = themeColour(Role::UiBorder);
+  colours[ImGuiCol_BorderShadow] = ImVec4(0, 0, 0, 0);
+  colours[ImGuiCol_FrameBg] = themeColour(Role::UiFrame);
+  colours[ImGuiCol_FrameBgHovered] = themeColour(Role::UiFrameHover);
+  colours[ImGuiCol_FrameBgActive] = themeColour(Role::UiFrameActive);
+  colours[ImGuiCol_TitleBg] = themeColour(Role::UiTitle);
+  colours[ImGuiCol_TitleBgActive] = themeColour(Role::UiTitleActive);
+  colours[ImGuiCol_TitleBgCollapsed] = themeColour(Role::UiTitle);
+  colours[ImGuiCol_MenuBarBg] = themeColour(Role::UiPanel);
+  colours[ImGuiCol_ScrollbarBg] = themeColour(Role::UiScrollbar);
+  colours[ImGuiCol_ScrollbarGrab] = themeColour(Role::UiScrollbarGrab);
+  colours[ImGuiCol_ScrollbarGrabHovered] = themeColour(Role::UiScrollbarGrabHover);
+  colours[ImGuiCol_ScrollbarGrabActive] = themeColour(Role::UiScrollbarGrabHover);
+  colours[ImGuiCol_CheckMark] = themeColour(Role::UiAccent);
+  colours[ImGuiCol_SliderGrab] = themeColour(Role::UiAccent);
+  colours[ImGuiCol_SliderGrabActive] = themeColour(Role::UiAccentHover);
+  colours[ImGuiCol_Button] = themeColour(Role::UiButton);
+  colours[ImGuiCol_ButtonHovered] = themeColour(Role::UiButtonHover);
+  colours[ImGuiCol_ButtonActive] = themeColour(Role::UiButtonActive);
+  colours[ImGuiCol_Header] = themeColour(Role::UiHeader);
+  colours[ImGuiCol_HeaderHovered] = themeColour(Role::UiHeaderHover);
+  colours[ImGuiCol_HeaderActive] = themeColour(Role::UiHeaderActive);
+  colours[ImGuiCol_Separator] = themeColour(Role::UiBorder);
+  colours[ImGuiCol_SeparatorHovered] = alpha(themeColour(Role::UiAccent), 0.78f);
+  colours[ImGuiCol_SeparatorActive] = themeColour(Role::UiAccent);
+  colours[ImGuiCol_ResizeGrip] = alpha(themeColour(Role::UiAccent), 0.2f);
+  colours[ImGuiCol_ResizeGripHovered] = alpha(themeColour(Role::UiAccent), 0.67f);
+  colours[ImGuiCol_ResizeGripActive] = alpha(themeColour(Role::UiAccent), 0.95f);
+  colours[ImGuiCol_TabHovered] = themeColour(Role::UiTabHover);
+  colours[ImGuiCol_Tab] = themeColour(Role::UiTab);
+  colours[ImGuiCol_TabSelected] = themeColour(Role::UiTabSelected);
+  colours[ImGuiCol_TabSelectedOverline] = themeColour(Role::UiAccent);
+  colours[ImGuiCol_TabDimmed] = themeColour(Role::UiTab);
+  colours[ImGuiCol_TabDimmedSelected] = themeColour(Role::UiTabSelected);
+  colours[ImGuiCol_TabDimmedSelectedOverline] = alpha(themeColour(Role::UiAccent), 0.0f);
+  colours[ImGuiCol_DockingPreview] = themeColour(Role::UiDockPreview);
+  colours[ImGuiCol_DockingEmptyBg] = themeColour(Role::UiPanel);
+  colours[ImGuiCol_PlotLines] = themeColour(Role::UiTextDim);
+  colours[ImGuiCol_PlotLinesHovered] = themeColour(Role::UiAccent);
+  colours[ImGuiCol_PlotHistogram] = themeColour(Role::UiAccent);
+  colours[ImGuiCol_PlotHistogramHovered] = themeColour(Role::UiAccentHover);
+  colours[ImGuiCol_TableHeaderBg] = themeColour(Role::UiTableHeader);
+  colours[ImGuiCol_TableBorderStrong] = themeColour(Role::UiBorder);
+  colours[ImGuiCol_TableBorderLight] = alpha(themeColour(Role::UiBorder), 0.6f);
+  colours[ImGuiCol_TableRowBg] = ImVec4(0, 0, 0, 0);
+  colours[ImGuiCol_TableRowBgAlt] = themeColour(Role::UiTableRowAlt);
+  colours[ImGuiCol_TextLink] = themeColour(Role::UiLink);
+  colours[ImGuiCol_TextSelectedBg] = themeColour(Role::UiSelection);
+  colours[ImGuiCol_DragDropTarget] = themeColour(Role::UiAccent);
+  colours[ImGuiCol_NavCursor] = themeColour(Role::UiAccent);
+  colours[ImGuiCol_NavWindowingHighlight] = alpha(themeColour(Role::UiText), 0.7f);
+  colours[ImGuiCol_NavWindowingDimBg] = themeColour(Role::UiModalDim);
+  colours[ImGuiCol_ModalWindowDimBg] = themeColour(Role::UiModalDim);
   // the theme's own ImGui colours, by name
-  for (auto& [name, rgba] : r.imgui)
+  for (auto& [name, rgba] : resolved.imgui)
     for (int i = 0; i < ImGuiCol_COUNT; i++)
-      if (name == ImGui::GetStyleColorName(i)) c[i] = vec(rgba);
+      if (name == ImGui::GetStyleColorName(i)) colours[i] = vec(rgba);
 }
 
 // ---------------------------------------------------------------------------
@@ -164,32 +164,32 @@ void applyImGui(const Resolved& r) {
 // The names of the built-in themes, for the translations (the files say them in English).
 [[maybe_unused]] static const char* kBuiltInNames[] = {N_("Dark"), N_("Light")};
 
-std::string displayName(const Theme& t) { return t.builtIn ? T(t.name.c_str()) : t.name; }
+std::string displayName(const Theme& theme) { return theme.builtIn ? T(theme.name.c_str()) : theme.name; }
 
-static bool inputString(const char* id, std::string* s, float width, const char* hint = nullptr) {
-  char buf[256];
-  snprintf(buf, sizeof buf, "%s", s->c_str());
+static bool inputString(const char* id, std::string* text, float width, const char* hint = nullptr) {
+  char buffer[256];
+  snprintf(buffer, sizeof buffer, "%s", text->c_str());
   ImGui::SetNextItemWidth(width);
-  bool changed = hint ? ImGui::InputTextWithHint(id, hint, buf, sizeof buf) : ImGui::InputText(id, buf, sizeof buf);
-  if (changed) *s = buf;
+  bool changed = hint ? ImGui::InputTextWithHint(id, hint, buffer, sizeof buffer) : ImGui::InputText(id, buffer, sizeof buffer);
+  if (changed) *text = buffer;
   return changed;
 }
 
 // A swatch that opens a colour picker; true if the colour was changed.
-static bool swatch(const char* id, Rgba* c) {
-  ImVec4 v = vec(*c);
-  bool changed = ImGui::ColorEdit4(id, &v.x, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel |
+static bool swatch(const char* id, Rgba* colour) {
+  ImVec4 value = vec(*colour);
+  bool changed = ImGui::ColorEdit4(id, &value.x, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel |
                                                  ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_AlphaPreviewHalf);
   if (changed) {
-    auto b = [](float x) { return (Rgba)std::clamp((int)(x * 255 + 0.5f), 0, 255); };
-    *c = b(v.x) << 24 | b(v.y) << 16 | b(v.z) << 8 | b(v.w);
+    auto toByte = [](float component) { return (Rgba)std::clamp((int)(component * 255 + 0.5f), 0, 255); };
+    *colour = toByte(value.x) << 24 | toByte(value.y) << 16 | toByte(value.z) << 8 | toByte(value.w);
   }
   return changed;
 }
 
-void Editor::draw(Library& lib, const std::string& current, const Hooks& h) {
+void Editor::draw(Library& library, const std::string& current, const Hooks& hooks) {
   if (!open) return;
-  if (selected_.empty() || !lib.find(selected_)) selected_ = current;
+  if (selected_.empty() || !library.find(selected_)) selected_ = current;
   ImGui::SetNextWindowSize(ImVec2(em(900), em(640)), ImGuiCond_FirstUseEver);
   if (!ImGui::Begin((std::string(T("Themes")) + "###themes").c_str(), &open)) {
     ImGui::End();
@@ -203,13 +203,13 @@ void Editor::draw(Library& lib, const std::string& current, const Hooks& h) {
   ImGui::TextDisabled("%s", T("Built in"));
   for (int pass = 0; pass < 2; pass++) {
     if (pass) ImGui::Separator(), ImGui::TextDisabled("%s", T("Yours"));
-    for (auto& t : lib.themes()) {
-      if (t.builtIn != (pass == 0)) continue;
-      std::string label = displayName(t) + (t.id == current ? "  \xE2\x80\xA2" : "") + "##" + t.id;  // a dot: in use
-      if (ImGui::Selectable(label.c_str(), t.id == selected_)) {
-        selected_ = t.id;
+    for (auto& edited : library.themes()) {
+      if (edited.builtIn != (pass == 0)) continue;
+      std::string label = displayName(edited) + (edited.id == current ? "  \xE2\x80\xA2" : "") + "##" + edited.id;  // a dot: in use
+      if (ImGui::Selectable(label.c_str(), edited.id == selected_)) {
+        selected_ = edited.id;
         message_.clear();
-        if (h.use) h.use(t.id);
+        if (hooks.use) hooks.use(edited.id);
       }
     }
   }
@@ -217,31 +217,31 @@ void Editor::draw(Library& lib, const std::string& current, const Hooks& h) {
   ImGui::SameLine();
 
   ImGui::BeginChild("edit");
-  Theme* t = lib.find(selected_);
-  if (!t) {
+  Theme* edited = library.find(selected_);
+  if (!edited) {
     ImGui::EndChild();
     ImGui::End();
     return;
   }
-  std::string err;
-  auto adopt = [&](Theme n) {  // save a new theme and select it
-    if (lib.save(n, &err)) {
-      selected_ = n.id;
-      if (h.use) h.use(n.id);
-      message_ = F("Saved in {0}", {n.path});
+  std::string error;
+  auto adopt = [&](Theme newTheme) {  // save a new theme and select it
+    if (library.save(newTheme, &error)) {
+      selected_ = newTheme.id;
+      if (hooks.use) hooks.use(newTheme.id);
+      message_ = F("Saved in {0}", {newTheme.path});
     } else {
-      message_ = err;
+      message_ = error;
     }
   };
   // New and Duplicate ask for the name first ("Custom", "Custom 2"... by default).
   auto askName = [&](bool duplicate) {
     duplicate_ = duplicate;
     std::string name = T("Custom");
-    for (int n = 2;; n++) {
+    for (int suffix = 2;; suffix++) {
       bool taken = false;
-      for (auto& o : lib.themes()) taken |= displayName(o) == name;
+      for (auto& other : library.themes()) taken |= displayName(other) == name;
       if (!taken) break;
-      name = std::string(T("Custom")) + " " + std::to_string(n);
+      name = std::string(T("Custom")) + " " + std::to_string(suffix);
     }
     snprintf(newName_, sizeof newName_, "%s", name.c_str());
     focusName_ = true;
@@ -253,8 +253,8 @@ void Editor::draw(Library& lib, const std::string& current, const Hooks& h) {
   ImGui::SameLine();
   if (ImGui::Button(T("Duplicate"))) askName(true);
   if (ImGui::BeginPopup("newtheme")) {
-    ImGui::TextUnformatted(duplicate_ ? F("A copy of \"{0}\"", {displayName(*t)}).c_str()
-                                      : F("A new theme based on \"{0}\"", {displayName(*t)}).c_str());
+    ImGui::TextUnformatted(duplicate_ ? F("A copy of \"{0}\"", {displayName(*edited)}).c_str()
+                                      : F("A new theme based on \"{0}\"", {displayName(*edited)}).c_str());
     if (focusName_) ImGui::SetKeyboardFocusHere(), focusName_ = false;
     ImGui::SetNextItemWidth(em(260));
     bool enter = ImGui::InputText(T("name"), newName_, sizeof newName_, ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll);
@@ -262,12 +262,12 @@ void Editor::draw(Library& lib, const std::string& current, const Hooks& h) {
     while (!name.empty() && name.back() == ' ') name.pop_back();
     ImGui::BeginDisabled(name.empty());
     if ((ImGui::Button(T("Create")) || enter) && !name.empty()) {
-      Theme n;
-      if (duplicate_) n = *t, n.id.clear(), n.path.clear(), n.builtIn = false;
-      else n.base = t->id;
-      n.name = name;
-      adopt(n);
-      t = lib.find(selected_);
+      Theme newTheme;
+      if (duplicate_) newTheme = *edited, newTheme.id.clear(), newTheme.path.clear(), newTheme.builtIn = false;
+      else newTheme.base = edited->id;
+      newTheme.name = name;
+      adopt(newTheme);
+      edited = library.find(selected_);
       ImGui::CloseCurrentPopup();
     }
     ImGui::EndDisabled();
@@ -276,26 +276,26 @@ void Editor::draw(Library& lib, const std::string& current, const Hooks& h) {
     ImGui::EndPopup();
   }
   ImGui::SameLine();
-  ImGui::BeginDisabled(t->builtIn);
+  ImGui::BeginDisabled(edited->builtIn);
   if (ImGui::Button(T("Delete"))) ImGui::OpenPopup("delete");
   ImGui::EndDisabled();
   if (ImGui::BeginPopup("delete")) {
-    ImGui::TextUnformatted(F("Delete the theme \"{0}\" and its file?", {t->name}).c_str());
+    ImGui::TextUnformatted(F("Delete the theme \"{0}\" and its file?", {edited->name}).c_str());
     if (ImGui::Button(T("Delete"))) {
-      std::string base = t->base.empty() ? "dark" : t->base;
-      if (lib.remove(t->id, &err)) {
-        selected_ = lib.find(base) ? base : "dark";
-        if (h.use) h.use(selected_);
+      std::string base = edited->base.empty() ? "dark" : edited->base;
+      if (library.remove(edited->id, &error)) {
+        selected_ = library.find(base) ? base : "dark";
+        if (hooks.use) hooks.use(selected_);
       } else {
-        message_ = err;
+        message_ = error;
       }
       ImGui::CloseCurrentPopup();
     }
     ImGui::SameLine();
     if (ImGui::Button(T("Cancel"))) ImGui::CloseCurrentPopup();
     ImGui::EndPopup();
-    t = lib.find(selected_);
-    if (!t) {
+    edited = library.find(selected_);
+    if (!edited) {
       ImGui::EndChild();
       ImGui::End();
       return;
@@ -305,29 +305,29 @@ void Editor::draw(Library& lib, const std::string& current, const Hooks& h) {
   ImGui::SameLine();
   if (ImGui::Button(T("Share..."))) ImGui::OpenPopup("share");
   if (ImGui::BeginPopup("share")) {
-    if (ImGui::MenuItem(T("Export to a file...")) && h.exportFile) h.exportFile(t->id);
+    if (ImGui::MenuItem(T("Export to a file...")) && hooks.exportFile) hooks.exportFile(edited->id);
     if (ImGui::MenuItem(T("Copy as text"))) {
-      ImGui::SetClipboardText(lib.exportJson(t->id).c_str());
+      ImGui::SetClipboardText(library.exportJson(edited->id).c_str());
       message_ = T("Copied: paste it wherever you want to share it.");
     }
     ImGui::Separator();
-    if (ImGui::MenuItem(T("Import a file...")) && h.importFile) h.importFile();
+    if (ImGui::MenuItem(T("Import a file...")) && hooks.importFile) hooks.importFile();
     if (ImGui::MenuItem(T("Paste a theme"))) {
       const char* clip = ImGui::GetClipboardText();
       std::string id;
-      if (clip && lib.importText(clip, "", &id, &err)) {
+      if (clip && library.importText(clip, "", &id, &error)) {
         selected_ = id;
-        if (h.use) h.use(id);
-        message_ = F("Imported: {0}", {lib.find(id)->name});
+        if (hooks.use) hooks.use(id);
+        message_ = F("Imported: {0}", {library.find(id)->name});
       } else {
-        message_ = F("The clipboard does not hold a theme: {0}", {err});
+        message_ = F("The clipboard does not hold a theme: {0}", {error});
       }
     }
     ImGui::Separator();
-    if (ImGui::MenuItem(T("Open the themes folder")) && h.openFolder) h.openFolder(lib.userDir());
+    if (ImGui::MenuItem(T("Open the themes folder")) && hooks.openFolder) hooks.openFolder(library.userDir());
     ImGui::EndPopup();
-    t = lib.find(selected_);
-    if (!t) {
+    edited = library.find(selected_);
+    if (!edited) {
       ImGui::EndChild();
       ImGui::End();
       return;
@@ -337,37 +337,37 @@ void Editor::draw(Library& lib, const std::string& current, const Hooks& h) {
     ImGui::SetTooltip("%s", T("Themes are .vcstheme files. Exported or copied themes carry everything they need, except a built-in base."));
   if (!message_.empty()) ImGui::TextColored(colv(Role::MsgInfo), "%s", message_.c_str());
 
-  if (t->builtIn) {
+  if (edited->builtIn) {
     ImGui::PushStyleColor(ImGuiCol_Text, colv(Role::MsgHighlight));
     ImGui::TextWrapped("%s", T("Built-in themes cannot be changed. \"New, based on this one\" makes a theme of yours that follows it; \"Duplicate\", a full copy."));
     ImGui::PopStyleColor();
   }
   ImGui::Separator();
 
-  Resolved res = lib.resolve(t->id);
+  Resolved resolved = library.resolve(edited->id);
   std::map<std::string, std::string> mergedPalette, mergedColours;
-  lib.merged(t->base, &mergedPalette, &mergedColours);  // what the base gives
-  ImGui::BeginDisabled(t->builtIn);
+  library.merged(edited->base, &mergedPalette, &mergedColours);  // what the base gives
+  ImGui::BeginDisabled(edited->builtIn);
 
   // name and base
-  if (t->builtIn) {
-    std::string shown = displayName(*t);  // translated, and read-only anyway
+  if (edited->builtIn) {
+    std::string shown = displayName(*edited);  // translated, and read-only anyway
     inputString(T("name"), &shown, 200);
-  } else if (inputString(T("name"), &t->name, 200)) {
+  } else if (inputString(T("name"), &edited->name, 200)) {
     changed = true;
   }
   ImGui::SameLine();
   ImGui::SetNextItemWidth(em(180));
-  const Theme* base = lib.find(t->base);
+  const Theme* base = library.find(edited->base);
   if (ImGui::BeginCombo(T("based on"), base ? displayName(*base).c_str() : T("(none)"))) {
-    if (ImGui::Selectable(T("(none)"), t->base.empty())) t->base.clear(), changed = true;
-    for (auto& o : lib.themes()) {
-      if (o.id == t->id) continue;
+    if (ImGui::Selectable(T("(none)"), edited->base.empty())) edited->base.clear(), changed = true;
+    for (auto& other : library.themes()) {
+      if (other.id == edited->id) continue;
       // no loops: a theme cannot build on one that builds on it
       bool loops = false;
-      for (const Theme* b = &o; b && !loops; b = b->base.empty() ? nullptr : lib.find(b->base)) loops = b->id == t->id || b->base == o.id;
+      for (const Theme* ancestor = &other; ancestor && !loops; ancestor = ancestor->base.empty() ? nullptr : library.find(ancestor->base)) loops = ancestor->id == edited->id || ancestor->base == other.id;
       if (loops) continue;
-      if (ImGui::Selectable(displayName(o).c_str(), o.id == t->base)) t->base = o.id, changed = true;
+      if (ImGui::Selectable(displayName(other).c_str(), other.id == edited->base)) edited->base = other.id, changed = true;
     }
     ImGui::EndCombo();
   }
@@ -383,73 +383,73 @@ void Editor::draw(Library& lib, const std::string& current, const Hooks& h) {
   if (filter_.empty() && ImGui::CollapsingHeader(T("Palette"), ImGuiTreeNodeFlags_DefaultOpen)) {
     ImGui::TextDisabled("%s", T("Named colours. A colour that refers to one ($name) changes with it."));
     std::map<std::string, std::string> all = mergedPalette;
-    for (auto& [k, v] : t->palette) all[k] = v;
+    for (auto& [key, value] : edited->palette) all[key] = value;
     std::string removeKey;
-    for (auto& [k, v] : all) {
-      ImGui::PushID(("pal" + k).c_str());
-      bool own = t->palette.count(k);
-      Rgba c = 0xFF00FFFF;
-      lib.resolveSpec(t->id, "$" + k, &c);
-      if (swatch("##c", &c)) t->palette[k] = colourText(c), changed = true;
+    for (auto& [key, value] : all) {
+      ImGui::PushID(("pal" + key).c_str());
+      bool own = edited->palette.count(key);
+      Rgba colour = 0xFF00FFFF;
+      library.resolveSpec(edited->id, "$" + key, &colour);
+      if (swatch("##c", &colour)) edited->palette[key] = colourText(colour), changed = true;
       ImGui::SameLine();
       ImGui::AlignTextToFramePadding();
-      if (own) ImGui::TextUnformatted(k.c_str());
-      else ImGui::TextDisabled("%s", k.c_str());
+      if (own) ImGui::TextUnformatted(key.c_str());
+      else ImGui::TextDisabled("%s", key.c_str());
       ImGui::SameLine(200);
-      std::string spec = v;
-      if (inputString("##spec", &spec, 180)) t->palette[k] = spec, changed = true;
+      std::string spec = value;
+      if (inputString("##spec", &spec, 180)) edited->palette[key] = spec, changed = true;
       specHelp();
       if (own) {
         ImGui::SameLine();
-        if (ImGui::SmallButton(mergedPalette.count(k) ? T("Reset") : T("Remove"))) removeKey = k;
+        if (ImGui::SmallButton(mergedPalette.count(key) ? T("Reset") : T("Remove"))) removeKey = key;
       }
       ImGui::PopID();
     }
-    if (!removeKey.empty()) t->palette.erase(removeKey), changed = true;
+    if (!removeKey.empty()) edited->palette.erase(removeKey), changed = true;
     ImGui::SetNextItemWidth(em(160));
     ImGui::InputTextWithHint("##newpal", T("new name"), newPalette_, sizeof newPalette_);
     ImGui::SameLine();
     ImGui::BeginDisabled(!newPalette_[0] || all.count(newPalette_));
-    if (ImGui::Button(T("Add colour"))) t->palette[newPalette_] = "#808080", newPalette_[0] = 0, changed = true;
+    if (ImGui::Button(T("Add colour"))) edited->palette[newPalette_] = "#808080", newPalette_[0] = 0, changed = true;
     ImGui::EndDisabled();
   }
 
   // the roles, by group
   const char* group = nullptr;
   bool groupOpen = false;
-  std::string f = filter_;
-  std::transform(f.begin(), f.end(), f.begin(), ::tolower);
+  std::string needle = filter_;
+  std::transform(needle.begin(), needle.end(), needle.begin(), ::tolower);
   for (int i = 0; i < kRoles; i++) {
-    const RoleInfo& ri = info((Role)i);
-    std::string label = T(ri.label), hay = label + " " + ri.id;
-    std::transform(hay.begin(), hay.end(), hay.begin(), ::tolower);
-    if (!f.empty() && hay.find(f) == std::string::npos) continue;
-    if (!group || std::strcmp(group, ri.group) != 0) {
-      group = ri.group;
-      groupOpen = ImGui::CollapsingHeader(T(ri.group), f.empty() ? 0 : ImGuiTreeNodeFlags_DefaultOpen);
+    const RoleInfo& roleInfo = info((Role)i);
+    std::string label = T(roleInfo.label), haystack = label + " " + roleInfo.id;
+    std::transform(haystack.begin(), haystack.end(), haystack.begin(), ::tolower);
+    if (!needle.empty() && haystack.find(needle) == std::string::npos) continue;
+    if (!group || std::strcmp(group, roleInfo.group) != 0) {
+      group = roleInfo.group;
+      groupOpen = ImGui::CollapsingHeader(T(roleInfo.group), needle.empty() ? 0 : ImGuiTreeNodeFlags_DefaultOpen);
     }
     if (!groupOpen) continue;
-    ImGui::PushID(ri.id);
-    bool own = t->colours.count(ri.id);
-    Rgba c = res.colour[i];
-    if (swatch("##c", &c)) t->colours[ri.id] = colourText(c), changed = true;
+    ImGui::PushID(roleInfo.id);
+    bool own = edited->colours.count(roleInfo.id);
+    Rgba colour = resolved.colour[i];
+    if (swatch("##c", &colour)) edited->colours[roleInfo.id] = colourText(colour), changed = true;
     ImGui::SameLine();
     ImGui::AlignTextToFramePadding();
     if (own) ImGui::TextUnformatted(label.c_str());
     else ImGui::TextDisabled("%s", label.c_str());
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", ri.id);
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", roleInfo.id);
     ImGui::SameLine(330);
-    std::string spec = own ? t->colours[ri.id] : "";
-    std::string inherited = mergedColours.count(ri.id) ? mergedColours[ri.id] : "";
+    std::string spec = own ? edited->colours[roleInfo.id] : "";
+    std::string inherited = mergedColours.count(roleInfo.id) ? mergedColours[roleInfo.id] : "";
     if (inputString("##spec", &spec, 170, inherited.c_str())) {
-      if (spec.empty()) t->colours.erase(ri.id);
-      else t->colours[ri.id] = spec;
+      if (spec.empty()) edited->colours.erase(roleInfo.id);
+      else edited->colours[roleInfo.id] = spec;
       changed = true;
     }
     specHelp();
-    if (own && !t->base.empty()) {
+    if (own && !edited->base.empty()) {
       ImGui::SameLine();
-      if (ImGui::SmallButton(T("Reset"))) t->colours.erase(ri.id), changed = true;
+      if (ImGui::SmallButton(T("Reset"))) edited->colours.erase(roleInfo.id), changed = true;
       if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", T("Back to the base theme's colour."));
     }
     ImGui::PopID();
@@ -458,48 +458,48 @@ void Editor::draw(Library& lib, const std::string& current, const Hooks& h) {
   // indentation levels in the code editor
   if (filter_.empty() && ImGui::CollapsingHeader(T("Indentation levels"))) {
     ImGui::TextDisabled("%s", T("The code editor shades each level of indentation with the next colour (none: no shading)."));
-    if (ImGui::Checkbox(T("Colours of its own"), &t->hasIndent)) {
-      if (t->hasIndent && t->indent.empty())
-        for (Rgba c : res.indent) t->indent.push_back(colourText(c));
+    if (ImGui::Checkbox(T("Colours of its own"), &edited->hasIndent)) {
+      if (edited->hasIndent && edited->indent.empty())
+        for (Rgba colour : resolved.indent) edited->indent.push_back(colourText(colour));
       changed = true;
     }
-    if (t->hasIndent) {
+    if (edited->hasIndent) {
       int remove = -1;
-      for (size_t k = 0; k < t->indent.size(); k++) {
-        ImGui::PushID((int)k);
-        Rgba c = k < res.indent.size() ? res.indent[k] : 0;
-        if (swatch("##c", &c)) t->indent[k] = colourText(c), changed = true;
+      for (size_t index = 0; index < edited->indent.size(); index++) {
+        ImGui::PushID((int)index);
+        Rgba colour = index < resolved.indent.size() ? resolved.indent[index] : 0;
+        if (swatch("##c", &colour)) edited->indent[index] = colourText(colour), changed = true;
         ImGui::SameLine();
-        if (inputString("##spec", &t->indent[k], 170)) changed = true;
+        if (inputString("##spec", &edited->indent[index], 170)) changed = true;
         specHelp();
         ImGui::SameLine();
-        if (ImGui::SmallButton(T("Remove"))) remove = (int)k;
+        if (ImGui::SmallButton(T("Remove"))) remove = (int)index;
         ImGui::PopID();
       }
-      if (remove >= 0) t->indent.erase(t->indent.begin() + remove), changed = true;
-      if (ImGui::Button(T("Add level"))) t->indent.push_back("#80808020"), changed = true;
+      if (remove >= 0) edited->indent.erase(edited->indent.begin() + remove), changed = true;
+      if (ImGui::Button(T("Add level"))) edited->indent.push_back("#80808020"), changed = true;
     }
   }
   ImGui::EndDisabled();
 
-  if (!res.problems.empty()) {
+  if (!resolved.problems.empty()) {
     ImGui::Separator();
-    for (auto& p : res.problems) ImGui::TextColored(colv(Role::MsgWarning), "%s", p.c_str());
+    for (auto& problem : resolved.problems) ImGui::TextColored(colv(Role::MsgWarning), "%s", problem.c_str());
   }
-  if (!res.notes.empty()) {
+  if (!resolved.notes.empty()) {
     ImGui::Separator();
-    for (auto& n : res.notes) ImGui::TextDisabled("%s", n.c_str());
+    for (auto& note : resolved.notes) ImGui::TextDisabled("%s", note.c_str());
   }
   ImGui::EndChild();
   ImGui::End();
 
   // changes show at once; the file is written when no field is being dragged or typed in
-  if (changed && !t->builtIn) {
+  if (changed && !edited->builtIn) {
     dirty_ = true;
-    if (h.use) h.use(t->id);
+    if (hooks.use) hooks.use(edited->id);
   }
   if (dirty_ && !ImGui::IsAnyItemActive()) {
-    if (Theme* s = lib.find(selected_); s && !s->builtIn && !lib.save(*s, &err)) message_ = err;
+    if (Theme* existing = library.find(selected_); existing && !existing->builtIn && !library.save(*existing, &error)) message_ = error;
     dirty_ = false;
   }
 }

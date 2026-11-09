@@ -7,18 +7,18 @@
 namespace vcs {
 
 static void drawItems(const std::vector<MenuItem>& items) {
-  for (auto& m : items) {
-    if (m.separator) {
+  for (auto& item : items) {
+    if (item.separator) {
       ImGui::Separator();
-    } else if (!m.children.empty()) {
-      if (ImGui::BeginMenu(m.label.c_str(), m.enabled)) {
-        drawItems(m.children);
+    } else if (!item.children.empty()) {
+      if (ImGui::BeginMenu(item.label.c_str(), item.enabled)) {
+        drawItems(item.children);
         ImGui::EndMenu();
       }
     } else {
-      const std::string& right = m.shortcut.empty() ? m.hint : m.shortcut;
-      if (ImGui::MenuItem(m.label.c_str(), right.empty() ? nullptr : right.c_str(), m.checked, m.enabled) && m.action)
-        m.action();
+      const std::string& right = item.shortcut.empty() ? item.hint : item.shortcut;
+      if (ImGui::MenuItem(item.label.c_str(), right.empty() ? nullptr : right.c_str(), item.checked, item.enabled) && item.action)
+        item.action();
     }
   }
 }

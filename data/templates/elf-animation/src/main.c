@@ -10,7 +10,7 @@
  *
  * Build: F7 (runs make). Run: F5. This template is CC0: use it as you like.
  */
-#include "vcs.h"
+#include "vcsLib.h"
 #include "hero.gfx.h"
 
 #define LINES_PER_ROW 2          /* each row of the sprite is drawn on two lines */

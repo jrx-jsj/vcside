@@ -32,17 +32,17 @@ class GfxEditor {
  private:
   void toolbar(const gfx::Profile& project);
   void groupField(std::string& group);
-  void spriteView(gfx::Sprite& s, gfx::Tv tv);
-  void playfieldView(gfx::Playfield& p, gfx::Tv tv);
-  void animations(gfx::Sprite& s, gfx::Tv tv, int thumbBounds[4], float cw, float ch);
+  void spriteView(gfx::Sprite& sprite, gfx::Tv tv);
+  void playfieldView(gfx::Playfield& playfield, gfx::Tv tv);
+  void animations(gfx::Sprite& sprite, gfx::Tv tv, int thumbBounds[4], float cellWidth, float cellHeight);
   void issues(const std::vector<gfx::Issue>& list);
   bool colourButton(const char* id, int colour, gfx::Tv tv, int* out, bool allowInherit, float size);
-  void drawSprite(const gfx::Sprite& s, int frame, int phase, ImVec2 origin, float cw, float ch, gfx::Tv tv, int bk,
+  void drawSprite(const gfx::Sprite& sprite, int frame, int phase, ImVec2 origin, float cellWidth, float cellHeight, gfx::Tv tv, int backgroundColour,
                   int highlightLayer, int bounds[4]);
   void changed() { changed_ = true; dirty_ = true; }
   void endFrame();
 
-  gfx::Profile k_;        // the kernel of this frame
+  gfx::Profile kernelProfile_;        // the kernel of this frame
   std::string path_;      // the file, for the regions of batari Basic programs
   gfx::Asset asset_, committed_;
   std::vector<gfx::Asset> undo_, redo_;

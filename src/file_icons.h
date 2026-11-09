@@ -16,6 +16,6 @@ enum class Kind { Folder, Project, Asm, C, Header, Basic, Graphics, Rom, Image, 
 Kind kindOf(const std::string& filename, bool directory);
 
 // The icon in a square of side `size` at `pos`; `open` is for folders.
-void drawIcon(ImDrawList* dl, ImVec2 pos, float size, Kind kind, bool open = false);
+void drawIcon(ImDrawList* drawList, ImVec2 position, float size, Kind kind, bool open = false);
 
 }  // namespace vcs::files

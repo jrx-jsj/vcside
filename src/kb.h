@@ -72,7 +72,7 @@ struct EmuOption {
 struct EmulatorInfo {
   std::string id, name;
   std::vector<EmuOption> options;
-  const EmuOption* option(const std::string& id) const;
+  const EmuOption* option(const std::string& optionId) const;
 };
 
 // Where a fact comes from (data/kb/*.json "sources" arrays; docs/sources.md).
@@ -136,9 +136,9 @@ class KnowledgeBase {
   std::map<std::string, BasicKeyword> basic_;
 };
 
-std::string upper(std::string s);
+std::string upper(std::string text);
 // Compares text with the numbers in it as numbers ("8K" < "16K"), ignoring case.
-bool naturalLess(const std::string& a, const std::string& b);
+bool naturalLess(const std::string& left, const std::string& right);
 // Format categories in menu order, with their titles (translated).
 std::vector<std::pair<std::string, std::string>> formatCategories();
 std::vector<std::string> dasmDirectives();
