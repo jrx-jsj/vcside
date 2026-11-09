@@ -1,6 +1,9 @@
 /*
  * vcs.h - the vcsLib functions of an ELF cartridge (PlusCart, UnoCart, Chameleon Cart,
  * Stella, Gopher2600). Written for VCSIDE's ELF template: CC0 1.0, public domain.
+ * The names and values follow the vcsLib interface as Stella (ElfEnvironment.cxx,
+ * VcsLib.cxx), Al-Nafuur's TinyELF-Basic (vcsLib.h) and Gopher2600 define it; the text is
+ * VCSIDE's own.
  *
  * The game is a relocatable ARM object. The loader links these functions; each one puts
  * 6507 instructions on the cartridge bus, so the 6507 runs what the ARM sends it. The
@@ -87,14 +90,16 @@
 
 void vcsJmp3(void);                              /* jmp $1000 (3): keeps the 6507 in its 4 KB */
 void vcsNop2(void);                              /* nop (2) */
-void vcsNop2n(uint16_t n);                       /* n nops (2n) */
+void vcsNop2n(uint16_t count);                   /* count nops (2 × count) */
 void vcsLda2(uint8_t value);                     /* lda # (2) */
 void vcsLdx2(uint8_t value);                     /* ldx # (2) */
 void vcsLdy2(uint8_t value);                     /* ldy # (2) */
 void vcsSta3(uint8_t zeroPage);                  /* sta zp (3) */
 void vcsStx3(uint8_t zeroPage);                  /* stx zp (3) */
 void vcsSty3(uint8_t zeroPage);                  /* sty zp (3) */
-void vcsSta4(uint16_t address);                  /* sta abs (4) */
+/* sta $00zp in its absolute form (4): a cycle more than vcsSta3. Stella also writes a whole
+ * 16-bit address, but Gopher2600 and the Chameleon Cart take only the low byte. */
+void vcsSta4(uint8_t zeroPage);
 void vcsWrite5(uint8_t zeroPage, uint8_t value); /* lda # + sta zp (5) */
 void vcsWrite6(uint16_t address, uint8_t value); /* lda # + sta abs (6) */
 uint8_t vcsRead4(uint16_t address);              /* lda abs (4), returns what the 6507 read */
@@ -108,8 +113,8 @@ void vcsEndOverblank(void);
 /* Bus stuffing (vcsWrite3, vcsLd[axy]ForBusStuff2) exists on the PlusCart and in Stella
  * but not in the Chameleon Cart's current firmware, so it is left out here. */
 
-void *memset(void *dst, int c, unsigned int n);
-void *memcpy(void *dst, const void *src, unsigned int n);
+void *memset(void *dst, int value, unsigned int count);
+void *memcpy(void *dst, const void *src, unsigned int count);
 
 #pragma long_calls_off
 

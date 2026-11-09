@@ -5,18 +5,18 @@
 #include <stddef.h>
 #include <stdint.h>
 
-void *memcpy(void *dst, const void *src, size_t n)
+void *memcpy(void *dst, const void *src, size_t count)
 {
-    uint8_t *d = dst;
-    const uint8_t *s = src;
-    while (n--) *d++ = *s++;
+    uint8_t *to = dst;
+    const uint8_t *from = src;
+    while (count--) *to++ = *from++;
     return dst;
 }
 
-void *memset(void *dst, int c, size_t n)
+void *memset(void *dst, int value, size_t count)
 {
-    uint8_t *d = dst;
-    while (n--) *d++ = (uint8_t)c;
+    uint8_t *to = dst;
+    while (count--) *to++ = (uint8_t)value;
     return dst;
 }
 
@@ -24,12 +24,12 @@ void srand(unsigned seed) { (void)seed; }
 void __libc_init_array(void) {}
 
 /* The firmware divides; libgcc's division in the game is renamed (see the Makefile). */
-unsigned __aeabi_uidiv(unsigned a, unsigned b)
+unsigned __aeabi_uidiv(unsigned dividend, unsigned divisor)
 {
-    unsigned q = 0, r = 0;
-    for (int i = 31; i >= 0; i--) {
-        r = r << 1 | ((a >> i) & 1);
-        if (r >= b) r -= b, q |= 1u << i;
+    unsigned quotient = 0, remainder = 0;
+    for (int bit = 31; bit >= 0; bit--) {
+        remainder = remainder << 1 | ((dividend >> bit) & 1);
+        if (remainder >= divisor) remainder -= divisor, quotient |= 1u << bit;
     }
-    return q;
+    return quotient;
 }
