@@ -24,6 +24,8 @@
 #include "child_process.h"
 #include "music/tia_audio.h"
 #include "music/tuning.h"
+#include "music/song.h"
+#include "music/player.h"
 
 #include <algorithm>
 #include <array>
@@ -1908,6 +1910,119 @@ static void testMusic() {
   CHECK(tunedAverage.averageCents <= asWritten.averageCents && tunedAverage.averageCents <= tunedWorst.averageCents);
 }
 
+static void testSong() {
+  using namespace vcs::music;
+  namespace fs = std::filesystem;
+  double ntsc = audioClockHz("NTSC");
+  // JSON round trip
+  Song song = blankSong();
+  song.name = "theme";
+  song.speed = 5, song.swing = 7, song.loopTo = 1;
+  song.instruments[0].loopStart = 2;
+  song.instruments[0].pitch = {1, -1};
+  song.tuning.transpose = -3, song.tuning.referenceCents = -14, song.tuning.goal = TuningGoal::Average;
+  Pattern second;
+  second.name = "verse";
+  second.resize(16);
+  song.patterns.push_back(second);
+  song.order = {0, 1, 1};
+  song.patterns[0].cells[0][0] = {69, 0};
+  song.patterns[0].cells[0][4] = {kNoteOff, -1};
+  song.patterns[0].cells[1][2] = {61, 1};
+  song.patterns[1].cells[1][15] = {119, 0};
+  std::string json = toJson(song), error;
+  CHECK(json.find("\"A-4 00\"") != std::string::npos && json.find("\"=== ..\"") != std::string::npos);
+  Song back;
+  CHECK(fromJson(json, &back, &error));
+  CHECK(toJson(back) == json);
+  CHECK(back.name == "theme" && back.speed == 5 && back.swing == 7 && back.loopTo == 1 && back.order == std::vector<int>({0, 1, 1}));
+  CHECK(back.instruments.size() == 2 && back.instruments[1].drum && back.instruments[0].loopStart == 2 && back.instruments[0].pitch == std::vector<int>({1, -1}));
+  CHECK(back.tuning.transpose == -3 && back.tuning.referenceCents == -14 && back.tuning.goal == TuningGoal::Average);
+  CHECK(back.patterns[1].rows == 16 && back.patterns[1].cells[1][15].note == 119 && back.patterns[0].cells[0][4].note == kNoteOff);
+  CHECK(!fromJson("{\"format\":\"other\"}", &back, &error) && !error.empty());
+  CHECK(song.rowFrames(0) == 5 && song.rowFrames(1) == 7);
+
+  // The player, frame by frame: a held note, its loop, a note off and its release
+  Song tune = blankSong();
+  tune.speed = 3;
+  tune.loopTo = -1;
+  tune.patterns[0].resize(4);
+  Instrument& lead = tune.instruments[0];
+  lead.volume = {15, 12, 9, 6};
+  lead.loopStart = 2;
+  lead.release = {4, 2};
+  lead.pitch = {0, 1};
+  tune.patterns[0].cells[0][0] = {69, 0};
+  tune.patterns[0].cells[0][2] = {kNoteOff, -1};
+  tune.patterns[0].cells[1][1] = {60, 1};
+  NotePitch a4 = tune.pitchOf(69, lead, ntsc);
+  Player player;
+  player.start(tune, ntsc);
+  std::vector<FrameRegisters> frames;
+  for (int frame = 0; frame < 14; frame++) frames.push_back(player.nextFrame());
+  std::vector<int> volumes, drumFrequencies;
+  for (auto& frame : frames) volumes.push_back(frame.volume[0]), drumFrequencies.push_back(frame.frequency[1]);
+  // rows of 3 frames: the note at 0, its loop (9 6 9 6...), the note off at 6, the release 4 2, then silence
+  CHECK(volumes == std::vector<int>({15, 12, 9, 6, 9, 6, 4, 2, 0, 0, 0, 0, 0, 0}));
+  CHECK(frames[0].control[0] == a4.control && frames[0].frequency[0] == a4.frequency && frames[1].frequency[0] == a4.frequency + 1 && frames[5].frequency[0] == a4.frequency + 1);
+  // the drum from row 1: AUDC 8, AUDF 2 4 6 6..., its volume 14 10 6 3 1 0
+  CHECK(frames[3].control[1] == 8 && drumFrequencies[3] == 2 && drumFrequencies[4] == 4 && drumFrequencies[5] == 6 && drumFrequencies[8] == 6);
+  CHECK(frames[3].volume[1] == 14 && frames[7].volume[1] == 1 && frames[8].volume[1] == 0 && frames[2].volume[1] == 0);
+  CHECK(!player.playing() && !player.sounding());  // 4 rows of 3 frames, then it stops
+
+  // swing and the order list: rows alternate 2 and 5 frames; the song loops to entry 1
+  Song looped = blankSong();
+  looped.speed = 2, looped.swing = 5;
+  looped.patterns[0].resize(2);
+  looped.patterns.push_back(looped.patterns[0]);
+  looped.order = {0, 1};
+  looped.loopTo = 1;
+  Player loopPlayer;
+  loopPlayer.start(looped, ntsc);
+  std::vector<std::pair<int, int>> seen;
+  for (int frame = 0; frame < 21; frame++) {
+    loopPlayer.nextFrame();
+    SongPosition position = loopPlayer.position();
+    if (seen.empty() || seen.back() != std::make_pair(position.order, position.row)) seen.push_back({position.order, position.row});
+  }
+  // 0:0 (2 frames) 0:1 (5) 1:0 (2) 1:1 (5) 1:0 (2) 1:1 (5): 21 frames
+  using RowPositions = std::vector<std::pair<int, int>>;
+  CHECK((seen == RowPositions({{0, 0}, {0, 1}, {1, 0}, {1, 1}, {1, 0}, {1, 1}}) && loopPlayer.playing()));
+  // a note no allowed AUDC reaches is not heard
+  Song unplayable = blankSong();
+  unplayable.instruments[0].controls = {4};
+  unplayable.patterns[0].cells[0][0] = {20, 0};
+  Player silentPlayer;
+  silentPlayer.start(unplayable, ntsc);
+  CHECK(silentPlayer.nextFrame().volume[0] == 0);
+  // a preview note outside the song, held until it is let go
+  Player previewPlayer;
+  previewPlayer.noteOn(tune, ntsc, 1, 69, 0);
+  CHECK(previewPlayer.nextFrame().volume[1] == 15 && previewPlayer.sounding() && !previewPlayer.playing());
+  previewPlayer.noteOff(1);
+  CHECK(previewPlayer.nextFrame().volume[1] == 4 && previewPlayer.nextFrame().volume[1] == 2);
+  previewPlayer.nextFrame();
+  CHECK(!previewPlayer.sounding());
+
+  // the song as sound: its 12 frames and the one where it ends, 262 lines each at 48 kHz, and a WAV of it
+  std::vector<float> samples = renderSong(tune, "NTSC", 48000, 1000);
+  double expected = 13 * 262 * 2 * 48000.0 / ntsc;
+  CHECK(std::fabs(samples.size() - expected) < 4);
+  float loudest = 0;
+  for (float sample : samples) loudest = std::max(loudest, std::fabs(sample));
+  CHECK(loudest > 0.05f && loudest <= 1.0f);
+  CHECK(renderSong(tune, "PAL", 48000, 5).size() > 5 * 262 * 2 * 48000.0 / audioClockHz("PAL"));  // PAL frames are longer
+  fs::path wavPath = fs::temp_directory_path() / "vcside-test-song.wav";
+  CHECK(writeWav(wavPath.string(), samples, 48000, &error));
+  std::ifstream wav(wavPath, std::ios::binary);
+  std::string header(44, '\0');
+  wav.read(&header[0], 44);
+  CHECK(header.compare(0, 4, "RIFF") == 0 && header.compare(8, 8, "WAVEfmt ") == 0 && header.compare(36, 4, "data") == 0);
+  CHECK(fs::file_size(wavPath) == 44 + samples.size() * 2);
+  wav.close();
+  fs::remove(wavPath);
+}
+
 int main() {
   KnowledgeBase kb;
   std::string error;
@@ -1929,6 +2044,7 @@ int main() {
   testEmulatorOptions(kb);
   testElfSpace();
   testMusic();
+  testSong();
   testBasic();
   testBasicSyntax(kb);
   testFormatOrder(kb);

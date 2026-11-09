@@ -134,7 +134,8 @@ Each technique, with whoever devised or spread it. The editor's help shows the s
 ## Phases for 0.2.0
 
 1. Tuning maths and TIA sound synthesis, with tests. Each credit is checked against a primary source and recorded in `docs/sources.md`. The cents tables are computed and checked against the formula and against Stella recordings.
-2. The editor: TIA instruments, two channels, patterns, listening, tuning views and automatic tuning.
+2. The editor: TIA instruments, two channels, patterns, listening, tuning views and automatic tuning. **Done**: `src/music/song.*` (the `.vcsmusic` file), `player.*` (frame by frame, the rules the exported players will follow), `music_audio.*` (SDL3 output) and `music_editor.*`.
+   The player's rules, which the exported players must keep: a row lasts `speed` frames (`swing` on odd rows if set); a note starts its instrument's envelopes at frame 0; while held, the volume repeats from `loop` to its end, or stays on its last value (and an envelope that ends on 0 with no loop ends the note); a note off (`===`) plays the release once and silences the channel; the pitch envelope is added to AUDF, clamped to 0-31, its last value held; a note no allowed AUDC reaches is silent; at the song's end every voice is released and the song loops to `loop_to` or stops.
 3. DASM and batari Basic export, and the DASM example. Checked in Stella and Gopher2600.
 4. Samples for ELF: waveforms, voices, mixing, the C player and the C example. Checked in Stella; on the PlusCart and the Chameleon if possible.
 5. TIATracker import; DPC+ and CDFJ export.

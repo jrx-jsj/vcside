@@ -309,6 +309,19 @@ OpenFile* App::openFile(const std::string& pathIn, int line) {
     activeFile_ = (int)files_.size() - 1;
     return files_.back().get();
   }
+  if (lower(fs::path(path).extension().string()) == ".vcsmusic") {
+    newFile->asmSyntax = false;
+    newFile->music = std::make_unique<music::MusicEditor>();
+    std::string error;
+    if (!newFile->music->load(path, &error)) {
+      output_ += F("Cannot read {0}: {1}", {path, error}) + "\n";
+      return nullptr;
+    }
+    newFile->requestFocus = true;
+    files_.push_back(std::move(newFile));
+    activeFile_ = (int)files_.size() - 1;
+    return files_.back().get();
+  }
   if (lower(fs::path(path).extension().string()) == ".vcsgfx") {
     newFile->asmSyntax = false;
     newFile->gfx = std::make_unique<GfxEditor>();
@@ -397,6 +410,15 @@ bool App::saveFile(OpenFile& file) {
     out.close();
     file.form->saved(file.editor, text);
     if (project_ && fs::weakly_canonical(project_->file) == fs::weakly_canonical(file.path)) projectFileSaved();
+    return true;
+  }
+  if (file.music) {
+    std::string error;
+    if (!file.music->save(file.path, &error)) {
+      output_ += error + "\n";
+      return false;
+    }
+    lastStatus_ = F("Saved {0}", {fs::path(file.path).filename().string()});
     return true;
   }
   if (file.gfx) {
@@ -1512,6 +1534,13 @@ void App::frame() {
         if (out << themes_.exportJson(kind.substr(12))) lastStatus_ = F("Theme saved in {0}", {exportPath});
         else lastStatus_ = F("Cannot write {0}", {exportPath});
       }
+      else if (kind == "newmusic") {
+        std::string musicPath = path;
+        if (lower(fs::path(musicPath).extension().string()) != ".vcsmusic") musicPath += ".vcsmusic";
+        std::ofstream out(musicPath, std::ios::binary);
+        if (out << music::toJson(music::blankSong())) out.close(), openFile(musicPath);
+        else output_ += F("Cannot write {0}", {musicPath}) + "\n";
+      }
       else if (kind == "newgfx") {
         std::string graphicsPath = path;
         if (lower(fs::path(graphicsPath).extension().string()) != ".vcsgfx") graphicsPath += ".vcsgfx";
@@ -1652,6 +1681,11 @@ MenuBar App::buildMenuBar(bool native) {
         std::string where = ((project_ ? fs::path(project_->dir) : fs::path(folder_.empty() ? "." : folder_)) / "graphics.vcsgfx").string();
         SDL_ShowSaveFileDialog(dialogCallback, new DialogCtx{this, "newgfx"}, window_, filters, 1, where.c_str());
       }),
+      item(T("New music..."), "", [this] {
+        static const SDL_DialogFileFilter filters[] = {{"VCSIDE music", "vcsmusic"}};
+        std::string where = ((project_ ? fs::path(project_->dir) : fs::path(folder_.empty() ? "." : folder_)) / "music.vcsmusic").string();
+        SDL_ShowSaveFileDialog(dialogCallback, new DialogCtx{this, "newmusic"}, window_, filters, 1, where.c_str());
+      }),
       MenuItem::sep(),
       item(T("Save"), "Ctrl+S", [this] { if (activeFile_ >= 0) saveFile(*files_[activeFile_]); }, hasFile),
       item(T("Save all"), "Ctrl+Shift+S", [this] { saveAll(); }),
@@ -1674,10 +1708,12 @@ MenuBar App::buildMenuBar(bool native) {
   bar.push_back(sub(T("Edit"), {
       item(T("Undo"), "Ctrl+Z", [this, editor] {
         if (activeFile_ >= 0 && files_[activeFile_]->gfx) files_[activeFile_]->gfx->undo();
+        else if (activeFile_ >= 0 && files_[activeFile_]->music) files_[activeFile_]->music->undo();
         else if (TextEditor* textEditor = editor()) textEditor->undo();
       }),
       item(T("Redo"), "Ctrl+Shift+Z", [this, editor] {
         if (activeFile_ >= 0 && files_[activeFile_]->gfx) files_[activeFile_]->gfx->redo();
+        else if (activeFile_ >= 0 && files_[activeFile_]->music) files_[activeFile_]->music->redo();
         else if (TextEditor* textEditor = editor()) textEditor->redo();
       }),
       MenuItem::sep(),
@@ -2241,6 +2277,10 @@ void App::editorsPanel() {
         } else if (openedFile.form) {
           ImGui::BeginChild("##form", ImVec2(0, 0), 0, ImGuiWindowFlags_NoScrollbar);
           openedFile.form->render(openedFile.editor, editorFont(), kb_, tools_);
+          ImGui::EndChild();
+        } else if (openedFile.music) {
+          ImGui::BeginChild("##music", ImVec2(0, 0), 0, ImGuiWindowFlags_NoScrollbar);
+          openedFile.music->render(project_ ? project_->tv : "NTSC");
           ImGui::EndChild();
         } else if (openedFile.gfx) {
           ImGui::BeginChild("##gfx", ImVec2(0, 0), 0, ImGuiWindowFlags_NoScrollbar);

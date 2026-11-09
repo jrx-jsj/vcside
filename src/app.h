@@ -22,6 +22,7 @@
 #include "debugmap.h"
 #include "editor/text_editor.h"
 #include "gfx_editor.h"
+#include "music/music_editor.h"
 #include "kb.h"
 #include "menu.h"
 #include "child_process.h"
@@ -42,11 +43,12 @@ struct OpenFile {
   std::string path;
   TextEditor editor;
   std::unique_ptr<GfxEditor> gfx;  // a .vcsgfx: the graphics editor instead of the text
+  std::unique_ptr<music::MusicEditor> music;  // a .vcsmusic: the music editor
   std::unique_ptr<ImageViewer> image;  // a PNG or BMP: shown, not edited
   std::unique_ptr<ProjectForm> form;   // a .vcsproj: a form, or its text in the editor
   bool asmSyntax = true;
   bool requestFocus = false;
-  bool dirty() const { return gfx ? gfx->dirty() : form ? form->dirty(editor) : editor.dirty(); }
+  bool dirty() const { return gfx ? gfx->dirty() : music ? music->dirty() : form ? form->dirty(editor) : editor.dirty(); }
 };
 
 class App;
