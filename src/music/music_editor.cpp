@@ -634,16 +634,19 @@ void MusicEditor::keyboard() {
     if (hovered && mouse.x >= from.x && mouse.x < to.x && mouse.y < to.y) hoveredNote = note;
   }
   if (hoveredNote >= 0) {
+    if (!melodic) ImGui::SetTooltip("%s", F("{0}: click to write it at the cursor", {noteName(hoveredNote)}).c_str());
     if (melodic) {
       NotePitch pitch = song_.pitchOf(hoveredNote, *instrument, clock_);
       if (pitch.playable)
-        ImGui::SetTooltip("%s", F("{0}: AUDC {1}, AUDF {2}, {3} cents", {noteName(hoveredNote), std::to_string(pitch.control), std::to_string(pitch.frequency),
-                                                                        (pitch.cents >= 0 ? "+" : "") + std::to_string((int)std::lround(pitch.cents))})
-                                    .c_str());
+        ImGui::SetTooltip("%s\n%s", F("{0}: AUDC {1}, AUDF {2}, {3} cents", {noteName(hoveredNote), std::to_string(pitch.control), std::to_string(pitch.frequency),
+                                                                            (pitch.cents >= 0 ? "+" : "") + std::to_string((int)std::lround(pitch.cents))})
+                                        .c_str(),
+                          T("Click: writes it at the cursor."));
       else
         ImGui::SetTooltip("%s", F("{0}: no allowed AUDC reaches it", {noteName(hoveredNote)}).c_str());
     }
-    if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) preview(hoveredNote), previewMouse_ = true;
+    // a click writes the note at the cursor, as typing it would, and plays it while held
+    if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) enterNote(hoveredNote), preview(hoveredNote), previewMouse_ = true;
   }
 }
 

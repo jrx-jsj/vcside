@@ -167,6 +167,7 @@
     "Choose the file...": "Elegir el archivo...",
     "Choose...": "Elegir...",
     "Clear all breakpoints": "Quitar todos los puntos de ruptura",
+    "Click: writes it at the cursor.": "Clic: la escribe en el cursor.",
     "Click: zoom in · Alt+click or right button: zoom out · drag: move": "Clic: acercar · Alt+clic o botón derecho: alejar · arrastrar: mover",
     "Close": "Cerrar",
     "Close file": "Cerrar archivo",
@@ -841,6 +842,7 @@
     "{0}: AUDC {1}, AUDF {2}, {3} cents": "{0}: AUDC {1}, AUDF {2}, {3} cents",
     "{0}: AUDC {1}, AUDF {2}, {3} Hz, {4} cents": "{0}: AUDC {1}, AUDF {2}, {3} Hz, {4} cents",
     "{0}: cannot read \"{1}\".": "{0}: no se puede leer «{1}».",
+    "{0}: click to write it at the cursor": "{0}: clic para escribirla en el cursor",
     "{0}: its bases go round in a loop.": "{0}: sus bases forman un bucle.",
     "{0}: label ({1}). Build to get its address.": "{0}: etiqueta ({1}). Compila para saber su dirección.",
     "{0}: macro ({1})": "{0}: macro ({1})",
@@ -855,5 +857,5 @@
     "{0}:{1}: no code at or after this line; breakpoint ignored.": "{0}:{1}: no hay código en esta línea ni después; se ignora el punto de ruptura.",
     "{0}:{1}: no listing to place the breakpoint: build first.": "{0}:{1}: no hay listado para situar el punto de ruptura: compila antes."
   },
-  "total": 852
+  "total": 854
 }
