@@ -257,6 +257,12 @@ class App {
   AddressMap addresses_;
   std::map<std::string, std::set<int>> breakpoints_;
   std::set<std::string> treeToggled_;  // project tree folders opened or closed against their default
+  // What Git ignores in the folder (shown dimmed in the tree), asked again every few seconds.
+  std::set<std::string> gitIgnored_;  // absolute paths, folders without the final separator
+  std::unique_ptr<Job> gitJob_;
+  std::string gitFolder_;
+  double gitAskedAt_ = -100;
+  void updateGitIgnored();
   bool showGoToAddress_ = false;
   bool showEmuOptions_ = false;
   std::string emuOptionsTab_;  // emulator whose tab to select when the dialog opens

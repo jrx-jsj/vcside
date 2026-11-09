@@ -1980,6 +1980,7 @@ void App::projectPanel() {
       ImGui::Separator();
     }
   }
+  updateGitIgnored();
   // The tree, drawn row by row: chevron, icon, name; guides for each level.
   ImDrawList* drawList = ImGui::GetWindowDrawList();
   float fontH = ImGui::GetTextLineHeight(), rowH = std::round(fontH * 1.45f), indentW = std::round(fontH * 0.9f);
@@ -2027,8 +2028,7 @@ void App::projectPanel() {
     std::error_code errorCode;
     for (auto& entry : fs::directory_iterator(dir, errorCode)) {
       std::string name = entry.path().filename().string();
-      if (name.empty() || name[0] == '.') continue;
-      if (name.size() > 13 && name.compare(name.size() - 13, 13, ".vcsproj.user") == 0) continue;  // VCSIDE's own state
+      if (name.empty() || name == ".git") continue;  // every file shows, but not Git's own folder
       entries.push_back(entry);
     }
     std::sort(entries.begin(), entries.end(), [](auto& first, auto& second) {
@@ -2038,14 +2038,15 @@ void App::projectPanel() {
     for (auto& entry : entries) {
       std::string name = entry.path().filename().string(), entryPath = entry.path().string();
       bool isDirectory = entry.is_directory();
+      bool ignored = gitIgnored_.count(entryPath) > 0;
       if (isDirectory) {
-        bool sub = dimmed || name == "build";  // build output: shown dimmed
+        bool sub = dimmed || ignored || name == "build";  // build output and what Git ignores: shown dimmed
         bool open = isOpen(entryPath, false);
         if (row(entryPath, depth, name, files::Kind::Folder, true, open, false, sub)) toggle(entryPath), open = !open;
         if (open) tree(entry.path(), depth + 1, sub);
       } else {
         bool active = activeFile_ >= 0 && files_[activeFile_]->path == entryPath;
-        if (row(entryPath, depth, name, files::kindOf(name, false), false, false, active, dimmed)) {
+        if (row(entryPath, depth, name, files::kindOf(name, false), false, false, active, dimmed || ignored)) {
           if (entry.path().extension() == ".vcsproj" && !(project_ && fs::weakly_canonical(project_->file) == fs::weakly_canonical(entryPath))) openProject(entryPath);
           else if (entry.path().extension() == ".vcsproj") projectSettings();
           else if (files::kindOf(name, false) != files::Kind::Rom) openFile(entryPath);
@@ -2061,6 +2062,36 @@ void App::projectPanel() {
   if (rootOpen) tree(folder_, 1, false);
   ImGui::PopStyleVar();
   ImGui::End();
+}
+
+// Asks Git (in the background) which files and folders of the project it ignores. Without
+// Git, or outside a repository, nothing is ignored.
+void App::updateGitIgnored() {
+  if (gitJob_ && gitJob_->finished()) {
+    gitIgnored_.clear();
+    if (gitJob_->exitCode() == 0 && gitFolder_ == folder_) {
+      std::string output = gitJob_->output();
+      size_t start = 0;
+      if (output.rfind("> ", 0) == 0) start = output.find('\n') + 1;  // the command line Job puts first
+      for (size_t end; (end = output.find('\0', start)) != std::string::npos; start = end + 1) {
+        std::string relative = output.substr(start, end - start);
+        while (!relative.empty() && (relative.back() == '/' || relative.back() == '\\')) relative.pop_back();  // a folder
+        if (!relative.empty()) gitIgnored_.insert((fs::path(folder_) / fs::path(relative)).make_preferred().string());
+      }
+    }
+    gitJob_.reset();
+  }
+  if (gitJob_ || folder_.empty()) return;
+  if (gitFolder_ != folder_) gitIgnored_.clear(), gitAskedAt_ = -100;
+  double now = ImGui::GetTime();
+  if (now - gitAskedAt_ < 3) return;
+  gitAskedAt_ = now;
+  gitFolder_ = folder_;
+  static const std::string git = findInPath("git");
+  if (git.empty()) return;
+  gitJob_ = std::make_unique<Job>();
+  // the paths come relative to the folder, with ignored folders as one entry ending in /
+  if (!gitJob_->start({git, "ls-files", "--others", "--ignored", "--exclude-standard", "--directory", "-z"}, folder_)) gitJob_.reset();
 }
 
 // The whole window, with no title or panels, for the welcome page.
