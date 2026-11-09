@@ -657,7 +657,9 @@ static void testElfSpace() {
   std::string error;
   CHECK(readElf(rom, romElf, &error) && romElf.type == 1 && romElf.machine == 40 && romElf.sections.size() == 8);
   CHECK(romElf.sections.size() == 8 && romElf.sections[2].name == ".RamFunc");
-  ElfSpace elfSpace = analyzeElfSpace(romElf, (long)rom.size(), nullptr, 90);
+  ElfLimits chameleon = elfLimits("chameleon", 0, 0);
+  CHECK(chameleon.cartridge == ElfCartridge::Chameleon && chameleon.flash == kChameleonFlash && chameleon.ram == kChameleonRam);
+  ElfSpace elfSpace = analyzeElfSpace(romElf, (long)rom.size(), nullptr, chameleon, 90);
   CHECK(elfSpace.code == 1000 && elfSpace.ramCode == 300 && elfSpace.constants == 2000 && elfSpace.data == 40 && elfSpace.bss == 500 && !elfSpace.exact);
   CHECK(elfSpace.flash.used == 3340 + kChameleonFirmwareFlash && elfSpace.ram.used == 840 + kChameleonFirmwareRam);
   CHECK(elfSpace.diagnostics.empty());
@@ -666,9 +668,29 @@ static void testElfSpace() {
                                    {0x20008500, 0x0801E460, 0, 1100}});
   ElfFile imageElf;
   CHECK(readElf(img, imageElf, &error) && imageElf.type == 2 && imageElf.segments.size() == 3);
-  elfSpace = analyzeElfSpace(romElf, (long)rom.size(), &imageElf, 90);
+  elfSpace = analyzeElfSpace(romElf, (long)rom.size(), &imageElf, chameleon, 90);
   CHECK(elfSpace.exact && elfSpace.flash.used == 124000 && elfSpace.ram.used == 35100);
   CHECK(elfSpace.diagnostics.size() == 2 && elfSpace.diagnostics[0].severity == Diagnostic::Warning);  // 94 % and 95 %
+  // the 512 KB model, set in the project: the same image fits easily
+  ElfLimits bigChameleon = elfLimits("chameleon", 512, 144);
+  CHECK(bigChameleon.flash == 512 * 1024 && bigChameleon.ram == 144 * 1024);
+  elfSpace = analyzeElfSpace(romElf, (long)rom.size(), &imageElf, bigChameleon, 90);
+  CHECK(elfSpace.diagnostics.empty() && elfSpace.ccm.size == 0);
+  // PlusCart / UnoCart: a small file is read whole into the 96 KB buffer, the zeroed variables go to CCM RAM
+  ElfLimits plusCart = elfLimits("pluscart", 0, 0);
+  CHECK(plusCart.cartridge == ElfCartridge::PlusCart && plusCart.ram == kPlusCartBuffer && defaultElfFlashKb("pluscart") == 0);
+  elfSpace = analyzeElfSpace(romElf, 5000, &imageElf, plusCart, 90);  // the Chameleon image is not used
+  CHECK(elfSpace.wholeFile && elfSpace.ram.used == 5000 && elfSpace.ccm.used == 500 && elfSpace.ccm.size == kPlusCartCcm && elfSpace.flash.size == 0);
+  CHECK(elfSpace.diagnostics.empty() && elfSpace.summary().find("PlusCart") != std::string::npos);
+  // a bigger file goes to flash: code, .data and the constants with relocations are copied to the buffer
+  std::string relocated = makeElf(1, {{".text", 1, 6, 1000}, {".RamFunc", 1, 6, 302}, {".rodata.tab", 1, 2, 2000}, {".rodata.font", 1, 2, 700},
+                                      {".rel.rodata.tab", 9, 0x40, 16}, {".data.x", 1, 3, 40}, {".bss.y", 8, 3, 501}}, {});
+  CHECK(readElf(relocated, romElf, &error));
+  elfSpace = analyzeElfSpace(romElf, 200000, nullptr, plusCart, 90);
+  CHECK(!elfSpace.wholeFile && elfSpace.relocatedConstants == 2000 && elfSpace.constants == 2700);
+  CHECK(elfSpace.ram.used == 1000 + 304 + 2000 + 40 && elfSpace.ccm.used == 504);
+  elfSpace = analyzeElfSpace(romElf, 200000, nullptr, elfLimits("pluscart", 0, 3), 90);  // a 3 KB buffer
+  CHECK(elfSpace.diagnostics.size() == 1 && elfSpace.diagnostics[0].severity == Diagnostic::Error);
   CHECK(!readElf("not an elf", romElf, &error) && !error.empty());
 
   // a new ELF project from the template
@@ -679,6 +701,13 @@ static void testElfSpace() {
   Project project;
   CHECK(Project::create(dir.string(), "rainbow", Language::ElfC, "NTSC", &project, &error));
   CHECK(project.buildCommand == "make" && project.format == "ELF" && project.output == "build/rainbow.bin" && project.main == "src/main.c");
+  CHECK(project.elfCartridge == "chameleon" && project.toJson().find("\"elf_cartridge\": \"chameleon\"") != std::string::npos);
+  project.elfCartridge = "pluscart", project.elfFlashKb = 512, project.elfRamKb = 64;
+  {
+    Project reread;
+    CHECK(reread.fromJson(project.toJson(), project.file, &error));
+    CHECK(reread.elfCartridge == "pluscart" && reread.elfFlashKb == 0 && reread.elfRamKb == 64 && reread.otherKeys.empty());
+  }
   for (auto fileName : {"Makefile", "include/vcsLib.h", "src/main.c", "src/memcpy_long.S", "chameleon/support.c"}) CHECK(fs::exists(dir / fileName));
   CHECK(!fs::exists(dir / "LICENSE.md"));
   std::ifstream makefile(dir / "Makefile");

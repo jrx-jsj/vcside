@@ -40,7 +40,9 @@ A small native IDE for making Atari 2600 games, on macOS, Windows and Linux. It 
   - bytes used and free per ROM bank, in the 2600's RAM (with room left for the stack) and in the cartridge's RAM (Superchip, FA, CV);
   - warnings for full banks, wrong ROM sizes and code on bank-switch hotspots, with the source line when possible;
   - thresholds per project: `space_warn_percent` and `stack_reserve` in the `.vcsproj`;
-  - ELF projects: code, code in RAM (`.RamFunc`), constants and variables read from the ROM's sections, and the Chameleon Cart's flash (128 KB) and RAM (36 KB). Exact when the Chameleon image is built, otherwise estimated with the firmware's measured share.
+  - ELF projects: code, code in RAM (`.RamFunc`), constants and variables read from the ROM's sections, measured against the cartridge chosen in the new-project dialog or the project settings:
+    - Chameleon Cart: flash (128 KB) and RAM (36 KB), or the sizes set in the project (512 KB and 144 KB on its 512 KB model). Exact when the Chameleon image is built, otherwise estimated with the firmware's measured share.
+    - PlusCart or UnoCart (firmware 2.3.32 or later): the loader's 96 KB RAM buffer (a file that fits is read whole into it; a bigger one goes to flash and only the code, the variables with a value and the constants with relocations are copied) and the 64 KB of CCM RAM for the zeroed variables. The buffer size can be set in the project.
 - **Graphics editor** (`.vcsgfx`, *File → New graphics...*):
   - Sprites built from the TIA's five movable objects (P0, P1, M0, M1, BL) as layers, each with its position, width, reflection and colour per row and frame, in animation frames. A multicolour sprite is any mix of them.
   - Flicker phases: layers in different phases are drawn on alternate frames, so an object can be used more than once; the preview shows the flicker.

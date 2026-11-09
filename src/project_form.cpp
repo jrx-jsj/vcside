@@ -9,6 +9,7 @@
 #include <fstream>
 #include <sstream>
 
+#include "elf_space.h"
 #include "i18n.h"
 #include "imgui_stdlib.h"
 #include "theme_ui.h"
@@ -239,6 +240,26 @@ void ProjectForm::render(TextEditor& text, ImFont* mono, const KnowledgeBase& kb
     }
 
     section(T("Space report"));
+    if (project_.language == Language::ElfC) {
+      row(T("Cartridge"), T("What the space report measures the game against."));
+      combo("##cart", project_.elfCartridge, {{"chameleon", "Chameleon Cart"}, {"pluscart", T("PlusCart or UnoCart")}}, project_.elfCartridge);
+      // the cartridge's own size shows when none is set; setting it back to that unsets it
+      auto sizeField = [&](const char* id, int& kilobytes, long defaultKb) {
+        int shown = kilobytes > 0 ? kilobytes : (int)defaultKb;
+        if (ImGui::InputInt(id, &shown, 0)) {
+          shown = std::clamp(shown, 1, 65536);
+          kilobytes = shown == defaultKb ? 0 : shown;
+          changed = true;
+        }
+      };
+      if (project_.elfCartridge == "chameleon") {
+        row(T("Flash (KB)"), T("128 on the Chameleon Cart; 512 on its 512 KB model."));
+        sizeField("##flash", project_.elfFlashKb, defaultElfFlashKb(project_.elfCartridge));
+      }
+      row(T("RAM (KB)"), project_.elfCartridge == "chameleon" ? T("36 on the Chameleon Cart; 144 on its 512 KB model.")
+                                                              : T("The loader's buffer: 96 in the PlusCart and UnoCart firmware."));
+      sizeField("##ram", project_.elfRamKb, defaultElfRamKb(project_.elfCartridge));
+    }
     row(T("Warn when fuller than"), T("A bank or a RAM area fuller than this gets a warning."));
     if (ImGui::SliderInt("##warn", &project_.spaceWarnPercent, 50, 100, "%d %%")) changed = true;
     row(T("Bytes kept for the stack"), T("Bytes of the 2600's RAM that the RAM count leaves free for the stack."));

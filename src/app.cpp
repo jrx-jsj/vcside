@@ -626,9 +626,11 @@ void App::measureElf() {
     return;
   }
   std::error_code errorCode;
-  bool useChameleon = fs::exists(chameleonPath, errorCode) && fs::last_write_time(chameleonPath, errorCode) >= fs::last_write_time(rom, errorCode) &&
-               readElf(readFile(chameleonPath), chameleonElf, &error) && chameleonElf.type == 2;
-  elfSpace_ = analyzeElfSpace(romElf, (long)fs::file_size(rom, errorCode), useChameleon ? &chameleonElf : nullptr, project_->spaceWarnPercent);
+  ElfLimits limits = elfLimits(project_->elfCartridge, project_->elfFlashKb, project_->elfRamKb);
+  bool useChameleon = limits.cartridge == ElfCartridge::Chameleon && fs::exists(chameleonPath, errorCode) &&
+                      fs::last_write_time(chameleonPath, errorCode) >= fs::last_write_time(rom, errorCode) &&
+                      readElf(readFile(chameleonPath), chameleonElf, &error) && chameleonElf.type == 2;
+  elfSpace_ = analyzeElfSpace(romElf, (long)fs::file_size(rom, errorCode), useChameleon ? &chameleonElf : nullptr, limits, project_->spaceWarnPercent);
   for (auto diagnostic : elfSpace_->diagnostics) {
     diagnostic.message = T("Space") + std::string(": ") + diagnostic.message;
     diagnostics_.push_back(diagnostic);
@@ -2610,18 +2612,36 @@ void App::spacePanel() {
         }
         ImGui::EndTable();
       }
-      ImGui::SeparatorText(T("Chameleon Cart (STM32G070RB)"));
-      SpaceReport::Area flashArea{elfReport.flash.name, elfReport.flash.used, elfReport.flash.size, true, ""}, ramArea{elfReport.ram.name, elfReport.ram.used, elfReport.ram.size, true, ""};
-      spaceBar(flashArea, warnPercent);
-      spaceBar(ramArea, warnPercent);
-      ImGui::PushTextWrapPos(0);
-      if (elfReport.exact)
-        ImGui::TextDisabled("%s", T("Measured on the Chameleon image (make chameleon), firmware included."));
-      else
-        ImGui::TextDisabled("%s", F("Estimate: the game plus about {0} bytes of flash and {1} of RAM for the firmware. Build the Chameleon image (make chameleon) for the exact figures.",
-                                    {std::to_string(kChameleonFirmwareFlash), std::to_string(kChameleonFirmwareRam)})
-                                      .c_str());
-      ImGui::TextDisabled("%s", T("The 512 KB Chameleon Cart (STM32G0B0RE) has 144 KB of RAM. Stella, Gopher2600 and the PlusCart load the whole ROM into RAM."));
+      auto bar = [&](const ElfSpace::Area& area) {
+        SpaceReport::Area shown{area.name, area.used, area.size, true, ""};
+        spaceBar(shown, warnPercent);
+      };
+      if (elfReport.cartridge == ElfCartridge::PlusCart) {
+        ImGui::SeparatorText(T("PlusCart / UnoCart"));
+        bar(elfReport.ram);
+        bar(elfReport.ccm);
+        ImGui::PushTextWrapPos(0);
+        if (elfReport.wholeFile)
+          ImGui::TextDisabled("%s", T("The file fits the loader's buffer, so it is read whole into RAM. The zeroed variables go to the CCM RAM."));
+        else
+          ImGui::TextDisabled("%s", F("The file is bigger than the loader's buffer: it goes to flash, and the code, the variables with a value and the constants with pointers ({0} bytes) are copied to RAM. The zeroed variables go to the CCM RAM.",
+                                      {std::to_string(elfReport.relocatedConstants)})
+                                        .c_str());
+        ImGui::TextDisabled("%s", T("Firmware 2.3.32 or later; with older ones the whole file must fit the 96 KB buffer."));
+      } else {
+        ImGui::SeparatorText(T("Chameleon Cart"));
+        bar(elfReport.flash);
+        bar(elfReport.ram);
+        ImGui::PushTextWrapPos(0);
+        if (elfReport.exact)
+          ImGui::TextDisabled("%s", T("Measured on the Chameleon image (make chameleon), firmware included."));
+        else
+          ImGui::TextDisabled("%s", F("Estimate: the game plus about {0} bytes of flash and {1} of RAM for the firmware. Build the Chameleon image (make chameleon) for the exact figures.",
+                                      {std::to_string(kChameleonFirmwareFlash), std::to_string(kChameleonFirmwareRam)})
+                                        .c_str());
+        ImGui::TextDisabled("%s", T("The 512 KB Chameleon Cart (STM32G0B0RE) has 512 KB of flash and 144 KB of RAM: set them in the project settings."));
+      }
+      ImGui::TextDisabled("%s", T("Stella and Gopher2600 load the whole ROM into RAM."));
       ImGui::PopTextWrapPos();
     } else if (!space_) {
       if (!spaceRunning_ && spaceNote_.empty()) ImGui::TextDisabled("%s", T("Build the project (F7) to see the space used."));
@@ -2944,6 +2964,28 @@ void App::newProjectDialog() {
         ImGui::EndCombo();
       }
     }
+    if (languageFromId(kLangIds[npLang_]) == Language::ElfC) {
+      row(T("Cartridge"));
+      const std::pair<const char*, const char*> cartridges[] = {{"chameleon", "Chameleon Cart"}, {"pluscart", N_("PlusCart or UnoCart")}};
+      std::string shown = npElfCartridge_ == "pluscart" ? T(cartridges[1].second) : cartridges[0].second;
+      if (ImGui::BeginCombo("##cart", shown.c_str())) {
+        for (auto& [id, name] : cartridges)
+          if (ImGui::Selectable(id == std::string("pluscart") ? T(name) : name, npElfCartridge_ == id) && npElfCartridge_ != id) {
+            npElfCartridge_ = id;
+            npFlashKb_ = (int)defaultElfFlashKb(id), npRamKb_ = (int)defaultElfRamKb(id);
+          }
+        ImGui::EndCombo();
+      }
+      if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", T("What the space report measures the game against. It can be changed later in the project settings."));
+      if (npElfCartridge_ == "chameleon") {
+        row(T("Flash (KB)"));
+        ImGui::InputInt("##flash", &npFlashKb_, 0);
+        npFlashKb_ = std::clamp(npFlashKb_, 1, 65536);
+      }
+      row(T("RAM (KB)"));
+      ImGui::InputInt("##ram", &npRamKb_, 0);
+      npRamKb_ = std::clamp(npRamKb_, 1, 65536);
+    }
     npExample_ = std::clamp(npExample_, 0, (int)examples.size());
     if (!examples.empty()) {
       std::vector<const char*> names = {T("Empty project")};
@@ -2962,7 +3004,14 @@ void App::newProjectDialog() {
     Project created;
     error.clear();
     std::string example = npExample_ > 0 && npExample_ <= (int)examples.size() ? examples[npExample_ - 1].first : "";
-    if (Project::create(target.string(), npName_, languageFromId(kLangIds[npLang_]), npTvId_, &created, &error, example)) {
+    bool made = Project::create(target.string(), npName_, languageFromId(kLangIds[npLang_]), npTvId_, &created, &error, example);
+    if (made && created.language == Language::ElfC) {  // the cartridge; its own sizes are left unset
+      created.elfCartridge = npElfCartridge_;
+      created.elfFlashKb = npFlashKb_ == defaultElfFlashKb(npElfCartridge_) ? 0 : npFlashKb_;
+      created.elfRamKb = npRamKb_ == defaultElfRamKb(npElfCartridge_) ? 0 : npRamKb_;
+      made = created.save(&error);
+    }
+    if (made) {
       openProject(created.file);
       ImGui::CloseCurrentPopup();
     }

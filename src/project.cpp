@@ -51,7 +51,8 @@ IllegalOpcodes illegalFromId(const std::string& id) {
 // The keys VCSIDE writes; the others are kept as they are.
 static const char* kKnownKeys[] = {"name", "language", "main", "output", "format", "tv", "emulator", "illegal_opcodes",
                                    "include_dirs", "build_command", "tool_paths", "build_flags", "space_warn_percent",
-                                   "stack_reserve", "emulator_options", "emulator_args"};
+                                   "stack_reserve", "elf_cartridge", "elf_flash_kb", "elf_ram_kb", "emulator_options",
+                                   "emulator_args"};
 
 bool Project::fromJson(const std::string& text, const std::string& path, std::string* error) {
   try {
@@ -76,6 +77,9 @@ bool Project::fromJson(const std::string& text, const std::string& path, std::st
     parsed.buildFlags = document.value("build_flags", "");
     parsed.spaceWarnPercent = document.value("space_warn_percent", 90);
     parsed.stackReserve = document.value("stack_reserve", 8);
+    parsed.elfCartridge = document.value("elf_cartridge", parsed.elfCartridge) == "pluscart" ? "pluscart" : "chameleon";
+    parsed.elfFlashKb = std::max(0, document.value("elf_flash_kb", 0));
+    parsed.elfRamKb = std::max(0, document.value("elf_ram_kb", 0));
     if (document.contains("emulator_options") && document["emulator_options"].is_object())
       for (auto& [emulatorId, options] : document["emulator_options"].items())
         for (auto& [key, value] : options.items())
@@ -118,6 +122,11 @@ std::string Project::toJson() const {
   if (!buildFlags.empty()) document["build_flags"] = buildFlags;
   if (spaceWarnPercent != 90) document["space_warn_percent"] = spaceWarnPercent;
   if (stackReserve != 8) document["stack_reserve"] = stackReserve;
+  if (language == Language::ElfC) {
+    document["elf_cartridge"] = elfCartridge;
+    if (elfFlashKb > 0 && elfCartridge == "chameleon") document["elf_flash_kb"] = elfFlashKb;
+    if (elfRamKb > 0) document["elf_ram_kb"] = elfRamKb;
+  }
   json optionsJson = json::object(), argsJson = json::object();
   for (auto& [emulatorId, options] : emulatorOptions)
     for (auto& [key, value] : options)

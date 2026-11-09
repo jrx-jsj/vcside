@@ -41,6 +41,7 @@ Each JSON file has a top-level `sources` array (`id`, `title`, `author`, `url`, 
 - **masswerk, NMS and Gopher2600 definitions**: bytes, cycles and page penalty of the 256 opcodes (all three agree), stable/unstable classification. The only change: LAS is stable (only SHA, SHX, SHY, SHS/TAS, ANE and LXA are unstable).
 - **DASM**: every opcode was assembled to check the name and the bytes. 36 opcodes cannot be generated with a mnemonic (marked `"dasm": false`; `.byte` must be used): the 12 JAMs, the USBC `$EB`, `$2B` (ANC), the 1-byte NOPs and several NOPs with an operand. DASM does not accept `ASL A` with an operand (you have to write `ASL`); the DASM name for `$4B` is `ASR`, not `ALR`.
 - **Stella (code)**: cartridge type names for `-bs`, supported sizes, hotspots of FA, FA2, UA, 0840, SB, X07, EF, DF, BF, E0, E7, 3E, 3E+, CDF, DPC+, BUS, detection by strings and by size, Superchip detection, reading the SC write port = unwanted write, RIOT decoding (`M6532.cxx`).
+- **United Carts of Atari (PlusCart and UnoCart firmware, https://github.com/Al-Nafuur/United-Carts-of-Atari, v2.3.32)**: the ELF loader's 96 KB RAM buffer and 64 KB of CCM RAM (`main.h`), files bigger than the buffer written to flash with only the code, writable data and read-only data with relocations copied to RAM, zeroed variables in CCM RAM (`cartridge_emulation_ELF.c`, `elfLib.c`). Used by the ELF space report.
 - **Gopher2600 (code)**: accepted `-mapping` ids (`cartridge.go`: F0, 0840, X07, 4A50 and BUS do not exist), fingerprint of ELF/CDF/DPC+/3E+/AR/SC, CDF and E7 hotspot table, vcsLib names of the ELF loader, line counts per TV specification.
 - **Tests with the Gopher2600 binary** (our own test programs): RESP0 position = 3·N − 68 + 5 (N = write cycle; N = 23 gives 6), RESM0/RESBL = 3·N − 68 + 4, in HBLANK without HMOVE the player ends up at 3 and the missile/ball at 2; WSYNC written at cycles 72, 74 or 75 resumes at cycle 0 of the next line, and written at cycle 0 it waits a whole line.
 
@@ -73,7 +74,7 @@ Each JSON file has a top-level `sources` array (`id`, `title`, `author`, `url`, 
 - AUDV: whether the change applies instantly or on the next audio clock (used for PCM samples).
 - Behaviour of INTIM read exactly on the cycle it wraps around (0 → `$FF`), and "idiomatic" TIM64T values (43, 35/36).
 - Doubtful formats: FA (Stella's comment says D0 must be 1; the code has it commented out), FA2 (number of banks per variant), BUS (seven banks according to the comment, six hotspots in the code), DF/DFSC (Gopher2600 has no id of its own), CV (title/layout only according to Stella), 4A50 (exact hotspot addresses), F8 (real boot bank).
-- ELF: what is said about PlusCart firmware 2.3.32, old Gopher2600 versions with code in RAM and the Chameleon sizes comes from the project's notes, not from a public source.
+- ELF: which vcsLib symbols PlusCart firmware 2.3.32 lacks, old Gopher2600 versions with code in RAM and the Chameleon sizes comes from the project's notes, not from a public source.
 - PAL colours: hues 0, 1, 14 and 15 as greys (not checked in a primary document).
 - MCS6500 (6 MB datasheet) and Bruce Clark's decimal mode tutorial were not read in this pass.
 - Version 0.96 of *No More Secrets* could not be downloaded; 0.91 was used.

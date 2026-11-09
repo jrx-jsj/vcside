@@ -35,6 +35,10 @@ struct Project {
   std::string buildFlags;       // more arguments for DASM (e.g. "-DPAL=1 -T1")
   int spaceWarnPercent = 90;    // warn when a bank or RAM area is fuller than this
   int stackReserve = 8;         // bytes of 2600 RAM to keep free for the stack
+  // ELF: the cartridge the space report measures against, "chameleon" or "pluscart"
+  // (PlusCart and UnoCart), and its flash and RAM in KB (0: the cartridge's own sizes).
+  std::string elfCartridge = "chameleon";
+  int elfFlashKb = 0, elfRamKb = 0;
   // Launch options per emulator: option id (emulators.json) -> value. Unset = not passed.
   std::map<std::string, std::map<std::string, std::string>> emulatorOptions;
   std::map<std::string, std::string> emulatorArgs;  // extra arguments per emulator, before the ROM
