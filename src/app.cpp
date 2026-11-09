@@ -92,6 +92,7 @@ void App::loadSettings() {
   themes_.load(dataDir() + "/themes", configDir() + "themes");
   useTheme(settings.value("theme", std::string("dark")), false);
   showCycles_ = settings.value("show_cycles", true);
+  showPages_ = settings.value("show_pages", true);
   zoom_ = std::clamp(settings.value("zoom", settings.value("editor_zoom", 1.0f)), 0.5f, 3.0f);
   tools_.loadSettings(settings.value("tools", std::map<std::string, std::string>{}));
   // A new docked panel needs the default layout once (imgui.ini would keep it floating).
@@ -105,6 +106,7 @@ void App::saveSettings() {
   json settings = {{"language", currentLanguage()},
             {"recent", recent_},
             {"show_cycles", showCycles_},
+            {"show_pages", showPages_},
             {"zoom", zoom_},
             {"theme", themeId_},
             {"tools", tools_.userPaths()},
@@ -125,11 +127,13 @@ void App::syncSettings() {
   if (!settings.is_object()) return;
   recent_ = settings.value("recent", recent_);
   showCycles_ = settings.value("show_cycles", showCycles_);
+  showPages_ = settings.value("show_pages", showPages_);
   zoom_ = std::clamp(settings.value("zoom", zoom_), 0.5f, 3.0f);
   themes_.load(dataDir() + "/themes", configDir() + "themes");
   useTheme(settings.value("theme", themeId_), false);  // this window's ImGui style
   tools_.loadSettings(settings.value("tools", std::map<std::string, std::string>{}));
   for (auto& file : files_) file->editor.setGutterWidthChars(showCycles_ && file->asmSyntax ? 5 : 0);
+  for (auto& file : files_) updatePageSeparators(*file);
 }
 
 void App::useTheme(const std::string& id, bool save) {
@@ -330,8 +334,10 @@ OpenFile* App::openFile(const std::string& pathIn, int line) {
       return findDefinition(word, self->path, line, path, foundLine);
     };
     }
+    if (newFile->asmSyntax) editorHooks.lineInfo = [this, self](int line) { return addressInfo(self->path, line); };
     newFile->editor.setHooks(editorHooks);
   }
+  updatePageSeparators(*newFile);
   newFile->requestFocus = true;
   if (line > 0) newFile->editor.goTo(line - 1);
   if (auto found = breakpoints_.find(path); found != breakpoints_.end()) newFile->editor.setBreakpoints(found->second);
@@ -727,6 +733,51 @@ void App::loadSymbols() {
                        basicLineMap(readFile(project_->basicOutput(".asm"))), project_->abs(project_->main));
     addresses_.resolveFiles([this](const std::string& name) { return resolveSource(name); });
   }
+  for (auto& file : files_) updatePageSeparators(*file);
+}
+
+static std::string hexAddress(long address) {
+  char text[16];
+  snprintf(text, sizeof text, "$%04lX", address);
+  return text;
+}
+
+std::string App::addressInfo(const std::string& path, int line) const {
+  if (addresses_.empty()) return T("No addresses yet: build first.");
+  std::string info;
+  int shown = 0;
+  for (const ListedLine* listed : addresses_.linesIn(path)) {
+    if (listed->line != line + 1) continue;
+    if (++shown > 8) {
+      info += "...\n";
+      break;
+    }
+    long last = listed->cpu + listed->bytes - 1;
+    std::string where = hexAddress(listed->cpu);
+    if (listed->bytes > 1) where += "-" + hexAddress(last);
+    if (addresses_.banks() > 1) where += "  " + F("(bank {0})", {std::to_string(addresses_.bankOf(*listed))});
+    info += where + "\n";
+    info += "  " + F("{0} bytes, at {1} in the ROM file", {std::to_string(listed->bytes), hexAddress(addresses_.romOffset(*listed))}) + "\n";
+    if ((last >> 8) != (listed->cpu >> 8)) info += "  " + F("Crosses into page {0}.", {hexAddress(last & ~0xFFL)}) + "\n";
+  }
+  if (!shown) return T("No bytes for this line in the last build.");
+  info.pop_back();
+  return info;
+}
+
+void App::updatePageSeparators(OpenFile& file) {
+  std::map<int, std::string> separators;
+  if (!showPages_ || !file.asmSyntax || file.gfx || file.form || addresses_.empty()) {
+    file.editor.setSeparators(separators);
+    return;
+  }
+  for (const PageBreak& pageBreak : pageBreaks(addresses_, file.path, file.editor.lines())) {
+    std::string name = F("page {0}", {hexAddress(pageBreak.address)});
+    if (addresses_.banks() > 1) name += "  " + F("(bank {0})", {std::to_string(pageBreak.bank)});
+    if (pageBreak.inside) name += "  " + std::string(T("(starts in the line above)"));
+    separators.emplace(pageBreak.line, name);
+  }
+  file.editor.setSeparators(separators);
 }
 
 std::string App::resolveSource(const std::string& name) const {
@@ -1716,6 +1767,11 @@ MenuBar App::buildMenuBar(bool native) {
         for (auto& openedFile : files_) openedFile->editor.setGutterWidthChars(showCycles_ && openedFile->asmSyntax ? 5 : 0);
         saveSettings();
       }, true, showCycles_),
+      item(T("Show 6502 page separators"), "", [this] {
+        showPages_ = !showPages_;
+        for (auto& openedFile : files_) updatePageSeparators(*openedFile);
+        saveSettings();
+      }, true, showPages_),
       MenuItem::sep(),
       item(T("Zoom in"), "Ctrl++", [this] { zoomEditor(1); }, zoom_ < 3.0f),
       item(T("Zoom out"), "Ctrl+-", [this] { zoomEditor(-1); }, zoom_ > 0.5f),

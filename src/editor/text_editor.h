@@ -34,6 +34,8 @@ struct EditorHooks {
   std::function<std::vector<Token>(const std::string&)> tokenize;
   // Text shown in the gutter for a line (e.g. "3" or "4/5" cycles); empty = nothing.
   std::function<std::string(int line, const std::string&)> gutter;
+  // What clicking the gutter's cycle column shows for a line (e.g. its address); empty = nothing.
+  std::function<std::string(int line)> lineInfo;
   // Help for the word under the mouse; empty = no tooltip.
   std::function<std::string(const std::string& word, const std::string& line)> hover;
   // Completion candidates for a prefix.
@@ -77,6 +79,8 @@ class TextEditor {
   void setHooks(EditorHooks hooks) { hooks_ = std::move(hooks); }
   void setMarkers(std::map<int, std::pair<bool, std::string>> markers) { markers_ = std::move(markers); }  // line -> (error?, msg)
   void setGutterWidthChars(int chars) { gutterChars_ = chars; }
+  // Labelled rules drawn above lines (0-based), e.g. where a new 6502 page starts.
+  void setSeparators(std::map<int, std::string> separators) { separators_ = std::move(separators); }
 
   // Draws the editor filling the available region. Returns true if the text changed.
   bool render(const char* id, ImFont* font);
@@ -186,6 +190,8 @@ class TextEditor {
   int gutterChars_ = 0;
   EditorHooks hooks_;
   std::map<int, std::pair<bool, std::string>> markers_;
+  std::map<int, std::string> separators_;
+  std::string lineInfoText_;  // the cycle column's popup
   std::set<int> bps_;
   std::vector<std::string> bpBase_;  // text the breakpoint lines refer to
   size_t bpVersion_ = 0;

@@ -14,6 +14,8 @@ namespace {
 const std::regex kLine(R"(^\s*(\d+)\s([U ])([0-9a-fA-F]{4,8})(?: \?\?\?\?)?\t(.*)$)");
 const std::regex kBytes(R"(^\t {7}((?:[0-9a-f]{2} ?)+)\*?(.*)$)");
 const std::regex kFile(R"(^------- FILE (\S+))");
+// Any numbered line, also the blank ones (they have no tab after the address).
+const std::regex kNumber(R"(^\s*(\d+)\s+[U ]?[0-9a-fA-F]{4,8})");
 
 std::vector<std::string> words(const std::string& text) {
   std::vector<std::string> result;
@@ -45,35 +47,61 @@ void AddressMap::load(const std::string& listing, const SymbolLookup& lookup, lo
   std::map<std::string, long> segDelta;
   long delta = 0;
   int lastLine = 0, macroCall = 0;
+  // Macro expansions are numbered from the macro, so their lines go to the calling line.
+  // Calls on consecutive lines list one expansion after another with nothing between
+  // them: when the file goes on n lines after the first call and there were n
+  // expansions, each one goes to its own line (otherwise they were nested).
+  std::vector<size_t> expansionStarts;  // index in lines_ where each expansion begins
+  auto endExpansions = [&](int nextLine) {
+    int calls = nextLine - macroCall;
+    if (calls > 1 && calls == (int)expansionStarts.size())
+      for (int call = 0; call < calls; call++) {
+        size_t end = call + 1 < calls ? expansionStarts[call + 1] : lines_.size();
+        for (size_t index = expansionStarts[call]; index < end; index++) lines_[index].line = macroCall + call;
+      }
+    macroCall = 0;
+    expansionStarts.clear();
+  };
+  bool truncatedLast = false;  // the last listed line's bytes go on to the next one
   while (std::getline(stream, text)) {
     if (!text.empty() && text.back() == '\r') text.pop_back();
     std::smatch match;
     if (std::regex_search(text, match, kFile)) {
       file = match[1];
       macroCall = 0;
+      expansionStarts.clear();
       continue;
     }
+    std::smatch numberMatch;
+    if (!std::regex_search(text, numberMatch, kNumber)) continue;
+    int num = std::stoi(numberMatch[1]);
+    if (num != 0) {
+      if (macroCall && num > macroCall) endExpansions(num);  // back in the file after the expansions
+      if (!macroCall) lastLine = num;
+    }
     if (!std::regex_match(text, match, kLine)) continue;
-    int num = std::stoi(match[1]);
     bool uninit = match[2] == "U";
     long phys = std::stol(match[3], nullptr, 16);
     std::string rest = match[4];
     int bytes = 0;
+    bool truncated = false;  // DASM lists the first bytes and a '*' for the rest
     std::smatch bytesMatch;
     if (std::regex_match(rest, bytesMatch, kBytes)) {
       bytes = (int)words(bytesMatch[1].str()).size();
+      size_t bytesEnd = bytesMatch.position(1) + bytesMatch.length(1);
+      truncated = bytesEnd < rest.size() && rest[bytesEnd] == '*';
       rest = bytesMatch[2];
     }
     auto wordList = words(rest);
-    // Line 0 opens an include (its FILE header follows) or a macro expansion,
-    // whose lines are numbered from the macro: give them to the calling line.
+    // Line 0 opens an include (its FILE header follows) or a macro expansion.
     if (num == 0) {
-      if (findWord(wordList, "INCLUDE") < 0) macroCall = lastLine + 1;
+      if (findWord(wordList, "INCLUDE") < 0) {
+        if (!macroCall) macroCall = lastLine + 1;
+        expansionStarts.push_back(lines_.size());
+      }
       continue;
     }
-    if (macroCall && num == macroCall + 1) macroCall = 0;  // back in the file after the expansion
     int line = macroCall ? macroCall : num;
-    if (!macroCall) lastLine = num;
 
     int segAt = findWord(wordList, "SEG") >= 0 ? findWord(wordList, "SEG") : findWord(wordList, "SEG.U");
     if (int i = segAt; i >= 0) {
@@ -86,7 +114,9 @@ void AddressMap::load(const std::string& listing, const SymbolLookup& lookup, lo
     }
     if (findWord(wordList, "REND") >= 0) delta = 0;
     if (uninit || bytes == 0) continue;
+    if (!lines_.empty() && truncatedLast && phys > lines_.back().phys) lines_.back().bytes = (int)(phys - lines_.back().phys);
     lines_.push_back({file, line, phys, phys + delta, bytes, rest});
+    truncatedLast = truncated;
   }
   if (lines_.empty()) return;
   long lowest = lines_[0].phys, highest = 0;
@@ -131,6 +161,13 @@ std::optional<Breakpoint> AddressMap::breakpointAt(const std::string& file, int 
   return Breakpoint{best->cpu, bankOf(*best), best};
 }
 
+std::vector<const ListedLine*> AddressMap::linesIn(const std::string& file) const {
+  std::vector<const ListedLine*> result;
+  for (auto& listed : lines_)
+    if (listed.file == file) result.push_back(&listed);
+  return result;
+}
+
 std::vector<const ListedLine*> AddressMap::linesAt(long cpu, int bank) const {
   std::vector<const ListedLine*> result;
   for (auto& listed : lines_) {
@@ -138,6 +175,33 @@ std::vector<const ListedLine*> AddressMap::linesAt(long cpu, int bank) const {
     // the 6507 has 13 address lines: $F000, $1000, $3000... are the same place
     if (!hit) hit = (cpu & 0x1FFF) >= (listed.cpu & 0x1FFF) && (cpu & 0x1FFF) < (listed.cpu & 0x1FFF) + listed.bytes;
     if (hit && (bank < 0 || bankOf(listed) == bank)) result.push_back(&listed);
+  }
+  return result;
+}
+
+std::vector<PageBreak> pageBreaks(const AddressMap& addresses, const std::string& file, const std::vector<std::string>& lines) {
+  auto isLabelLine = [&lines](int index) {
+    if (index < 0 || index >= (int)lines.size() || lines[index].empty()) return false;
+    char first = lines[index][0];
+    return !std::isspace((unsigned char)first) && first != ';' && first != '*';
+  };
+  std::vector<PageBreak> result;
+  long lastPage = -1;
+  int lastBank = -1, lastLine = 0;  // lastLine: 1-based, as in the listing
+  for (const ListedLine* listed : addresses.linesIn(file)) {
+    long last = listed->cpu + listed->bytes - 1;
+    int bank = addresses.bankOf(*listed);
+    if (lastPage >= 0 && ((listed->cpu >> 8) != lastPage || bank != lastBank)) {
+      if (listed->line == lastLine) {
+        result.push_back({listed->line, listed->cpu & ~0xFFL, bank, true});
+      } else {
+        int above = listed->line - 1;
+        while (above - 1 > lastLine - 1 && isLabelLine(above - 1)) above--;
+        result.push_back({above, listed->cpu & ~0xFFL, bank, false});
+      }
+    }
+    if ((last >> 8) != (listed->cpu >> 8)) result.push_back({listed->line, last & ~0xFFL, bank, true});
+    lastPage = last >> 8, lastBank = bank, lastLine = listed->line;
   }
   return result;
 }

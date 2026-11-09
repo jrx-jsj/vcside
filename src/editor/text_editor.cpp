@@ -1038,8 +1038,13 @@ bool TextEditor::render(const char* id, ImFont* font) {
   float foldX = ImGui::GetWindowPos().x + bpW + numW + cycW;
   bool inMargin = io.MousePos.x < ImGui::GetWindowPos().x + bpW + numW;
   bool inFolds = foldW > 0 && io.MousePos.x >= foldX && io.MousePos.x < foldX + foldW + charW_ * 0.5f;
+  bool inCycles = cycW > 0 && hooks_.lineInfo && !inMargin && io.MousePos.x < foldX;
+  if (hovered && inCycles) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
   if (hovered && inMargin && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
     toggleBreakpoint(lineAtY(io.MousePos.y));
+  } else if (hovered && inCycles && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+    lineInfoText_ = hooks_.lineInfo(lineAtY(io.MousePos.y));
+    if (!lineInfoText_.empty()) ImGui::OpenPopup("##lineInfo");
   } else if (hovered && inFolds && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
     int line = lineAtY(io.MousePos.y);
     if (regionAt(line)) {
@@ -1199,6 +1204,19 @@ bool TextEditor::render(const char* id, ImFont* font) {
     linkWord_.clear(), linkLine_ = -1;
   }
 
+  // separators: a rule above the line, with its label at the right of the view
+  for (int row = firstRow; row <= lastRow; row++) {
+    auto separator = separators_.find(lineAt_[row]);
+    if (separator == separators_.end()) continue;
+    float y = origin.y + row * lineH_;
+    float right = winPos.x + ImGui::GetWindowWidth() - charW_ * 2;
+    float labelWidth = ImGui::CalcTextSize(separator->second.c_str()).x;
+    drawList->AddLine(ImVec2(winPos.x + gutterW, y), ImVec2(right, y), col(Role::EdGutterBorder), 1.0f);
+    float labelX = right - labelWidth;
+    drawList->AddRectFilled(ImVec2(labelX - charW_ * 0.5f, y - lineH_ * 0.5f), ImVec2(right, y + lineH_ * 0.5f), col(Role::EdBackground));
+    drawList->AddText(font, fontSize * 0.9f, ImVec2(labelX, y - lineH_ * 0.45f), col(Role::EdLineNumber), separator->second.c_str());
+  }
+
   // gutter (drawn over the text so it stays fixed when scrolling horizontally)
   float gx = winPos.x;
   drawList->AddRectFilled(ImVec2(gx, winPos.y), ImVec2(gx + gutterW - charW_ * 0.5f, winPos.y + viewH), col(Role::EdGutter));
@@ -1235,6 +1253,15 @@ bool TextEditor::render(const char* id, ImFont* font) {
   drawList->AddLine(ImVec2(gx + gutterW - charW_ * 0.5f, winPos.y), ImVec2(gx + gutterW - charW_ * 0.5f, winPos.y + viewH), col(Role::EdGutterBorder));
   // offset the gutter by the horizontal scroll so it stays on screen
   (void)scrollX;
+
+  if (ImGui::BeginPopup("##lineInfo")) {
+    ImGui::TextUnformatted(lineInfoText_.c_str());
+    if (ImGui::SmallButton(T("Copy"))) {
+      ImGui::SetClipboardText(lineInfoText_.c_str());
+      ImGui::CloseCurrentPopup();
+    }
+    ImGui::EndPopup();
+  }
 
   // cursor
   if (focused) {

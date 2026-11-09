@@ -49,6 +49,10 @@ class AddressMap {
   // decides which listed lines count (e.g. instructions, not .byte).
   std::optional<Breakpoint> breakpointAt(const std::string& file, int line,
                                          const std::function<bool(const ListedLine&)>& isCode) const;
+  // Listed lines of a source file, in the order they were assembled.
+  std::vector<const ListedLine*> linesIn(const std::string& file) const;
+  // Where a listed line is in the ROM file.
+  long romOffset(const ListedLine& listed) const { return listed.phys - base_; }
   // Listed lines whose code starts at a CPU address (one per bank where it exists).
   std::vector<const ListedLine*> linesAt(long cpu, int bank = -1) const;
 
@@ -57,5 +61,16 @@ class AddressMap {
   long base_ = 0, bankSize_ = 4096;
   int banks_ = 1;
 };
+
+// Where the code or data of a file enters a new 256-byte page (or bank): a rule goes above
+// line (0-based). A page that starts inside a line (a table that crosses it) goes below
+// that line, with inside set. Labels just before a new page are kept below the rule.
+struct PageBreak {
+  int line = 0;
+  long address = 0;  // the first address of the page
+  int bank = 0;
+  bool inside = false;
+};
+std::vector<PageBreak> pageBreaks(const AddressMap& addresses, const std::string& file, const std::vector<std::string>& lines);
 
 }  // namespace vcs

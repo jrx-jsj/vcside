@@ -405,6 +405,52 @@ static void testDebugMap() {
   CHECK(lines.size() == 1 && lines[0]->line == 20);
   map.resolveFiles([](const std::string& path) { return "/p/" + path; });
   CHECK(map.breakpointAt("/p/inc.h", 1, isCode));
+  CHECK(map.linesAt(0xF050, 0).size() == 1);  // inside the ds: its length comes from the next line
+
+  // Macros: a blank line before the call (listed without a tab) and two calls in a row
+  std::string macroListing =
+      "------- FILE m.asm LEVEL 1 PASS 2\n"
+      "     10  f000\t\t       ea\t\t      nop\n"
+      "     11  f001\n"
+      "      0  f001\t\t\t\t\t      TWO\n"
+      "      1  f001\t\t       ea\t\t      nop\n"
+      "      2  f002\t\t       ea\t\t      nop\n"
+      "      0  f003\t\t\t\t\t      ONE\n"
+      "      1  f003\t\t       e8\t\t      inx\n"
+      "     14  f004\n"
+      "     15  f004\t\t       c8\t\t      iny\n";
+  AddressMap macroMap;
+  macroMap.load(macroListing, [](const std::string&) -> std::optional<int> { return std::nullopt; }, 4096);
+  auto macroLines = macroMap.linesIn("m.asm");
+  CHECK(macroLines.size() == 5);
+  if (macroLines.size() == 5)
+    CHECK(macroLines[1]->line == 12 && macroLines[2]->line == 12 && macroLines[3]->line == 13 && macroLines[4]->line == 15);
+
+  // 6502 page separators
+  std::string pagesListing =
+      "------- FILE pages.asm LEVEL 1 PASS 2\n"
+      "      1  f0fc\t\t\t\t\t      ORG\t$F0FC\n"
+      "      2  f0fc\t\t       a9 01\t\t      lda\t#1\n"
+      "      3  f0fe\t\t\t\t   Table\t\n"
+      "      4  f0fe\t\t       01 02 03 04\t      .byte\t1,2,3,4\n"
+      "      5  f102\t\t       ea\t\t      nop\n"
+      "      6  f103\t\t\t\t\t      ; comment\n"
+      "      7  f103\t\t\t\t\t      ORG\t$F200\n"
+      "      8  f200\t\t\t\t   Next\t\n"
+      "      9  f200\t\t       ea\t\t      nop\n"
+      "     10  f201\t\t       00 00 00 00*\t      ds\t300\n"
+      "     11  f32d\t\t       ea\t\t      nop\n";
+  AddressMap pagesMap;
+  pagesMap.load(pagesListing, [](const std::string&) -> std::optional<int> { return std::nullopt; }, 4096);
+  std::vector<std::string> pagesSource = {"  ORG $F0FC", "  lda #1", "Table", "  .byte 1,2,3,4", "  nop", "; comment",
+                                          "  ORG $F200", "Next", "  nop", "  ds 300", "  nop"};
+  auto breaks = pageBreaks(pagesMap, "pages.asm", pagesSource);
+  CHECK(breaks.size() == 3);
+  if (breaks.size() == 3) {
+    CHECK(breaks[0].line == 4 && breaks[0].address == 0xF100 && breaks[0].inside);   // the table crosses into $F100
+    CHECK(breaks[1].line == 7 && breaks[1].address == 0xF200 && !breaks[1].inside);  // above the label Next
+    CHECK(breaks[2].line == 10 && breaks[2].address == 0xF300 && breaks[2].inside);  // the ds goes on into $F300
+  }
 
   // Breakpoints follow the text.
   TextEditor textEditor;

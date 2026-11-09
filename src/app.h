@@ -160,6 +160,10 @@ class App {
   void pollSpace();
   void loadSymbols();
   std::string resolveSource(const std::string& listingName) const;  // file name in the listing -> absolute path
+  // From the last build's listing: what clicking a line's cycles shows (its address) and
+  // the rules where a new 6502 page starts.
+  std::string addressInfo(const std::string& path, int line) const;
+  void updatePageSeparators(OpenFile& file);
   // breakpoints: per file (absolute path, 0-based lines), kept in <project>.vcsproj.user
   void loadUserState();
   void saveUserState();
@@ -285,6 +289,7 @@ class App {
   // settings
   std::vector<std::string> recent_;
   bool showCycles_ = true;
+  bool showPages_ = true;  // 6502 page separators in assembly files
   bool resetLayout_ = false;
   // themes
   theme::Library themes_;
