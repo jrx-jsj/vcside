@@ -49,6 +49,7 @@ Each JSON file has a top-level `sources` array (`id`, `title`, `author`, `url`, 
 
 Read for the design in `docs/design-music.md`; only facts are taken, in our own words, and no code. The editor's help credits the same people next to each feature.
 
+- **Ultimate Soundtracker** (Karsten Obarski, Amiga, 1987; https://en.wikipedia.org/wiki/Ultimate_Soundtracker): the tracker layout the music editor follows, with patterns, an order list and a per-cell effect column (in VCSIDE, V and R pick an instrument's volume and release variants).
 - **TIATracker** (Andre "Kylearan" Wichmann, 2016-2017, https://bitbucket.org/kylearan/tiatracker; licences from Debian's copyright file: program GPL-2.0-or-later, player Apache-2.0): instruments with per-frame envelopes, swing, the `.ttt` format to import.
 - **Paul Slocum, *Atari 2600 Music and Sound Programming Guide*** (v1.02, 2003, https://www.qotile.net/files/2600_music_guide.txt): the three non-tempered setups, tuning against the song.
 - **Eckhard Stolberg, frequency and waveform guide** (referenced by Slocum's guide): the tuning of every TIA note.

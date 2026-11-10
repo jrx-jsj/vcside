@@ -22,6 +22,15 @@ struct SongPosition {
   int order = 0, row = 0;
 };
 
+// Why a channel wrote what it wrote on a frame (for the register view).
+struct VoiceTrace {
+  bool active = false, released = false;
+  int note = kNoNote, instrument = 0;
+  int frame = 0;         // of the note (or of its release)
+  int volumeVariant = 0, releaseVariant = 0;
+  PitchStep pitch;       // melodic: the step played
+};
+
 class Player {
  public:
   // From an order entry and a row; audioClock: for the tuning (audioClockHz).
@@ -37,13 +46,15 @@ class Player {
   bool playing() const { return playing_; }
   bool sounding() const;  // the song plays or a voice still sounds
   SongPosition position() const { return shown_; }  // the row being heard
+  const VoiceTrace& trace(int channel) const { return traces_[channel]; }  // of the last frame
 
  private:
   struct Voice {
-    int instrument = 0;
-    bool active = false, released = false, silent = false;
+    int instrument = 0, note = kNoNote;
+    bool active = false, released = false;
     int frame = 0, releaseFrame = 0;
-    int control = 0, frequency = 0;  // from the note's pitch (melodic)
+    int volumeVariant = 0, releaseVariant = 0;
+    std::vector<PitchStep> pitch;  // melodic: frame by frame, the last one stays
   };
   void playRow();
   void end();
@@ -53,6 +64,7 @@ class Player {
   Song song_;
   double audioClock_ = 0;
   Voice voices_[kChannels];
+  VoiceTrace traces_[kChannels];
   bool playing_ = false;
   SongPosition next_, shown_;
   int framesLeft_ = 0;  // in the current row

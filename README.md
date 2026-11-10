@@ -56,7 +56,10 @@ A small native IDE for making Atari 2600 games, on macOS, Windows and Linux. It 
   - Projects with a kernel of their own get `<name>.gfx.asm` on save; *Copy as...* gives DASM tables or the kernel's batari Basic blocks (row order, `playerNcolor:`, 32- or 16-column playfields, `DFnFRACINC` for DPC+ and PXE). *Import* reads those, PlayerPal's assembly tables, batari Basic's blocks and the playfields of masswerk's Tiny VCS Playfield Editor (with its mode and line height) from the clipboard.
 - **Music editor** (`.vcsmusic`, *File → New music...*), for the TIA's own two channels:
   - A tracker grid (notes from the computer keyboard, laid out as a piano) and a piano roll of the same pattern; patterns played in an order list with a loop point; speed and swing.
-  - Instruments: melodic ones choose among the tonal sounds of AUDC (square, square ÷6, ÷31, 5 bits, ÷93...), drums give AUDC and AUDF frame by frame; volume with a held loop, release after a note off and a pitch envelope.
+  - Instruments: melodic ones choose among the tonal sounds of AUDC (square, square ÷6, ÷31, 5 bits, ÷93...), drums give AUDC and AUDF frame by frame; volume with a held loop, release after a note off, and a pitch envelope in cents (the closest AUDF for every note and frame) or in AUDF steps.
+  - Variants: an instrument can have several volume envelopes and releases, picked per cell in the effect column (`V1`, `R2`...).
+  - Note by note: what each note writes with an instrument and how far off every frame is; any note can be tuned by hand, with its own AUDC and AUDF list.
+  - *Registers* view: what the player writes to AUDC, AUDF and AUDV on every frame of the pattern, which values change (each change is a write) and, under the mouse, why.
   - How out of tune each note is: every note, key of the piano and bar of the piano roll is coloured by its cents against A440; the *Tuning* tab lists the AUDC and AUDF of each note, the worst and the average, and *Tune the song* finds the transposition and the A4 that suit the song best (for its worst note or for the average).
   - Played as the TIA plays it, counter by counter (checked against Gopher2600), on NTSC or PAL as the project says; *Save as WAV* writes the song once through.
 - **Illegal-opcode policy** per project: allow, stable only, warn or forbid.

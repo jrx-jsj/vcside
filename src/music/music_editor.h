@@ -32,6 +32,9 @@ class MusicEditor {
   void instrumentPanel();
   void patternGrid();
   void pianoRoll();
+  void registerView();
+  void noteTuningEditor(Instrument& instrument);
+  std::string explain(const VoiceTrace& trace) const;
   void instrumentEditor();
   void tuningPanel();
   void keyboard();
@@ -45,7 +48,7 @@ class MusicEditor {
   Pattern& pattern();
   int patternIndex() const;
   ImU32 tuningColour(const NotePitch& pitch) const;
-  void changed() { changed_ = true, dirty_ = true; }
+  void changed() { changed_ = true, dirty_ = true, revision_++; }
   void endFrame();
 
   std::string path_, tv_ = "NTSC";
@@ -53,9 +56,24 @@ class MusicEditor {
   Song song_, committed_;
   std::vector<Song> undo_, redo_;
   bool dirty_ = false, changed_ = false;
-  int order_ = 0, row_ = 0, channel_ = 0, field_ = 0;  // the cursor: field 0 note, 1 instrument
+  int revision_ = 0;  // goes up with every change, for what is worked out from the song
+  int order_ = 0, row_ = 0, channel_ = 0, field_ = 0;  // the cursor: field 0 note, 1 instrument, 2 effect
   int instrument_ = 0, octave_ = 4, step_ = 1;
-  bool roll_ = false, follow_ = true;
+  enum class View { Tracker, PianoRoll, Registers };
+  View view_ = View::Tracker;
+  bool follow_ = true;
+  // the register view: the frames of the current order entry, played from the song's start
+  struct TracedFrame {
+    SongPosition position;
+    FrameRegisters registers;
+    VoiceTrace voices[kChannels];
+  };
+  std::vector<TracedFrame> traced_;
+  FrameRegisters tracedBefore_;  // the frame before the first one, to see what changes
+  int tracedRevision_ = -1, tracedOrder_ = -1;
+  double tracedClock_ = 0;
+  int volumeVariant_ = 0, releaseVariant_ = 0;  // shown in the instrument editor
+  int handNote_ = -1;                           // the note open in the tuning by hand
   bool muted_[kChannels] = {false, false};
   int previewKey_ = -1;    // ImGuiKey held for the note being previewed
   bool previewMouse_ = false;

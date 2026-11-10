@@ -123,6 +123,7 @@ Each technique, with whoever devised or spread it. The editor's help shows the s
 | Tuning against the song, not A440 (non-tempered setups) | Paul Slocum, *Atari 2600 Music and Sound Programming Guide* (2003) |
 | Exploring A4 and transposition against TIA pitches | pizzatari, TIA Music Explorer |
 | Instruments with per-frame envelopes, swing, a tracker for the TIA | Andre "Kylearan" Wichmann, TIATracker (2016) |
+| The tracker itself: patterns, an order list and an effect column per cell | Karsten Obarski, Ultimate Soundtracker (Amiga, 1987) |
 | Finer pitch by switching AUDF values (fractional bits) | Aleksi Eeben, Tiatonic Tuning in Star Bars (2023); Natt (AYCE), TIunA (2024) |
 | Exact pitch by software dividers | utz, TIAtune (2017), with Thomas Jentzsch (2022) |
 | 3 voices mixed by the cartridge into one channel | David Crane, DPC in Pitfall II (Activision, 1984) |
@@ -135,7 +136,19 @@ Each technique, with whoever devised or spread it. The editor's help shows the s
 
 1. Tuning maths and TIA sound synthesis, with tests. Each credit is checked against a primary source and recorded in `docs/sources.md`. The cents tables are computed and checked against the formula and against Stella recordings.
 2. The editor: TIA instruments, two channels, patterns, listening, tuning views and automatic tuning. **Done**: `src/music/song.*` (the `.vcsmusic` file), `player.*` (frame by frame, the rules the exported players will follow), `music_audio.*` (SDL3 output) and `music_editor.*`.
-   The player's rules, which the exported players must keep: a row lasts `speed` frames (`swing` on odd rows if set); a note starts its instrument's envelopes at frame 0; while held, the volume repeats from `loop` to its end, or stays on its last value (and an envelope that ends on 0 with no loop ends the note); a note off (`===`) plays the release once and silences the channel; the pitch envelope is added to AUDF, clamped to 0-31, its last value held; a note no allowed AUDC reaches is silent; at the song's end every voice is released and the song loops to `loop_to` or stops.
+   The player's rules, which the exported players must keep:
+   - A row lasts `speed` frames (`swing` on odd rows if set).
+   - A note starts its instrument's envelopes at frame 0, with volume envelope 0 and release 0.
+   - While held, the volume repeats from `loop` to its end, or stays on its last value; an envelope that ends on 0 with no loop ends the note.
+   - A note off (`===`) plays the release once and silences the channel.
+   - The effect column, applied after the cell's note and before its note off: `Vn` switches to volume envelope n (on a cell with no note, the held note goes on at its frame with envelope n); `Rn` sets the release a later note off uses. A variant the instrument does not have is its first one.
+   - Melodic pitch, frame by frame (`Song::pitchSequence`): a note tuned by hand (by the note heard, after the transposition) plays its own AUDC and AUDF list; otherwise the note gets the closest AUDC and AUDF, and the pitch envelope moves it, in cents (the AUDF of the same AUDC closest to the note plus those cents) or in AUDF steps (added to AUDF, clamped to 0-31). The last value is held.
+   - A note no allowed AUDC reaches is silent.
+   - At the song's end every voice is released, and the song loops to `loop_to` or stops.
+
+   Exporting will turn every combination a song uses (instrument, note tuned by hand, variant) into tables of its own, so the players on the console only read tables frame by frame: the extra cost is ROM, not cycles.
+
+   Added after the first version (2026-11-10): the *Registers* view (what is written to AUDC, AUDF and AUDV on every frame, the values that change and why), the pitch envelope in cents resolved note by note, notes tuned by hand per instrument, and volume and release variants picked by the effect column. `.vcsmusic` is now version 2; version 1 files are read with their pitch in AUDF steps.
 3. DASM and batari Basic export, and the DASM example. Checked in Stella and Gopher2600.
 4. Samples for ELF: waveforms, voices, mixing, the C player and the C example. Checked in Stella; on the PlusCart and the Chameleon if possible.
 5. TIATracker import; DPC+ and CDFJ export.

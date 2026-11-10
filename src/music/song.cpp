@@ -3,6 +3,9 @@
 #include "song.h"
 
 #include <algorithm>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <nlohmann/json.hpp>
 
 #include "../i18n.h"
@@ -33,10 +36,82 @@ std::vector<SongNote> Song::notes() const {
   return list;
 }
 
+std::vector<int> Song::notesOf(int instrument) const {
+  std::vector<int> heard;
+  for (int orderIndex : order) {
+    if (orderIndex < 0 || orderIndex >= (int)patterns.size()) continue;
+    for (int channel = 0; channel < kChannels; channel++) {
+      int instrumentIndex = 0;
+      for (const Cell& cell : patterns[orderIndex].cells[channel]) {
+        if (cell.instrument >= 0) instrumentIndex = cell.instrument;
+        if (cell.note >= 0 && instrumentIndex == instrument) heard.push_back(cell.note + tuning.transpose);
+      }
+    }
+  }
+  std::sort(heard.begin(), heard.end());
+  heard.erase(std::unique(heard.begin(), heard.end()), heard.end());
+  return heard;
+}
+
+// How many cents a register pair is from a (fractional) note.
+static double centsFrom(double audioClock, int control, int frequency, double note, int referenceCents) {
+  const Distortion* distortion = distortionOf(control);
+  if (!distortion) return 0;
+  return (noteNumber(pitchHz(audioClock, distortion->period, frequency), referenceCents) - note) * 100.0;
+}
+
 NotePitch Song::pitchOf(int note, const Instrument& instrument, double audioClock) const {
-  NotePitch pitch = closestPitch(note + tuning.transpose, audioClock, instrument.controls, tuning.referenceCents);
+  int heard = note + tuning.transpose;
+  auto byHand = instrument.byHand.find(heard);
+  if (byHand != instrument.byHand.end() && distortionOf(byHand->second.control)) {
+    NotePitch pitch;
+    pitch.note = note;
+    pitch.playable = true;
+    pitch.control = byHand->second.control;
+    pitch.frequency = byHand->second.frequencies.empty() ? 0 : byHand->second.frequencies[0];
+    pitch.hz = pitchHz(audioClock, distortionOf(pitch.control)->period, pitch.frequency);
+    pitch.cents = centsFrom(audioClock, pitch.control, pitch.frequency, heard, tuning.referenceCents);
+    return pitch;
+  }
+  NotePitch pitch = closestPitch(heard, audioClock, instrument.controls, tuning.referenceCents);
   pitch.note = note;
   return pitch;
+}
+
+std::vector<PitchStep> Song::pitchSequence(int note, const Instrument& instrument, double audioClock) const {
+  int heard = note + tuning.transpose;
+  std::vector<PitchStep> steps;
+  auto byHand = instrument.byHand.find(heard);
+  if (byHand != instrument.byHand.end() && distortionOf(byHand->second.control)) {
+    for (int frequency : byHand->second.frequencies) {
+      PitchStep step;
+      step.playable = true, step.control = byHand->second.control, step.frequency = std::clamp(frequency, 0, 31);
+      step.cents = centsFrom(audioClock, step.control, step.frequency, heard, tuning.referenceCents);
+      steps.push_back(step);
+    }
+    if (steps.empty()) steps.push_back(PitchStep{true, byHand->second.control, 0, centsFrom(audioClock, byHand->second.control, 0, heard, tuning.referenceCents)});
+    return steps;
+  }
+  NotePitch base = pitchOf(note, instrument, audioClock);
+  PitchStep first{base.playable, base.control, base.frequency, base.cents};
+  if (!base.playable || instrument.pitch.empty()) return {first};
+  for (int offset : instrument.pitch) {
+    PitchStep step = first;
+    if (instrument.pitchUnit == PitchUnit::Audf) {
+      step.frequency = std::clamp(base.frequency + offset, 0, 31);
+      step.cents = centsFrom(audioClock, step.control, step.frequency, heard, tuning.referenceCents);
+    } else {
+      // the AUDF of the note's own AUDC that comes closest to the note moved by these cents
+      double target = heard + offset / 100.0;
+      double bestDistance = 1e9;
+      for (int frequency = 0; frequency < 32; frequency++) {
+        double cents = centsFrom(audioClock, step.control, frequency, target, tuning.referenceCents);
+        if (std::fabs(cents) < bestDistance) bestDistance = std::fabs(cents), step.frequency = frequency, step.cents = cents;
+      }
+    }
+    steps.push_back(step);
+  }
+  return steps;
 }
 
 Song blankSong() {
@@ -46,8 +121,8 @@ Song blankSong() {
   Instrument drum;
   drum.name = "snare";
   drum.drum = true;
-  drum.volume = {14, 10, 6, 3, 1, 0};
-  drum.release.clear();
+  drum.volumes = {{{14, 10, 6, 3, 1, 0}, -1}};
+  drum.releases = {{}};
   drum.drumControl = {8, 8, 8};
   drum.drumFrequency = {2, 4, 6};
   song.instruments = {lead, drum};
@@ -58,15 +133,21 @@ Song blankSong() {
   return song;
 }
 
-// Cells are written as a tracker shows them, one string per row: "C-4 00" (note and
-// instrument in hex), "=== .." (note off), "--- .." (nothing), so a pattern diffs by row.
+// Cells are written as a tracker shows them, one string per row: "C-4 00 V1" (note,
+// instrument in hex, effect), "=== .. .." (note off), "--- .. .." (nothing), so a
+// pattern diffs by row. Version 1 files had no effect.
 static const char* kNames[] = {"C-", "C#", "D-", "D#", "E-", "F-", "F#", "G-", "G#", "A-", "A#", "B-"};
 
 static std::string cellText(const Cell& cell) {
   std::string note = cell.note == kNoteOff ? "===" : cell.note < 0 ? "---" : std::string(kNames[cell.note % 12]) + std::to_string(cell.note / 12 - 1);
   char instrument[4] = "..";
   if (cell.instrument >= 0) snprintf(instrument, sizeof instrument, "%02X", cell.instrument & 0xff);
-  return note + " " + instrument;
+  std::string effect = "..";
+  if (cell.effect) {
+    static const char* digits = "0123456789ABCDEF";
+    effect = std::string(1, cell.effect) + digits[cell.effectValue & 15];
+  }
+  return note + " " + instrument + " " + effect;
 }
 
 static bool parseCell(const std::string& text, Cell* cell) {
@@ -82,21 +163,42 @@ static bool parseCell(const std::string& text, Cell* cell) {
     cell->note = (note[2] - '0' + 1) * 12 + index;
   }
   if (text.size() >= 6 && text.compare(4, 2, "..") != 0) cell->instrument = (int)std::strtol(text.substr(4, 2).c_str(), nullptr, 16);
+  if (text.size() >= 9 && text.compare(7, 2, "..") != 0) {
+    char letter = text[7];
+    if (letter != kEffectVolume && letter != kEffectRelease) return false;
+    char* end = nullptr;
+    long value = std::strtol(text.substr(8, 1).c_str(), &end, 16);
+    if (!end || *end) return false;
+    cell->effect = letter, cell->effectValue = (int)value;
+  }
   return true;
 }
 
 std::string toJson(const Song& song) {
   json instruments = json::array();
   for (auto& instrument : song.instruments) {
-    json item = {{"name", instrument.name}, {"volume", instrument.volume}, {"release", instrument.release}};
-    if (instrument.loopStart >= 0) item["loop"] = instrument.loopStart;
+    json volumes = json::array();
+    for (auto& envelope : instrument.volumes) {
+      json entry = {{"values", envelope.values}};
+      if (envelope.loop >= 0) entry["loop"] = envelope.loop;
+      volumes.push_back(entry);
+    }
+    json item = {{"name", instrument.name}, {"volumes", volumes}, {"releases", instrument.releases}};
     if (instrument.drum) {
       item["drum"] = true;
       item["audc"] = instrument.drumControl;
       item["audf"] = instrument.drumFrequency;
     } else {
       item["controls"] = instrument.controls;
-      if (!instrument.pitch.empty()) item["pitch"] = instrument.pitch;
+      if (!instrument.pitch.empty()) {
+        item["pitch"] = instrument.pitch;
+        item["pitch_unit"] = instrument.pitchUnit == PitchUnit::Audf ? "audf" : "cents";
+      }
+      if (!instrument.byHand.empty()) {
+        json byHand = json::array();
+        for (auto& [note, tuned] : instrument.byHand) byHand.push_back({{"note", note}, {"audc", tuned.control}, {"audf", tuned.frequencies}});
+        item["by_hand"] = byHand;
+      }
     }
     instruments.push_back(item);
   }
@@ -115,7 +217,7 @@ std::string toJson(const Song& song) {
   json tuning = {{"transpose", song.tuning.transpose},
                  {"reference_cents", song.tuning.referenceCents},
                  {"goal", song.tuning.goal == TuningGoal::Average ? "average" : "worst"}};
-  json document = {{"format", "vcsmusic"}, {"version", 1},       {"name", song.name},       {"target", "tia"},
+  json document = {{"format", "vcsmusic"}, {"version", 2},       {"name", song.name},       {"target", "tia"},
                    {"speed", song.speed},  {"swing", song.swing}, {"tuning", tuning},       {"instruments", instruments},
                    {"order", song.order},  {"loop_to", song.loopTo}, {"patterns", patterns}};
   return document.dump(1) + "\n";
@@ -125,6 +227,7 @@ bool fromJson(const std::string& text, Song* song, std::string* error) {
   try {
     json document = json::parse(text);
     if (!document.is_object() || document.value("format", std::string("vcsmusic")) != "vcsmusic") throw std::runtime_error(T("not a VCSIDE music file"));
+    int version = document.value("version", 1);
     Song parsed;
     parsed.name = document.value("name", parsed.name);
     parsed.speed = std::clamp(document.value("speed", 6), 1, 255);
@@ -146,15 +249,39 @@ bool fromJson(const std::string& text, Song* song, std::string* error) {
       Instrument instrument;
       instrument.name = item.value("name", instrument.name);
       instrument.drum = item.value("drum", false);
-      instrument.volume = clampedList(item.value("volume", json::array()), 0, 15);
-      instrument.release = clampedList(item.value("release", json::array()), 0, 15);
-      instrument.loopStart = std::clamp(item.value("loop", -1), -1, std::max(-1, (int)instrument.volume.size() - 1));
+      auto envelopeFrom = [&](const json& values, int loop) {
+        Envelope envelope;
+        envelope.values = clampedList(values, 0, 15);
+        envelope.loop = std::clamp(loop, -1, std::max(-1, (int)envelope.values.size() - 1));
+        return envelope;
+      };
+      instrument.volumes.clear(), instrument.releases.clear();
+      if (item.contains("volumes")) {
+        for (auto& entry : item["volumes"])
+          if (entry.is_object()) instrument.volumes.push_back(envelopeFrom(entry.value("values", json::array()), entry.value("loop", -1)));
+        for (auto& entry : item.value("releases", json::array())) instrument.releases.push_back(clampedList(entry, 0, 15));
+      } else {  // version 1: one of each
+        instrument.volumes.push_back(envelopeFrom(item.value("volume", json::array()), item.value("loop", -1)));
+        instrument.releases.push_back(clampedList(item.value("release", json::array()), 0, 15));
+      }
+      if (instrument.volumes.empty()) instrument.volumes.push_back(Envelope{{15}, -1});
+      if (instrument.releases.empty()) instrument.releases.push_back({});
       if (instrument.drum) {
         instrument.drumControl = clampedList(item.value("audc", json::array()), 0, 15);
         instrument.drumFrequency = clampedList(item.value("audf", json::array()), 0, 31);
       } else {
         instrument.controls = clampedList(item.value("controls", json::array()), 0, 15);
-        instrument.pitch = clampedList(item.value("pitch", json::array()), -31, 31);
+        // version 1 had the pitch in AUDF steps only
+        bool inSteps = item.value("pitch_unit", version < 2 ? "audf" : "cents") == "audf";
+        instrument.pitchUnit = inSteps ? PitchUnit::Audf : PitchUnit::Cents;
+        instrument.pitch = clampedList(item.value("pitch", json::array()), inSteps ? -31 : -1200, inSteps ? 31 : 1200);
+        for (auto& entry : item.value("by_hand", json::array())) {
+          if (!entry.is_object() || !entry.value("note", json()).is_number_integer()) continue;
+          NoteTuning tuned;
+          tuned.control = std::clamp(entry.value("audc", 4), 0, 15);
+          tuned.frequencies = clampedList(entry.value("audf", json::array()), 0, 31);
+          instrument.byHand[std::clamp(entry["note"].get<int>(), 0, 127)] = tuned;
+        }
       }
       parsed.instruments.push_back(instrument);
     }

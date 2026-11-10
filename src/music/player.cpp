@@ -55,14 +55,14 @@ bool Player::sounding() const {
 void Player::trigger(Voice& voice, int note) {
   voice.active = voice.instrument >= 0 && voice.instrument < (int)song_.instruments.size();
   voice.released = false;
+  voice.note = note;
   voice.frame = voice.releaseFrame = 0;
-  voice.silent = false;
+  voice.volumeVariant = voice.releaseVariant = 0;
+  voice.pitch.clear();
   if (!voice.active) return;
   const Instrument& instrument = song_.instruments[voice.instrument];
-  if (instrument.drum) return;
-  NotePitch pitch = song_.pitchOf(note, instrument, audioClock_);
-  voice.silent = !pitch.playable;  // no allowed AUDC reaches it: it is not heard
-  voice.control = pitch.control, voice.frequency = pitch.frequency;
+  // a note no allowed AUDC reaches has an unplayable step: it is not heard
+  if (!instrument.drum) voice.pitch = song_.pitchSequence(note, instrument, audioClock_);
 }
 
 // The song is over: what still sounds goes into its release.
@@ -89,7 +89,10 @@ void Player::playRow() {
     Voice& voice = voices_[channel];
     if (cell.instrument >= 0) voice.instrument = cell.instrument;
     if (cell.note >= 0) trigger(voice, cell.note);
-    else if (cell.note == kNoteOff) noteOff(channel);
+    // the effect after the note (it is for that note) and before a note off (whose release it picks)
+    if (cell.effect == kEffectVolume) voice.volumeVariant = cell.effectValue;
+    else if (cell.effect == kEffectRelease) voice.releaseVariant = cell.effectValue;
+    if (cell.note == kNoteOff) noteOff(channel);
   }
   framesLeft_ = std::max(1, song_.rowFrames(next_.row));
   // the next row: the pattern's end goes to the next order entry, the song's end loops or stops
@@ -99,10 +102,11 @@ void Player::playRow() {
   }
 }
 
-static int envelopeValue(const std::vector<int>& values, int loopStart, int frame) {
+static int envelopeValue(const Envelope& envelope, int frame) {
+  const std::vector<int>& values = envelope.values;
   if (values.empty()) return 0;
   if (frame < (int)values.size()) return values[frame];
-  if (loopStart >= 0 && loopStart < (int)values.size()) return values[loopStart + (frame - loopStart) % ((int)values.size() - loopStart)];
+  if (envelope.loop >= 0 && envelope.loop < (int)values.size()) return values[envelope.loop + (frame - envelope.loop) % ((int)values.size() - envelope.loop)];
   return values.back();
 }
 
@@ -111,34 +115,52 @@ static int heldValue(const std::vector<int>& values, int frame, int fallback) {
   return values[std::min(frame, (int)values.size() - 1)];
 }
 
+// A variant the instrument does not have is its first one.
+template <typename List>
+static const typename List::value_type& variant(const List& list, int index) {
+  return list[index >= 0 && index < (int)list.size() ? index : 0];
+}
+
 void Player::output(Voice& voice, int channel, FrameRegisters& registers) {
   registers.control[channel] = registers.frequency[channel] = registers.volume[channel] = 0;
+  VoiceTrace& trace = traces_[channel];
+  trace = VoiceTrace();
   if (!voice.active) return;
   const Instrument& instrument = song_.instruments[voice.instrument];
+  const Envelope& envelope = variant(instrument.volumes, voice.volumeVariant);
+  const std::vector<int>& release = variant(instrument.releases, voice.releaseVariant);
+  trace.active = true, trace.note = voice.note, trace.instrument = voice.instrument;
+  trace.volumeVariant = voice.volumeVariant, trace.releaseVariant = voice.releaseVariant;
+  trace.released = voice.released;
+  trace.frame = voice.released ? voice.releaseFrame : voice.frame;
   int volume;
   if (!voice.released) {
     // an envelope that has ended on 0 with no loop is over
-    bool ended = voice.frame >= (int)instrument.volume.size() && (instrument.loopStart < 0 || instrument.loopStart >= (int)instrument.volume.size());
-    if (ended && (instrument.volume.empty() || instrument.volume.back() == 0)) {
-      voice.active = false;
+    bool ended = voice.frame >= (int)envelope.values.size() && (envelope.loop < 0 || envelope.loop >= (int)envelope.values.size());
+    if (ended && (envelope.values.empty() || envelope.values.back() == 0)) {
+      voice.active = false, trace.active = false;
       return;
     }
-    volume = envelopeValue(instrument.volume, instrument.loopStart, voice.frame);
+    volume = envelopeValue(envelope, voice.frame);
   } else {
-    if (voice.releaseFrame >= (int)instrument.release.size()) {
-      voice.active = false;
+    if (voice.releaseFrame >= (int)release.size()) {
+      voice.active = false, trace.active = false;
       return;
     }
-    volume = instrument.release[voice.releaseFrame++];
+    volume = release[voice.releaseFrame++];
   }
+  bool heard = true;
   if (instrument.drum) {
     registers.control[channel] = (uint8_t)heldValue(instrument.drumControl, voice.frame, 8);
     registers.frequency[channel] = (uint8_t)heldValue(instrument.drumFrequency, voice.frame, 0);
-  } else {
-    registers.control[channel] = (uint8_t)voice.control;
-    registers.frequency[channel] = (uint8_t)std::clamp(voice.frequency + heldValue(instrument.pitch, voice.frame, 0), 0, 31);
+  } else if (!voice.pitch.empty()) {
+    const PitchStep& step = voice.pitch[std::min(voice.frame, (int)voice.pitch.size() - 1)];
+    trace.pitch = step;
+    registers.control[channel] = (uint8_t)step.control;
+    registers.frequency[channel] = (uint8_t)step.frequency;
+    heard = step.playable;
   }
-  registers.volume[channel] = voice.silent ? 0 : (uint8_t)volume;
+  registers.volume[channel] = heard ? (uint8_t)volume : 0;
   voice.frame++;
 }
 

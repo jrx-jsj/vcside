@@ -1918,8 +1918,12 @@ static void testSong() {
   Song song = blankSong();
   song.name = "theme";
   song.speed = 5, song.swing = 7, song.loopTo = 1;
-  song.instruments[0].loopStart = 2;
+  song.instruments[0].volumes[0].loop = 2;
+  song.instruments[0].volumes.push_back({{8, 4}, 0});
+  song.instruments[0].releases.push_back({});
   song.instruments[0].pitch = {1, -1};
+  song.instruments[0].pitchUnit = PitchUnit::Audf;
+  song.instruments[0].byHand[64] = {12, {9, 10}};
   song.tuning.transpose = -3, song.tuning.referenceCents = -14, song.tuning.goal = TuningGoal::Average;
   Pattern second;
   second.name = "verse";
@@ -1929,17 +1933,29 @@ static void testSong() {
   song.patterns[0].cells[0][0] = {69, 0};
   song.patterns[0].cells[0][4] = {kNoteOff, -1};
   song.patterns[0].cells[1][2] = {61, 1};
-  song.patterns[1].cells[1][15] = {119, 0};
+  song.patterns[1].cells[1][15] = {119, 0, kEffectVolume, 1};
+  song.patterns[0].cells[0][5] = {kNoNote, -1, kEffectRelease, 15};
   std::string json = toJson(song), error;
-  CHECK(json.find("\"A-4 00\"") != std::string::npos && json.find("\"=== ..\"") != std::string::npos);
+  CHECK(json.find("\"A-4 00 ..\"") != std::string::npos && json.find("\"=== .. ..\"") != std::string::npos && json.find("\"--- .. RF\"") != std::string::npos);
   Song back;
   CHECK(fromJson(json, &back, &error));
   CHECK(toJson(back) == json);
   CHECK(back.name == "theme" && back.speed == 5 && back.swing == 7 && back.loopTo == 1 && back.order == std::vector<int>({0, 1, 1}));
-  CHECK(back.instruments.size() == 2 && back.instruments[1].drum && back.instruments[0].loopStart == 2 && back.instruments[0].pitch == std::vector<int>({1, -1}));
+  const Instrument& leadBack = back.instruments[0];
+  CHECK(back.instruments.size() == 2 && back.instruments[1].drum && leadBack.volumes.size() == 2 && leadBack.volumes[0].loop == 2 && leadBack.volumes[1].values == std::vector<int>({8, 4}));
+  CHECK(leadBack.releases.size() == 2 && leadBack.releases[1].empty() && leadBack.pitch == std::vector<int>({1, -1}) && leadBack.pitchUnit == PitchUnit::Audf);
+  CHECK(leadBack.byHand.size() == 1 && leadBack.byHand.at(64).control == 12 && leadBack.byHand.at(64).frequencies == std::vector<int>({9, 10}));
+  CHECK(back.patterns[1].cells[1][15].effect == kEffectVolume && back.patterns[1].cells[1][15].effectValue == 1 && back.patterns[0].cells[0][5].effectValue == 15);
   CHECK(back.tuning.transpose == -3 && back.tuning.referenceCents == -14 && back.tuning.goal == TuningGoal::Average);
   CHECK(back.patterns[1].rows == 16 && back.patterns[1].cells[1][15].note == 119 && back.patterns[0].cells[0][4].note == kNoteOff);
   CHECK(!fromJson("{\"format\":\"other\"}", &back, &error) && !error.empty());
+  CHECK(!fromJson("{\"patterns\":[{\"rows\":1,\"channels\":[[\"C-4 00 X1\"]]}]}", &back, &error));  // no such effect
+  // version 1: one volume, loop and release; the pitch in AUDF steps; cells without an effect
+  CHECK(fromJson("{\"format\":\"vcsmusic\",\"version\":1,\"instruments\":[{\"name\":\"old\",\"volume\":[9,8],\"loop\":1,\"release\":[2],"
+                 "\"controls\":[4],\"pitch\":[0,2]}],\"patterns\":[{\"rows\":2,\"channels\":[[\"C-4 00\",\"=== ..\"],[]]}]}",
+                 &back, &error));
+  CHECK(back.instruments[0].volumes.size() == 1 && back.instruments[0].volumes[0].values == std::vector<int>({9, 8}) && back.instruments[0].volumes[0].loop == 1);
+  CHECK(back.instruments[0].releases == std::vector<std::vector<int>>({{2}}) && back.instruments[0].pitchUnit == PitchUnit::Audf && back.patterns[0].cells[0][0].note == 60);
   CHECK(song.rowFrames(0) == 5 && song.rowFrames(1) == 7);
 
   // The player, frame by frame: a held note, its loop, a note off and its release
@@ -1948,10 +1964,10 @@ static void testSong() {
   tune.loopTo = -1;
   tune.patterns[0].resize(4);
   Instrument& lead = tune.instruments[0];
-  lead.volume = {15, 12, 9, 6};
-  lead.loopStart = 2;
-  lead.release = {4, 2};
+  lead.volumes = {{{15, 12, 9, 6}, 2}};
+  lead.releases = {{4, 2}};
   lead.pitch = {0, 1};
+  lead.pitchUnit = PitchUnit::Audf;
   tune.patterns[0].cells[0][0] = {69, 0};
   tune.patterns[0].cells[0][2] = {kNoteOff, -1};
   tune.patterns[0].cells[1][1] = {60, 1};
@@ -2021,6 +2037,60 @@ static void testSong() {
   CHECK(fs::file_size(wavPath) == 44 + samples.size() * 2);
   wav.close();
   fs::remove(wavPath);
+
+  // The pitch in cents: every frame gets the AUDF closest to the note moved by those cents,
+  // on the note's own AUDC; in AUDF steps the same step is a different interval on each note.
+  Instrument vibrato;
+  vibrato.controls = {4};
+  vibrato.pitch = {0, 100, -100};
+  Song plain = blankSong();
+  std::vector<PitchStep> steps = plain.pitchSequence(81, vibrato, ntsc);  // A5
+  NotePitch a5 = closestPitch(81, ntsc, {4}), b5 = closestPitch(82, ntsc, {4});
+  CHECK(steps.size() == 3 && steps[0].frequency == a5.frequency && steps[1].control == 4 && steps[1].frequency == b5.frequency && steps[2].frequency > a5.frequency);
+  CHECK(std::fabs(steps[1].cents - b5.cents) < 1e-6);  // measured against the note it aims at
+  vibrato.pitch = {-1};
+  vibrato.pitchUnit = PitchUnit::Audf;
+  vibrato.controls = {12};  // ÷6 reaches both C4 and C6
+  double highStep = plain.pitchSequence(84, vibrato, ntsc)[0].cents - plain.pitchOf(84, vibrato, ntsc).cents;
+  double lowStep = plain.pitchSequence(60, vibrato, ntsc)[0].cents - plain.pitchOf(60, vibrato, ntsc).cents;
+  CHECK(highStep > 2 * lowStep && lowStep > 0);
+  // a note tuned by hand: its own AUDC and AUDF list, by the note heard
+  vibrato.byHand[72] = {12, {11, 12}};
+  plain.tuning.transpose = 2;
+  steps = plain.pitchSequence(70, vibrato, ntsc);
+  CHECK(steps.size() == 2 && steps[0].control == 12 && steps[0].frequency == 11 && steps[1].frequency == 12 && plain.pitchOf(70, vibrato, ntsc).frequency == 11);
+  CHECK(plain.pitchSequence(72, vibrato, ntsc)[0].frequency != 11 || plain.pitchSequence(72, vibrato, ntsc)[0].control != 12);
+
+  // The effects: V picks the volume envelope, R the release; a new note goes back to 0
+  Song effects = blankSong();
+  effects.speed = 2, effects.loopTo = -1;
+  effects.patterns[0].resize(6);
+  Instrument& voiced = effects.instruments[0];
+  voiced.volumes = {{{10}, -1}, {{5}, -1}};
+  voiced.releases = {{1}, {7, 7}};
+  auto& lane = effects.patterns[0].cells[0];
+  lane[0] = {60, 0, kEffectVolume, 1};
+  lane[1] = {kNoNote, -1, kEffectVolume, 0};   // the held note changes envelope
+  lane[2] = {kNoteOff, -1, kEffectRelease, 1};
+  lane[3] = {62, 0};                          // back to envelope 0 and release 0
+  lane[4] = {kNoteOff, -1};
+  Player effectPlayer;
+  effectPlayer.start(effects, ntsc);
+  std::vector<int> effectVolumes;
+  for (int frame = 0; frame < 12; frame++) effectVolumes.push_back(effectPlayer.nextFrame().volume[0]);
+  CHECK(effectVolumes == std::vector<int>({5, 5, 10, 10, 7, 7, 10, 10, 1, 0, 0, 0}));
+  CHECK(effectPlayer.trace(0).active == false);
+  // a variant the instrument lacks is its first one
+  lane[0].effectValue = 9;
+  effectPlayer.start(effects, ntsc);
+  CHECK(effectPlayer.nextFrame().volume[0] == 10);
+  // what the register view explains: note, instrument, envelope frame and pitch
+  effectPlayer.start(effects, ntsc);
+  effectPlayer.nextFrame();
+  effectPlayer.nextFrame();
+  effectPlayer.nextFrame();
+  const VoiceTrace& trace = effectPlayer.trace(0);
+  CHECK(trace.active && trace.note == 60 && trace.instrument == 0 && trace.frame == 2 && !trace.released && trace.pitch.playable && trace.pitch.control == effectPlayer.nextFrame().control[0]);
 }
 
 int main() {

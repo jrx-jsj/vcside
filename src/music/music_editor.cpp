@@ -46,6 +46,7 @@ bool MusicEditor::load(const std::string& path, std::string* error) {
   committed_ = song_;
   undo_.clear(), redo_.clear();
   dirty_ = changed_ = false;
+  revision_++;
   return true;
 }
 
@@ -66,7 +67,7 @@ void MusicEditor::undo() {
   song_ = undo_.back();
   undo_.pop_back();
   committed_ = song_;
-  dirty_ = true;
+  dirty_ = true, revision_++;
   musicAudio().updateSong(song_);
 }
 
@@ -76,7 +77,7 @@ void MusicEditor::redo() {
   song_ = redo_.back();
   redo_.pop_back();
   committed_ = song_;
-  dirty_ = true;
+  dirty_ = true, revision_++;
   musicAudio().updateSong(song_);
 }
 
@@ -167,9 +168,11 @@ void MusicEditor::render(const std::string& tv) {
   float centre = std::max(em(200), ImGui::GetContentRegionAvail().x - right - ImGui::GetStyle().ItemSpacing.x);
   ImGui::BeginChild("##centre", ImVec2(centre, height), ImGuiChildFlags_None);
   float keysHeight = em(70);
-  ImGui::BeginChild(roll_ ? "##roll" : "##grid", ImVec2(0, ImGui::GetContentRegionAvail().y - keysHeight - ImGui::GetStyle().ItemSpacing.y),
-                    ImGuiChildFlags_Borders, roll_ ? ImGuiWindowFlags_HorizontalScrollbar : 0);
-  if (roll_) pianoRoll();
+  static const char* viewIds[] = {"##grid", "##roll", "##registers"};
+  ImGui::BeginChild(viewIds[(int)view_], ImVec2(0, ImGui::GetContentRegionAvail().y - keysHeight - ImGui::GetStyle().ItemSpacing.y), ImGuiChildFlags_Borders,
+                    view_ == View::PianoRoll ? ImGuiWindowFlags_HorizontalScrollbar : 0);
+  if (view_ == View::PianoRoll) pianoRoll();
+  else if (view_ == View::Registers) registerView();
   else patternGrid();
   ImGui::EndChild();
   keyboard();
@@ -209,9 +212,12 @@ void MusicEditor::toolbar() {
     if (ImGui::Checkbox(label.c_str(), &heard)) muted_[channel] = !heard, musicAudio().setMuted(channel, muted_[channel]);
   }
   ImGui::SameLine(0, em(20));
-  if (ImGui::RadioButton(T("Tracker"), !roll_)) roll_ = false;
+  if (ImGui::RadioButton(T("Tracker"), view_ == View::Tracker)) view_ = View::Tracker;
   ImGui::SameLine();
-  if (ImGui::RadioButton(T("Piano roll"), roll_)) roll_ = true;
+  if (ImGui::RadioButton(T("Piano roll"), view_ == View::PianoRoll)) view_ = View::PianoRoll;
+  ImGui::SameLine();
+  if (ImGui::RadioButton(T("Registers"), view_ == View::Registers)) view_ = View::Registers;
+  if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", T("What the player writes to AUDC, AUDF and AUDV on every video frame of this pattern."));
   ImGui::SameLine(0, em(20));
   if (ImGui::Button(T("Save as WAV"))) {
     std::string wavPath = fs::path(path_).replace_extension(".wav").string(), error;
@@ -381,10 +387,10 @@ void MusicEditor::gridKeys() {
   if (ImGui::IsKeyPressed(ImGuiKey_End)) move(rows);
   if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow)) {
     if (field_ > 0) field_--;
-    else if (channel_ > 0) channel_--, field_ = 1;
+    else if (channel_ > 0) channel_--, field_ = 2;
   }
   if (ImGui::IsKeyPressed(ImGuiKey_RightArrow)) {
-    if (field_ < 1) field_++;
+    if (field_ < 2) field_++;
     else if (channel_ + 1 < kChannels) channel_++, field_ = 0;
   }
   if (ImGui::IsKeyPressed(ImGuiKey_Tab, false)) channel_ = (channel_ + 1) % kChannels;
@@ -392,7 +398,8 @@ void MusicEditor::gridKeys() {
   Cell& cell = pattern().cells[channel_][row_];
   if (ImGui::IsKeyPressed(ImGuiKey_Delete) || ImGui::IsKeyPressed(ImGuiKey_Backspace)) {
     if (field_ == 0) cell = Cell();
-    else cell.instrument = -1;
+    else if (field_ == 1) cell.instrument = -1;
+    else cell.effect = 0, cell.effectValue = 0;
     changed();
     move(step_);
     return;
@@ -410,9 +417,28 @@ void MusicEditor::gridKeys() {
         previewKey_ = key;
         return;
       }
-  } else {
-    static const ImGuiKey hexKeys[] = {ImGuiKey_0, ImGuiKey_1, ImGuiKey_2, ImGuiKey_3, ImGuiKey_4, ImGuiKey_5, ImGuiKey_6, ImGuiKey_7,
-                                       ImGuiKey_8, ImGuiKey_9, ImGuiKey_A, ImGuiKey_B, ImGuiKey_C, ImGuiKey_D, ImGuiKey_E, ImGuiKey_F};
+    return;
+  }
+  static const ImGuiKey hexKeys[] = {ImGuiKey_0, ImGuiKey_1, ImGuiKey_2, ImGuiKey_3, ImGuiKey_4, ImGuiKey_5, ImGuiKey_6, ImGuiKey_7,
+                                     ImGuiKey_8, ImGuiKey_9, ImGuiKey_A, ImGuiKey_B, ImGuiKey_C, ImGuiKey_D, ImGuiKey_E, ImGuiKey_F};
+  if (field_ == 2) {
+    // the letter picks the effect, a hex digit its value
+    if (ImGui::IsKeyPressed(ImGuiKey_V, false) || ImGui::IsKeyPressed(ImGuiKey_R, false)) {
+      cell.effect = ImGui::IsKeyPressed(ImGuiKey_V, false) ? kEffectVolume : kEffectRelease;
+      changed();
+      return;
+    }
+    for (int digit = 0; digit < 16; digit++)
+      if (ImGui::IsKeyPressed(hexKeys[digit], false)) {
+        if (!cell.effect) cell.effect = kEffectVolume;
+        cell.effectValue = digit;
+        changed();
+        move(step_);
+        return;
+      }
+    return;
+  }
+  {
     for (int digit = 0; digit < 16; digit++)
       if (ImGui::IsKeyPressed(hexKeys[digit], false)) {
         cell.instrument = ((std::max(0, cell.instrument) * 16) + digit) & 0xff;
@@ -432,7 +458,9 @@ void MusicEditor::patternGrid() {
   float lineHeight = ImGui::GetTextLineHeightWithSpacing();
   float pad = em(8);
   float numberWidth = ImGui::CalcTextSize("000").x + pad;
-  float noteWidth = ImGui::CalcTextSize("C#4 ").x, cellWidth = std::max(ImGui::CalcTextSize("C#4 00").x + pad * 3, ImGui::CalcTextSize(F("Channel {0}", {"0"}).c_str()).x + pad * 2);
+  float noteWidth = ImGui::CalcTextSize("C#4 ").x, instrumentWidth = ImGui::CalcTextSize("00 ").x;
+  float cellWidth = std::max(ImGui::CalcTextSize("C#4 00 V1").x + pad * 3, ImGui::CalcTextSize(F("Channel {0}", {"0"}).c_str()).x + pad * 2);
+  auto fieldAt = [&](float x) { return x > noteWidth + instrumentWidth ? 2 : x > noteWidth ? 1 : 0; };
   bool playing = musicAudio().playing();
   SongPosition heard = musicAudio().position();
   // header
@@ -456,7 +484,7 @@ void MusicEditor::patternGrid() {
         float x = ImGui::GetMousePos().x - position.x - numberWidth;
         if (x >= 0) {
           channel_ = std::clamp((int)(x / cellWidth), 0, kChannels - 1);
-          field_ = x - channel_ * cellWidth > pad + noteWidth ? 1 : 0;
+          field_ = fieldAt(x - channel_ * cellWidth - pad);
         }
         row_ = row;
       }
@@ -465,7 +493,7 @@ void MusicEditor::patternGrid() {
         draw->AddRectFilled(position, ImVec2(position.x + width, position.y + lineHeight), theme::col(theme::Role::EdCurrentLine));
       if (row == row_) {
         draw->AddRect(position, ImVec2(position.x + width, position.y + lineHeight), theme::col(theme::Role::UiBorder));
-        float cellX = position.x + numberWidth + channel_ * cellWidth + pad + (field_ ? noteWidth : 0);
+        float cellX = position.x + numberWidth + channel_ * cellWidth + pad + (field_ == 0 ? 0 : field_ == 1 ? noteWidth : noteWidth + instrumentWidth);
         float fieldWidth = field_ ? ImGui::CalcTextSize("00").x : ImGui::CalcTextSize("C#4").x;
         draw->AddRectFilled(ImVec2(cellX - 2, position.y), ImVec2(cellX + fieldWidth + 2, position.y + lineHeight), theme::col(theme::Role::EdSelection));
       }
@@ -493,9 +521,17 @@ void MusicEditor::patternGrid() {
         bool missing = cell.instrument >= (int)song_.instruments.size();
         draw->AddText(ImVec2(x + noteWidth, position.y), theme::col(missing ? theme::Role::MsgError : cell.instrument >= 0 ? theme::Role::SynNumber : theme::Role::UiTextDim),
                       instrumentText);
-        if (ImGui::IsItemHovered() && cell.note >= 0 && lastInstrument < (int)song_.instruments.size() && !song_.instruments[lastInstrument].drum) {
-          float mouseX = ImGui::GetMousePos().x - position.x - numberWidth;
-          if ((int)(mouseX / cellWidth) == channel) {
+        char effectText[4] = "..";
+        if (cell.effect) snprintf(effectText, sizeof effectText, "%c%X", cell.effect, cell.effectValue & 15);
+        draw->AddText(ImVec2(x + noteWidth + instrumentWidth, position.y), theme::col(cell.effect ? theme::Role::SynMnemonic : theme::Role::UiTextDim), effectText);
+        float mouseInCell = ImGui::GetMousePos().x - position.x - numberWidth - channel * cellWidth;
+        bool hoveredHere = ImGui::IsItemHovered() && mouseInCell >= 0 && mouseInCell < cellWidth;
+        if (hoveredHere && fieldAt(mouseInCell - pad) == 2) {
+          if (cell.effect == kEffectVolume) ImGui::SetTooltip("%s", F("V{0}: volume envelope {0} of the instrument", {std::to_string(cell.effectValue)}).c_str());
+          else if (cell.effect == kEffectRelease) ImGui::SetTooltip("%s", F("R{0}: the note is released with release {0}", {std::to_string(cell.effectValue)}).c_str());
+          else ImGui::SetTooltip("%s", T("Effect: V and a digit, the volume envelope; R and a digit, the release."));
+        } else if (hoveredHere && cell.note >= 0 && lastInstrument < (int)song_.instruments.size() && !song_.instruments[lastInstrument].drum) {
+          {
             NotePitch pitch = song_.pitchOf(cell.note, song_.instruments[lastInstrument], clock_);
             if (pitch.playable)
               ImGui::SetTooltip("%s", F("{0}: AUDC {1}, AUDF {2}, {3} Hz, {4} cents", {noteName(cell.note + song_.tuning.transpose), std::to_string(pitch.control),
@@ -518,6 +554,101 @@ void MusicEditor::patternGrid() {
   if (ImGui::IsWindowHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) ImGui::SetWindowFocus();
   if (ImGui::IsWindowFocused()) gridKeys();
   ImGui::EndChild();
+}
+
+// ---------------------------------------------------------------------------
+// The register view: every frame of the pattern as the TIA gets it. The song is played
+// from its start up to this order entry, so notes held from earlier patterns are right.
+
+std::string MusicEditor::explain(const VoiceTrace& trace) const {
+  if (!trace.active) return T("Silent: no note sounds.");
+  std::string name = trace.instrument < (int)song_.instruments.size() ? song_.instruments[trace.instrument].name : "?";
+  char number[8];
+  snprintf(number, sizeof number, "%02X", trace.instrument & 0xff);
+  std::string text = F("{0} with instrument {1} ({2})", {noteName(trace.note + song_.tuning.transpose), number, name}) + "\n";
+  if (trace.released) text += F("Release {0}, frame {1}", {std::to_string(trace.releaseVariant), std::to_string(trace.frame)});
+  else text += F("Volume envelope {0}, frame {1}", {std::to_string(trace.volumeVariant), std::to_string(trace.frame)});
+  bool drum = trace.instrument < (int)song_.instruments.size() && song_.instruments[trace.instrument].drum;
+  if (drum) return text + "\n" + T("Drum: its AUDC and AUDF lists.");
+  if (!trace.pitch.playable) return text + "\n" + T("No allowed AUDC reaches this note: silent.");
+  return text + "\n" + F("{0} cents from what is meant", {(trace.pitch.cents >= 0 ? "+" : "") + std::to_string((int)std::lround(trace.pitch.cents))});
+}
+
+void MusicEditor::registerView() {
+  if (tracedRevision_ != revision_ || tracedOrder_ != order_ || tracedClock_ != clock_) {
+    tracedRevision_ = revision_, tracedOrder_ = order_, tracedClock_ = clock_;
+    traced_.clear();
+    tracedBefore_ = FrameRegisters();
+    Song once = song_;
+    once.loopTo = -1;
+    Player player;
+    player.start(once, clock_);
+    for (int frame = 0; frame < 200000 && player.playing(); frame++) {
+      FrameRegisters registers = player.nextFrame();
+      SongPosition position = player.position();
+      if (!player.playing() || position.order > order_) break;
+      if (position.order < order_) {
+        tracedBefore_ = registers;
+        continue;
+      }
+      TracedFrame entry{position, registers, {player.trace(0), player.trace(1)}};
+      traced_.push_back(entry);
+    }
+  }
+  // how many writes the player makes here: a register only needs writing when it changes
+  int writes = 0;
+  for (size_t index = 0; index < traced_.size(); index++) {
+    const FrameRegisters& before = index ? traced_[index - 1].registers : tracedBefore_;
+    for (int channel = 0; channel < kChannels; channel++)
+      writes += (traced_[index].registers.control[channel] != before.control[channel]) + (traced_[index].registers.frequency[channel] != before.frequency[channel]) +
+                (traced_[index].registers.volume[channel] != before.volume[channel]);
+  }
+  ImGui::TextDisabled("%s", F("{0} frames, {1} register changes", {std::to_string(traced_.size()), std::to_string(writes)}).c_str());
+  ImGui::SameLine();
+  ImGui::TextDisabled("%s", T("(C, F, V: AUDC, AUDF, AUDV)"));
+  bool playing = musicAudio().playing();
+  SongPosition heard = musicAudio().position();
+  ImGuiTableFlags flags = ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_SizingFixedFit;
+  if (!ImGui::BeginTable("##registers", 2 + 3 * kChannels, flags)) return;
+  ImGui::TableSetupScrollFreeze(0, 1);
+  ImGui::TableSetupColumn(T("Frame"));
+  ImGui::TableSetupColumn(T("Row"));
+  // C0 F0 V0 C1 F1 V1: AUDC, AUDF and AUDV of each channel
+  for (int channel = 0; channel < kChannels; channel++)
+    for (const char* name : {"C", "F", "V"}) ImGui::TableSetupColumn((name + std::to_string(channel)).c_str());
+  ImGui::TableHeadersRow();
+  ImGuiListClipper clipper;
+  clipper.Begin((int)traced_.size());
+  while (clipper.Step()) {
+    for (int index = clipper.DisplayStart; index < clipper.DisplayEnd; index++) {
+      const TracedFrame& frame = traced_[index];
+      const FrameRegisters& before = index ? traced_[index - 1].registers : tracedBefore_;
+      bool rowStart = index == 0 || traced_[index - 1].position.row != frame.position.row;
+      ImGui::TableNextRow();
+      if (playing && heard.order == order_ && heard.row == frame.position.row) ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg1, theme::col(theme::Role::EdCurrentLine));
+      else if (frame.position.row == row_) ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg1, theme::col(theme::Role::EdSelection));
+      ImGui::TableNextColumn();
+      ImGui::TextDisabled("%d", index);
+      ImGui::TableNextColumn();
+      if (rowStart) {
+        char label[32];
+        snprintf(label, sizeof label, "%02d##r%d", frame.position.row, index);
+        if (ImGui::Selectable(label, false, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap)) row_ = frame.position.row;
+      }
+      for (int channel = 0; channel < kChannels; channel++) {
+        int values[3] = {frame.registers.control[channel], frame.registers.frequency[channel], frame.registers.volume[channel]};
+        int previous[3] = {before.control[channel], before.frequency[channel], before.volume[channel]};
+        for (int field = 0; field < 3; field++) {
+          ImGui::TableNextColumn();
+          // what changes is written; what stays needs no write
+          bool written = values[field] != previous[field];
+          ImGui::TextColored(theme::colv(written ? theme::Role::SynNumber : theme::Role::UiTextDim), "%2d", values[field]);
+          if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", explain(frame.voices[channel]).c_str());
+        }
+      }
+    }
+  }
+  ImGui::EndTable();
 }
 
 // ---------------------------------------------------------------------------
@@ -705,6 +836,30 @@ bool MusicEditor::envelope(const char* id, std::vector<int>& values, int low, in
   return edited;
 }
 
+// The variants of an envelope as small buttons: 0 1 2 ... plus one more and minus this one.
+static bool variantButtons(const char* id, int count, int* current, bool* add, bool* remove) {
+  ImGui::PushID(id);
+  bool clicked = false;
+  for (int index = 0; index < count; index++) {
+    if (index) ImGui::SameLine(0, 2);
+    bool selected = index == *current;
+    if (selected) ImGui::PushStyleColor(ImGuiCol_Button, theme::col(theme::Role::UiAccent));
+    if (ImGui::SmallButton(std::to_string(index).c_str())) *current = index, clicked = true;
+    if (selected) ImGui::PopStyleColor();
+  }
+  ImGui::SameLine(0, em(8));
+  *add = count < 16 && ImGui::SmallButton("+");
+  if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", T("Another variant, a copy of this one."));
+  *remove = false;
+  if (count > 1) {
+    ImGui::SameLine(0, 2);
+    *remove = ImGui::SmallButton("-");
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", T("Removes this variant; the effects that used it fall back to the first one."));
+  }
+  ImGui::PopID();
+  return clicked;
+}
+
 void MusicEditor::instrumentEditor() {
   if (song_.instruments.empty()) return;
   Instrument& instrument = song_.instruments[instrument_];
@@ -732,12 +887,24 @@ void MusicEditor::instrumentEditor() {
       }
     }
   }
+  bool add = false, remove = false;
   ImGui::SeparatorText(T("Volume"));
-  ImGui::TextDisabled("%s", T("Frame by frame. Right click: the held note repeats from there."));
-  if (envelope("volume", instrument.volume, 0, 15, &instrument.loopStart, 1)) changed();
+  volumeVariant_ = std::clamp(volumeVariant_, 0, (int)instrument.volumes.size() - 1);
+  variantButtons("volumes", (int)instrument.volumes.size(), &volumeVariant_, &add, &remove);
+  if (add) instrument.volumes.push_back(instrument.volumes[volumeVariant_]), volumeVariant_ = (int)instrument.volumes.size() - 1, changed();
+  else if (remove) instrument.volumes.erase(instrument.volumes.begin() + volumeVariant_), volumeVariant_ = std::max(0, volumeVariant_ - 1), changed();
+  ImGui::TextDisabled("%s", volumeVariant_ == 0 ? T("Frame by frame. Right click: the held note repeats from there.")
+                                                : F("Used by notes with the effect V{0}. Right click: the held note repeats from there.", {std::to_string(volumeVariant_)}).c_str());
+  Envelope& volume = instrument.volumes[volumeVariant_];
+  if (envelope("volume", volume.values, 0, 15, &volume.loop, 1)) changed();
   ImGui::SeparatorText(T("Release"));
-  ImGui::TextDisabled("%s", T("After a note off (===). Empty: silent at once."));
-  if (envelope("release", instrument.release, 0, 15, nullptr, 0)) changed();
+  releaseVariant_ = std::clamp(releaseVariant_, 0, (int)instrument.releases.size() - 1);
+  variantButtons("releases", (int)instrument.releases.size(), &releaseVariant_, &add, &remove);
+  if (add) instrument.releases.push_back(instrument.releases[releaseVariant_]), releaseVariant_ = (int)instrument.releases.size() - 1, changed();
+  else if (remove) instrument.releases.erase(instrument.releases.begin() + releaseVariant_), releaseVariant_ = std::max(0, releaseVariant_ - 1), changed();
+  ImGui::TextDisabled("%s", releaseVariant_ == 0 ? T("After a note off (===). Empty: silent at once.")
+                                                 : F("After a note off when the note has the effect R{0}. Empty: silent at once.", {std::to_string(releaseVariant_)}).c_str());
+  if (envelope("release", instrument.releases[releaseVariant_], 0, 15, nullptr, 0)) changed();
   if (instrument.drum) {
     ImGui::SeparatorText("AUDC");
     if (envelope("audc", instrument.drumControl, 0, 15, nullptr, 1)) changed();
@@ -745,12 +912,124 @@ void MusicEditor::instrumentEditor() {
     if (envelope("audf", instrument.drumFrequency, 0, 31, nullptr, 1)) changed();
   } else {
     ImGui::SeparatorText(T("Pitch"));
-    ImGui::TextDisabled("%s", T("Added to AUDF frame by frame (positive is lower); the last value stays."));
-    if (envelope("pitch", instrument.pitch, -8, 8, nullptr, 0)) changed();
+    bool cents = instrument.pitchUnit == PitchUnit::Cents;
+    if (ImGui::RadioButton(T("in cents"), cents) && !cents) instrument.pitchUnit = PitchUnit::Cents, instrument.pitch.assign(instrument.pitch.size(), 0), changed();
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", T("The same interval on every note: each frame gets the AUDF that comes closest, note by note."));
+    ImGui::SameLine();
+    if (ImGui::RadioButton(T("in AUDF steps"), !cents) && cents) instrument.pitchUnit = PitchUnit::Audf, instrument.pitch.assign(instrument.pitch.size(), 0), changed();
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", T("Added to AUDF as it is: one step is almost a semitone on high notes and a few cents on low ones."));
+    ImGui::TextDisabled("%s", cents ? T("Added to the note frame by frame (positive is higher); the last value stays.")
+                                    : T("Added to AUDF frame by frame (positive is lower); the last value stays."));
+    if (cents ? envelope("pitch", instrument.pitch, -100, 100, nullptr, 0) : envelope("pitch", instrument.pitch, -8, 8, nullptr, 0)) changed();
+    noteTuningEditor(instrument);
   }
   ImGui::Spacing();
   if (ImGui::Button(T("Try it"))) preview((octave_ + 1) * 12 + 9), previewMouse_ = true;
   if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", T("Plays an A of the current octave while the button is held."));
+}
+
+// The notes this instrument plays, each with what it writes frame by frame and how far
+// off that is; any of them can be set by hand.
+void MusicEditor::noteTuningEditor(Instrument& instrument) {
+  ImGui::SeparatorText(T("Note by note"));
+  ImGui::TextDisabled("%s", T("What each note of the song writes with this instrument. A note tuned by hand keeps its own AUDC and AUDF list."));
+  std::vector<int> notes = song_.notesOf(instrument_);
+  for (auto& [note, tuned] : instrument.byHand)
+    if (std::find(notes.begin(), notes.end(), note) == notes.end()) notes.push_back(note);
+  std::sort(notes.begin(), notes.end());
+  if (notes.empty()) {
+    ImGui::TextDisabled("%s", T("No note of the song uses it yet."));
+    return;
+  }
+  auto centsText = [](double cents) { return (cents >= 0 ? "+" : "") + std::to_string((int)std::lround(cents)); };
+  auto stepsColour = [&](const std::vector<PitchStep>& steps) {
+    NotePitch worst;
+    worst.playable = true;
+    for (auto& step : steps) {
+      if (!step.playable) worst.playable = false;
+      if (std::fabs(step.cents) > std::fabs(worst.cents)) worst.cents = step.cents;
+    }
+    return tuningColour(worst);
+  };
+  if (ImGui::BeginTable("##notes", 4, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit)) {
+    ImGui::TableSetupColumn(T("Note"));
+    ImGui::TableSetupColumn("AUDC");
+    ImGui::TableSetupColumn("AUDF");
+    ImGui::TableSetupColumn(T("Cents"), ImGuiTableColumnFlags_WidthStretch);
+    ImGui::TableHeadersRow();
+    for (int note : notes) {
+      std::vector<PitchStep> steps = song_.pitchSequence(note - song_.tuning.transpose, instrument, clock_);
+      bool byHand = instrument.byHand.count(note) > 0;
+      ImGui::TableNextRow();
+      ImGui::TableNextColumn();
+      std::string label = noteName(note) + (byHand ? " *" : "") + "##hand" + std::to_string(note);
+      if (ImGui::Selectable(label.c_str(), handNote_ == note, ImGuiSelectableFlags_SpanAllColumns)) handNote_ = handNote_ == note ? -1 : note;
+      if (byHand && ImGui::IsItemHovered()) ImGui::SetTooltip("%s", T("* tuned by hand"));
+      ImGui::TableNextColumn();
+      if (steps[0].playable) ImGui::Text("%d", steps[0].control);
+      ImGui::TableNextColumn();
+      std::string frequencies;
+      for (size_t index = 0; index < steps.size() && index < 8; index++) frequencies += (index ? " " : "") + std::to_string(steps[index].frequency);
+      if (steps.size() > 8) frequencies += " ...";
+      if (steps[0].playable) ImGui::TextUnformatted(frequencies.c_str());
+      ImGui::TableNextColumn();
+      std::string centsList;
+      for (size_t index = 0; index < steps.size() && index < 8; index++) centsList += (index ? " " : "") + centsText(steps[index].cents);
+      ImGui::PushStyleColor(ImGuiCol_Text, stepsColour(steps));
+      ImGui::TextUnformatted(steps[0].playable ? centsList.c_str() : T("none"));
+      ImGui::PopStyleColor();
+    }
+    ImGui::EndTable();
+  }
+  if (handNote_ < 0 || std::find(notes.begin(), notes.end(), handNote_) == notes.end()) return;
+  ImGui::PushID(handNote_);
+  auto found = instrument.byHand.find(handNote_);
+  ImGui::Text("%s", noteName(handNote_).c_str());
+  ImGui::SameLine();
+  if (ImGui::Button(T("Listen"))) preview(handNote_ - song_.tuning.transpose), previewMouse_ = true;
+  ImGui::SameLine();
+  if (found == instrument.byHand.end()) {
+    if (ImGui::Button(T("Tune by hand"))) {
+      std::vector<PitchStep> steps = song_.pitchSequence(handNote_ - song_.tuning.transpose, instrument, clock_);
+      NoteTuning tuned;
+      tuned.control = steps[0].playable ? steps[0].control : (instrument.controls.empty() ? 4 : instrument.controls[0]);
+      for (auto& step : steps) tuned.frequencies.push_back(step.frequency);
+      instrument.byHand[handNote_] = tuned;
+      changed();
+    }
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", T("Starts from what it plays now; then each frame's AUDF, and the AUDC, are yours."));
+    ImGui::PopID();
+    return;
+  }
+  if (ImGui::Button(T("Back to automatic"))) {
+    instrument.byHand.erase(found);
+    changed();
+    ImGui::PopID();
+    return;
+  }
+  NoteTuning& tuned = found->second;
+  ImGui::SetNextItemWidth(em(200));
+  std::string current = distortionOf(tuned.control) ? std::string(T(distortionOf(tuned.control)->name)) + " (AUDC " + std::to_string(tuned.control) + ")" : "AUDC " + std::to_string(tuned.control);
+  if (ImGui::BeginCombo("AUDC", current.c_str())) {
+    for (auto& distortion : distortions()) {
+      if (!distortion.tonal) continue;
+      std::string label = std::string(T(distortion.name)) + " (AUDC " + std::to_string(distortion.controls[0]) + ")";
+      if (ImGui::Selectable(label.c_str(), distortion.controls[0] == tuned.control)) tuned.control = distortion.controls[0], changed();
+    }
+    ImGui::EndCombo();
+  }
+  ImGui::TextDisabled("%s", T("AUDF frame by frame (higher is lower); the last one stays."));
+  if (envelope("handaudf", tuned.frequencies, 0, 31, nullptr, 1)) changed();
+  // how far off each frame is, under its bar
+  std::vector<PitchStep> steps = song_.pitchSequence(handNote_ - song_.tuning.transpose, instrument, clock_);
+  for (size_t index = 0; index < steps.size(); index++) {
+    if (index) ImGui::SameLine(0, em(4));
+    NotePitch shown;
+    shown.playable = steps[index].playable, shown.cents = steps[index].cents;
+    ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(tuningColour(shown)), "%s", centsText(steps[index].cents).c_str());
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", F("Frame {0}: AUDF {1}, {2} cents from the note", {std::to_string(index), std::to_string(steps[index].frequency), centsText(steps[index].cents)}).c_str());
+  }
+  ImGui::PopID();
 }
 
 // ---------------------------------------------------------------------------
