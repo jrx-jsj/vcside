@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+#include "export.h"
 #include "music_audio.h"
 #include "song.h"
 
@@ -37,6 +38,10 @@ class MusicEditor {
   std::string explain(const VoiceTrace& trace) const;
   void instrumentEditor();
   void tuningPanel();
+  void effectsPanel();
+  void exportPopup();
+  // Writes <name>.music.asm as the song says (Song::exportTo); quiet: only problems are said.
+  bool exportSongFile(bool quiet);
   void keyboard();
   void gridKeys();
   bool envelope(const char* id, std::vector<int>& values, int low, int high, int* loopStart, int minLength);
@@ -79,6 +84,8 @@ class MusicEditor {
   bool previewMouse_ = false;
   bool scrollToCursor_ = false;
   std::string message_;
+  std::vector<std::string> exportProblems_;
+  int effect_ = 0;  // the sound effect shown
 };
 
 // The one sound output all music editors share.

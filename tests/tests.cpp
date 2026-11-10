@@ -26,6 +26,9 @@
 #include "music/tuning.h"
 #include "music/song.h"
 #include "music/player.h"
+#include "music/export.h"
+#include "cpu6502.h"
+#include <random>
 
 #include <algorithm>
 #include <array>
@@ -725,6 +728,12 @@ static void testElfSpace() {
   std::string basicText((std::istreambuf_iterator<char>(basFile)), {});
   CHECK(basicText.find("rem Square Run - batari Basic") != std::string::npos && basicText.find("drawscreen") != std::string::npos);
   CHECK(basicText.find("set tv") == std::string::npos);  // NTSC: batari Basic's own timing
+  {  // its music: the song, and the player and tables main.bas inlines (h to z)
+    std::ifstream musicFile(dir / "bb" / "theme.music.asm");
+    std::string musicText((std::istreambuf_iterator<char>(musicFile)), {});
+    CHECK(fs::exists(dir / "bb" / "theme.vcsmusic") && basicText.find("inline theme.music.asm") != std::string::npos);
+    CHECK(musicText.find("MUSIC_RAM = h") != std::string::npos && musicText.find("MUSIC_EFFECT_BLIP") != std::string::npos);
+  }
   CHECK(Project::create((dir / "bbpal").string(), "Pal Run", Language::BatariBasic, "PAL", &project, &error));
   std::ifstream palFile(dir / "bbpal" / "main.bas");
   std::string palText((std::istreambuf_iterator<char>(palFile)), {});
@@ -805,7 +814,11 @@ static void testElfSpace() {
   for (const char* tvStandard : {"NTSC", "PAL", "AUTO"}) {
     fs::path animationDir = dir / (std::string("anim-") + tvStandard);
     CHECK(Project::create(animationDir.string(), "walker", Language::Dasm, tvStandard, &project, &error, "animation"));
-    for (auto fileName : {"main.asm", "2600.h", "hero.vcsgfx", "hero.gfx.asm"}) CHECK(fs::exists(animationDir / fileName));
+    for (auto fileName : {"main.asm", "2600.h", "hero.vcsgfx", "hero.gfx.asm", "theme.vcsmusic", "theme.music.asm"})
+      CHECK(fs::exists(animationDir / fileName));
+    std::ifstream musicFile(animationDir / "theme.music.asm");
+    std::string musicText((std::istreambuf_iterator<char>(musicFile)), {});
+    CHECK(musicText.find("MUSIC_EFFECT_JUMP") != std::string::npos && musicText.find("MusicFrame") != std::string::npos);
     std::ifstream includeFile(animationDir / "hero.gfx.asm");
     std::string includeText((std::istreambuf_iterator<char>(includeFile)), {});
     CHECK(includeText.find("hero_walk_FRAME") != std::string::npos && includeText.find("hero_P0_FramePtrLo") != std::string::npos);
@@ -2090,7 +2103,213 @@ static void testSong() {
   effectPlayer.nextFrame();
   effectPlayer.nextFrame();
   const VoiceTrace& trace = effectPlayer.trace(0);
-  CHECK(trace.active && trace.note == 60 && trace.instrument == 0 && trace.frame == 2 && !trace.released && trace.pitch.playable && trace.pitch.control == effectPlayer.nextFrame().control[0]);
+  CHECK(trace.active && trace.note == 60 && trace.instrument == 0 && trace.frame == 0 && !trace.released && trace.pitch.playable && trace.pitch.control == effectPlayer.nextFrame().control[0]);
+}
+
+// The exported player against the editor's: songs assembled with DASM and run on a 6502,
+// frame by frame, every AUDC, AUDF and AUDV write compared. Skipped without DASM.
+static std::string findDasm() {
+  if (const char* given = std::getenv("VCSIDE_DASM")) return given;
+#ifndef _WIN32
+  if (std::system("command -v dasm >/dev/null 2>&1") == 0) return "dasm";
+#endif
+  return "";
+}
+
+struct AssembledSong {
+  bool ok = false;
+  std::string error;
+  Cpu6502 cpu;
+  uint16_t init = 0, frame = 0, effect = 0;
+  int bytes = 0;
+};
+
+static void assembleSong(const std::string& dasm, const std::string& exportText, AssembledSong& out) {
+  namespace fs = std::filesystem;
+  fs::path folder = fs::temp_directory_path() / "vcside-test-music";
+  fs::create_directories(folder);
+  {
+    std::ofstream source(folder / "song.asm");
+    source << "    processor 6502\nAUDC0 = $15\nAUDC1 = $16\nAUDF0 = $17\nAUDF1 = $18\nAUDV0 = $19\nAUDV1 = $1A\nMUSIC_RAM = $80\n    ORG $1000\n"
+           << exportText;
+  }
+  std::string command = "cd \"" + folder.string() + "\" && \"" + dasm + "\" song.asm -f3 -osong.bin -ssong.sym -lsong.lst > song.log 2>&1";
+  if (std::system(command.c_str()) != 0) {
+    std::ifstream log(folder / "song.log");
+    std::stringstream text;
+    text << log.rdbuf();
+    out.error = text.str();
+    return;
+  }
+  std::ifstream binary(folder / "song.bin", std::ios::binary);
+  std::vector<char> bytes((std::istreambuf_iterator<char>(binary)), std::istreambuf_iterator<char>());
+  out.bytes = (int)bytes.size();
+  for (size_t index = 0; index < bytes.size() && 0x1000 + index < 65536; index++) out.cpu.memory[0x1000 + index] = (uint8_t)bytes[index];
+  std::ifstream symbols(folder / "song.sym");
+  for (std::string line; std::getline(symbols, line);) {
+    std::istringstream words(line);
+    std::string name, value;
+    words >> name >> value;
+    uint16_t address = (uint16_t)std::strtol(value.c_str(), nullptr, 16);
+    if (name == "MusicInit") out.init = address;
+    if (name == "MusicFrame") out.frame = address;
+    if (name == "MusicEffect") out.effect = address;
+  }
+  out.ok = out.init && out.frame && out.effect;
+  if (!out.ok) out.error = "no player symbols";
+}
+
+// A song made of random choices, with every feature the player has.
+static vcs::music::Song randomSong(unsigned seed) {
+  using namespace vcs::music;
+  std::mt19937 random(seed);
+  auto pick = [&](int low, int high) { return std::uniform_int_distribution<int>(low, high)(random); };
+  Song song = blankSong();
+  song.speed = pick(1, 5);
+  song.swing = pick(0, 1) ? pick(1, 6) : 0;
+  song.tuning.transpose = pick(-3, 3);
+  song.instruments.clear();
+  int instrumentCount = pick(2, 5);
+  for (int index = 0; index < instrumentCount; index++) {
+    Instrument instrument;
+    instrument.name = "i" + std::to_string(index);
+    instrument.drum = pick(0, 3) == 0;
+    static const int tonal[] = {1, 4, 6, 7, 12, 14, 15};
+    instrument.controls = {tonal[pick(0, 6)]};
+    if (pick(0, 1)) instrument.controls.push_back(tonal[pick(0, 6)]);
+    instrument.volumes.clear();
+    for (int variantIndex = pick(1, 3); variantIndex > 0; variantIndex--) {
+      Envelope envelope;
+      for (int frame = pick(0, 6); frame > 0; frame--) envelope.values.push_back(pick(0, 15));
+      envelope.loop = !envelope.values.empty() && pick(0, 1) ? pick(0, (int)envelope.values.size() - 1) : -1;
+      instrument.volumes.push_back(envelope);
+    }
+    instrument.releases.clear();
+    for (int variantIndex = pick(1, 2); variantIndex > 0; variantIndex--) {
+      std::vector<int> release;
+      for (int frame = pick(0, 4); frame > 0; frame--) release.push_back(pick(0, 15));
+      instrument.releases.push_back(release);
+    }
+    instrument.pitchUnit = pick(0, 1) ? PitchUnit::Cents : PitchUnit::Audf;
+    for (int frame = pick(0, 1) ? pick(1, 5) : 0; frame > 0; frame--) instrument.pitch.push_back(instrument.pitchUnit == PitchUnit::Cents ? pick(-150, 150) : pick(-3, 3));
+    if (pick(0, 2) == 0) instrument.byHand[pick(55, 80)] = {tonal[pick(0, 6)], {pick(0, 31), pick(0, 31)}};
+    instrument.drumControl = {pick(1, 15), pick(1, 15)};
+    instrument.drumFrequency = {pick(0, 31)};
+    song.instruments.push_back(instrument);
+  }
+  song.patterns.clear();
+  for (int patternIndex = pick(1, 3); patternIndex > 0; patternIndex--) {
+    Pattern pattern;
+    pattern.resize(pick(2, 12));
+    for (auto& channel : pattern.cells)
+      for (auto& cell : channel) {
+        int kind = pick(0, 9);
+        if (kind < 4) cell.note = pick(40, 90), cell.instrument = pick(0, instrumentCount);  // sometimes one that does not exist
+        else if (kind == 4) cell.note = kNoteOff;
+        if (pick(0, 4) == 0) cell.effect = pick(0, 1) ? kEffectVolume : kEffectRelease, cell.effectValue = pick(0, 3);
+      }
+    song.patterns.push_back(pattern);
+  }
+  song.order.clear();
+  for (int entry = pick(1, 4); entry > 0; entry--) song.order.push_back(pick(0, (int)song.patterns.size() - 1));
+  song.loopTo = pick(0, 2) ? pick(0, (int)song.order.size() - 1) : -1;
+  for (int index = pick(0, 2); index > 0; index--) song.effects.push_back({"fx" + std::to_string(index), pick(0, instrumentCount - 1), pick(50, 80), pick(0, 1)});
+  return song;
+}
+
+static void testMusicExport() {
+  using namespace vcs::music;
+  double ntsc = audioClockHz("NTSC");
+  // what the export says without running it
+  Song song = blankSong();
+  song.patterns[0].cells[0][0] = {69, 0};
+  song.effects.push_back({"Jump up!", 1, 60, 1});
+  ExportResult exported = exportSong(song, ntsc, {});
+  CHECK(exported.ok && exported.problems.empty() && exported.sounds == 2 && exported.text.find("MUSIC_EFFECT_JUMP_UP = 0") != std::string::npos);
+  CHECK(exported.text.find("IFNCONST MUSIC_RAM") != std::string::npos && exported.text.find("CC0") != std::string::npos);
+  ExportResult basic = exportSong(song, ntsc, {ExportTarget::BatariBasic, "h", "NTSC"});
+  CHECK(basic.ok && basic.text.find("MUSIC_RAM = h") != std::string::npos && basic.text.find("IFNCONST") == std::string::npos);
+  CHECK(effectSymbol("  boom 2 ") == "MUSIC_EFFECT_BOOM_2");
+  // a pattern that plays differently depending on what came before is reported
+  Song ambiguous = blankSong();
+  ambiguous.patterns[0].resize(2);
+  Pattern second = ambiguous.patterns[0];
+  ambiguous.patterns[0].cells[0][0] = {60, 0};
+  second.cells[0][0] = {60, 1};
+  ambiguous.patterns.push_back(second);
+  Pattern shared;
+  shared.resize(1);
+  shared.cells[0][0].note = 62;  // no instrument: the one before it
+  ambiguous.patterns.push_back(shared);
+  ambiguous.order = {0, 2, 1, 2};
+  CHECK(exportSong(ambiguous, ntsc, {}).problems.size() == 1);
+
+  std::string dasm = findDasm();
+  if (dasm.empty()) {
+    std::printf("  (no DASM: the exported player is not run)\n");
+    return;
+  }
+  int compared = 0, skipped = 0, heardFrames = 0, effectsPlayed = 0;
+  long mostInstructions = 0;
+  for (unsigned seed = 1; seed <= 60; seed++) {
+    Song random = seed == 1 ? blankSong() : randomSong(seed);
+    if (seed == 1) {
+      random.patterns[0].cells[0][0] = {69, 0}, random.patterns[0].cells[1][4] = {60, 1}, random.patterns[0].cells[0][8] = {kNoteOff, -1};
+      random.effects.push_back({"blip", 0, 72, 0});
+    }
+    ExportResult result = exportSong(random, ntsc, {});
+    bool ambiguousSong = false;
+    for (auto& problem : result.problems) ambiguousSong = ambiguousSong || problem.find("depending on what came before") != std::string::npos;
+    if (ambiguousSong) {
+      skipped++;
+      continue;
+    }
+    CHECK(result.ok);
+    if (!result.ok) continue;
+    AssembledSong assembled;
+    assembleSong(dasm, result.text, assembled);
+    if (!assembled.ok) {
+      std::printf("  seed %u: %s\n", seed, assembled.error.c_str());
+      CHECK(assembled.ok);
+      break;
+    }
+    Player player;
+    player.start(random, ntsc);
+    Cpu6502& cpu = assembled.cpu;
+    CHECK(cpu.call(assembled.init));
+    std::mt19937 effects(seed);
+    int validEffects = 0;
+    for (auto& effect : random.effects) validEffects += effect.instrument < (int)random.instruments.size();
+    bool same = true;
+    for (int frame = 0; frame < 1500 && same; frame++) {
+      if (validEffects && std::uniform_int_distribution<int>(0, 60)(effects) == 0) {
+        int effect = std::uniform_int_distribution<int>(0, validEffects - 1)(effects);
+        player.playEffect(random, ntsc, effect);
+        effectsPlayed++;
+        cpu.a = (uint8_t)effect;
+        same = cpu.call(assembled.effect);
+      }
+      FrameRegisters expected = player.nextFrame();
+      long before = cpu.instructions;
+      same = same && cpu.call(assembled.frame);
+      mostInstructions = std::max(mostInstructions, cpu.instructions - before);
+      heardFrames += expected.volume[0] || expected.volume[1];
+      for (int channel = 0; channel < kChannels && same; channel++)
+        same = cpu.memory[0x15 + channel] == expected.control[channel] && cpu.memory[0x17 + channel] == expected.frequency[channel] &&
+               cpu.memory[0x19 + channel] == expected.volume[channel];
+      if (!same)
+        std::printf("  seed %u, frame %d: 6502 %d %d %d / %d %d %d, editor %d %d %d / %d %d %d\n", seed, frame, cpu.memory[0x15], cpu.memory[0x17], cpu.memory[0x19],
+                    cpu.memory[0x16], cpu.memory[0x18], cpu.memory[0x1a], expected.control[0], expected.frequency[0], expected.volume[0], expected.control[1],
+                    expected.frequency[1], expected.volume[1]);
+    }
+    CHECK(same);
+    compared++;
+    if (!same) break;
+  }
+  CHECK(compared >= 40 && heardFrames > 10000 && effectsPlayed > 100);
+  CHECK(mostInstructions < 260);  // MusicFrame stays well inside a vertical blank
+  std::printf("  exported player: %d songs the same as the editor's (%d skipped as ambiguous; %d frames with sound, %d effects), at most %ld instructions a frame\n",
+              compared, skipped, heardFrames, effectsPlayed, mostInstructions);
 }
 
 int main() {
@@ -2115,6 +2334,7 @@ int main() {
   testElfSpace();
   testMusic();
   testSong();
+  testMusicExport();
   testBasic();
   testBasicSyntax(kb);
   testFormatOrder(kb);

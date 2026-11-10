@@ -11,6 +11,8 @@
 #include <sstream>
 
 #include "gfx.h"
+#include "music/export.h"
+#include "music/tuning.h"
 #include "i18n.h"
 #include "paths.h"
 
@@ -482,6 +484,24 @@ static void writeGfxIncludes(const fs::path& dir, bool isC) {
   }
 }
 
+// A .vcsmusic of an example comes with its export (<name>.music.asm), written as the music
+// editor writes it on save, tuned for the project's TV standard.
+static void writeMusicIncludes(const fs::path& dir, const std::string& tvStandard) {
+  std::error_code errorCode;
+  for (auto& entry : fs::directory_iterator(dir, errorCode)) {
+    if (entry.path().extension() != ".vcsmusic") continue;
+    music::Song song;
+    std::string error;
+    if (!music::fromJson(readFile(entry.path().string()), &song, &error) || (song.exportTo != "dasm" && song.exportTo != "bb")) continue;
+    std::string tv = tvStandard == "AUTO" ? "NTSC" : tvStandard;
+    music::ExportOptions options;
+    options.tv = tv;
+    if (song.exportTo == "bb") options.target = music::ExportTarget::BatariBasic, options.ramStart = song.exportRam;
+    music::ExportResult result = music::exportSong(song, music::audioClockHz(tv), options);
+    if (result.ok) std::ofstream(dir / (entry.path().stem().string() + ".music.asm"), std::ios::binary) << result.text;
+  }
+}
+
 bool Project::create(const std::string& dirIn, const std::string& projName, Language projectLanguage, const std::string& tvStandard,
                      Project* result, std::string* error, const std::string& example) {
   fs::path folder(dirIn);
@@ -526,11 +546,12 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
     if (!fs::exists(mainFile)) std::ofstream(mainFile) << asmText;
     fs::path headerFile = fs::path(newProject.dir) / "2600.h";
     if (!fs::exists(headerFile)) fs::copy_file(templateDir / "2600.h", headerFile, errorCode);
-    // the example's graphics, and the tables they give
+    // the example's graphics and music, and the tables they give
     for (auto& entry : fs::directory_iterator(exampleDir, errorCode))
-      if (entry.path().extension() == ".vcsgfx" && !fs::exists(fs::path(newProject.dir) / entry.path().filename()))
+      if ((entry.path().extension() == ".vcsgfx" || entry.path().extension() == ".vcsmusic") && !fs::exists(fs::path(newProject.dir) / entry.path().filename()))
         fs::copy_file(entry.path(), fs::path(newProject.dir) / entry.path().filename(), errorCode);
     writeGfxIncludes(newProject.dir, false);
+    writeMusicIncludes(newProject.dir, tvStandard);
     newProject.main = "main.asm";
   } else if (projectLanguage == Language::BatariBasic) {
     newProject.main = "main.bas";
@@ -547,6 +568,11 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
     if (tvIs50Hz(tvStandard)) replaceAll(text, "  set romsize 4k\n", "  set romsize 4k\n  set tv pal\n");
     fs::path mainFile = fs::path(newProject.dir) / "main.bas";
     if (!fs::exists(mainFile)) std::ofstream(mainFile, std::ios::binary) << text;
+    // its music, and the player and tables it includes
+    for (auto& entry : fs::directory_iterator(templateDir.parent_path(), errorCode))
+      if (entry.path().extension() == ".vcsmusic" && !fs::exists(fs::path(newProject.dir) / entry.path().filename()))
+        fs::copy_file(entry.path(), fs::path(newProject.dir) / entry.path().filename(), errorCode);
+    writeMusicIncludes(newProject.dir, tvStandard);
   } else if (projectLanguage == Language::ElfC) {
     if (projName.find_first_of(" \t") != std::string::npos) {
       if (error) *error = T("ELF projects build with make, which does not take spaces in file names: choose a name without spaces.");

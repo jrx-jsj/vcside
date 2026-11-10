@@ -9,6 +9,13 @@
 ; the frame through a pointer, and the vertical blank plays the animations
 ; with their tables: for each step, the frame (_FRAME) and how many frames
 ; it lasts (_TICKS).
+;
+; Music and sound: theme.vcsmusic (open it from the project panel) is the song
+; and its two sound effects; saving it writes theme.music.asm, the player and
+; the song's tables, included below. MusicInit starts the song, MusicFrame
+; plays it once per frame, and MusicEffect plays an effect: jump on the fire
+; button, bump when the hero reaches an edge. While an effect sounds, the
+; song's notes on its channel wait.
 
         processor 6502
         include "2600.h"
@@ -30,6 +37,10 @@ ColPtr  ds 2            ; its colours
 CurGfx  ds 1            ; what the next line pair writes
 CurCol  ds 1
 Ptr     ds 2            ; scratch pointer
+Button  ds 1            ; the fire button on the last frame (0 = down)
+Bump    ds 1            ; not 0: the hero has just reached an edge
+MusicRam ds 19          ; the music player's
+MUSIC_RAM = MusicRam
 
 ; ---- Code ------------------------------------------------------------------
         SEG Code
@@ -49,6 +60,9 @@ Reset   sei
         sta HeroY
         lda #$90                ; dark blue sky
         sta COLUBK
+        lda #$80
+        sta Button              ; as if up: holding it at power on is no jump
+        jsr MusicInit           ; the song from its start
 
 StartFrame
         lda #2
@@ -64,6 +78,8 @@ StartFrame
 
         jsr Joystick
         jsr Animate
+        jsr Sounds
+        jsr MusicFrame          ; the music's writes for this frame
         lda HeroX
         ldx #0                  ; player 0
         jsr PosObject
@@ -122,6 +138,10 @@ Joystick
         cmp #152
         bcs .noRight
         inc HeroX
+        lda HeroX
+        cmp #152
+        bne .noRight
+        sta Bump                ; just got to the right edge
 .noRight
         lda SWCHA
         asl
@@ -132,6 +152,8 @@ Joystick
         lda HeroX
         beq .noLeft
         dec HeroX
+        bne .noLeft
+        inc Bump                ; just got to the left edge
 .noLeft
         cpy Anim
         beq .same
@@ -140,6 +162,23 @@ Joystick
         sta Step
         sta Timer
 .same   rts
+
+; ---- Sounds: the effects, when the button goes down and at the edges -------
+Sounds
+        lda INPT4
+        and #$80                ; D7 = 0: the button is down
+        cmp Button              ; carry clear: down now, up before
+        sta Button
+        bcs .noJump
+        lda #MUSIC_EFFECT_JUMP
+        jsr MusicEffect
+.noJump lda Bump
+        beq .done
+        lda #0
+        sta Bump
+        lda #MUSIC_EFFECT_BUMP
+        jsr MusicEffect
+.done   rts
 
 ; ---- Animate: advance the current animation and point at its frame ----------
 Animate
@@ -205,6 +244,7 @@ AnimSteps       .byte hero_idle_STEPS, hero_walk_STEPS
 AnimLoop        .byte hero_idle_LOOP, hero_walk_LOOP
 
         include "hero.gfx.asm"
+        include "theme.music.asm"
 
         ORG $FFFC
         .word Reset

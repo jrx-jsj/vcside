@@ -14,6 +14,7 @@ void Player::start(const Song& song, double audioClock, SongPosition from) {
   song_ = song;
   audioClock_ = audioClock;
   for (auto& voice : voices_) voice = Voice();
+  for (int& instrument : channelInstruments_) instrument = 0;
   next_ = from;
   if (next_.order < 0 || next_.order >= (int)song_.order.size()) next_ = {};
   shown_ = next_;
@@ -23,7 +24,7 @@ void Player::start(const Song& song, double audioClock, SongPosition from) {
 
 void Player::stop() {
   playing_ = false;
-  for (auto& voice : voices_) voice.active = false;
+  for (auto& voice : voices_) voice.active = voice.locked = false;
 }
 
 void Player::updateSong(const Song& song) {
@@ -37,12 +38,23 @@ void Player::noteOn(const Song& song, double audioClock, int channel, int note, 
   if (!playing_) song_ = song, audioClock_ = audioClock;
   Voice& voice = voices_[channel];
   voice.instrument = instrument;
+  voice.locked = false;
   trigger(voice, note);
+}
+
+void Player::playEffect(const Song& song, double audioClock, int effect) {
+  if (!playing_) song_ = song, audioClock_ = audioClock;
+  if (effect < 0 || effect >= (int)song_.effects.size()) return;
+  const SoundEffect& sound = song_.effects[effect];
+  Voice& voice = voices_[std::clamp(sound.channel, 0, kChannels - 1)];
+  voice.instrument = sound.instrument;
+  trigger(voice, sound.note);
+  voice.locked = voice.active;  // the music leaves the channel alone until it ends
 }
 
 void Player::noteOff(int channel) {
   Voice& voice = voices_[channel];
-  if (voice.active && !voice.released) voice.released = true, voice.releaseFrame = 0;
+  if (voice.active && !voice.released) voice.released = true, voice.releaseFrame = 0, voice.releaseUsed = voice.releaseVariant;
 }
 
 bool Player::sounding() const {
@@ -56,7 +68,7 @@ void Player::trigger(Voice& voice, int note) {
   voice.active = voice.instrument >= 0 && voice.instrument < (int)song_.instruments.size();
   voice.released = false;
   voice.note = note;
-  voice.frame = voice.releaseFrame = 0;
+  voice.frame = voice.volumeIndex = voice.releaseFrame = 0;
   voice.volumeVariant = voice.releaseVariant = 0;
   voice.pitch.clear();
   if (!voice.active) return;
@@ -68,7 +80,8 @@ void Player::trigger(Voice& voice, int note) {
 // The song is over: what still sounds goes into its release.
 void Player::end() {
   playing_ = false;
-  for (int channel = 0; channel < kChannels; channel++) noteOff(channel);
+  for (int channel = 0; channel < kChannels; channel++)
+    if (!voices_[channel].locked) noteOff(channel);
 }
 
 void Player::playRow() {
@@ -87,8 +100,10 @@ void Player::playRow() {
     if (next_.row >= (int)pattern.cells[channel].size()) continue;
     const Cell& cell = pattern.cells[channel][next_.row];
     Voice& voice = voices_[channel];
-    if (cell.instrument >= 0) voice.instrument = cell.instrument;
-    if (cell.note >= 0) trigger(voice, cell.note);
+    // the cell's instrument is the channel's from now on; the note sounding keeps its own
+    if (cell.instrument >= 0) channelInstruments_[channel] = cell.instrument;
+    if (voice.locked) continue;  // a sound effect has the channel
+    if (cell.note >= 0) voice.instrument = channelInstruments_[channel], trigger(voice, cell.note);
     // the effect after the note (it is for that note) and before a note off (whose release it picks)
     if (cell.effect == kEffectVolume) voice.volumeVariant = cell.effectValue;
     else if (cell.effect == kEffectRelease) voice.releaseVariant = cell.effectValue;
@@ -100,14 +115,6 @@ void Player::playRow() {
     next_.row = 0;
     if (++next_.order >= (int)song_.order.size()) next_.order = song_.loopTo >= 0 ? song_.loopTo : (int)song_.order.size();
   }
-}
-
-static int envelopeValue(const Envelope& envelope, int frame) {
-  const std::vector<int>& values = envelope.values;
-  if (values.empty()) return 0;
-  if (frame < (int)values.size()) return values[frame];
-  if (envelope.loop >= 0 && envelope.loop < (int)values.size()) return values[envelope.loop + (frame - envelope.loop) % ((int)values.size() - envelope.loop)];
-  return values.back();
 }
 
 static int heldValue(const std::vector<int>& values, int frame, int fallback) {
@@ -128,25 +135,33 @@ void Player::output(Voice& voice, int channel, FrameRegisters& registers) {
   if (!voice.active) return;
   const Instrument& instrument = song_.instruments[voice.instrument];
   const Envelope& envelope = variant(instrument.volumes, voice.volumeVariant);
-  const std::vector<int>& release = variant(instrument.releases, voice.releaseVariant);
+  const std::vector<int>& release = variant(instrument.releases, voice.releaseUsed);
   trace.active = true, trace.note = voice.note, trace.instrument = voice.instrument;
-  trace.volumeVariant = voice.volumeVariant, trace.releaseVariant = voice.releaseVariant;
-  trace.released = voice.released;
-  trace.frame = voice.released ? voice.releaseFrame : voice.frame;
+  trace.volumeVariant = voice.volumeVariant, trace.releaseVariant = voice.released ? voice.releaseUsed : voice.releaseVariant;
+  trace.released = voice.released, trace.effect = voice.locked;
+  trace.frame = voice.released ? voice.releaseFrame : voice.volumeIndex;
+  // The volume index goes up one a frame and, past the end, goes back to the loop or
+  // stays on the last value (a V effect changes the envelope and keeps the index). An
+  // envelope that ends on 0 with no loop ends the note; so does the end of the release.
   int volume;
+  auto silence = [&] {
+    voice.active = voice.locked = false;
+    trace = VoiceTrace();
+  };
   if (!voice.released) {
-    // an envelope that has ended on 0 with no loop is over
-    bool ended = voice.frame >= (int)envelope.values.size() && (envelope.loop < 0 || envelope.loop >= (int)envelope.values.size());
-    if (ended && (envelope.values.empty() || envelope.values.back() == 0)) {
-      voice.active = false, trace.active = false;
-      return;
+    int size = (int)envelope.values.size();
+    if (voice.volumeIndex >= size) {
+      if (envelope.loop >= 0 && envelope.loop < size) {
+        voice.volumeIndex = envelope.loop;
+      } else {
+        if (size == 0 || envelope.values.back() == 0) return silence();
+        voice.volumeIndex = size - 1;
+      }
     }
-    volume = envelopeValue(envelope, voice.frame);
+    trace.frame = voice.volumeIndex;
+    volume = envelope.values[voice.volumeIndex++];
   } else {
-    if (voice.releaseFrame >= (int)release.size()) {
-      voice.active = false, trace.active = false;
-      return;
-    }
+    if (voice.releaseFrame >= (int)release.size()) return silence();
     volume = release[voice.releaseFrame++];
   }
   bool heard = true;

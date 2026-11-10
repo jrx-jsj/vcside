@@ -217,9 +217,14 @@ std::string toJson(const Song& song) {
   json tuning = {{"transpose", song.tuning.transpose},
                  {"reference_cents", song.tuning.referenceCents},
                  {"goal", song.tuning.goal == TuningGoal::Average ? "average" : "worst"}};
+  json effects = json::array();
+  for (auto& effect : song.effects)
+    effects.push_back({{"name", effect.name}, {"instrument", effect.instrument}, {"note", effect.note}, {"channel", effect.channel}});
   json document = {{"format", "vcsmusic"}, {"version", 2},       {"name", song.name},       {"target", "tia"},
                    {"speed", song.speed},  {"swing", song.swing}, {"tuning", tuning},       {"instruments", instruments},
                    {"order", song.order},  {"loop_to", song.loopTo}, {"patterns", patterns}};
+  if (!song.effects.empty()) document["effects"] = effects;
+  if (!song.exportTo.empty()) document["export"] = {{"to", song.exportTo}, {"ram", song.exportRam}};
   return document.dump(1) + "\n";
 }
 
@@ -306,6 +311,20 @@ bool fromJson(const std::string& text, Song* song, std::string* error) {
     for (int index : clampedList(document.value("order", json::array()), 0, (int)parsed.patterns.size() - 1)) parsed.order.push_back(index);
     if (parsed.order.empty()) parsed.order.push_back(0);
     parsed.loopTo = std::clamp(document.value("loop_to", 0), -1, (int)parsed.order.size() - 1);
+    if (document.contains("export") && document["export"].is_object()) {
+      parsed.exportTo = document["export"].value("to", "");
+      if (parsed.exportTo != "dasm" && parsed.exportTo != "bb") parsed.exportTo.clear();
+      parsed.exportRam = document["export"].value("ram", "h");
+    }
+    for (auto& item : document.value("effects", json::array())) {
+      if (!item.is_object()) continue;
+      SoundEffect effect;
+      effect.name = item.value("name", effect.name);
+      effect.instrument = std::max(0, item.value("instrument", 0));
+      effect.note = std::clamp(item.value("note", 60), 0, 127);
+      effect.channel = std::clamp(item.value("channel", 1), 0, kChannels - 1);
+      parsed.effects.push_back(effect);
+    }
     *song = std::move(parsed);
   } catch (const std::exception& exception) {
     if (error) *error = exception.what();

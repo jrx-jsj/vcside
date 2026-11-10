@@ -100,15 +100,16 @@ With AUDC = 0 the TIA outputs AUDV as a level, so a program that writes AUDV0 on
   - The sample target goes through the same path as the console: 4-bit levels at the scanline rate.
   - Playback follows the cursor, and one channel can be heard alone.
   - Export to WAV.
-- **Output on save:**
-  - **DASM:** `<name>.music.asm` with the data tables and a player written for VCSIDE (CC0), called once per frame.
-  - **batari Basic:** `data` tables and a player as an include for the standard kernel. In DPC+, its music data.
+- **Sound effects:** sounds the game plays when something happens (a jump, a shot): an instrument and a note on a channel, with a name. While one sounds, the song's notes on that channel wait.
+- **Output on save** (*Export...* chooses where; the song remembers it):
+  - **DASM:** `<name>.music.asm` with VCSIDE's player (CC0) and the song's tables, in one file. The program defines `MUSIC_RAM` (19 bytes of zero page) before including it.
+  - **batari Basic:** the same file, with `MUSIC_RAM` set to a variable (`h` uses h to z), put in with `inline` and called from `asm` blocks. In DPC+, its music data (phase 5).
   - **C (ELF):** `<name>.music.h` with the song and the synthesis player, ready to call once per scanline from the kernel and once per frame.
   - Each file states its size in ROM and RAM, so the space report can show it.
 - **Import:**
   - TIATracker `.ttt`: its instruments, percussion and patterns.
   - MIDI files (later): notes per channel, then tuned.
-- **Example project:** a short song in the DASM and C templates, as with the animated sprite.
+- **Example projects:** the DASM example and the batari Basic template play a short song, with a sound effect on the fire button and another when the hero (or the square) reaches an edge or a wall. The C (ELF) examples get theirs with the samples (phase 4).
 
 ## Credits
 
@@ -131,6 +132,7 @@ Each technique, with whoever devised or spread it. The editor's help shows the s
 | 4-bit samples by writing AUDV with AUDC = 0 | Still to be found |
 | More than 4 bits by sampling the volume between audio clocks | Discussed in AtariAge's "8-bit digital audio from 2600" thread; authors still to be credited |
 | Direct digital synthesis (phase accumulator) | A general technique with no single author |
+| Sound effects that take a music channel while they sound | Common in 2600 games; who did it first is still to be found |
 
 ## Phases for 0.2.0
 
@@ -149,7 +151,14 @@ Each technique, with whoever devised or spread it. The editor's help shows the s
    Exporting will turn every combination a song uses (instrument, note tuned by hand, variant) into tables of its own, so the players on the console only read tables frame by frame: the extra cost is ROM, not cycles.
 
    Added after the first version (2026-11-10): the *Registers* view (what is written to AUDC, AUDF and AUDV on every frame, the values that change and why), the pitch envelope in cents resolved note by note, notes tuned by hand per instrument, and volume and release variants picked by the effect column. `.vcsmusic` is now version 2; version 1 files are read with their pitch in AUDF steps.
-3. DASM and batari Basic export, and the DASM example. Checked in Stella and Gopher2600.
+3. DASM and batari Basic export, and the DASM example. Checked in Stella and Gopher2600. **Done** (2026-11-10): `src/music/export.*`, sound effects, the *Export...* window and the examples.
+   - **The player** is VCSIDE's own, written for this and dedicated to the public domain (CC0), so a game carries no notice. `MusicInit` starts the song, `MusicFrame` plays a frame, `MusicEffect` plays the effect whose number is in A (`MUSIC_EFFECT_<NAME>` constants). It is about 400 bytes; the example's song adds 326 bytes of tables.
+   - **RAM:** 19 bytes of zero page from `MUSIC_RAM`. The song: order entry, row, frames left, pointer to the next row. Per channel: the volume (or release) table and its index, the pitch table and its index (bit 7: an effect has the channel), and a state byte (bit 7 sounding, bit 6 released, bits 0-5 the release).
+   - **Tables:** every combination the song uses (instrument, note, tuning by hand, variant) is a *sound*: a volume envelope, a pitch table of AUDC and AUDF pairs frame by frame (at most 120), and the releases it may use. Identical tables are shared. Rows store, per channel, an event code: nothing, note off, volume envelope, release, note off with release, silence, or a sound to start. At most 250 sounds, 64 releases, 256 envelopes and 254 order entries; more is reported as a problem.
+   - **Exactly what the editor plays:** the editor's player follows the same rules (below), and the tests run each export on a 6502 emulator against `Player` write by write: 60 random songs, 1500 frames each, effects included. A cell that would play differently depending on what came before (a note with no instrument after different instruments) is reported, so the editor and the console never disagree silently.
+   - **Rules added for the console:** a cell's instrument becomes the channel's for later notes; the volume index goes on frame by frame and the `V` effect switches envelope keeping it; the release is chosen at the note off; a voice that stops writes AUDC, AUDF and AUDV = 0; the pitch stays on its last step.
+   - **Sound effects:** an effect starts its sound on its channel and locks it: the song's events there are skipped, and the song's end does not release it. The lock ends when the effect's voice stops (an envelope that ends on 0, or its release).
+   - **Cost:** at most 190 instructions a frame in the tests, about 800 cycles. In the DASM example the vertical blank keeps more than 1700 cycles free (INTIM, measured in Stella); in the batari Basic template about 1900 cycles of the overscan are left. Both keep their line count (Stella and Gopher2600).
 4. Samples for ELF: waveforms, voices, mixing, the C player and the C example. Checked in Stella; on the PlusCart and the Chameleon if possible.
 5. TIATracker import; DPC+ and CDFJ export.
 6. Finer pitch: switching AUDF values within a frame (TIA) or per scanline (ELF).

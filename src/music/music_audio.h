@@ -25,6 +25,7 @@ class MusicAudio {
   void updateSong(const Song& song);
   void noteOn(const Song& song, const std::string& tv, int channel, int note, int instrument);
   void noteOff(int channel);
+  void playEffect(const Song& song, const std::string& tv, int effect);
   void setMuted(int channel, bool muted);
 
   bool playing();

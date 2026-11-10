@@ -58,6 +58,35 @@ bool MusicEditor::save(const std::string& path, std::string* error) {
   }
   path_ = path;
   dirty_ = false;
+  if (!song_.exportTo.empty()) exportSongFile(true);  // kept up to date
+  return true;
+}
+
+static std::string exportPath(const std::string& songPath) {
+  fs::path path(songPath);
+  return (path.parent_path() / (path.stem().string() + ".music.asm")).string();
+}
+
+bool MusicEditor::exportSongFile(bool quiet) {
+  ExportOptions options;
+  options.target = song_.exportTo == "bb" ? ExportTarget::BatariBasic : ExportTarget::Dasm;
+  options.ramStart = options.target == ExportTarget::BatariBasic ? song_.exportRam : "";
+  options.tv = tv_;
+  ExportResult result = exportSong(song_, audioClockHz(tv_), options);
+  exportProblems_ = result.problems;
+  std::string path = exportPath(path_);
+  if (!result.ok) {
+    message_ = F("Not exported: {0}", {result.problems.empty() ? std::string() : result.problems[0]});
+    return false;
+  }
+  std::ofstream file(path, std::ios::binary);
+  if (!file || !(file << result.text)) {
+    message_ = F("Cannot write {0}", {path});
+    return false;
+  }
+  if (!quiet || !result.problems.empty())
+    message_ = F("Exported {0}: {1} bytes of song, {2} sounds{3}", {fs::path(path).filename().string(), std::to_string(result.dataBytes), std::to_string(result.sounds),
+                                                                    result.problems.empty() ? std::string() : F("; {0} warnings", {std::to_string(result.problems.size())})});
   return true;
 }
 
@@ -188,6 +217,10 @@ void MusicEditor::render(const std::string& tv) {
       tuningPanel();
       ImGui::EndTabItem();
     }
+    if (ImGui::BeginTabItem(T("Sound effects"))) {
+      effectsPanel();
+      ImGui::EndTabItem();
+    }
     ImGui::EndTabBar();
   }
   ImGui::EndChild();
@@ -218,14 +251,7 @@ void MusicEditor::toolbar() {
   ImGui::SameLine();
   if (ImGui::RadioButton(T("Registers"), view_ == View::Registers)) view_ = View::Registers;
   if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", T("What the player writes to AUDC, AUDF and AUDV on every video frame of this pattern."));
-  ImGui::SameLine(0, em(20));
-  if (ImGui::Button(T("Save as WAV"))) {
-    std::string wavPath = fs::path(path_).replace_extension(".wav").string(), error;
-    auto samples = renderSong(song_, tv_, 48000, 60 * 60 * 10);
-    message_ = writeWav(wavPath, samples, 48000, &error) ? F("Written {0} ({1} s)", {fs::path(wavPath).filename().string(), std::to_string(samples.size() / 48000)}) : error;
-  }
-  if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", T("The song once through, next to this file, as the TIA plays it."));
-  // second line: timing and typing
+  // second line: timing, typing and files
   ImGui::SetNextItemWidth(em(90));
   int speed = song_.speed;
   if (ImGui::InputInt(T("Speed"), &speed)) song_.speed = std::clamp(speed, 1, 60), changed();
@@ -242,6 +268,18 @@ void MusicEditor::toolbar() {
   ImGui::SetNextItemWidth(em(90));
   if (ImGui::InputInt(T("Step"), &step_)) step_ = std::clamp(step_, 0, 16);
   if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", T("Rows the cursor moves after a note is typed."));
+  ImGui::SameLine(0, em(20));
+  if (ImGui::Button(T("Save as WAV"))) {
+    std::string wavPath = fs::path(path_).replace_extension(".wav").string(), error;
+    auto samples = renderSong(song_, tv_, 48000, 60 * 60 * 10);
+    message_ = writeWav(wavPath, samples, 48000, &error) ? F("Written {0} ({1} s)", {fs::path(wavPath).filename().string(), std::to_string(samples.size() / 48000)}) : error;
+  }
+  if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", T("The song once through, next to this file, as the TIA plays it."));
+  ImGui::SameLine();
+  if (ImGui::Button(T("Export..."))) ImGui::OpenPopup("##export");
+  if (ImGui::IsItemHovered())
+    ImGui::SetTooltip("%s", F("{0}: the song and VCSIDE's player for the console, kept up to date on every save.", {fs::path(exportPath(path_)).filename().string()}).c_str());
+  exportPopup();
   if (!message_.empty()) {
     ImGui::SameLine();
     ImGui::TextDisabled("%s", message_.c_str());
@@ -1030,6 +1068,99 @@ void MusicEditor::noteTuningEditor(Instrument& instrument) {
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", F("Frame {0}: AUDF {1}, {2} cents from the note", {std::to_string(index), std::to_string(steps[index].frequency), centsText(steps[index].cents)}).c_str());
   }
   ImGui::PopID();
+}
+
+// ---------------------------------------------------------------------------
+// Export
+
+void MusicEditor::exportPopup() {
+  if (!ImGui::BeginPopup("##export")) return;
+  ImGui::TextUnformatted(T("Export the song for the console"));
+  ImGui::Separator();
+  bool basic = song_.exportTo == "bb";
+  if (ImGui::RadioButton(T("DASM (assembly)"), !basic)) basic = false;
+  if (ImGui::RadioButton("batari Basic", basic)) basic = true;
+  if (basic) {
+    ImGui::SetNextItemWidth(em(60));
+    if (ImGui::InputText(T("first variable"), &song_.exportRam)) changed();
+    ImGui::TextDisabled("%s", F("The player takes {0} variables from there: h takes h to z.", {std::to_string(kMusicRamBytes)}).c_str());
+  } else {
+    ImGui::TextDisabled("%s", F("Define MUSIC_RAM, {0} bytes of zero page, before the include.", {std::to_string(kMusicRamBytes)}).c_str());
+  }
+  ImGui::TextDisabled("%s", T("Calls: MusicInit once, MusicFrame once per frame, MusicEffect with an effect in A."));
+  ImGui::Spacing();
+  if (theme::primaryButton(T("Export"))) {
+    std::string target = basic ? "bb" : "dasm";
+    if (song_.exportTo != target) song_.exportTo = target, changed();
+    exportSongFile(false);
+    ImGui::CloseCurrentPopup();
+  }
+  if (!song_.exportTo.empty()) {
+    ImGui::SameLine();
+    if (ImGui::Button(T("Stop exporting"))) song_.exportTo.clear(), changed(), ImGui::CloseCurrentPopup();
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", T("Saving no longer writes the .music.asm (the file stays)."));
+  }
+  if (!exportProblems_.empty()) {
+    ImGui::SeparatorText(T("Last export"));
+    for (auto& problem : exportProblems_) ImGui::BulletText("%s", problem.c_str());
+  }
+  ImGui::EndPopup();
+}
+
+// Sound effects: an instrument and a note the game plays when something happens.
+void MusicEditor::effectsPanel() {
+  ImGui::TextWrapped("%s", T("Sounds the game plays when something happens. While one sounds, the song's notes on its channel wait."));
+  ImGui::BeginChild("##effects", ImVec2(0, em(110)), ImGuiChildFlags_Borders);
+  for (int index = 0; index < (int)song_.effects.size(); index++) {
+    std::string label = song_.effects[index].name + "##e" + std::to_string(index);
+    if (ImGui::Selectable(label.c_str(), index == effect_)) effect_ = index;
+    ImGui::SameLine();
+    ImGui::TextDisabled("%s", effectSymbol(song_.effects[index].name).c_str());
+  }
+  ImGui::EndChild();
+  ImGui::PushID("effectButtons");
+  if (ImGui::SmallButton(T("New"))) {
+    SoundEffect effect;
+    effect.name = F("effect {0}", {std::to_string(song_.effects.size() + 1)});
+    effect.instrument = instrument_;
+    song_.effects.push_back(effect);
+    effect_ = (int)song_.effects.size() - 1, changed();
+  }
+  ImGui::SameLine();
+  if (ImGui::SmallButton(T("Remove")) && effect_ < (int)song_.effects.size()) {
+    song_.effects.erase(song_.effects.begin() + effect_);
+    effect_ = std::max(0, effect_ - 1), changed();
+  }
+  ImGui::PopID();
+  if (effect_ >= (int)song_.effects.size()) return;
+  SoundEffect& effect = song_.effects[effect_];
+  ImGui::Spacing();
+  ImGui::SetNextItemWidth(-FLT_MIN);
+  if (ImGui::InputText("##ename", &effect.name)) changed();
+  std::string current = effect.instrument < (int)song_.instruments.size() ? song_.instruments[effect.instrument].name : "?";
+  ImGui::SetNextItemWidth(em(160));
+  if (ImGui::BeginCombo(T("Instrument"), current.c_str())) {
+    for (int index = 0; index < (int)song_.instruments.size(); index++)
+      if (ImGui::Selectable((song_.instruments[index].name + "##ei" + std::to_string(index)).c_str(), index == effect.instrument)) effect.instrument = index, changed();
+    ImGui::EndCombo();
+  }
+  ImGui::SetNextItemWidth(em(160));
+  int note = effect.note;
+  if (ImGui::SliderInt(T("Note"), &note, 24, 108, noteName(note).c_str())) effect.note = note, changed();
+  int channel = effect.channel;
+  ImGui::AlignTextToFramePadding();
+  ImGui::TextUnformatted(T("Channel"));
+  ImGui::SameLine();
+  if (ImGui::RadioButton("0", channel == 0)) effect.channel = 0, changed();
+  ImGui::SameLine();
+  if (ImGui::RadioButton("1", channel == 1)) effect.channel = 1, changed();
+  if (ImGui::Button(T("Play it"))) {
+    std::string error;
+    if (!musicAudio().ready(&error)) message_ = F("No sound output: {0}", {error});
+    else musicAudio().playEffect(song_, tv_, effect_);
+  }
+  if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", T("Also while the song plays, to hear how the two share the channel."));
+  ImGui::TextDisabled("%s", F("In the game: lda #{0} / jsr MusicEffect", {effectSymbol(effect.name)}).c_str());
 }
 
 // ---------------------------------------------------------------------------

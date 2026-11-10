@@ -65,6 +65,13 @@ void MusicAudio::noteOn(const Song& song, const std::string& tv, int channel, in
   renderer_.player.noteOn(song, audioClockHz(tv), channel, note, instrument);
 }
 
+void MusicAudio::playEffect(const Song& song, const std::string& tv, int effect) {
+  if (!ready(nullptr)) return;
+  std::lock_guard<std::mutex> lock(mutex_);
+  use(tv);
+  renderer_.player.playEffect(song, audioClockHz(tv), effect);
+}
+
 void MusicAudio::noteOff(int channel) {
   std::lock_guard<std::mutex> lock(mutex_);
   renderer_.player.noteOff(channel);

@@ -28,6 +28,7 @@ struct VoiceTrace {
   int note = kNoNote, instrument = 0;
   int frame = 0;         // of the note (or of its release)
   int volumeVariant = 0, releaseVariant = 0;
+  bool effect = false;   // a sound effect, not the song
   PitchStep pitch;       // melodic: the step played
 };
 
@@ -41,6 +42,9 @@ class Player {
   // One note on a channel, outside the song (the editor's preview); held until noteOff.
   void noteOn(const Song& song, double audioClock, int channel, int note, int instrument);
   void noteOff(int channel);
+  // A sound effect of the song (Song::effects) on its channel: the music's notes there
+  // wait until it has ended, as in the exported player.
+  void playEffect(const Song& song, double audioClock, int effect);
 
   FrameRegisters nextFrame();
   bool playing() const { return playing_; }
@@ -50,10 +54,10 @@ class Player {
 
  private:
   struct Voice {
-    int instrument = 0, note = kNoNote;
-    bool active = false, released = false;
-    int frame = 0, releaseFrame = 0;
-    int volumeVariant = 0, releaseVariant = 0;
+    int instrument = 0, note = kNoNote;  // the instrument of the note sounding
+    bool active = false, released = false, locked = false;  // locked: a sound effect
+    int frame = 0, volumeIndex = 0, releaseFrame = 0;
+    int volumeVariant = 0, releaseVariant = 0, releaseUsed = 0;  // releaseUsed: set at the note off
     std::vector<PitchStep> pitch;  // melodic: frame by frame, the last one stays
   };
   void playRow();
@@ -64,6 +68,7 @@ class Player {
   Song song_;
   double audioClock_ = 0;
   Voice voices_[kChannels];
+  int channelInstruments_[kChannels] = {0, 0};  // for the channel's next notes
   VoiceTrace traces_[kChannels];
   bool playing_ = false;
   SongPosition next_, shown_;

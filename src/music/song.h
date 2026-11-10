@@ -78,6 +78,15 @@ struct Pattern {
   void resize(int rowCount);
 };
 
+// A sound for the game to play when something happens (a jump, a shot): an instrument
+// and a note on a channel. While it sounds, the song's notes on that channel wait.
+struct SoundEffect {
+  std::string name = "effect";
+  int instrument = 0;
+  int note = 60;    // as a note of the song (the transposition applies)
+  int channel = 1;
+};
+
 struct SongTuningSettings {
   int transpose = 0;       // semitones added to every note when it is played
   int referenceCents = 0;  // A4 moved by this many cents
@@ -100,6 +109,11 @@ struct Song {
   std::vector<Pattern> patterns;
   std::vector<int> order = {0};  // patterns in playing order
   int loopTo = 0;                // order entry to go back to at the end (-1: stop)
+  std::vector<SoundEffect> effects;
+  // Where the song is exported on every save: "" (nowhere), "dasm" or "bb" (batari
+  // Basic), and for batari Basic the variable the player's RAM starts at.
+  std::string exportTo;
+  std::string exportRam = "h";
   SongTuningSettings tuning;
 
   int rowFrames(int row) const { return (row % 2 == 1 && swing > 0) ? swing : speed; }
