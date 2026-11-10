@@ -75,6 +75,7 @@ void parseAnthropicStreamData(const std::string& data, std::vector<Event>& event
     usage.promptTokens = value["usage"].value("input_tokens", 0);
     usage.completionTokens = value["usage"].value("output_tokens", 0);
     events.push_back(usage);
+    if (value.contains("delta") && value["delta"].is_object() && value["delta"].value("stop_reason", std::string()) == "max_tokens") events.push_back({Event::Length, "", 0, 0});
   } else if (type == "message_stop") {
     events.push_back({Event::Done, "", 0, 0});
   } else if (type == "error") {
@@ -120,6 +121,7 @@ void parseOpenAiStreamData(const std::string& data, std::vector<Event>& events) 
   }
   if (value.contains("choices") && value["choices"].is_array() && !value["choices"].empty()) {
     const json& choice = value["choices"][0];
+    if (choice.contains("finish_reason") && choice["finish_reason"].is_string() && choice["finish_reason"].get<std::string>() == "length") events.push_back({Event::Length, "", 0, 0});
     if (choice.contains("delta") && choice["delta"].is_object()) {
       const json& content = choice["delta"]["content"];
       if (content.is_string() && !content.get<std::string>().empty()) events.push_back({Event::Text, content.get<std::string>(), 0, 0});

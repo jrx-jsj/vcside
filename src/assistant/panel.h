@@ -188,6 +188,7 @@ class AssistantPanel {
   };
   std::map<std::string, Placement> placements_;
   bool pendingEditFromChat_ = false;
+  bool answerCut_ = false;    // the answer stopped because the window was full
   std::string notice_;        // a line after the conversation: what the last Apply did
   const Placement& placementOf(const PanelContext& context, const std::string& key, const EditBlock& block);
   void drawEditBlock(const PanelContext& context, const EditBlock& block, const std::string& key, bool finished);
@@ -205,6 +206,8 @@ class AssistantPanel {
   std::string pendingRemote_, projectDir_;
 
   void send(const PanelContext& context, const std::string& question);
+  // Room kept in the window for the answer: a change with its diff takes a couple of thousand tokens.
+  static int replyReserve(int window) { return std::clamp(window * 30 / 100, 2048, 4096); }
   void dispatch(const PanelContext& context, const std::string& question, const std::string& english);
   void poll(const PanelContext& context);
   void finishAnswer(const PanelContext& context, const std::string& note);

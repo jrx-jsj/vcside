@@ -495,6 +495,12 @@ bool AssistantPanel::prepareBuiltin(Provider& provider) {
   // What this computer can run: its memory and CPUs at once, its GPUs from the helper (a second or two).
   if (!hardware_.probed && !probe_.valid()) {
     hardware_ = basicHardware();
+    // 8K tokens is too little for a file and an answer with a change: with 16 GB or more the window goes to 16K, once (it can be
+    // changed in the settings afterwards)
+    if (!settings_.contextTuned) {
+      if (provider.contextTokens == 8192 && hardware_.ramGb >= 16) provider.contextTokens = 16384;
+      settings_.contextTuned = true, changed_ = true;
+    }
     probe_ = std::async(std::launch::async, [path = helperPath()] { return probeDevices(path); });
   }
   if (probe_.valid() && probe_.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
@@ -927,6 +933,7 @@ void AssistantPanel::send(const PanelContext& context, const std::string& questi
   bool first = chat_.messages.empty();
   chat_.messages.push_back({"user", question, {}, "", ""});  // shown at once, in its bubble
   streaming_.clear(), error_.clear(), notice_.clear();
+  answerCut_ = false;
   scrollDown_ = true;
   // the prose goes to be translated and the code and names stay out of it, unless it is English already
   auto isMnemonic = [&](const std::string& word) { return context.kb && context.kb->instruction(word) != nullptr; };
@@ -951,10 +958,47 @@ void AssistantPanel::dispatch(const PanelContext& context, const std::string& qu
   if (!provider) return;
   Attachments attachments;
   attachments.projectInfo = context.projectInfo;
-  // What the chips above the input say: the open file or the selected lines, the build errors and the
-  // files added with @, within what the model's window can hold.
-  GatheredContext gathered = gatherContext(contextSet_.chips(T("Build errors")), {context.fileText, context.selection, context.errors, context.cursorLine}, context.projectDir,
-                                           (size_t)std::max(4000, provider->contextTokens * 2));
+  std::string modelQuestion = english.empty() ? question : english;
+  auto chips = contextSet_.chips(T("Build errors"));
+  std::string skipFile;  // the open file is attached whole: its chunks are not offered again as excerpts
+  for (auto& chip : chips)
+    if (chip.kind == ContextChip::File) skipFile = chip.path;
+  // The whole project, not only what is open: the files that match the question go along as excerpts
+  // (searched in an index of the project's files), and a map of the files and their names.
+  int excerptCount = 0;
+  std::string searchText = question + " " + english + " " + oneLine(context.selection, 400) + " " + oneLine(context.errors, 400);
+  if (!context.projectDir.empty()) {
+    index_.update(context.projectDir);
+    std::string excerpts;
+    std::vector<float> meaning = queryVector(searchText);  // empty when search by meaning is off or not ready
+    const CatalogModel* searchModel = embedModel();
+    for (auto& hit : index_.search(searchText, 3, skipFile, meaning.empty() ? nullptr : &meaning, searchModel ? searchModel->minSimilarity : 0.45)) {
+      std::string piece = "--- " + hit.file + ":" + std::to_string(hit.firstLine) + "-" + std::to_string(hit.lastLine) + "\n```\n" + utf8Cut(hit.text, 1200) + "\n```\n";
+      if (excerpts.size() + piece.size() > 3200) break;
+      excerpts += piece;
+      excerptCount++;
+    }
+    attachments.excerpts = excerpts;
+    attachments.projectMap = index_.map(searchText, 900);
+  }
+  // The reference entries come from what the question asks and from the selection and the errors; the names in a whole
+  // attached file (STA, LDA, VSYNC...) are in every file and would crowd out what was asked.
+  std::string codeText = attachments.selection + "\n" + attachments.errors;
+  std::vector<GroundedEntry> entries;
+  if (context.kb) entries = groundText(*context.kb, english.empty() ? question : question + " " + english, codeText, context.grounding);
+  attachments.grounding = groundingBlock(entries);
+  streamingReference_.clear();
+  for (auto& entry : entries) streamingReference_.push_back(entry.id);
+  // What the chips come to must leave room for the answer: the window minus the system prompt, the reference entries, the
+  // excerpts and map, the question, the history (at most a quarter of it) and the reserve for the answer itself.
+  int window = provider->contextTokens, reserve = replyReserve(window);
+  int historyTokens = 0;
+  for (size_t k = 0; k + 1 < chat_.messages.size(); k++) historyTokens += estimateTokens(chat_.messages[k].english.empty() ? chat_.messages[k].content : chat_.messages[k].english);
+  historyTokens = std::min(historyTokens, window / 4);
+  // Code and hex take more tokens than prose (about 2.8 characters each, not 3.5): the estimates are raised by a quarter.
+  int fixedTokens = (estimateTokens(systemPrompt()) + estimateTokens(attachments.projectInfo + attachments.projectMap + attachments.excerpts + attachments.grounding + modelQuestion)) * 5 / 4 + historyTokens;
+  size_t chipChars = (size_t)std::clamp((window - reserve - fixedTokens) * 14 / 5, 1200, window * 2);
+  GatheredContext gathered = gatherContext(chips, {context.fileText, context.selection, context.errors, context.cursorLine}, context.projectDir, chipChars);
   attachments.selection = gathered.selection, attachments.selectionLabel = gathered.selectionLabel;
   attachments.errors = gathered.errors;
   attachments.fileName = gathered.fileName, attachments.fileText = gathered.fileText;
@@ -975,39 +1019,12 @@ void AssistantPanel::dispatch(const PanelContext& context, const std::string& qu
       else part = F("{0}: lines {1} to {2} of {3}, around the cursor", {cut.label, number(cut.firstLine), number(cut.lastLine), number(cut.totalLines)});
       cuts += (cuts.empty() ? "" : "; ") + part;
     }
-    attachedNote += (attachedNote.empty() ? "" : " ") + std::string("(") + cuts + " - " + F("the model's window is {0}K tokens", {std::to_string(provider->contextTokens / 1024)}) + ")";
+    attachedNote += (attachedNote.empty() ? "" : " ") + std::string("(") + cuts + " - " + F("the model's window is {0}K tokens, and the answer needs room", {std::to_string(window / 1024)}) + ")";
   }
-  // The whole project, not only what is open: the files that match the question go along as excerpts
-  // (searched in an index of the project's files), and a map of the files and their names.
-  int excerptCount = 0;
-  std::string searchText = question + " " + english + " " + oneLine(context.selection, 400) + " " + oneLine(context.errors, 400);
-  if (!context.projectDir.empty()) {
-    index_.update(context.projectDir);
-    std::string excerpts;
-    excerptCount = 0;
-    std::vector<float> meaning = queryVector(searchText);  // empty when search by meaning is off or not ready
-    const CatalogModel* searchModel = embedModel();
-    for (auto& hit : index_.search(searchText, 3, gathered.fileName, meaning.empty() ? nullptr : &meaning, searchModel ? searchModel->minSimilarity : 0.45)) {
-      std::string piece = "--- " + hit.file + ":" + std::to_string(hit.firstLine) + "-" + std::to_string(hit.lastLine) + "\n```\n" + utf8Cut(hit.text, 1200) + "\n```\n";
-      if (excerpts.size() + piece.size() > 3200) break;
-      excerpts += piece;
-      excerptCount++;
-    }
-    attachments.excerpts = excerpts;
-    attachments.projectMap = index_.map(searchText, 900);
-  }
-  // The reference entries come from what the question asks and from the selection and the errors; the names in a whole
-  // attached file (STA, LDA, VSYNC...) are in every file and would crowd out what was asked.
-  std::string codeText = attachments.selection + "\n" + attachments.errors;
-  std::vector<GroundedEntry> entries;
-  if (context.kb) entries = groundText(*context.kb, english.empty() ? question : question + " " + english, codeText, context.grounding);
-  attachments.grounding = groundingBlock(entries);
-  streamingReference_.clear();
-  for (auto& entry : entries) streamingReference_.push_back(entry.id);
-  std::string turn = userTurn(english.empty() ? question : english, attachments);
+  std::string turn = userTurn(modelQuestion, attachments);
   chat_.messages.back().english = english;
   std::vector<ChatMessage> history(chat_.messages.begin(), chat_.messages.end() - 1);  // the question itself is `turn`
-  std::vector<Message> messages = buildMessages(systemPrompt(), history, turn, provider->contextTokens, 1024, &droppedTurns_);
+  std::vector<Message> messages = buildMessages(systemPrompt(), history, turn, provider->contextTokens, reserve, &droppedTurns_);
   chat_.messages.back().attached = attachedNote;
   turnText_ = turn;
   agentSteps_ = 0, callCounts_.clear(), pendingEditActive_ = false, pendingEditFromChat_ = false, pendingRun_.clear(), waitingBuild_ = false;
@@ -1043,6 +1060,10 @@ void AssistantPanel::finishAnswer(const PanelContext& context, const std::string
     saveChat(context);
     handleToolCall(context, call);
     return;
+  }
+  if (answerCut_) {
+    notice_ = F("The answer was cut off because the model's window ({0}K tokens) is full. Ask it to go on, or raise the context size in the settings.", {std::to_string(settings_.provider() ? settings_.provider()->contextTokens / 1024 : 0)});
+    answerCut_ = false;
   }
   saveChat(context);
   if (translateThisTurn_ && note != "stopped" && error_.empty() && !answer.empty() && !chat_.messages.empty() && chat_.messages.back().role == "assistant" && chat_.messages.back().kind.empty())
@@ -1122,7 +1143,7 @@ void AssistantPanel::continueAgent(const PanelContext& /*context*/) {  // the hi
       if (!turnText_.empty()) history[i].content = turnText_;
       break;
     }
-  std::vector<Message> messages = buildMessages(systemPrompt(), history, chat_.messages.back().content, provider->contextTokens, 1024, &droppedTurns_);
+  std::vector<Message> messages = buildMessages(systemPrompt(), history, chat_.messages.back().content, provider->contextTokens, replyReserve(provider->contextTokens), &droppedTurns_);
   lastRequest_ = chatRequestBody(*provider, messages);
   streaming_.clear();
   waitingText_ = T("Reading the result of the tool");
@@ -1438,6 +1459,7 @@ void AssistantPanel::poll(const PanelContext& context) {
         lastUsageSpent_ = promptTokens_ + completionTokens_;
         break;
       case Event::Error: error_ = event.text, finishAnswer(context, ""); break;
+      case Event::Length: answerCut_ = true; break;
       case Event::Done: finishAnswer(context, event.text == "cancelled" ? "stopped" : ""); break;
     }
   }

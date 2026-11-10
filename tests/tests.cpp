@@ -3390,6 +3390,21 @@ static void testAgentTools(const KnowledgeBase& kb) {
   fs::remove_all(root.parent_path() / "vcside_agent_outside");
 }
 
+static void testLengthStops() {
+  using namespace vcs::assistant;
+  std::vector<Event> events;
+  parseOpenAiStreamData(R"({"choices":[{"delta":{"content":"x"},"finish_reason":null}]})", events);
+  parseOpenAiStreamData(R"({"choices":[{"delta":{},"finish_reason":"length"}]})", events);
+  parseOpenAiStreamData(R"({"choices":[{"delta":{},"finish_reason":"stop"}]})", events);
+  CHECK(events.size() == 2 && events[0].kind == Event::Text && events[1].kind == Event::Length);
+  std::vector<Event> anthropic;
+  parseAnthropicStreamData(R"({"type":"message_delta","delta":{"stop_reason":"max_tokens"},"usage":{"output_tokens":9}})", anthropic);
+  CHECK(anthropic.size() == 2 && anthropic[0].kind == Event::Usage && anthropic[1].kind == Event::Length);
+  std::vector<Event> normal;
+  parseAnthropicStreamData(R"({"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":9}})", normal);
+  CHECK(normal.size() == 1);
+}
+
 static void testRemote() {
   using namespace vcs::assistant;
   // the Anthropic dialect: the system prompt is its own field
@@ -3870,6 +3885,15 @@ static void testEditBlocks() {
   CHECK(locate("edit fresh.asm", "<<<<<<< SEARCH\n=======\n  nop\n>>>>>>> REPLACE").edit.created);
   CHECK(!locate("edit ../outside.asm", "<<<<<<< SEARCH\nx\n=======\ny\n>>>>>>> REPLACE").proposed);
   CHECK(!locate("edit .env", "<<<<<<< SEARCH\n=======\nTOKEN=1\n>>>>>>> REPLACE").proposed);
+  // a path a little off ("src/main.asm" for the "main.asm" it was shown) finds the only file with that name
+  fs::create_directories(root / "docs");
+  write(root / "docs" / "notes.txt", "notes\n");
+  auto off = locate("edit src/main.asm", "<<<<<<< SEARCH\nLoop\n\tlda #2\n=======\nLoop\n\tlda #5\n>>>>>>> REPLACE");
+  CHECK(off.proposed && off.edit.relative == "main.asm" && off.edit.after.find("lda #5") != std::string::npos);
+  write(root / "docs" / "main.asm", "other\n");  // two files with the name: not guessed
+  CHECK(!locate("edit src/main.asm", "<<<<<<< SEARCH\nLoop\n=======\nx\n>>>>>>> REPLACE").proposed);
+  CHECK(locate("edit docs/notes.txt", "<<<<<<< SEARCH\nnotes\n=======\nmore\n>>>>>>> REPLACE").proposed);
+  fs::remove(root / "docs" / "main.asm");
   // nothing was written by any of them
   std::ifstream after(root / "main.asm");
   std::string disk((std::istreambuf_iterator<char>(after)), {});
@@ -3902,6 +3926,9 @@ static void testUnknownNames(const KnowledgeBase& kb) {
   // directives, formats and TV standards are known
   CHECK(names("```\n  processor 6502\n  SEG CODE\n  ORG $F000\n```\nUse F8 or 4K, NTSC or PAL").size() == 1);  // CODE is not a word of the knowledge base
   CHECK(names("An unfinished block ```asm\n  lda PADDLE").size() == 1);
+  // the markers of an edit block are not names, but a made-up name inside one is
+  auto inEdit = names("```edit main.asm\n<<<<<<< SEARCH\n  lda #0\n=======\n  lda #PLAYER_JUMP\n>>>>>>> REPLACE\n```");
+  CHECK(inEdit.size() == 1 && inEdit[0] == "PLAYER_JUMP");
 }
 
 static void testFirstPass() {
@@ -4304,6 +4331,7 @@ int main() {
   testEditBlocks();
   testUnknownNames(kb);
   testFirstPass();
+  testLengthStops();
   testMasking(kb);
   std::printf("%d checks, %d failures\n", checks, failures);
   return failures ? 1 : 0;

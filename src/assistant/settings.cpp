@@ -16,7 +16,7 @@ namespace fs = std::filesystem;
 using json = nlohmann::json;
 
 json Settings::toJson() const {
-  json value = {{"asked", asked}, {"chat", chat}, {"agent", agent}, {"completion", completion}, {"explain_errors", explainErrors}, {"active", active}, {"tool_profile", toolProfile}, {"budget_tokens", budgetTokens}, {"smart_search", smartSearch}, {"work_in_english", workInEnglish}, {"embedding_model", embeddingModel}};
+  json value = {{"asked", asked}, {"chat", chat}, {"agent", agent}, {"completion", completion}, {"explain_errors", explainErrors}, {"active", active}, {"tool_profile", toolProfile}, {"budget_tokens", budgetTokens}, {"smart_search", smartSearch}, {"work_in_english", workInEnglish}, {"context_tuned", contextTuned}, {"embedding_model", embeddingModel}};
   value["providers"] = json::array();
   for (auto& provider : providers)
     value["providers"].push_back({{"name", provider.name},
@@ -41,6 +41,7 @@ Settings Settings::fromJson(const json& input) {
   settings.budgetTokens = std::max(0, value.value("budget_tokens", 0));
   settings.smartSearch = value.value("smart_search", false);
   settings.workInEnglish = value.value("work_in_english", true);
+  settings.contextTuned = value.value("context_tuned", false);
   settings.embeddingModel = value.value("embedding_model", std::string("qwen3-embedding-0.6b"));
   settings.toolProfile = std::clamp(value.value("tool_profile", 2), 0, 2);
   if (value.contains("providers") && value["providers"].is_array())

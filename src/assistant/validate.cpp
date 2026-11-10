@@ -44,7 +44,7 @@ std::vector<std::pair<std::string, bool>> codeParts(const std::string& answer) {
 const std::set<std::string>& directives() {
   static const std::set<std::string> words = {"PROCESSOR", "INCLUDE", "ORG", "SEG", "MAC", "ENDM", "IF", "ENDIF", "ELSE", "ECHO", "ALIGN", "RORG", "REPEAT", "REPEND", "DS", "BYTE", "WORD", "HEX",
                                               "EQU", "SET", "END", "SUBROUTINE", "INCBIN", "LIST", "DC", "DV", "ERR", "EOF", "SEGU", "LONG", "DATA", "REM", "DIM", "CONST", "GOSUB", "GOTO",
-                                              "RETURN", "THEN", "TRUE", "FALSE", "NULL", "ARM", "TODO", "NOTE", "FIXME", "XXX"};
+                                              "RETURN", "THEN", "TRUE", "FALSE", "NULL", "ARM", "TODO", "NOTE", "FIXME", "XXX", "SEARCH", "REPLACE"};
   return words;
 }
 }  // namespace

@@ -16,6 +16,8 @@ namespace vcs::assistant {
 namespace fs = std::filesystem;
 using nlohmann::json;
 
+static std::string uniqueByName(const std::string& projectDir, const std::string& relative);
+
 namespace {
 
 struct ToolInfo {
@@ -156,7 +158,17 @@ ToolResult listFiles(const ToolEnv& env, const json& args) {
 
 ToolResult readFile(const ToolEnv& env, const json& args) {
   std::string absolute, error;
-  if (!resolveInProject(env.projectDir, stringArg(args, "path"), &absolute, &error)) return fail(error);
+  std::string wanted = stringArg(args, "path");
+  {
+    std::string direct;
+    std::error_code exists;
+    if (!resolveInProject(env.projectDir, wanted, &direct, &error) || !fs::is_regular_file(direct, exists)) {
+      std::string named = uniqueByName(env.projectDir, wanted);
+      if (!named.empty()) wanted = named;
+    }
+    error.clear();
+  }
+  if (!resolveInProject(env.projectDir, wanted, &absolute, &error)) return fail(error);
   std::error_code ec;
   if (!fs::is_regular_file(absolute, ec)) return fail("no such file: " + stringArg(args, "path"));
   std::string text;
@@ -250,6 +262,15 @@ ToolResult kbSearch(const ToolEnv& env, const json& args) {
 ToolResult editFile(const ToolEnv& env, const json& args) {
   std::string relative = stringArg(args, "path");
   std::string absolute, error;
+  if (!relative.empty() && !args.contains("content")) {  // a change to a file: the path may be a little off
+    std::string direct;
+    std::error_code exists;
+    if (!resolveInProject(env.projectDir, relative, &direct, &error) || !fs::is_regular_file(direct, exists)) {
+      std::string named = uniqueByName(env.projectDir, relative);
+      if (!named.empty()) relative = named;
+    }
+    error.clear();
+  }
   if (!resolveInProject(env.projectDir, relative, &absolute, &error)) return fail(error);
   std::string name = fs::path(absolute).filename().string();
   if (!isTextFileName(name)) return fail("only text files can be edited: " + relative);
@@ -538,6 +559,27 @@ bool isBuildFile(const std::string& fileName) {
   for (const char* suffix : {".vcsproj", ".mk", ".sh", ".bat", ".cmd", ".ps1", ".py"})
     if (endsWith(name, suffix)) return true;
   return false;
+}
+
+// A model writes "src/main.asm" for the "main.asm" it was shown: when the path names no file but exactly one file of the
+// project has that name, that is the one. Hidden folders, build/ and secrets are not looked into.
+static std::string uniqueByName(const std::string& projectDir, const std::string& relative) {
+  std::string name = fs::path(relative).filename().string();
+  if (name.empty() || isSecretFile(name)) return "";
+  std::error_code ec;
+  std::string found;
+  int count = 0;
+  fs::recursive_directory_iterator it(projectDir, fs::directory_options::skip_permission_denied, ec), end;
+  for (; it != end && count < 2; it.increment(ec)) {
+    if (ec) break;
+    std::string current = it->path().filename().string();
+    if (it->is_directory(ec)) {
+      if (hidden(current) || current == "build") it.disable_recursion_pending();
+      continue;
+    }
+    if (current == name && it->is_regular_file(ec)) found = fs::relative(it->path(), projectDir, ec).generic_string(), count++;
+  }
+  return count == 1 ? found : "";
 }
 
 bool resolveInProject(const std::string& projectDir, const std::string& relative, std::string* absolute, std::string* error) {

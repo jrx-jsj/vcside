@@ -36,7 +36,7 @@ struct Provider {
 
 // What a worker reports to the UI thread.
 struct Event {
-  enum Kind { Text, Usage, Error, Done } kind = Text;
+  enum Kind { Text, Usage, Error, Done, Length } kind = Text;  // Length: the answer stopped because the window was full
   std::string text;          // Text: a piece of the answer; Error: the message
   int promptTokens = 0, completionTokens = 0;  // Usage
 };
