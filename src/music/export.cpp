@@ -636,8 +636,10 @@ voices:
         uint16_t samples_key = (uint16_t)(level ? (voice->wave + 1) << 8 | level : 0);
         if (samples_key != voice->cdfj_wave) {
             voice->cdfj_wave = samples_key;
+            /* each sample: wave (0-15) x level / 15, rounded; x 547 >> 14 is / 30 for these
+             * values, and costs no division (the ARM7 has no divide instruction) */
             for (int j = 0; j < 32; j++)
-                music_cdfj_samples[i][j] = (uint8_t)(level ? (2 * music_waves[voice->wave][j] * level + 15) / 30 : 0);
+                music_cdfj_samples[i][j] = (uint8_t)(level ? ((2 * music_waves[voice->wave][j] * level + 15) * 547) >> 14 : 0);
             MUSIC_CDFJ_WAVE(i, music_cdfj_samples[i]);
         }
         if (level) {

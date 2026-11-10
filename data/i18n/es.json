@@ -318,6 +318,7 @@
     "Estimate: the game plus about {0} bytes of flash and {1} of RAM for the firmware. Build the Chameleon image (make chameleon) for the exact figures.": "Estimación: el juego más unos {0} bytes de flash y {1} de RAM para el firmware. Compila la imagen del Chameleon (make chameleon) para tener las cifras exactas.",
     "Example": "Ejemplo",
     "Example: an animated sprite": "Ejemplo: un sprite animado",
+    "Example: C and music on a CDFJ cartridge": "Ejemplo: C y música en un cartucho CDFJ",
     "Example: music on a DPC+ cartridge": "Ejemplo: música en un cartucho DPC+",
     "Explain errors (coming later)": "Explicar errores (más adelante)",
     "Export": "Exportar",
@@ -805,6 +806,7 @@
     "The ball's colour is the playfield's (COLUPF): changing it per row recolours the playfield on those lines.": "El color de la bola es el del playfield (COLUPF): cambiarlo por fila cambia también el del playfield en esas líneas.",
     "The blocks between `rem vcsgfx` lines. Saving this file rewrites them in the project's programs (one region per animation frame).": "Los bloques entre líneas `rem vcsgfx`. Al guardar este archivo se reescriben en los programas del proyecto (una zona por fotograma de la animación).",
     "The cartridge's music is DPC+'s, by Darrell Spice Jr. and Fred Quimby (first in Stay Frosty 2); CDF and CDFJ reuse it.": "La música del cartucho es la de DPC+, de Darrell Spice Jr. y Fred Quimby (estrenada en Stay Frosty 2); CDF y CDFJ la reutilizan.",
+    "The CDFJ example builds with make, which does not take spaces in file names: choose a name without spaces.": "El ejemplo CDFJ se compila con make, que no admite espacios en los nombres de archivo: elige un nombre sin espacios.",
     "The clipboard does not hold a theme: {0}": "El portapapeles no tiene un tema: {0}",
     "The clipboard holds no tables or blocks of graphics.": "El portapapeles no tiene tablas ni bloques de gráficos.",
     "The code editor shades each level of indentation with the next colour (none: no shading).": "El editor de código sombrea cada nivel de sangría con el color siguiente (ninguno: sin sombreado).",
@@ -1046,5 +1048,5 @@
     "{0}:{1}: no listing to place the breakpoint: build first.": "{0}:{1}: no hay listado para situar el punto de ruptura: compila antes.",
     "±{0}": "±{0}"
   },
-  "total": 1043
+  "total": 1045
 }

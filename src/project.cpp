@@ -466,7 +466,8 @@ static void replaceAll(std::string& text, const std::string& search, const std::
 }
 
 std::vector<std::pair<std::string, const char*>> Project::examples(Language language) {
-  if (language == Language::Dasm) return {{"animation", N_("Example: an animated sprite")}, {"dpcplus", N_("Example: music on a DPC+ cartridge")}};
+  if (language == Language::Dasm) return {{"animation", N_("Example: an animated sprite")}, {"dpcplus", N_("Example: music on a DPC+ cartridge")},
+            {"cdfj", N_("Example: C and music on a CDFJ cartridge")}};
   if (language == Language::ElfC) return {{"animation", N_("Example: an animated sprite")}};
   return {};
 }
@@ -551,6 +552,11 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
         return false;
       }
     }
+    const bool cdfj = example == "cdfj";
+    if (cdfj && projName.find_first_of(" \t") != std::string::npos) {
+      if (error) *error = T("The CDFJ example builds with make, which does not take spaces in file names: choose a name without spaces.");
+      return false;
+    }
     bool pal = tvIs50Hz(tvStandard);
     const char* lines50 = "VBLANK_LINES   = 45\nVISIBLE_LINES  = 228\nOVERSCAN_LINES = 36";
     const char* lines60 = "VBLANK_LINES   = 37\nVISIBLE_LINES  = 192\nOVERSCAN_LINES = 30";
@@ -558,7 +564,7 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
     if (tvStandard == "AUTO") {  // several systems: the program chooses when it is assembled
       defs = std::string("        IFCONST PAL     ; 50 Hz: assemble with -DPAL=1 (Project settings > DASM arguments)\n") +
              lines50 + "\n        ELSE\n" + lines60 + "\n        ENDIF";
-      tvText = "NTSC timing, or PAL assembled with -DPAL=1";
+      tvText = cdfj ? "NTSC timing, or PAL with make DASMFLAGS=-DPAL=1" : "NTSC timing, or PAL assembled with -DPAL=1";
     }
     replaceAll(asmText, "{{NAME}}", projName);
     replaceAll(asmText, "{{TV}} timing", tvText);
@@ -571,6 +577,21 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
     for (auto& entry : fs::directory_iterator(exampleDir, errorCode))
       if ((entry.path().extension() == ".vcsgfx" || entry.path().extension() == ".vcsmusic") && !fs::exists(fs::path(newProject.dir) / entry.path().filename()))
         fs::copy_file(entry.path(), fs::path(newProject.dir) / entry.path().filename(), errorCode);
+    // CDFJ: the C code, its linker script and the Makefile that builds both (the driver
+    // is not included: the Makefile says where it comes from)
+    if (cdfj) {
+      for (auto& entry : fs::directory_iterator(exampleDir, errorCode)) {
+        std::string extension = entry.path().extension().string(), fileName = entry.path().filename().string();
+        if (fileName != "Makefile" && extension != ".c" && extension != ".h" && extension != ".S" && extension != ".ld") continue;
+        fs::path target = fs::path(newProject.dir) / fileName;
+        if (fs::exists(target)) continue;
+        std::string text = readFile(entry.path().string());
+        replaceAll(text, "{{NAME}}", projName);
+        std::ofstream(target, std::ios::binary) << text;
+      }
+      newProject.buildCommand = "make";
+      newProject.format = "CDFJ";
+    }
     if (!dpcDriver.empty()) {
       if (!fs::exists(fs::path(newProject.dir) / "DPCplus.arm")) fs::copy_file(dpcDriver, fs::path(newProject.dir) / "DPCplus.arm", errorCode);
       newProject.format = "DPC+";
@@ -637,7 +658,7 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
 std::string stellaFormat(const std::string& id) {
   // VCSIDE ids follow Stella's names, except a few aliases.
   if (id == "DPC+") return "DPCP";
-  if (id == "CDFJ+") return "CDFJ+";
+  if (id == "CDFJ" || id == "CDFJ+") return "CDF";  // Stella's one type for CDF, CDFJ and CDFJ+
   if (id == "3E+") return "3EP";
   return id;
 }

@@ -834,7 +834,7 @@ static void testElfSpace() {
   }
 
   // the DASM example: its graphics, the tables they give, and a program that assembles
-  CHECK(Project::examples(Language::Dasm).size() == 2 && Project::examples(Language::BatariBasic).empty());
+  CHECK(Project::examples(Language::Dasm).size() == 3 && Project::examples(Language::BatariBasic).empty());
   for (const char* tvStandard : {"NTSC", "PAL", "AUTO"}) {
     fs::path animationDir = dir / (std::string("anim-") + tvStandard);
     CHECK(Project::create(animationDir.string(), "walker", Language::Dasm, tvStandard, &project, &error, "animation"));
@@ -893,6 +893,37 @@ static void testElfSpace() {
     }
     setBb(savedBb);
   }
+  // the CDFJ example: the C code, the Makefile and the song exported for CDFJ; built with
+  // make when the tools are there, with a stand-in for the driver (or the real one in
+  // VCSIDE_CDFJ_DRIVER; VCSIDE_CDFJ_OUT keeps the project there, to run it)
+  for (const char* tvStandard : {"NTSC", "PAL"}) {
+    const char* keepIn = std::getenv("VCSIDE_CDFJ_OUT");
+    fs::path cdfjDir = keepIn && std::string(tvStandard) == "NTSC" ? fs::path(keepIn) : dir / (std::string("cdfj-") + tvStandard);
+    CHECK(!Project::create((dir / "cdfj spaces").string(), "my game", Language::Dasm, tvStandard, &project, &error, "cdfj") && !error.empty());
+    CHECK(Project::create(cdfjDir.string(), "voices", Language::Dasm, tvStandard, &project, &error, "cdfj"));
+    CHECK(project.format == "CDFJ" && project.buildCommand == "make" && project.output == "build/voices.bin");
+    for (auto fileName : {"main.asm", "2600.h", "Makefile", "game.c", "divide.c", "cdfj.h", "layout.h", "start.S", "arm.ld", "theme.vcsmusic", "theme.music.h"})
+      CHECK(fs::exists(cdfjDir / fileName));
+    std::ifstream makefile(cdfjDir / "Makefile"), musicFile(cdfjDir / "theme.music.h");
+    std::string makeText((std::istreambuf_iterator<char>(makefile)), {}), musicText((std::istreambuf_iterator<char>(musicFile)), {});
+    CHECK(makeText.find("NAME      = voices") != std::string::npos && musicText.find("#define MUSIC_CDFJ 1") != std::string::npos);
+    std::string make = findInPath("make"), dasm = findInPath("dasm"), gcc = findInPath("arm-none-eabi-gcc");
+    if (make.empty() || dasm.empty() || gcc.empty()) {
+      std::printf("  (no make, dasm or arm-none-eabi-gcc: the CDFJ example is not built)\n");
+      continue;
+    }
+    std::string withoutDriver = "cd \"" + cdfjDir.string() + "\" && make > make.log 2>&1";
+    CHECK(std::system(withoutDriver.c_str()) != 0);  // the driver is not there: make says so
+    std::ifstream logFile(cdfjDir / "make.log");
+    std::string logText((std::istreambuf_iterator<char>(logFile)), {});
+    CHECK(logText.find("cdfj_driver.bin is missing") != std::string::npos);
+    const char* realDriver = std::getenv("VCSIDE_CDFJ_DRIVER");
+    if (realDriver) fs::copy_file(realDriver, cdfjDir / "cdfj_driver.bin", fs::copy_options::overwrite_existing, errorCode);
+    else std::ofstream(cdfjDir / "cdfj_driver.bin", std::ios::binary) << std::string(2048, '\0');
+    std::string build = "cd \"" + cdfjDir.string() + "\" && make > make.log 2>&1";
+    CHECK(std::system(build.c_str()) == 0 && fs::file_size(cdfjDir / "build" / "voices.bin", errorCode) == 32768);
+  }
+  CHECK(stellaFormat("CDFJ") == "CDF" && stellaFormat("DPC+") == "DPCP");
   // the ELF example: the template with the example's main.c, and hero.gfx.h next to it
   CHECK(Project::examples(Language::ElfC).size() == 1);
   fs::path elfDir = dir / "anim-elf";

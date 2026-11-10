@@ -39,6 +39,7 @@ BANK5          = $1FFB          ; read: selects the last bank
 ; ---- TV timing (scanlines) -------------------------------------------------
 {{TVDEFS}}
 HERO_HEIGHT    = 12             ; lines
+HERO_RIGHT     = 149            ; the last x: PosObject draws 3 pixels further right
 
 ; ---- SOUND: the voices' sum to AUDV0. Every line does it once; code that takes
 ; longer than a line does it in between, or the sound stops for those lines.
@@ -198,11 +199,11 @@ Joystick
         lda SWCHA
         bmi .noRight            ; D7 = 0: right
         ldx HeroX
-        cpx #152
+        cpx #HERO_RIGHT
         bcs .noRight
         inx
         stx HeroX
-        cpx #152
+        cpx #HERO_RIGHT
         bne .noRight
         stx Bump                ; just got to the right edge
 .noRight
@@ -257,8 +258,6 @@ Sounds
 ; ---- PosObject: A = x (0-159), X = object (0 = P0). Ends with HMxx set. ------
 PosObject
         sta WSYNC
-        ldy AMPLITUDE           ; this line's sound (A holds x)
-        sty AUDV0
         sec
 .div    sbc #15
         bcs .div
