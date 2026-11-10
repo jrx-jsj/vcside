@@ -29,8 +29,8 @@ std::string helperPath() {
   return "";
 }
 
-std::vector<std::string> helperArguments(const std::string& modelPath, int port, int contextTokens) {
-  return {helperPath(),
+std::vector<std::string> helperArguments(const std::string& modelPath, int port, int contextTokens, const std::vector<std::string>& extra) {
+  std::vector<std::string> arguments = {helperPath(),
           "-m", modelPath,
           "--host", "127.0.0.1",
           "--port", std::to_string(port),
@@ -38,11 +38,13 @@ std::vector<std::string> helperArguments(const std::string& modelPath, int port,
           "-np", "1",          // one chat at a time: all the memory goes to one context
           "--no-webui",
           "--no-warmup"};
+  arguments.insert(arguments.end(), extra.begin(), extra.end());
+  return arguments;
 }
 
 std::string Engine::baseUrl() const { return "http://127.0.0.1:" + std::to_string(port_) + "/v1"; }
 
-void Engine::start(const std::string& modelPath, int contextTokens) {
+void Engine::start(const std::string& modelPath, int contextTokens, const std::vector<std::string>& extra) {
   stop();
   error_.clear();
   modelPath_ = modelPath;
@@ -63,7 +65,7 @@ void Engine::start(const std::string& modelPath, int contextTokens) {
     return;
   }
   job_.keepLastBytes(32 * 1024);
-  if (!job_.start(helperArguments(modelPath, port_, contextTokens), "")) {
+  if (!job_.start(helperArguments(modelPath, port_, contextTokens, extra), "")) {
     state_ = State::Failed;
     error_ = "The helper could not be started.";
     return;

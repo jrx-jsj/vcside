@@ -40,6 +40,7 @@
 #include "assistant/tools.h"
 #include "assistant/chat_tabs.h"
 #include "assistant/project_index.h"
+#include "assistant/embeddings.h"
 #include <imgui.h>
 #include "assistant/secrets.h"
 #include "assistant/models.h"
@@ -3597,6 +3598,93 @@ static void testProjectIndex() {
   fs::remove_all(root);
 }
 
+static void testEmbeddings() {
+  namespace fs = std::filesystem;
+  using namespace vcs::assistant;
+  // vectors
+  auto unit = normalised({3, 4});
+  CHECK(std::abs(unit[0] - 0.6f) < 1e-6 && std::abs(unit[1] - 0.8f) < 1e-6 && std::abs(dotProduct(unit, unit) - 1.0f) < 1e-6);
+  CHECK(normalised({0, 0}) == std::vector<float>({0, 0}) && dotProduct({1, 2}, {1}) == 0);
+  CHECK(embeddingKey("m", "text").size() == 64 && embeddingKey("m", "text") != embeddingKey("n", "text") && embeddingKey("m", "text") == embeddingKey("m", "text"));
+
+  // the request: the body, and the answer read back in order and normalised
+  {
+    std::string body = R"({"data":[{"index":1,"embedding":[0,2]},{"index":0,"embedding":[3,4]}]})";
+    MockServer server("HTTP/1.1 200 OK\r\nContent-Length: " + std::to_string(body.size()) + "\r\n\r\n" + body);
+    std::vector<std::vector<float>> vectors;
+    std::string error;
+    std::atomic<bool> never{false};
+    bool ok = requestEmbeddings(server.url(), {"first", "second \xC3"}, &vectors, &error, never, 5);
+    CHECK(ok && vectors.size() == 2 && std::abs(vectors[0][0] - 0.6f) < 1e-6 && std::abs(vectors[1][1] - 1.0f) < 1e-6);
+    server.thread.join();
+    server.thread = std::thread([] {});
+    auto sent = nlohmann::json::parse(server.request.substr(server.request.find("\r\n\r\n") + 4));
+    CHECK(sent["input"].size() == 2 && sent["input"][0] == "first" && server.request.find("POST /v1/embeddings") == 0);
+  }
+  {
+    MockServer server("HTTP/1.1 200 OK\r\nContent-Length: 11\r\n\r\n{\"data\":[]}");
+    std::vector<std::vector<float>> vectors;
+    std::string error;
+    std::atomic<bool> never{false};
+    CHECK(!requestEmbeddings(server.url(), {"a"}, &vectors, &error, never, 5) && !error.empty());  // wrong number of vectors
+  }
+
+  // the cache: written, read back, damaged files ignored
+  fs::path root = fs::temp_directory_path() / "vcside_cache_test";
+  fs::remove_all(root);
+  std::string path = (root / "index" / "m.vec").string();
+  EmbeddingCache cache;
+  cache.put(embeddingKey("m", "a"), {0.5f, -0.5f});
+  cache.put(embeddingKey("m", "b"), {1.0f, 0.0f});
+  CHECK(cache.save(path));
+  EmbeddingCache loaded;
+  CHECK(loaded.load(path) && loaded.size() == 2 && loaded.find(embeddingKey("m", "a")) && (*loaded.find(embeddingKey("m", "a")))[1] == -0.5f && !loaded.find("nothing"));
+  loaded.keepOnly({{embeddingKey("m", "b"), true}});
+  CHECK(loaded.size() == 1 && !loaded.find(embeddingKey("m", "a")));
+  { std::ofstream out(path, std::ios::binary | std::ios::trunc); out << "VCSV1" << "garbage"; }
+  EmbeddingCache damaged;
+  CHECK(!damaged.load(path) && damaged.size() == 0);
+  fs::remove_all(root);
+
+  // meaning in the index, with vectors made by hand: topics are directions, words need not match
+  fs::path project = fs::temp_directory_path() / "vcside_meaning_test";
+  fs::remove_all(project);
+  fs::create_directories(project);
+  auto write = [](const fs::path& file, const std::string& text) { std::ofstream(file, std::ios::binary) << text; };
+  write(project / "pad.asm", "ReadPad\n  lda SWCHA\n  and #$F0\n  cmp #$E0\n  beq GoUp\n  rts\n  ; reads the controller port and decides the direction to move\n");
+  write(project / "noise.asm", "MakeBeep\n  lda #4\n  sta AUDC0\n  lda #12\n  sta AUDF0\n  lda #8\n  sta AUDV0\n  rts\n  ; writes the sound registers to play a short tone\n");
+  write(project / "tiny.txt", "x\n");
+  ProjectIndex index;
+  index.useEmbeddings("toy");
+  index.update(project.string());
+  CHECK(index.chunks() >= 3 && index.embedded() == 0);
+  auto missing = index.missing();
+  CHECK(missing.size() == index.chunks());
+  for (auto& item : missing) {
+    std::vector<float> vector = item.second.find("SWCHA") != std::string::npos ? std::vector<float>{1, 0, 0} : item.second.find("AUDC0") != std::string::npos ? std::vector<float>{0, 1, 0} : std::vector<float>{0, 0, 1};
+    index.setVector(item.first, vector);
+  }
+  CHECK(index.embedded() == index.chunks() && index.missing().empty());
+  std::vector<float> askInput = {0.9f, 0.1f, 0}, askSound = {0.1f, 0.95f, 0}, askNothing = {0, 0, 1};
+  askInput = normalised(askInput), askSound = normalised(askSound);
+  // no word in common with the code ("gamepad" is nowhere): keywords find nothing, meaning does
+  CHECK(index.search("how does the gamepad steer the character", 3).empty());
+  auto byMeaning = index.search("how does the gamepad steer the character", 3, "", &askInput, 0.5);
+  CHECK(!byMeaning.empty() && byMeaning[0].file == "pad.asm");
+  byMeaning = index.search("which routine makes noise", 3, "", &askSound, 0.5);
+  CHECK(!byMeaning.empty() && byMeaning[0].file == "noise.asm");
+  CHECK(index.search("something unrelated", 3, "", &askNothing, 0.5).empty());        // the one-line file is never offered
+  CHECK(index.search("how does the gamepad steer", 3, "pad.asm", &askInput, 0.5).empty());  // the attached file is left out
+  // both agree: the chunk named by the question comes first, and a threshold that nothing reaches leaves keywords alone
+  auto both = index.search("MakeBeep tone", 3, "", &askSound, 0.5);
+  CHECK(!both.empty() && both[0].file == "noise.asm");
+  CHECK(index.search("MakeBeep", 3, "", &askInput, 0.999).size() == 1);
+  // a change of model forgets the vectors; changed text needs new ones
+  index.useEmbeddings("other");
+  CHECK(index.embedded() == 0 && index.missing().size() == index.chunks());
+  fs::remove_all(project);
+}
+
 static void testAssistant(const KnowledgeBase& kb) {
   using namespace vcs::assistant;
   // SSE, fed one byte at a time, with CRLF, comments and a data line split over two
@@ -3913,6 +4001,7 @@ int main() {
   testChatTabs();
   testInvalidUtf8();
   testProjectIndex();
+  testEmbeddings();
   std::printf("%d checks, %d failures\n", checks, failures);
   return failures ? 1 : 0;
 }

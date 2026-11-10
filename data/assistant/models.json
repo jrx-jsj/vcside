@@ -37,5 +37,23 @@
       "license": "Apache-2.0",
       "note": "For 24 GB machines or a GPU with 12 GB or more. Better at multi-step edits."
     }
+  ],
+  "embedding_models": [
+    {
+      "id": "qwen3-embedding-0.6b",
+      "name": "Qwen3 Embedding 0.6B",
+      "class": "Embedding",
+      "file": "Qwen3-Embedding-0.6B-Q8_0.gguf",
+      "url": "https://huggingface.co/Qwen/Qwen3-Embedding-0.6B-GGUF/resolve/main/Qwen3-Embedding-0.6B-Q8_0.gguf",
+      "sha256": "06507c7b42688469c4e7298b0a1e16deff06caf291cf0a5b278c308249c3e439",
+      "bytes": 639150592,
+      "memory_gb": 1,
+      "license": "Apache-2.0",
+      "pooling": "last",
+      "query_prefix": "Instruct: Given a question about Atari 2600 code, retrieve the code that answers it\nQuery: ",
+      "document_prefix": "",
+      "min_similarity": 0.5,
+      "note": "Finds the parts of your project that match a question, in English or Spanish. Runs on this computer; about 0.7 GB of memory while the assistant is open."
+    }
   ]
 }

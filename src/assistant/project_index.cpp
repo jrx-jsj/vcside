@@ -9,6 +9,7 @@
 #include <set>
 #include <sstream>
 
+#include "assistant/embeddings.h"
 #include "assistant/prompt.h"
 #include "assistant/tools.h"
 
@@ -170,6 +171,7 @@ int ProjectIndex::update(const std::string& projectDir) {
         for (auto& word : words(chunk.symbol)) chunk.counts[word] += 3;  // what the chunk is called weighs more
         for (auto& word : nameTokens) chunk.counts[word] += 2;           // so does the file's name
         for (auto& entry : chunk.counts) chunk.length += entry.second;
+        if (!modelId_.empty()) chunk.key = embeddingKey(modelId_, chunk.text);
         chunks_.push_back(std::move(chunk));
       }
       start = stop;
@@ -200,44 +202,105 @@ void ProjectIndex::rebuildStatistics() {
   averageLength_ = chunks_.empty() ? 1 : std::max(1.0, total / (double)chunks_.size());
 }
 
-std::vector<IndexHit> ProjectIndex::search(const std::string& query, size_t limit, const std::string& skipFile) const {
+void ProjectIndex::useEmbeddings(const std::string& modelId) {
+  if (modelId == modelId_) return;
+  modelId_ = modelId;
+  for (auto& chunk : chunks_) {
+    chunk.vector.clear();
+    chunk.key = modelId_.empty() ? std::string() : embeddingKey(modelId_, chunk.text);
+  }
+}
+
+std::vector<std::pair<std::string, std::string>> ProjectIndex::missing() const {
+  std::vector<std::pair<std::string, std::string>> list;
+  std::set<std::string> seen;
+  for (auto& chunk : chunks_)
+    if (!chunk.key.empty() && chunk.vector.empty() && seen.insert(chunk.key).second) list.push_back({chunk.key, chunk.text});
+  return list;
+}
+
+void ProjectIndex::setVector(const std::string& key, const std::vector<float>& vector) {
+  for (auto& chunk : chunks_)
+    if (chunk.key == key) chunk.vector = vector;
+}
+
+std::map<std::string, bool> ProjectIndex::keysInUse() const {
+  std::map<std::string, bool> keys;
+  for (auto& chunk : chunks_)
+    if (!chunk.key.empty()) keys[chunk.key] = true;
+  return keys;
+}
+
+size_t ProjectIndex::embedded() const {
+  size_t count = 0;
+  for (auto& chunk : chunks_) count += chunk.vector.empty() ? 0 : 1;
+  return count;
+}
+
+std::vector<IndexHit> ProjectIndex::search(const std::string& query, size_t limit, const std::string& skipFile, const std::vector<float>* queryVector,
+                                           double minSimilarity) const {
   std::vector<IndexHit> hits;
   if (chunks_.empty()) return hits;
   std::set<std::string> queryWords;
   for (auto& word : words(query))
     if (word.size() >= 3 && !stopWords().count(word)) queryWords.insert(word);
-  if (queryWords.empty()) return hits;
   const double k1 = 1.2, b = 0.75, n = (double)chunks_.size();
   struct Scored {
     size_t index;
     double score;
-    size_t matched;
   };
-  std::vector<Scored> scored;
-  for (size_t i = 0; i < chunks_.size(); i++) {
-    const Chunk& chunk = chunks_[i];
-    if (!skipFile.empty() && chunk.file == skipFile) continue;
-    double score = 0;
-    size_t matched = 0;
-    for (auto& word : queryWords) {
-      auto found = chunk.counts.find(word);
-      if (found == chunk.counts.end()) continue;
-      double df = (double)documentFrequency_.at(word);
-      double idf = std::log(1.0 + (n - df + 0.5) / (df + 0.5));
-      double tf = found->second;
-      score += idf * (tf * (k1 + 1)) / (tf + k1 * (1 - b + b * chunk.length / averageLength_));
-      matched++;
+  // 1. keywords (BM25)
+  std::vector<Scored> byKeywords;
+  if (!queryWords.empty()) {
+    for (size_t i = 0; i < chunks_.size(); i++) {
+      const Chunk& chunk = chunks_[i];
+      if (!skipFile.empty() && chunk.file == skipFile) continue;
+      double score = 0;
+      size_t matched = 0;
+      for (auto& word : queryWords) {
+        auto found = chunk.counts.find(word);
+        if (found == chunk.counts.end()) continue;
+        double df = (double)documentFrequency_.at(word);
+        double idf = std::log(1.0 + (n - df + 0.5) / (df + 0.5));
+        double tf = found->second;
+        score += idf * (tf * (k1 + 1)) / (tf + k1 * (1 - b + b * chunk.length / averageLength_));
+        matched++;
+      }
+      // a question of several words must find at least two of them (one is noise), or the name of the chunk
+      bool nameMatch = false;
+      for (auto& word : words(chunk.symbol)) nameMatch = nameMatch || queryWords.count(word) > 0;
+      if (score >= 1.5 && (matched >= 2 || queryWords.size() == 1 || nameMatch)) byKeywords.push_back({i, score});
     }
-    // a question of several words must find at least two of them (one is noise), or the name of the chunk
-    bool nameMatch = false;
-    for (auto& word : words(chunk.symbol)) nameMatch = nameMatch || queryWords.count(word) > 0;
-    if (score > 0 && (matched >= 2 || queryWords.size() == 1 || nameMatch)) scored.push_back({i, score, matched});
+    std::sort(byKeywords.begin(), byKeywords.end(), [](const Scored& a, const Scored& c) { return a.score > c.score; });
   }
-  std::sort(scored.begin(), scored.end(), [](const Scored& a, const Scored& c) { return a.score > c.score; });
-  for (size_t i = 0; i < scored.size() && hits.size() < limit; i++) {
-    if (scored[i].score < 1.5) break;
-    const Chunk& chunk = chunks_[scored[i].index];
-    hits.push_back({chunk.file, chunk.firstLine, chunk.lastLine, chunk.text, scored[i].score});
+  // 2. meaning (cosine similarity of the vectors)
+  std::vector<Scored> byMeaning;
+  if (queryVector && !queryVector->empty()) {
+    for (size_t i = 0; i < chunks_.size(); i++) {
+      const Chunk& chunk = chunks_[i];
+      if (chunk.vector.empty() || chunk.text.size() < 60 || (!skipFile.empty() && chunk.file == skipFile)) continue;  // a one-line file says nothing
+      double similarity = dotProduct(*queryVector, chunk.vector);
+      if (similarity >= minSimilarity) byMeaning.push_back({i, similarity});
+    }
+    std::sort(byMeaning.begin(), byMeaning.end(), [](const Scored& a, const Scored& c) { return a.score > c.score; });
+  }
+  if (byMeaning.empty()) {  // keywords alone: as before
+    for (size_t i = 0; i < byKeywords.size() && hits.size() < limit; i++) {
+      const Chunk& chunk = chunks_[byKeywords[i].index];
+      hits.push_back({chunk.file, chunk.firstLine, chunk.lastLine, chunk.text, byKeywords[i].score});
+    }
+    return hits;
+  }
+  // 3. both: reciprocal rank fusion, which needs no tuning of the two scales
+  std::map<size_t, double> fused;
+  for (size_t rank = 0; rank < byKeywords.size(); rank++) fused[byKeywords[rank].index] += 1.0 / (60.0 + (double)rank);
+  for (size_t rank = 0; rank < byMeaning.size(); rank++) fused[byMeaning[rank].index] += 1.0 / (60.0 + (double)rank);
+  std::vector<Scored> ranked;
+  for (auto& item : fused) ranked.push_back({item.first, item.second});
+  std::sort(ranked.begin(), ranked.end(), [](const Scored& a, const Scored& c) { return a.score > c.score; });
+  for (size_t i = 0; i < ranked.size() && hits.size() < limit; i++) {
+    const Chunk& chunk = chunks_[ranked[i].index];
+    hits.push_back({chunk.file, chunk.firstLine, chunk.lastLine, chunk.text, ranked[i].score});
   }
   return hits;
 }

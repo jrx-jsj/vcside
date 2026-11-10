@@ -23,13 +23,14 @@ using nlohmann::json;
 
 namespace vcs::assistant {
 
-std::vector<CatalogModel> loadCatalog(const std::string& jsonPath) {
+namespace {
+std::vector<CatalogModel> loadList(const std::string& jsonPath, const char* listName) {
   std::vector<CatalogModel> models;
   std::ifstream input(jsonPath);
   json root = json::parse(input, nullptr, false);
-  if (!root.is_object() || !root.contains("models") || !root["models"].is_array()) return models;
+  if (!root.is_object() || !root.contains(listName) || !root[listName].is_array()) return models;
   auto text = [](const json& item, const char* key) { return item.contains(key) && item[key].is_string() ? item[key].get<std::string>() : std::string(); };
-  for (auto& item : root["models"]) {
+  for (auto& item : root[listName]) {
     if (!item.is_object()) continue;
     CatalogModel model;
     model.id = text(item, "id");
@@ -42,12 +43,20 @@ std::vector<CatalogModel> loadCatalog(const std::string& jsonPath) {
     model.note = text(item, "note");
     model.bytes = item.value("bytes", (int64_t)0);
     model.memoryGb = item.value("memory_gb", 0);
+    model.pooling = text(item, "pooling");
+    model.queryPrefix = text(item, "query_prefix");
+    model.documentPrefix = text(item, "document_prefix");
+    model.minSimilarity = item.value("min_similarity", 0.4);
     // A model without a pinned hash, an https address or a plain file name is not offered.
     bool plainName = !model.file.empty() && model.file.find_first_of("/\\") == std::string::npos && model.file.find("..") == std::string::npos;
     if (!model.id.empty() && plainName && model.sha256.size() == 64 && model.url.rfind("https://", 0) == 0) models.push_back(model);
   }
   return models;
 }
+}  // namespace
+
+std::vector<CatalogModel> loadCatalog(const std::string& jsonPath) { return loadList(jsonPath, "models"); }
+std::vector<CatalogModel> loadEmbeddingCatalog(const std::string& jsonPath) { return loadList(jsonPath, "embedding_models"); }
 
 std::string modelsDir() { return (fs::path(configDir()) / "models").string(); }
 std::string modelPath(const CatalogModel& model) { return (fs::path(modelsDir()) / model.file).string(); }

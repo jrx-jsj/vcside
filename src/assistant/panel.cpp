@@ -527,6 +527,119 @@ void AssistantPanel::refreshModels() {
   });
 }
 
+// ---- searching the project by meaning ------------------------------------------------------
+
+const CatalogModel* AssistantPanel::embedModel() {
+  if (!embedCatalogLoaded_) {
+    embedCatalog_ = loadEmbeddingCatalog(dataDir() + "/assistant/models.json");
+    embedCatalogLoaded_ = true;
+  }
+  for (auto& model : embedCatalog_)
+    if (model.id == settings_.embeddingModel) return &model;
+  return embedCatalog_.empty() ? nullptr : &embedCatalog_.front();
+}
+
+namespace {
+std::string embeddingCachePath(const std::string& projectDir, const std::string& modelId) { return (std::filesystem::path(projectDir) / ".vcsai" / "index" / (modelId + ".vec")).string(); }
+
+// The vectors are derived data: they stay out of git like the chats do.
+void keepOutOfGit(const std::string& projectDir) {
+  std::filesystem::path ignore = std::filesystem::path(projectDir) / ".vcsai" / ".gitignore";
+  std::string text;
+  if (std::ifstream in{ignore}) text.assign(std::istreambuf_iterator<char>(in), {});
+  if (text.find("index/") == std::string::npos) std::ofstream(ignore, std::ios::app) << (text.empty() || text.back() == '\n' ? "" : "\n") << "index/\n";
+}
+}  // namespace
+
+// Every frame while the panel is open: starts the embedding helper when the option is on and the
+// model is there, embeds the chunks that have no vector (the cache first), and keeps the cache.
+void AssistantPanel::updateEmbeddings(const PanelContext& context) {
+  const CatalogModel* model = embedModel();
+  bool wanted = settings_.smartSearch && model && isInstalled(*model) && !context.projectDir.empty() && embedEngine_.available();
+  if (!wanted) {
+    if (embedEngine_.state() != Engine::State::Stopped) embedEngine_.stop(), embedWorker_.cancel();
+    return;
+  }
+  if (embedEngine_.state() == Engine::State::Stopped) {
+    embedEngine_.start(modelPath(*model), 2048, {"--embedding", "--pooling", model->pooling.empty() ? "mean" : model->pooling, "-b", "2048", "-ub", "2048"});
+    return;
+  }
+  if (embedEngine_.state() != Engine::State::Ready) return;
+  index_.useEmbeddings(model->id);
+  double now = ImGui::GetTime();
+  if (now - embedLastTick_ > 3.0 && !embedWorker_.running()) {  // the files may have changed
+    embedLastTick_ = now;
+    index_.update(context.projectDir);
+    std::string cacheId = context.projectDir + "|" + model->id;
+    if (embedCacheFor_ != cacheId) {
+      embedCache_.load(embeddingCachePath(context.projectDir, model->id));
+      embedCacheFor_ = cacheId;
+    }
+    std::vector<EmbeddingWorker::Job> jobs;
+    for (auto& item : index_.missing()) {
+      if (const std::vector<float>* cached = embedCache_.find(item.first)) index_.setVector(item.first, *cached);
+      else jobs.push_back({item.first, item.second});
+    }
+    if (!jobs.empty()) {
+      embedWorker_.start(embedEngine_.baseUrl(), model->documentPrefix, std::move(jobs));
+      embedWasRunning_ = true;
+    }
+  }
+  for (auto& done : embedWorker_.poll()) {
+    index_.setVector(done.key, done.vector);
+    embedCache_.put(done.key, done.vector);
+  }
+  if (embedWasRunning_ && !embedWorker_.running()) {  // finished (or stopped by an error): keep what was done
+    embedWasRunning_ = false;
+    for (auto& done : embedWorker_.poll()) {
+      index_.setVector(done.key, done.vector);
+      embedCache_.put(done.key, done.vector);
+    }
+    embedNote_ = embedWorker_.error();
+    embedCache_.keepOnly(index_.keysInUse());  // what no chunk uses any more is dropped
+    embedCache_.save(embeddingCachePath(context.projectDir, model->id));  // creates .vcsai/index
+    keepOutOfGit(context.projectDir);
+  }
+}
+
+// The question as a vector, or empty when meaning-based search is not ready.
+std::vector<float> AssistantPanel::queryVector(const std::string& text) {
+  const CatalogModel* model = embedModel();
+  if (!model || embedEngine_.state() != Engine::State::Ready || index_.embedded() == 0) return {};
+  std::vector<std::vector<float>> vectors;
+  std::string error;
+  std::atomic<bool> never{false};
+  if (!requestEmbeddings(embedEngine_.baseUrl(), {model->queryPrefix + utf8Cut(text, 1500)}, &vectors, &error, never, 5) || vectors.empty()) return {};
+  return vectors[0];
+}
+
+// The offer to download the embedding model, and how the indexing is going.
+void AssistantPanel::embedCard() {
+  const CatalogModel* model = embedModel();
+  if (!settings_.smartSearch || !model) return;
+  using DState = Download::State;
+  if (!isInstalled(*model)) {
+    if (embedDownload_.state() == DState::Running || embedDownload_.state() == DState::Verifying) {
+      ImGui::TextUnformatted(F("Downloading {0}...", {model->name}).c_str());
+      ImGui::ProgressBar((float)embedDownload_.progress(), ImVec2(-theme::em(90), 0));
+      ImGui::SameLine();
+      if (embedDownload_.state() == DState::Running && theme::dialogButton(T("Cancel"), ImVec2(theme::em(80), 0))) embedDownload_.cancel();
+      return;
+    }
+    ImGui::TextWrapped("%s", F("Searching the project by meaning needs {0} ({1}), which runs on this computer. {2}", {model->name, formatBytes(model->bytes), model->note}).c_str());
+    if (embedDownload_.state() == DState::Failed) ImGui::TextColored(theme::colv(theme::Role::MsgError), "%s", embedDownload_.error().c_str());
+    ImGui::BeginDisabled(!embedDownload_.available());
+    if (theme::primaryButton(F("Download ({0})", {formatBytes(model->bytes)}).c_str())) embedDownload_.start(*model);
+    ImGui::EndDisabled();
+    ImGui::Separator();
+    return;
+  }
+  if (embedEngine_.state() == Engine::State::Failed) ImGui::TextColored(theme::colv(theme::Role::MsgError), "%s", embedEngine_.error().c_str());
+  else if (embedEngine_.state() == Engine::State::Starting) ImGui::TextDisabled("%s", T("Starting the search model..."));
+  else if (embedWorker_.running()) ImGui::TextDisabled("%s", F("Indexing the project by meaning: {0} of {1} parts", {std::to_string(embedWorker_.finished()), std::to_string(embedWorker_.total())}).c_str());
+  else if (!embedNote_.empty()) ImGui::TextColored(theme::colv(theme::Role::MsgWarning), "%s", embedNote_.c_str());
+}
+
 void AssistantPanel::saveChat(const PanelContext& context) {
   if (context.projectDir.empty() || chat_.messages.empty()) return;
   try {
@@ -561,7 +674,9 @@ void AssistantPanel::send(const PanelContext& context, const std::string& questi
   if (!context.projectDir.empty()) {
     index_.update(context.projectDir);
     std::string excerpts;
-    for (auto& hit : index_.search(searchText, 3, context.selection.empty() ? context.fileRelative : std::string())) {
+    std::vector<float> meaning = queryVector(searchText);  // empty when search by meaning is off or not ready
+    const CatalogModel* searchModel = embedModel();
+    for (auto& hit : index_.search(searchText, 3, context.selection.empty() ? context.fileRelative : std::string(), meaning.empty() ? nullptr : &meaning, searchModel ? searchModel->minSimilarity : 0.45)) {
       std::string piece = "--- " + hit.file + ":" + std::to_string(hit.firstLine) + "-" + std::to_string(hit.lastLine) + "\n```\n" + utf8Cut(hit.text, 1200) + "\n```\n";
       if (excerpts.size() + piece.size() > 3200) break;
       excerpts += piece;
@@ -626,10 +741,12 @@ ToolEnv AssistantPanel::toolEnv(const PanelContext& context) const {
   env.spaceReport = context.spaceReport;
   env.symbols = context.symbols;
   if (!context.projectDir.empty())
-    env.findCode = [this, dir = context.projectDir](const std::string& query) {
-      index_.update(dir);
+    env.findCode = [self = const_cast<AssistantPanel*>(this), dir = context.projectDir](const std::string& query) {
+      self->index_.update(dir);
       std::string out;
-      for (auto& hit : index_.search(query, 4)) {
+      std::vector<float> meaning = self->queryVector(query);
+      const CatalogModel* searchModel = self->embedModel();
+      for (auto& hit : self->index_.search(query, 4, "", meaning.empty() ? nullptr : &meaning, searchModel ? searchModel->minSimilarity : 0.45)) {
         std::string piece = hit.file + ":" + std::to_string(hit.firstLine) + "-" + std::to_string(hit.lastLine) + "\n" + utf8Cut(hit.text, 1200) + "\n";
         if (out.size() + piece.size() > 4000) break;
         out += piece + "\n";
@@ -1029,6 +1146,8 @@ void AssistantPanel::draw(const PanelContext& context, ImFont* mono, bool* open)
     builtinCard(*provider);
     ImGui::Separator();
   }
+  updateEmbeddings(context);
+  embedCard();
 
   // conversation
   float footer = ImGui::GetFrameHeightWithSpacing() * 2 + ImGui::GetTextLineHeightWithSpacing() * 4;
@@ -1115,10 +1234,15 @@ void AssistantPanel::draw(const PanelContext& context, ImFont* mono, bool* open)
 
 void AssistantPanel::dialogs() {
   download_.poll();
+  embedDownload_.poll();
   engine_.poll();
+  embedEngine_.poll();
   if (!drawnThisFrame_) {  // the panel is closed: stop the answer and give the memory back
     request_.cancel();
     engine_.stop();
+    embedWorker_.cancel();
+    embedEngine_.stop();
+    embedCacheFor_.clear();
   }
   drawnThisFrame_ = false;
   firstStartDialog();
@@ -1211,6 +1335,8 @@ void AssistantPanel::settingsDialog() {
   if (ImGui::Checkbox(T("Chat panel"), &settings_.chat)) changed_ = true, settings_.asked = true;
   if (ImGui::Checkbox(T("Agent (reads project files, proposes edits, builds when you allow it)"), &settings_.agent)) changed_ = true;
   if (ImGui::Checkbox(T("Explain errors (a button in Problems and in the assistant)"), &settings_.explainErrors)) changed_ = true;
+  if (ImGui::Checkbox(T("Search the project by meaning (a small model, downloaded once)"), &settings_.smartSearch)) changed_ = true;
+  if (settings_.smartSearch) ImGui::TextDisabled("%s", T("Each part of your project is turned into numbers on this computer; the numbers stay in the project's .vcsai/index folder, which git ignores."));
   ImGui::SetNextItemWidth(theme::em(140));
   if (ImGui::InputInt(T("Token budget for remote models (0 = none)"), &settings_.budgetTokens, 10000, 100000)) settings_.budgetTokens = std::max(0, settings_.budgetTokens), changed_ = true;
   if (settings_.budgetTokens > 0) ImGui::TextDisabled("%s", F("Used in this session: {0}", {std::to_string(spentTokens_)}).c_str());

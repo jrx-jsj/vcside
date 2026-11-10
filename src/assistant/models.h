@@ -17,10 +17,16 @@ struct CatalogModel {
   std::string id, name, sizeClass, file, url, sha256, license, note;
   int64_t bytes = 0;
   int memoryGb = 0;  // memory the model needs to run comfortably
+  // Embedding models only (the "embedding_models" list): how the helper pools the vectors, what goes in
+  // front of a question and of a document, and the cosine similarity below which a match is not kept.
+  std::string pooling, queryPrefix, documentPrefix;
+  double minSimilarity = 0.4;
 };
 
 // data/assistant/models.json. Empty if the file is missing or malformed.
 std::vector<CatalogModel> loadCatalog(const std::string& jsonPath);
+// The embedding models (data/assistant/models.json, "embedding_models"), with the same checks.
+std::vector<CatalogModel> loadEmbeddingCatalog(const std::string& jsonPath);
 // The folder the models live in (inside the user's settings folder).
 std::string modelsDir();
 std::string modelPath(const CatalogModel& model);          // where the file goes

@@ -17,6 +17,8 @@ struct Settings {
   bool chat = false;   // the chat panel
   // Planned features, remembered so the first-start answer is kept as given.
   bool agent = false, completion = false, explainErrors = false;
+  bool smartSearch = false;          // search the project by meaning too (embeddings; downloads a small model)
+  std::string embeddingModel = "qwen3-embedding-0.6b";
   int budgetTokens = 0;  // remote models: stop asking after this many tokens in a session (0 = no limit)
   int toolProfile = 2;  // what the agent may use: 0 read only, 1 + propose edits, 2 + build and run (each asked)
   std::vector<Provider> providers;

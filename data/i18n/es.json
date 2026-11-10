@@ -313,6 +313,7 @@
     "Duplicate": "Duplicar",
     "Duplicate lines": "Duplicar líneas",
     "Duty (of 32)": "Ciclo de trabajo (de 32)",
+    "Each part of your project is turned into numbers on this computer; the numbers stay in the project's .vcsai/index folder, which git ignores.": "Cada parte de tu proyecto se convierte en números en este ordenador; los números se quedan en la carpeta .vcsai/index del proyecto, que git ignora.",
     "Each row has its own mode (M mirror, R repeat), an A when its right half is drawn on its own, and its colours. Drawing on the right half of a symmetric row makes it asymmetric.": "Cada fila tiene su modo (M espejo, R repetido), una A cuando su mitad derecha se dibuja aparte, y sus colores. Dibujar en la mitad derecha de una fila simétrica la vuelve asimétrica.",
     "Edit": "Editar",
     "Edit themes...": "Editar temas...",
@@ -441,6 +442,7 @@
     "indent: cannot read \"{0}\".": "indent: no se puede leer «{0}».",
     "Indentation guides": "Guías de sangría",
     "Indentation levels": "Niveles de sangría",
+    "Indexing the project by meaning: {0} of {1} parts": "Indexando el proyecto por significado: {0} de {1} partes",
     "info": "info",
     "Inserted at the cursor in {0}": "Se inserta en el cursor de {0}",
     "Install it normally; VCSIDE looks in the usual application folders.": "Instálalo normalmente; VCSIDE lo busca en las carpetas de aplicaciones habituales.",
@@ -757,6 +759,8 @@
     "Search again": "Buscar otra vez",
     "Search colours": "Buscar colores",
     "Search results": "Resultados de la búsqueda",
+    "Search the project by meaning (a small model, downloaded once)": "Buscar en el proyecto por significado (un modelo pequeño, se descarga una vez)",
+    "Searching the project by meaning needs {0} ({1}), which runs on this computer. {2}": "Buscar en el proyecto por significado necesita {0} ({1}), que funciona en este ordenador. {2}",
     "Secondary text": "Texto secundario",
     "Select all": "Seleccionar todo",
     "Selected animation step": "Paso de animación elegido",
@@ -808,6 +812,7 @@
     "Stable only": "Solo estables",
     "standard": "estándar",
     "Start from": "Empezar con",
+    "Starting the search model...": "Arrancando el modelo de búsqueda...",
     "Starts from what it plays now; then each frame's AUDF, and the AUDC, are yours.": "Parte de lo que toca ahora; después el AUDF de cada cuadro, y el AUDC, los eliges tú.",
     "Starts with every frame in order; add, remove and reorder steps below.": "Empieza con todos los fotogramas en orden; debajo se añaden, quitan y reordenan pasos.",
     "Stella and Gopher2600 load the whole ROM into RAM.": "Stella y Gopher2600 cargan la ROM entera en RAM.",
@@ -1116,5 +1121,5 @@
     "{0}:{1}: no listing to place the breakpoint: build first.": "{0}:{1}: no hay listado para situar el punto de ruptura: compila antes.",
     "±{0}": "±{0}"
   },
-  "total": 1108
+  "total": 1118
 }

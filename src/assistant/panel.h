@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 
+#include "assistant/embeddings.h"
 #include "assistant/engine.h"
 #include "assistant/grounding.h"
 #include "assistant/models.h"
@@ -114,6 +115,20 @@ class AssistantPanel {
   void closeTab(int index);
   void drawTabs(bool busy);
   void openSavedChat(const Chat& loaded);
+  // searching the project by meaning: a second copy of the helper with an embedding model, a worker
+  // that embeds the chunks, and the vectors kept on disk
+  Engine embedEngine_;
+  EmbeddingWorker embedWorker_;
+  EmbeddingCache embedCache_;
+  Download embedDownload_;
+  std::vector<CatalogModel> embedCatalog_;
+  bool embedCatalogLoaded_ = false, embedWasRunning_ = false;
+  std::string embedCacheFor_, embedNote_;
+  double embedLastTick_ = -10;
+  const CatalogModel* embedModel();
+  void updateEmbeddings(const PanelContext& context);
+  std::vector<float> queryVector(const std::string& text);
+  void embedCard();
   mutable ProjectIndex index_;                                 // the project's files, searched for each question
   ImFont* monoFont_ = nullptr;
   long long spentTokens_ = 0;                          // remote tokens used this session

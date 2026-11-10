@@ -18,7 +18,7 @@ namespace vcs::assistant {
 std::string helperPath();
 
 // The helper's command line for a model (exposed for tests).
-std::vector<std::string> helperArguments(const std::string& modelPath, int port, int contextTokens);
+std::vector<std::string> helperArguments(const std::string& modelPath, int port, int contextTokens, const std::vector<std::string>& extra = {});
 
 class Engine {
  public:
@@ -27,7 +27,8 @@ class Engine {
   ~Engine() { stop(); }
   bool available() const { return !helperPath().empty(); }
   // Starts the helper with this model; stops the previous one first. Returns at once.
-  void start(const std::string& modelPath, int contextTokens);
+  // extra: more arguments for the helper (an embedding model needs "--embedding --pooling last").
+  void start(const std::string& modelPath, int contextTokens, const std::vector<std::string>& extra = {});
   void stop();
   // Call every frame: checks whether the helper has finished loading the model or has died.
   void poll();

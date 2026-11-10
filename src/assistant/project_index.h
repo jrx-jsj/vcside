@@ -28,9 +28,23 @@ class ProjectIndex {
   size_t files() const { return fileCount_; }
   size_t chunks() const { return chunks_.size(); }
 
+  // Meaning-based search (embeddings): the model's id keys the vectors, so a change of model
+  // starts again. missing() lists the chunks that have no vector yet (key and text, each once);
+  // setVector() gives one; embedded() counts the chunks that have one.
+  void useEmbeddings(const std::string& modelId);
+  std::vector<std::pair<std::string, std::string>> missing() const;
+  void setVector(const std::string& key, const std::vector<float>& vector);
+  size_t embedded() const;
+  std::map<std::string, bool> keysInUse() const;  // the key of every chunk (for pruning the cache)
+  const std::string& embeddingModel() const { return modelId_; }
+
   // The best `limit` chunks for a question; chunks of `skipFile` are left out (it is attached
-  // whole). Nothing is returned for a question that matches no more than noise.
-  std::vector<IndexHit> search(const std::string& query, size_t limit, const std::string& skipFile = "") const;
+  // whole). Nothing is returned for a question that matches no more than noise. With the
+  // question's vector (normalised, same model) the keyword ranking and the similarity ranking
+  // are merged (reciprocal rank fusion), and a chunk whose cosine similarity reaches
+  // minSimilarity can enter on meaning alone.
+  std::vector<IndexHit> search(const std::string& query, size_t limit, const std::string& skipFile = "",
+                               const std::vector<float>* queryVector = nullptr, double minSimilarity = 0.45) const;
 
   // One line per file: its name and the names it defines, the files and names the question
   // mentions first, up to maxChars.
@@ -44,7 +58,8 @@ class ProjectIndex {
   struct Chunk {
     std::string file;
     int firstLine = 0, lastLine = 0;
-    std::string text, symbol;
+    std::string text, symbol, key;
+    std::vector<float> vector;          // empty until embedded
     std::map<std::string, int> counts;  // word -> occurrences (name words weigh more)
     int length = 0;
   };
@@ -52,7 +67,7 @@ class ProjectIndex {
     long long size = 0, time = 0;
     std::vector<std::string> symbols;
   };
-  std::string dir_;
+  std::string dir_, modelId_;
   std::map<std::string, FileInfo> fileInfo_;
   std::vector<Chunk> chunks_;
   size_t fileCount_ = 0;
