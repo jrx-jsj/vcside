@@ -348,6 +348,17 @@ void MusicEditor::orderPanel() {
   ImGui::SetNextItemWidth(em(80));
   int rows = current.rows;
   if (ImGui::InputInt(T("Rows"), &rows, 1, 8, ImGuiInputTextFlags_EnterReturnsTrue)) current.resize(rows), changed();
+  // a speed of its own while it plays (0: the song's)
+  ImGui::SetNextItemWidth(em(80));
+  int speed = current.speed;
+  if (ImGui::InputInt(T("Pattern speed"), &speed)) current.speed = std::clamp(speed, 0, 60), current.swing = current.speed ? current.swing : 0, changed();
+  if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", T("Frames per row while this pattern plays. 0: the song's speed and swing."));
+  if (current.speed > 0) {
+    ImGui::SetNextItemWidth(em(80));
+    int swing = current.swing;
+    if (ImGui::InputInt(T("Pattern swing"), &swing)) current.swing = std::clamp(swing, 0, 60), changed();
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", T("Frames of this pattern's odd rows. 0: the same as the even ones."));
+  }
 }
 
 void MusicEditor::instrumentPanel() {

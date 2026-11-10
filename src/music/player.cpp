@@ -115,7 +115,7 @@ void Player::playRow() {
     else if (cell.effect == kEffectRelease) voice.releaseVariant = cell.effectValue;
     if (cell.note == kNoteOff) noteOff(channel);
   }
-  framesLeft_ = std::max(1, song_.rowFrames(next_.row));
+  framesLeft_ = std::max(1, song_.rowFrames(pattern, next_.row));
   // the next row: the pattern's end goes to the next order entry, the song's end loops or stops
   if (++next_.row >= pattern.rows) {
     next_.row = 0;

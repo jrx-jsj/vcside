@@ -117,7 +117,7 @@ add_custom_command(TARGET vcside POST_BUILD
 
 # --- Tests (no GUI) ---------------------------------------------------------
 enable_testing()
-add_executable(vcside_tests tests/tests.cpp src/kb.cpp src/cycles.cpp src/builder_parse.cpp src/editor/text_editor.cpp src/editor/folding.cpp src/editor/indentation.cpp src/source_links.cpp src/i18n.cpp src/space.cpp src/debugmap.cpp src/emulator_launch.cpp src/elf_space.cpp src/basic_syntax.cpp src/about.cpp src/project.cpp src/toolchain.cpp src/paths.cpp src/child_process.cpp src/gfx.cpp src/theme.cpp src/music/tia_audio.cpp src/music/tuning.cpp src/music/song.cpp src/music/player.cpp src/music/export.cpp src/assistant/sse.cpp src/assistant/http.cpp src/assistant/provider.cpp src/assistant/grounding.cpp src/assistant/prompt.cpp src/assistant/settings.cpp)
+add_executable(vcside_tests tests/tests.cpp src/kb.cpp src/cycles.cpp src/builder_parse.cpp src/editor/text_editor.cpp src/editor/folding.cpp src/editor/indentation.cpp src/source_links.cpp src/i18n.cpp src/space.cpp src/debugmap.cpp src/emulator_launch.cpp src/elf_space.cpp src/basic_syntax.cpp src/about.cpp src/project.cpp src/toolchain.cpp src/paths.cpp src/child_process.cpp src/gfx.cpp src/theme.cpp src/music/tia_audio.cpp src/music/tuning.cpp src/music/song.cpp src/music/player.cpp src/music/export.cpp src/music/import_tiatracker.cpp src/assistant/sse.cpp src/assistant/http.cpp src/assistant/provider.cpp src/assistant/grounding.cpp src/assistant/prompt.cpp src/assistant/settings.cpp)
 target_include_directories(vcside_tests PRIVATE src)
 target_link_libraries(vcside_tests PRIVATE imgui nlohmann_json::nlohmann_json)
 if(WIN32)

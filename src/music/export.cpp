@@ -99,13 +99,24 @@ MusicPlayRow SUBROUTINE
     bcc .length
     inc MusicPointer+1
 .length
+  IF MUSIC_PATTERN_SPEEDS
+    ldx MusicOrder              ; each pattern's speed: its even and odd rows' frames
+    lda MusicRow
+    lsr
+    lda MusicOrderSpeed,x
+    bcc .evenRow
+    lda MusicOrderSwing,x
+.evenRow
+    tax
+  ELSE
     ldx #MUSIC_SPEED
-  IF MUSIC_SWING > 0
+    IF MUSIC_SWING > 0
     lda MusicRow
     lsr
     bcc .even
     ldx #MUSIC_SWING
 .even
+    ENDIF
   ENDIF
     stx MusicWait
     inc MusicRow
@@ -444,7 +455,11 @@ static void music_play_row(void)
     int at = music_pointer;
     for (int i = 0; i < MUSIC_VOICES; i++) at = music_event(&music_voices[i], at);
     music_pointer = (uint16_t)at;
+#if MUSIC_PATTERN_SPEEDS
+    music_wait = (music_row & 1) ? music_order_swing[music_order] : music_order_speed[music_order];
+#else
     music_wait = (MUSIC_SWING > 0 && (music_row & 1)) ? MUSIC_SWING : MUSIC_SPEED;
+#endif
     if (++music_row >= music_order_rows[music_order]) {
         music_row = 0;
         if (++music_order >= MUSIC_ORDER_LENGTH) music_order = MUSIC_LOOP_TO;
@@ -684,6 +699,7 @@ static ExportResult writeC(const Song& song, Builder& builder, std::map<std::tup
   out << "#define MUSIC_VOICES " << channels << "\n";
   out << "#define MUSIC_SPEED " << std::clamp(song.speed, 1, 255) << "\n";
   out << "#define MUSIC_SWING " << std::clamp(song.swing, 0, 255) << "\n";
+  out << "#define MUSIC_PATTERN_SPEEDS " << (song.patternSpeeds() ? 1 : 0) << "  /* patterns with speeds of their own */\n";
   out << "#define MUSIC_ORDER_LENGTH " << song.order.size() << "\n";
   out << "#define MUSIC_LOOP_TO " << (song.loopTo >= 0 ? std::to_string(song.loopTo) : "MUSIC_ORDER_LENGTH  /* stops at the end */") << "\n";
   out << "#define MUSIC_MIX " << mixFactor(song.gain, channels) << "u  /* the sum of the voices to quarters of a level, in 1/65536 */\n";
@@ -715,6 +731,17 @@ static ExportResult writeC(const Song& song, Builder& builder, std::map<std::tup
   out << "\nstatic const uint8_t music_patterns[] = {\n" << cList(patternBytes) << "};\n";
   out << "static const uint16_t music_order_offset[] = {\n" << cList(orderOffset) << "};\n";
   out << "static const uint8_t music_order_rows[] = {\n" << cList(orderRows) << "};\n";
+  if (song.patternSpeeds()) {
+    std::vector<long long> evenFrames, oddFrames;
+    for (int patternIndex : song.order) {
+      bool valid = patternIndex >= 0 && patternIndex < (int)song.patterns.size();
+      evenFrames.push_back(std::clamp(valid ? song.rowFrames(song.patterns[patternIndex], 0) : song.speed, 1, 255));
+      oddFrames.push_back(std::clamp(valid ? song.rowFrames(song.patterns[patternIndex], 1) : song.rowFrames(1), 1, 255));
+    }
+    out << "static const uint8_t music_order_speed[] = {\n" << cList(evenFrames) << "};\n";
+    out << "static const uint8_t music_order_swing[] = {\n" << cList(oddFrames) << "};\n";
+    dataBytes += (int)song.order.size() * 2;
+  }
   dataBytes += (int)patternBytes.size() + (int)song.order.size() * 3;
   // envelopes and releases in one table: length, loop (0xFF none), values
   std::vector<long long> volumeData, envelopeOffset, releaseOffset;
@@ -901,6 +928,7 @@ ExportResult exportSong(const Song& song, double audioClock, const ExportOptions
   for (int patternIndex : song.order) orderRows.push_back(patternIndex >= 0 && patternIndex < (int)song.patterns.size() ? song.patterns[patternIndex].rows : 1);
   out << "\nMUSIC_SPEED = " << std::clamp(song.speed, 1, 255) << "\n";
   out << "MUSIC_SWING = " << std::clamp(song.swing, 0, 255) << "\n";
+  out << "MUSIC_PATTERN_SPEEDS = " << (song.patternSpeeds() ? 1 : 0) << "  ; patterns with speeds of their own\n";
   out << "MUSIC_ORDER_LENGTH = " << song.order.size() << "\n";
   out << "MUSIC_LOOP_TO = " << (song.loopTo >= 0 ? std::to_string(song.loopTo) : "MUSIC_ORDER_LENGTH  ; stops at the end") << "\n";
   for (size_t index = 0; index < effects.size(); index++) out << effects[index].first << " = " << index << "\n";
@@ -915,6 +943,16 @@ ExportResult exportSong(const Song& song, double audioClock, const ExportOptions
   }
   out << lows << "\nMusicOrderHi\n" << highs << "\nMusicOrderRows\n" << byteList(orderRows);
   dataBytes += (int)song.order.size() * 3;
+  if (song.patternSpeeds()) {
+    std::vector<int> evenFrames, oddFrames;
+    for (int patternIndex : song.order) {
+      bool valid = patternIndex >= 0 && patternIndex < (int)song.patterns.size();
+      evenFrames.push_back(std::clamp(valid ? song.rowFrames(song.patterns[patternIndex], 0) : song.speed, 1, 255));
+      oddFrames.push_back(std::clamp(valid ? song.rowFrames(song.patterns[patternIndex], 1) : song.rowFrames(1), 1, 255));
+    }
+    out << "\nMusicOrderSpeed\n" << byteList(evenFrames) << "\nMusicOrderSwing\n" << byteList(oddFrames);
+    dataBytes += (int)song.order.size() * 2;
+  }
   // patterns (each one used by the order list, once)
   std::set<int> written;
   for (int patternIndex : song.order) {

@@ -64,6 +64,8 @@ A small native IDE for making Atari 2600 games, on macOS, Windows and Linux. It 
   - Played as the TIA plays it, counter by counter (checked against Gopher2600), on NTSC or PAL as the project says; *Save as WAV* writes the song once through.
   - Sound effects for the game (a jump, a shot), each an instrument and a note on a channel; while one sounds, the song waits on that channel.
   - *Export...*: on every save, `<name>.music.asm` with VCSIDE's own player (CC0, about 400 bytes, 19 bytes of zero page) and the song, for DASM or batari Basic. The player writes exactly what the editor plays (checked on a 6502 emulator). The DASM example and the batari Basic template play a song with two effects.
+  - *File → Import TIATracker song...* (or opening a `.ttt`): the song as a `.vcsmusic`, instruments, percussion, patterns, speeds and loops included, playing as TIATracker plays it.
+  - Patterns can have a speed and swing of their own.
   - *Samples (ELF)*: 1 to 4 voices with waveforms (square with any duty, triangle, sawtooth, sine, noise, or drawn by hand) and exact pitch, mixed by the cartridge's ARM into one AUDV0 sample per scanline, overblank included. Exported as `<name>.music.h`, a C player (CC0) that plays exactly what the editor plays; the ELF template and its example play a 3-voice song with two effects.
 - **Illegal-opcode policy** per project: allow, stable only, warn or forbid.
 - **Menus** in the system menu bar on macOS (application menu with About, Tools and Language; Window menu), and in the window on Windows and Linux. Ctrl shortcuts are Cmd on macOS; Replace is Cmd+Shift+F there, since Cmd+H hides the app, and completion is Control+Space, since Cmd+Space is Spotlight.

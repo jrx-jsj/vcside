@@ -23,6 +23,7 @@
 #include "imgui_internal.h"
 #include "imgui_stdlib.h"
 #include "paths.h"
+#include "music/import_tiatracker.h"
 
 namespace fs = std::filesystem;
 using nlohmann::json;
@@ -192,6 +193,29 @@ void App::openPath(const std::string& path) {
   }
 }
 
+// A TIATracker song (.ttt) as a .vcsmusic next to it (a new name if that one is taken);
+// what the import could not keep goes to the output. Empty if it cannot be read.
+std::string App::importTiaTrackerFile(const std::string& path) {
+  music::Song song;
+  music::ImportResult result = music::importTiaTracker(readFile(path), fs::path(path).stem().string(), &song);
+  if (!result.ok) {
+    output_ += F("Cannot import {0}: {1}", {path, result.error}) + "\n";
+    return {};
+  }
+  fs::path folder = fs::path(path).parent_path(), musicPath = folder / (fs::path(path).stem().string() + ".vcsmusic");
+  std::error_code errorCode;
+  for (int number = 2; fs::exists(musicPath, errorCode); number++)
+    musicPath = folder / (fs::path(path).stem().string() + " " + std::to_string(number) + ".vcsmusic");
+  std::ofstream out(musicPath, std::ios::binary);
+  if (!(out << music::toJson(song))) {
+    output_ += F("Cannot write {0}", {musicPath.string()}) + "\n";
+    return {};
+  }
+  output_ += F("TIATracker song imported as {0}.", {musicPath.string()}) + "\n";
+  for (auto& warning : result.warnings) output_ += "  " + warning + "\n";
+  return musicPath.string();
+}
+
 std::string App::linkedFile(const std::string& name, const std::string& fromFile) const {
   if (name.empty()) return {};
   std::vector<fs::path> searchPaths;
@@ -283,6 +307,10 @@ OpenFile* App::openFile(const std::string& pathIn, int line) {
     }
   std::error_code errorCode;
   if (!fs::exists(path, errorCode)) return nullptr;
+  if (lower(fs::path(path).extension().string()) == ".ttt") {  // a TIATracker song: becomes a .vcsmusic
+    std::string musicPath = importTiaTrackerFile(path);
+    return musicPath.empty() ? nullptr : openFile(musicPath);
+  }
   auto newFile = std::make_unique<OpenFile>();
   newFile->path = path;
   if (ImageViewer::handles(path)) {
@@ -1536,6 +1564,9 @@ void App::frame() {
         if (out << themes_.exportJson(kind.substr(12))) lastStatus_ = F("Theme saved in {0}", {exportPath});
         else lastStatus_ = F("Cannot write {0}", {exportPath});
       }
+      else if (kind == "importttt") {
+        openFile(path);  // a .ttt is imported as it opens
+      }
       else if (kind == "newmusic") {
         std::string musicPath = path;
         if (lower(fs::path(musicPath).extension().string()) != ".vcsmusic") musicPath += ".vcsmusic";
@@ -1691,6 +1722,10 @@ MenuBar App::buildMenuBar(bool native) {
         static const SDL_DialogFileFilter filters[] = {{"VCSIDE music", "vcsmusic"}};
         std::string where = ((project_ ? fs::path(project_->dir) : fs::path(folder_.empty() ? "." : folder_)) / "music.vcsmusic").string();
         SDL_ShowSaveFileDialog(dialogCallback, new DialogCtx{this, "newmusic"}, window_, filters, 1, where.c_str());
+      }),
+      item(T("Import TIATracker song..."), "", [this] {
+        static const SDL_DialogFileFilter filters[] = {{"TIATracker song", "ttt"}};
+        SDL_ShowOpenFileDialog(dialogCallback, new DialogCtx{this, "importttt"}, window_, filters, 1, nullptr, false);
       }),
       MenuItem::sep(),
       item(T("Save"), "Ctrl+S", [this] { if (activeFile_ >= 0) saveFile(*files_[activeFile_]); }, hasFile),

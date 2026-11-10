@@ -159,6 +159,12 @@ std::vector<PitchStep> Song::pitchSequence(int note, const Instrument& instrumen
   return steps;
 }
 
+bool Song::patternSpeeds() const {
+  for (auto& pattern : patterns)
+    if (pattern.speed > 0) return true;
+  return false;
+}
+
 Song blankSong() {
   Song song;
   Instrument lead;
@@ -257,6 +263,7 @@ std::string toJson(const Song& song) {
   json patterns = json::array();
   for (auto& pattern : song.patterns) {
     json item = {{"name", pattern.name}, {"rows", pattern.rows}};
+    if (pattern.speed > 0) item["speed"] = pattern.speed, item["swing"] = pattern.swing;
     json channels = json::array();
     for (int channel = 0; channel < song.channelCount(); channel++) {
       json rows = json::array();
@@ -359,6 +366,8 @@ bool fromJson(const std::string& text, Song* song, std::string* error) {
       Pattern pattern;
       pattern.name = item.value("name", "");
       pattern.resize(item.value("rows", 32));
+      pattern.speed = std::clamp(item.value("speed", 0), 0, 255);
+      pattern.swing = pattern.speed > 0 ? std::clamp(item.value("swing", 0), 0, 255) : 0;
       auto channels = item.value("channels", json::array());
       for (int channel = 0; channel < kMaxChannels && channel < (int)channels.size(); channel++)
         for (int row = 0; row < pattern.rows && row < (int)channels[channel].size(); row++) {

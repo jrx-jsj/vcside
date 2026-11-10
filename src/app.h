@@ -148,6 +148,7 @@ class App {
   void projectFileSaved();    // the .vcsproj changed: the project takes it again
   void openFolder(const std::string& dir);
   OpenFile* openFile(const std::string& path, int line = 0);
+  std::string importTiaTrackerFile(const std::string& path);
   bool saveFile(OpenFile& file);
   // What the graphics editor checks against: a kernel of one's own for assembly, or the
   // kernel and options the main .bas sets (read again when the file changes).

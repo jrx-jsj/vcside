@@ -93,6 +93,9 @@ struct Cell {
 struct Pattern {
   std::string name;
   int rows = 32;
+  // Frames per row while this pattern plays, and of its odd rows (0: as the even ones);
+  // speed 0: the song's speed and swing.
+  int speed = 0, swing = 0;
   std::vector<Cell> cells[kMaxChannels];  // rows cells per channel (all four kept)
   void resize(int rowCount);
 };
@@ -143,6 +146,11 @@ struct Song {
   bool samples() const { return target == "samples"; }
   int channelCount() const { return samples() ? (voices < 1 ? 1 : voices > kMaxChannels ? kMaxChannels : voices) : kChannels; }
   int rowFrames(int row) const { return (row % 2 == 1 && swing > 0) ? swing : speed; }
+  int rowFrames(const Pattern& pattern, int row) const {
+    if (pattern.speed <= 0) return rowFrames(row);
+    return (row % 2 == 1 && pattern.swing > 0) ? pattern.swing : pattern.speed;
+  }
+  bool patternSpeeds() const;  // some pattern has a speed of its own
   // The notes the song plays, with the AUDC values each one's instrument allows (melodic only).
   std::vector<SongNote> notes() const;
   // The notes heard with each instrument (after the transposition), for the tuning by hand.

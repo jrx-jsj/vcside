@@ -27,6 +27,11 @@
 #include "music/song.h"
 #include "music/player.h"
 #include "music/export.h"
+#include "music/import_tiatracker.h"
+#include <nlohmann/json.hpp>
+#include <filesystem>
+#include <fstream>
+#include <sstream>
 #include "cpu6502.h"
 #include "assistant/grounding.h"
 #include "assistant/http.h"
@@ -2232,6 +2237,12 @@ static vcs::music::Song randomSong(unsigned seed) {
       }
     song.patterns.push_back(pattern);
   }
+  {  // some patterns with a speed of their own (a separate generator: the rest stays as it was)
+    std::mt19937 speeds(seed * 31 + 7);
+    auto speedPick = [&](int low, int high) { return std::uniform_int_distribution<int>(low, high)(speeds); };
+    for (auto& pattern : song.patterns)
+      if (speedPick(0, 2) == 0) pattern.speed = speedPick(1, 5), pattern.swing = speedPick(0, 1) ? speedPick(1, 6) : 0;
+  }
   song.order.clear();
   for (int entry = pick(1, 4); entry > 0; entry--) song.order.push_back(pick(0, (int)song.patterns.size() - 1));
   song.loopTo = pick(0, 2) ? pick(0, (int)song.order.size() - 1) : -1;
@@ -2363,6 +2374,188 @@ static vcs::music::Song randomSampleSong(unsigned seed) {
   }
   for (auto& effect : song.effects) effect.channel = pick(0, song.voices - 1);
   return song;
+}
+
+// How many frames of a TIATracker song (its .ttt as JSON) VCSIDE's player plays differently
+// after the import, against a small model of how TIATracker plays it: rows, envelopes with
+// a held loop and a release, percussion played once, the speed of channel 0's pattern
+// (even and odd rows), two channels with their own sequences and jumps.
+static int tiaTrackerDifferences(const nlohmann::json& song, const vcs::music::Song& imported, int frameCount, bool print) {
+  using namespace vcs::music;
+  using nlohmann::json;
+  const json &instruments = song["instruments"], &percussion = song["percussion"], &patterns = song["patterns"], &channels = song["channels"];
+  struct Channel {
+    int kind = 0;  // 0 silent, 1 instrument, 2 percussion
+    int number = 0, value = 0, frame = 0;
+    bool released = false;
+    size_t entry = 0, row = 0;
+  } model[2];
+  model[0].entry = song.value("startpattern0", 0), model[1].entry = song.value("startpattern1", 0);
+  auto controlOf = [](int waveform, int value) {
+    switch (waveform) {
+      case 16: return value >= 32 ? 12 : 4;
+      case 5: return 4;
+      case 9: return 7;
+      case 10: return 6;
+      case 13: return 12;
+      default: return waveform;
+    }
+  };
+  bool globalSpeed = song.value("globalspeed", true);
+  Player player;
+  player.start(imported, audioClockHz(song.value("tvmode", std::string("ntsc")) == "pal" ? "PAL" : "NTSC"));
+  int differences = 0, timer = 0;
+  for (int frame = 0; frame < frameCount; frame++) {
+    // a channel with no more patterns stops the song
+    if (timer == 0 && (model[0].entry >= channels[0]["sequence"].size() || model[1].entry >= channels[1]["sequence"].size())) break;
+    if (timer == 0) {
+      {  // channel 0's pattern (or the song) and its row give the speed
+        const json& pattern = globalSpeed ? song : patterns[channels[0]["sequence"][model[0].entry]["patternindex"].get<int>()];
+        timer = model[0].row % 2 == 0 ? pattern["oddspeed"].get<int>() : pattern["evenspeed"].get<int>();  // as TIATracker does
+      }
+      for (int channel = 0; channel < 2; channel++) {
+        Channel& voice = model[channel];
+        const json& sequence = channels[channel]["sequence"];
+        const json& notes = patterns[sequence[voice.entry]["patternindex"].get<int>()]["notes"];
+        const json& cell = notes[voice.row];
+        int type = cell["type"], number = cell["number"], value = cell["value"];
+        if (type == 1) voice = {1, number, value, 0, false, voice.entry, voice.row};
+        else if (type == 3) voice = {2, number, 0, 0, false, voice.entry, voice.row};
+        else if (type == 2 && voice.kind == 1 && !voice.released) voice.released = true, voice.frame = instruments[voice.number]["releaseStart"];
+        if (++voice.row == notes.size()) {
+          voice.row = 0;
+          int target = sequence[voice.entry]["gototarget"];
+          voice.entry = target >= 0 ? (size_t)target : voice.entry + 1;
+        }
+      }
+    }
+    timer--;
+    FrameRegisters registers = player.nextFrame();
+    for (int channel = 0; channel < 2; channel++) {
+      Channel& voice = model[channel];
+      int control = 0, frequency = 0, volume = 0;
+      if (voice.kind == 1) {
+        const json& source = instruments[voice.number];
+        int length = source["envelopeLength"], sustain = source["sustainStart"], release = source["releaseStart"];
+        if (voice.frame < length) {
+          control = controlOf(source["waveform"], voice.value);
+          frequency = std::clamp((voice.value & 31) + source["frequencies"][voice.frame].get<int>(), 0, 31);
+          volume = source["volumes"][voice.frame];
+          if (source["waveform"] == 11) volume = 0;
+          voice.frame++;
+          if (!voice.released && voice.frame == release) voice.frame = sustain;
+        } else {
+          voice.kind = 0;
+        }
+      } else if (voice.kind == 2) {
+        const json& source = percussion[voice.number];
+        if (voice.frame < (int)source["envelopeLength"]) {
+          control = controlOf(source["waveforms"][voice.frame], 0), frequency = source["frequencies"][voice.frame], volume = source["volumes"][voice.frame];
+          voice.frame++;
+        } else {
+          voice.kind = 0;
+        }
+      }
+      bool same = registers.volume[channel] == volume && (volume == 0 || (registers.control[channel] == control && registers.frequency[channel] == frequency));
+      if (!same && print && differences < 5)
+        std::printf("  TIATracker import, frame %d channel %d: expected %d/%d/%d, plays %d/%d/%d\n", frame, channel, control, frequency, volume,
+                    registers.control[channel], registers.frequency[channel], registers.volume[channel]);
+      differences += !same;
+    }
+  }
+  return differences;
+}
+
+// TIATracker import: a song of our own in the .ttt format, played by a small model of how
+// TIATracker plays it (rows, envelopes with a held loop and a release, percussion played
+// once, two channels with their own sequences and jumps) and by VCSIDE's player after the
+// import: every frame must write the same.
+static void testTiaTrackerImport() {
+  using namespace vcs::music;
+  using nlohmann::json;
+  auto instrument = [](const char* name, int waveform, std::vector<int> frequencies, std::vector<int> volumes, int sustain, int release) {
+    return json{{"name", name}, {"waveform", waveform}, {"envelopeLength", (int)volumes.size()}, {"sustainStart", sustain},
+                {"releaseStart", release}, {"frequencies", frequencies}, {"volumes", volumes}};
+  };
+  json instruments = json::array();
+  instruments.push_back(instrument("lead", 4, {2, 1, 0, 0, 0, 0, 0}, {15, 13, 11, 10, 9, 5, 2}, 3, 5));
+  instruments.push_back(instrument("pure", 16, {0, 0, 0, 0}, {12, 10, 8, 3}, 1, 3));
+  instruments.push_back(instrument("bass", 13, {0, 0, 0, 0, 0}, {14, 12, 12, 11, 4}, 2, 4));  // AUDC 13 sounds as 12
+  instruments.push_back(instrument("wobble", 4, {0, 1, -1, 0}, {9, 9, 9, 0}, 0, 3));          // bends while held
+  for (int unused = 4; unused < 7; unused++) instruments.push_back(instrument("unused", 4, {0, 0}, {0, 0}, 0, 1));
+  json percussion = json::array();
+  percussion.push_back(json{{"name", "kick"}, {"envelopeLength", 4}, {"overlay", false}, {"frequencies", {28, 30, 31, 31}}, {"volumes", {15, 12, 6, 2}}, {"waveforms", {15, 15, 14, 14}}});
+  percussion.push_back(json{{"name", "hat"}, {"envelopeLength", 2}, {"overlay", false}, {"frequencies", {1, 1}}, {"volumes", {8, 0}}, {"waveforms", {8, 8}}});
+  for (int unused = 2; unused < 15; unused++) percussion.push_back(json{{"name", "x"}, {"envelopeLength", 1}, {"overlay", false}, {"frequencies", {0}}, {"volumes", {0}}, {"waveforms", {8}}});
+  auto note = [](int type, int number, int value) { return json{{"type", type}, {"number", number}, {"value", value}}; };
+  enum { H = 0, I = 1, P = 2, D = 3 };
+  json patterns = json::array();
+  // channel 0: an intro pattern of 6 rows, then a loop of 8
+  patterns.push_back(json{{"name", "intro"}, {"evenspeed", 3}, {"oddspeed", 3}, {"notes", {note(I, 0, 17), note(H, 0, 0), note(I, 0, 14), note(H, 0, 0), note(P, 0, 0), note(H, 0, 0)}}});
+  patterns.push_back(json{{"name", "verse"}, {"evenspeed", 4}, {"oddspeed", 2},
+                          {"notes", {note(I, 1, 10), note(H, 0, 0), note(I, 1, 40), note(H, 0, 0), note(I, 3, 20), note(H, 0, 0), note(H, 0, 0), note(P, 0, 0)}}});
+  // channel 1: a loop of 5 rows (lengths 8 and 5 meet every 40 rows)
+  patterns.push_back(json{{"name", "drums"}, {"evenspeed", 3}, {"oddspeed", 3}, {"notes", {note(D, 0, 0), note(D, 1, 0), note(I, 2, 25), note(H, 0, 0), note(P, 0, 0)}}});
+  json channels = json::array();
+  channels.push_back(json{{"sequence", {json{{"patternindex", 0}, {"gototarget", -1}}, json{{"patternindex", 1}, {"gototarget", 1}}}}});
+  channels.push_back(json{{"sequence", {json{{"patternindex", 2}, {"gototarget", 0}}}}});
+  json song = {{"version", 1}, {"tvmode", "ntsc"}, {"globalspeed", false}, {"evenspeed", 3}, {"oddspeed", 3}, {"rowsperbeat", 4},
+               {"metaName", "test song"}, {"instruments", instruments}, {"percussion", percussion}, {"patterns", patterns}, {"channels", channels}};
+
+  Song imported;
+  ImportResult result = importTiaTracker(song.dump(), "fallback", &imported);
+  CHECK(result.ok && imported.name == "test song" && imported.speed == 3 && imported.swing == 0);
+  CHECK(imported.instruments.size() == 6);  // the 4 instruments and 2 percussion sounds used
+  {  // the verse's speeds, alternating, also where channel 1 cuts it on an odd row
+    bool even = false, odd = false;
+    for (auto& pattern : imported.patterns) even |= pattern.speed == 2 && pattern.swing == 4, odd |= pattern.speed == 4 && pattern.swing == 2;
+    CHECK(even && odd);
+    Song reread;
+    std::string error;
+    CHECK(fromJson(toJson(imported), &reread, &error) && reread.patterns.size() == imported.patterns.size());
+    for (size_t index = 0; index < reread.patterns.size(); index++)
+      CHECK(reread.patterns[index].speed == imported.patterns[index].speed && reread.patterns[index].swing == imported.patterns[index].swing);
+  }
+  CHECK(!importTiaTracker("{\"x\": 1}", "x", &imported).ok);
+
+  int frames = 700, differences = tiaTrackerDifferences(song, imported, frames, true);
+  CHECK(differences == 0);
+
+  // what could not be kept is said: slides, overlay percussion
+  json changed = song;
+  changed["patterns"][1]["notes"][5] = note(4, 0, 2);  // a slide
+  changed["percussion"][1]["overlay"] = true;
+
+  result = importTiaTracker(changed.dump(), "fallback", &imported);
+  CHECK(result.ok && result.warnings.size() == 4);  // + the instrument that bends while held and in its release
+
+  // the songs of a folder, if given (VCSIDE_TTT_DIR): each imported and exported for DASM
+  if (const char* folder = std::getenv("VCSIDE_TTT_DIR")) {
+    for (auto& entry : std::filesystem::directory_iterator(folder)) {
+      if (entry.path().extension() != ".ttt") continue;
+      std::ifstream file(entry.path());
+      std::stringstream text;
+      text << file.rdbuf();
+      Song folderSong;
+      ImportResult folderResult = importTiaTracker(text.str(), entry.path().stem().string(), &folderSong);
+      ExportOptions options;
+      ExportResult exported = folderResult.ok ? exportSong(folderSong, audioClockHz("NTSC"), options) : ExportResult{};
+      // compared with TIATracker's way where the import keeps it exactly (no slides, no
+      // overlay percussion)
+      bool exact = folderResult.ok;
+      for (auto& warning : folderResult.warnings) exact &= warning.find("Slides") == std::string::npos && warning.find("Overlay") == std::string::npos;
+      if (std::getenv("VCSIDE_TTT_DUMP")) std::printf("%s\n", toJson(folderSong).c_str());
+      int folderDifferences = -1;
+      if (exact) folderDifferences = tiaTrackerDifferences(nlohmann::json::parse(text.str()), folderSong, 3000, std::getenv("VCSIDE_TTT_PRINT") != nullptr);
+      std::printf("  %s: %s, %zu instruments, %zu patterns, order %zu, export %s, %s\n", entry.path().filename().string().c_str(),
+                  folderResult.ok ? "imported" : folderResult.error.c_str(), folderSong.instruments.size(), folderSong.patterns.size(),
+                  folderSong.order.size(), exported.ok ? "ok" : "fails",
+                  folderDifferences < 0 ? "not compared" : (std::to_string(folderDifferences) + " of 6000 channel frames differ").c_str());
+      for (auto& warning : folderResult.warnings) std::printf("      %s\n", warning.c_str());
+      for (auto& problem : exported.problems) std::printf("      ! %s\n", problem.c_str());
+    }
+  }
+  std::printf("  TIATracker import: %d frames the same as TIATracker plays them\n", frames);
 }
 
 static void testSampleExport() {
@@ -2780,6 +2973,7 @@ int main() {
   testSong();
   testMusicExport();
   testSampleExport();
+  testTiaTrackerImport();
   testBasic();
   testBasicSyntax(kb);
   testFormatOrder(kb);
