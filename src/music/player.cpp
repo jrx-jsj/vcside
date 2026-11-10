@@ -25,6 +25,7 @@ void Player::start(const Song& song, double audioClock, SongPosition from) {
 void Player::stop() {
   playing_ = false;
   for (auto& voice : voices_) voice.active = voice.locked = false;
+  tiaVoice_.active = false;
 }
 
 void Player::updateSong(const Song& song) {
@@ -32,13 +33,16 @@ void Player::updateSong(const Song& song) {
   if (next_.order >= (int)song_.order.size()) next_ = {};
   for (auto& voice : voices_)
     if (voice.instrument >= (int)song_.instruments.size()) voice.active = false;
+  if (tiaVoice_.instrument >= (int)song_.instruments.size()) tiaVoice_.active = false;
 }
 
 void Player::noteOn(const Song& song, double audioClock, int channel, int note, int instrument) {
   if (!playing_) song_ = song, audioClock_ = audioClock;
-  Voice& voice = voices_[channel];
+  if (channel == kTiaChannel && !song_.samples()) return;
+  Voice& voice = channel == kTiaChannel ? tiaVoice_ : voices_[channel];
   voice.instrument = instrument;
   voice.locked = false;
+  voice.tia = channel == kTiaChannel;
   trigger(voice, note);
 }
 
@@ -46,6 +50,12 @@ void Player::playEffect(const Song& song, double audioClock, int effect) {
   if (!playing_) song_ = song, audioClock_ = audioClock;
   if (effect < 0 || effect >= (int)song_.effects.size()) return;
   const SoundEffect& sound = song_.effects[effect];
+  if (song_.samples() && sound.tia) {
+    tiaVoice_.tia = true;
+    tiaVoice_.instrument = sound.instrument;
+    trigger(tiaVoice_, sound.note);
+    return;
+  }
   Voice& voice = voices_[std::clamp(sound.channel, 0, song_.channelCount() - 1)];
   voice.instrument = sound.instrument;
   trigger(voice, sound.note);
@@ -53,12 +63,12 @@ void Player::playEffect(const Song& song, double audioClock, int effect) {
 }
 
 void Player::noteOff(int channel) {
-  Voice& voice = voices_[channel];
+  Voice& voice = channel == kTiaChannel ? tiaVoice_ : voices_[channel];
   if (voice.active && !voice.released) voice.released = true, voice.releaseFrame = 0, voice.releaseUsed = voice.releaseVariant;
 }
 
 bool Player::sounding() const {
-  if (playing_) return true;
+  if (playing_ || tiaVoice_.active) return true;
   for (auto& voice : voices_)
     if (voice.active) return true;
   return false;
@@ -75,12 +85,12 @@ void Player::trigger(Voice& voice, int note) {
   voice.restart = true;
   if (!voice.active) return;
   const Instrument& instrument = song_.instruments[voice.instrument];
-  if (song_.samples()) {  // exact pitch: every note is heard
+  if (song_.samples() && !voice.tia) {  // exact pitch: every note is heard
     voice.steps = song_.phaseSteps(note, instrument, audioClock_);
     return;
   }
   // a note no allowed AUDC reaches has an unplayable step: it is not heard
-  if (!instrument.drum) voice.pitch = song_.pitchSequence(note, instrument, audioClock_);
+  if (!instrument.drum) voice.pitch = song_.pitchSequence(note, instrument, audioClock_, voice.tia);
 }
 
 // The song is over: what still sounds goes into its release.
@@ -173,7 +183,7 @@ void Player::output(Voice& voice, int channel, FrameRegisters& registers) {
     volume = release[voice.releaseFrame++];
   }
   bool heard = true;
-  if (song_.samples()) {
+  if (song_.samples() && !voice.tia) {
     registers.sounding[channel] = true;
     registers.instrument[channel] = voice.instrument;
     registers.phaseStep[channel] = voice.steps.empty() ? 0 : voice.steps[std::min(voice.frame, (int)voice.steps.size() - 1)];
@@ -191,12 +201,39 @@ void Player::output(Voice& voice, int channel, FrameRegisters& registers) {
   voice.frame++;
 }
 
+void Player::outputTia(FrameRegisters& registers) {
+  // the effect's voice as if it were a channel of a TIA song, then moved to channel 1's place
+  FrameRegisters own;
+  VoiceTrace kept = traces_[0];
+  output(tiaVoice_, 0, own);
+  traces_[0] = kept;
+  registers.tiaControl = own.control[0], registers.tiaFrequency = own.frequency[0], registers.tiaVolume = own.volume[0];
+}
+
 FrameRegisters Player::nextFrame() {
   if (playing_ && framesLeft_ <= 0) playRow();
   if (framesLeft_ > 0) framesLeft_--;
   FrameRegisters registers;
   for (int channel = 0; channel < song_.channelCount(); channel++) output(voices_[channel], channel, registers);
+  if (song_.samples()) outputTia(registers);
   return registers;
+}
+
+std::vector<TiaFrame> tiaEffectFrames(const Song& song, double audioClock, int effect, int maxFrames, bool* endless) {
+  std::vector<TiaFrame> frames;
+  if (endless) *endless = false;
+  Player player;
+  player.playEffect(song, audioClock, effect);
+  while (player.tiaEffectSounding()) {
+    FrameRegisters registers = player.nextFrame();
+    if (!player.tiaEffectSounding()) break;  // the frame it ended on is already silence
+    if ((int)frames.size() == maxFrames) {
+      if (endless) *endless = true;
+      break;
+    }
+    frames.push_back({registers.tiaControl, registers.tiaFrequency, registers.tiaVolume});
+  }
+  return frames;
 }
 
 int linesPerFrame(const std::string& tv) { return (tv == "PAL" || tv == "SECAM" || tv == "NTSC50") ? 312 : 262; }
@@ -275,7 +312,10 @@ void Renderer::renderFrame(std::vector<float>& output) {
   if (player.song().samples()) {  // one level per scanline in AUDV0, AUDC0 = 0
     lineLevels_.clear();
     mixer_.render(player.song(), registers_, linesPerFrame_, lineLevels_, muted);
-    tia_.channels[0].control = tia_.channels[1].control = tia_.channels[1].volume = 0;
+    tia_.channels[0].control = 0;
+    tia_.channels[1].control = registers_.tiaControl;  // a sound effect on the TIA's channel 1
+    tia_.channels[1].frequency = registers_.tiaFrequency;
+    tia_.channels[1].volume = registers_.tiaVolume;
     for (uint8_t level : lineLevels_) {
       tia_.channels[0].volume = level;
       resampler_.push(tia_.clock(), raw_);

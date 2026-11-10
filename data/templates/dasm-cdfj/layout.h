@@ -12,8 +12,9 @@
 #define LAYOUT_INPT4 2          /* the left fire button (bit 7 = 0: down) */
 #define LAYOUT_LINES 3          /* the kernel's lines (192 or 228) */
 
-/* the ARM writes it for the 6507 */
+/* the ARM writes them for the 6507, which reads them in this order */
 #define LAYOUT_HERO_X 4         /* the square's x, in colour clocks */
+#define LAYOUT_TIA 5            /* AUDC1, AUDF1 and AUDV1: sound effects on the TIA's channel 1 */
 
 /* the ARM's alone */
 #define LAYOUT_WAVES 32         /* the three voices' waveforms, 32 samples each */

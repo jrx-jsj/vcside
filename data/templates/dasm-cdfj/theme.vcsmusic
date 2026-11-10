@@ -7,10 +7,11 @@
    "note": 72
   },
   {
-   "channel": 2,
+   "channel": 1,
    "instrument": 5,
    "name": "bump",
-   "note": 40
+   "note": 40,
+   "tia": true
   }
  ],
  "export": {
@@ -214,12 +215,15 @@
    "wave": "saw"
   },
   {
-   "controls": [
-    4,
-    12
+   "audc": [
+    15
    ],
+   "audf": [
+    24,
+    28
+   ],
+   "drum": true,
    "name": "bump",
-   "noise_bits": 5,
    "releases": [
     []
    ],
@@ -234,8 +238,7 @@
       0
      ]
     }
-   ],
-   "wave": "noise"
+   ]
   }
  ],
  "loop_to": 0,

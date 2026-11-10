@@ -13,6 +13,8 @@
 
 namespace vcs::music {
 
+constexpr int kTiaChannel = -1;
+
 struct FrameRegisters {
   // TIA: what each channel writes. Samples: volume is the voice's (0..15) for the frame.
   uint8_t control[kMaxChannels] = {}, frequency[kMaxChannels] = {}, volume[kMaxChannels] = {};
@@ -22,6 +24,8 @@ struct FrameRegisters {
   bool sounding[kMaxChannels] = {}, restart[kMaxChannels] = {};
   uint32_t phaseStep[kMaxChannels] = {};
   int instrument[kMaxChannels] = {};
+  // Samples: the TIA's channel 1, for sound effects on it (silent when none sounds).
+  uint8_t tiaControl = 0, tiaFrequency = 0, tiaVolume = 0;
 };
 
 // Where the song is: the order entry and the row.
@@ -47,11 +51,14 @@ class Player {
   // A new version of the song while it plays (an edit): the position is kept.
   void updateSong(const Song& song);
   // One note on a channel, outside the song (the editor's preview); held until noteOff.
+  // kTiaChannel: on the TIA's channel 1 of a song of samples, as its sound effects play.
   void noteOn(const Song& song, double audioClock, int channel, int note, int instrument);
   void noteOff(int channel);
   // A sound effect of the song (Song::effects) on its channel: the music's notes there
-  // wait until it has ended, as in the exported player.
+  // wait until it has ended, as in the exported player. In a song of samples, one on the
+  // TIA's channel 1 sounds there, apart from the voices.
   void playEffect(const Song& song, double audioClock, int effect);
+  bool tiaEffectSounding() const { return tiaVoice_.active; }
 
   FrameRegisters nextFrame();
   bool playing() const { return playing_; }
@@ -69,21 +76,32 @@ class Player {
     std::vector<PitchStep> pitch;  // melodic: frame by frame, the last one stays
     std::vector<uint32_t> steps;   // samples: the phase step frame by frame, the last one stays
     bool restart = false;          // samples: a note started since the last frame
+    bool tia = false;              // samples: the TIA's channel 1 (a sound effect)
   };
   void playRow();
   void end();
   void trigger(Voice& voice, int note);
   void output(Voice& voice, int channel, FrameRegisters& registers);
+  void outputTia(FrameRegisters& registers);
 
   Song song_;
   double audioClock_ = 0;
   Voice voices_[kMaxChannels];
+  Voice tiaVoice_;  // samples: a sound effect on the TIA's channel 1
   int channelInstruments_[kMaxChannels] = {};  // for the channel's next notes
   VoiceTrace traces_[kMaxChannels];
   bool playing_ = false;
   SongPosition next_, shown_;
   int framesLeft_ = 0;  // in the current row
 };
+
+// A sound effect on the TIA's channel 1 (song of samples), frame by frame as the player
+// plays it: AUDC1, AUDF1 and AUDV1, until it ends (at most maxFrames; endless: it was
+// still sounding then).
+struct TiaFrame {
+  uint8_t control = 0, frequency = 0, volume = 0;
+};
+std::vector<TiaFrame> tiaEffectFrames(const Song& song, double audioClock, int effect, int maxFrames, bool* endless = nullptr);
 
 // Lines per video frame for a TV standard (262 or 312).
 int linesPerFrame(const std::string& tv);

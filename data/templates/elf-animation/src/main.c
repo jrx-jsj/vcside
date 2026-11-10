@@ -9,7 +9,9 @@
  * theme.music.h): a sound plays when the hero reaches an edge and another on the fire
  * button. It is played as samples: the ARM mixes the song's voices into one level per
  * scanline, written to AUDV0 (with AUDC0 = 0) on every line of the kernel and by the
- * overblank program on the overblank's lines.
+ * overblank program on the overblank's lines. "fire" takes a voice while it sounds; "bump"
+ * plays on the TIA's channel 1 instead, as a TIA sound: the kernel writes AUDC1, AUDF1 and
+ * AUDV1 from music_tia once per frame.
  *
  * The ARM feeds the 6507 every instruction of the visible lines; during the overblank the
  * 6507 runs VSYNC, VBLANK and overscan by itself and the ARM runs the game logic.
@@ -92,6 +94,9 @@ static RAM_FUNC void kernel(void)
     vcsSta3(WSYNC);
     vcsWrite5(AUDV0, music_level[lines - 1]);
     vcsWrite5(VBLANK, 2);
+    vcsWrite5(AUDC1, music_tia[0]); /* "bump", on the TIA's channel 1 (silent when it ends) */
+    vcsWrite5(AUDF1, music_tia[1]);
+    vcsWrite5(AUDV1, music_tia[2]);
     vcsWrite5(GRP0, 0);
     swcha = vcsRead4(SWCHA);
     swchb = vcsRead4(SWCHB);
@@ -105,6 +110,7 @@ static RAM_FUNC void leave(void)
     vcsEndOverblank();
     vcsWrite5(VBLANK, 2);
     vcsWrite5(AUDV0, 0);
+    vcsWrite5(AUDV1, 0);
     vcsJmp3();
     vcsNop2n(1024);
 }

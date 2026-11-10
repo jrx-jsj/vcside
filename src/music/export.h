@@ -31,6 +31,9 @@ namespace vcs::music {
 // played by a DPC+ cartridge. Cdfj: C for a CDFJ cartridge's ARM code, which plays them.
 enum class ExportTarget { Dasm, BatariBasic, C, DpcPlus, Cdfj };
 
+// The longest sound effect on the TIA's channel 1, in frames (its table counts frames + 1 in a byte).
+constexpr int kMaxTiaEffectFrames = 254;
+
 struct ExportOptions {
   ExportTarget target = ExportTarget::Dasm;
   // batari Basic: the variable the player's 19 bytes start at ("h" uses h to z).

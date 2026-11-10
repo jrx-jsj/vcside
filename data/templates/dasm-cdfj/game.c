@@ -10,6 +10,8 @@
  * samples with three voices, and its two sound effects; saving it writes theme.music.h.
  * The cartridge plays the voices: each one's waveform (32 samples) in the display data,
  * its note set with the driver. The two macros below are how the player gives them.
+ * "fire" takes a voice while it sounds; "bump" plays on the TIA's channel 1 instead, as a
+ * TIA sound: the player leaves AUDC1, AUDF1 and AUDV1 in music_tia, for main.asm to write.
  */
 #include <stdint.h>
 
@@ -65,8 +67,10 @@ static void frame(int lines, uint8_t swcha, uint8_t inpt4)
 
     music_frame(lines);
 
-    /* what the 6507 reads: the square's x, and its graphics line by line */
+    /* what the 6507 reads: the square's x, the TIA's channel 1, and the square's graphics
+     * line by line */
     uint8_t *display = CDFJ_DISPLAY;
+    for (int i = 0; i < 3; i++) display[LAYOUT_TIA + i] = music_tia[i];
     for (int line = 0; line < lines; line++)
         display[LAYOUT_HERO_GFX + line] = (unsigned)(line - hero_y) < HERO_HEIGHT ? 0xFF : 0x00;
     display[LAYOUT_HERO_X] = hero_x;

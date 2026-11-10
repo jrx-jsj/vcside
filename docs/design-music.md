@@ -101,6 +101,8 @@ With AUDC = 0 the TIA outputs AUDV as a level, so a program that writes AUDV0 on
   - Playback follows the cursor, and one channel can be heard alone.
   - Export to WAV.
 - **Sound effects:** sounds the game plays when something happens (a jump, a shot): an instrument and a note on a channel, with a name. While one sounds, the song's notes on that channel wait.
+  - **TIA songs:** an effect takes one of the two channels, usually channel 1, and the song's notes there wait until it ends.
+  - **Songs of samples (ELF, DPC+, CDFJ):** the voices all go to AUDV0, so the TIA's channel 1 is free. An effect marked *TIA channel 1* plays there as a TIA instrument (drum or melodic, noise included) and the song keeps all its voices. It is exported as a table, one AUDC1/AUDF1/AUDV1 triplet per frame, made by the editor's own player, so it sounds the same; its volume envelope must end on 0 (at most 254 frames). The C player leaves the frame's values in `music_tia[3]` for the game to write once per frame; the DPC+ 6502 player writes them itself in `MusicFrame` (3 more bytes of zero page).
 - **Output on save** (*Export...* chooses where; the song remembers it):
   - **DASM:** `<name>.music.asm` with VCSIDE's player (CC0) and the song's tables, in one file. The program defines `MUSIC_RAM` (19 bytes of zero page) before including it.
   - **batari Basic:** the same file, with `MUSIC_RAM` set to a variable (`h` uses h to z), put in with `inline` and called from `asm` blocks.
@@ -111,7 +113,7 @@ With AUDC = 0 the TIA outputs AUDV as a level, so a program that writes AUDV0 on
 - **Import:**
   - TIATracker `.ttt`: its instruments, percussion and patterns.
   - MIDI files (later): notes per channel, then tuned.
-- **Example projects:** the DASM example and the batari Basic template play a short song, with a sound effect on the fire button and another when the hero (or the square) reaches an edge or a wall. The C (ELF) template and its example play a 3-voice song as samples, with the same two effects. The DASM example "music on a DPC+ cartridge" plays that song on DPC+'s three voices, with the same effects; each scanline's luminance is the amplitude written to AUDV0. The example "C and music on a CDFJ cartridge" does the same on CDFJ, with the game logic and the player in C on the cartridge's ARM.
+- **Example projects:** the DASM example and the batari Basic template play a short song, with a sound effect on the fire button and another when the hero (or the square) reaches an edge or a wall. The C (ELF) template and its example play a 3-voice song as samples, with the same two effects: "fire" on a voice and "bump" on the TIA's channel 1. The DASM example "music on a DPC+ cartridge" plays that song on DPC+'s three voices, with the same effects ("bump" on the TIA's channel 1); each scanline's luminance is the amplitude written to AUDV0. The example "C and music on a CDFJ cartridge" does the same on CDFJ, with the game logic and the player in C on the cartridge's ARM.
 
 ## Credits
 
@@ -136,6 +138,7 @@ Each technique, with whoever devised or spread it. The editor's help shows the s
 | Direct digital synthesis (phase accumulator) | A general technique with no single author |
 | Samples on the overblank's lines of an ELF game | The ELF loader's own overblank program (United Carts of Atari firmware, Stella, Gopher2600) plays a nibble per line from RIOT RAM to $2D; VCSIDE's templates change that write to AUDV0. Who designed the program's sample slot is still to be found |
 | Sound effects that take a music channel while they sound | Common in 2600 games; who did it first is still to be found |
+| Sound effects on the TIA's free channel while the cartridge plays the music on the other | Done in DPC+ and CDFJ games; who did it first is still to be found |
 
 ## Phases for 0.2.0
 

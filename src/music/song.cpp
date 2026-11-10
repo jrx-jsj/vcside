@@ -99,9 +99,9 @@ static double centsFrom(double audioClock, int control, int frequency, double no
   return (noteNumber(pitchHz(audioClock, distortion->period, frequency), referenceCents) - note) * 100.0;
 }
 
-NotePitch Song::pitchOf(int note, const Instrument& instrument, double audioClock) const {
+NotePitch Song::pitchOf(int note, const Instrument& instrument, double audioClock, bool onTia) const {
   int heard = note + tuning.transpose;
-  if (samples()) {  // the ARM plays any pitch: every note is exact
+  if (samples() && !onTia) {  // the ARM plays any pitch: every note is exact
     NotePitch exact;
     exact.note = note, exact.playable = true;
     exact.hz = 440.0 * std::pow(2.0, (heard - 69 + tuning.referenceCents / 100.0) / 12.0);
@@ -123,7 +123,7 @@ NotePitch Song::pitchOf(int note, const Instrument& instrument, double audioCloc
   return pitch;
 }
 
-std::vector<PitchStep> Song::pitchSequence(int note, const Instrument& instrument, double audioClock) const {
+std::vector<PitchStep> Song::pitchSequence(int note, const Instrument& instrument, double audioClock, bool onTia) const {
   int heard = note + tuning.transpose;
   std::vector<PitchStep> steps;
   auto byHand = instrument.byHand.find(heard);
@@ -137,7 +137,7 @@ std::vector<PitchStep> Song::pitchSequence(int note, const Instrument& instrumen
     if (steps.empty()) steps.push_back(PitchStep{true, byHand->second.control, 0, centsFrom(audioClock, byHand->second.control, 0, heard, tuning.referenceCents)});
     return steps;
   }
-  NotePitch base = pitchOf(note, instrument, audioClock);
+  NotePitch base = pitchOf(note, instrument, audioClock, onTia);
   PitchStep first{base.playable, base.control, base.frequency, base.cents};
   if (!base.playable || instrument.pitch.empty()) return {first};
   for (int offset : instrument.pitch) {
@@ -157,6 +157,13 @@ std::vector<PitchStep> Song::pitchSequence(int note, const Instrument& instrumen
     steps.push_back(step);
   }
   return steps;
+}
+
+bool Song::playsOnTia(int instrument) const {
+  if (!samples()) return true;
+  for (auto& effect : effects)
+    if (effect.tia && effect.instrument == instrument) return true;
+  return false;
 }
 
 bool Song::patternSpeeds() const {
@@ -278,7 +285,11 @@ std::string toJson(const Song& song) {
                  {"goal", song.tuning.goal == TuningGoal::Average ? "average" : "worst"}};
   json effects = json::array();
   for (auto& effect : song.effects)
-    effects.push_back({{"name", effect.name}, {"instrument", effect.instrument}, {"note", effect.note}, {"channel", effect.channel}});
+  {
+    json item = {{"name", effect.name}, {"instrument", effect.instrument}, {"note", effect.note}, {"channel", effect.channel}};
+    if (song.samples() && effect.tia) item["tia"] = true;
+    effects.push_back(item);
+  }
   json document = {{"format", "vcsmusic"}, {"version", 2},       {"name", song.name},       {"target", song.samples() ? "samples" : "tia"},
                    {"speed", song.speed},  {"swing", song.swing}, {"tuning", tuning},       {"instruments", instruments},
                    {"order", song.order},  {"loop_to", song.loopTo}, {"patterns", patterns}};
@@ -398,6 +409,7 @@ bool fromJson(const std::string& text, Song* song, std::string* error) {
       effect.instrument = std::max(0, item.value("instrument", 0));
       effect.note = std::clamp(item.value("note", 60), 0, 127);
       effect.channel = std::clamp(item.value("channel", 1), 0, parsed.channelCount() - 1);
+      effect.tia = parsed.samples() && item.value("tia", false);
       parsed.effects.push_back(effect);
     }
     *song = std::move(parsed);

@@ -9,7 +9,9 @@
 ; copies that sum (the AMPLITUDE stream) to AUDV0 on every line, with AUDC0 = 0.
 ;
 ; The joystick moves the square; the fire button plays the "fire" effect and reaching
-; an edge plays "bump" (game.c). The background shows the sound: each line's
+; an edge plays "bump" (game.c). "fire" takes a voice while it sounds; "bump" plays on
+; the TIA's channel 1, as a TIA sound (game.c leaves AUDC1, AUDF1 and AUDV1 after the
+; square's x). The background shows the sound: each line's
 ; luminance is the amplitude written to AUDV0 on it.
 ;
 ; With fast fetch on, "lda #n" with n from 0 to $23 reads data stream n instead of
@@ -100,6 +102,12 @@ StartFrame
         sta WSYNC
         sta HMOVE
         SOUND
+        lda #DSCOMM             ; then "bump", on the TIA's channel 1 (LAYOUT_TIA)
+        sta AUDC1
+        lda #DSCOMM
+        sta AUDF1
+        lda #DSCOMM
+        sta AUDV1
 .vblank sta WSYNC               ; until the timer runs out, a line at a time
         SOUND
         lda INTIM

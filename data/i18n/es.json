@@ -750,9 +750,11 @@
     "Some layers overlap: the TIA draws P0 and M0 over P1 and M1, and those over the ball and playfield (the preview does the same).": "Algunas capas se solapan: el TIA dibuja P0 y M0 sobre P1 y M1, y estos sobre la bola y el playfield (la vista previa hace lo mismo).",
     "Some lines change {0} registers (playfield and colours): together with sprites it may not fit in one line.": "Algunas líneas cambian {0} registros (playfield y colores): junto con los sprites puede no caber en una línea.",
     "Sound": "Sonido",
+    "Sound effect {0} on the TIA's channel 1 lasts more than {1} frames: its volume envelope must end on 0": "El efecto {0} en el canal 1 del TIA dura más de {1} fotogramas: su envolvente de volumen tiene que acabar en 0",
     "Sound effect {0}: another one has the same name": "Efecto de sonido {0}: otro tiene el mismo nombre",
     "Sound effect {0}: its instrument does not exist": "Efecto de sonido {0}: su instrumento no existe",
     "Sound effects": "Efectos de sonido",
+    "Sound effects on the TIA's channel 1 use it: it plays as a TIA instrument there.": "Lo usan efectos en el canal 1 del TIA: allí suena como instrumento del TIA.",
     "Sounds it may use": "Sonidos que puede usar",
     "Sounds the game plays when something happens. While one sounds, the song's notes on its channel wait.": "Sonidos que el juego toca cuando pasa algo. Mientras suena uno, las notas de la canción en su canal esperan.",
     "Sources": "Fuentes",
@@ -815,6 +817,7 @@
     "The file fits the loader's buffer, so it is read whole into RAM. The zeroed variables go to the CCM RAM.": "El archivo cabe en el búfer del cargador, así que se lee entero en RAM. Las variables a cero van a la RAM CCM.",
     "The file is bigger than the loader's buffer: it goes to flash, and the code, the variables with a value and the constants with pointers ({0} bytes) are copied to RAM. The zeroed variables go to the CCM RAM.": "El archivo es mayor que el búfer del cargador: va a la flash, y el código, las variables con valor y las constantes con punteros ({0} bytes) se copian a RAM. Las variables a cero van a la RAM CCM.",
     "The file the build starts from, relative to the project.": "El archivo desde el que se compila, relativo al proyecto.",
+    "The game writes AUDC1, AUDF1 and AUDV1 once per frame, as the player leaves them (see the export).": "El juego escribe AUDC1, AUDF1 y AUDV1 una vez por fotograma, tal como los deja el reproductor (mira la exportación).",
     "The kernel option player1colors (or playercolors) uses missile 1's time.": "La opción de kernel player1colors (o playercolors) usa el tiempo del misil 1.",
     "The kernel option playercolors uses both missiles' time.": "La opción de kernel playercolors usa el tiempo de los dos misiles.",
     "The kernel option playercolors works together with player1colors: `set kernel_options player1colors playercolors`.": "La opción de kernel playercolors va junto con player1colors: `set kernel_options player1colors playercolors`.",
@@ -852,6 +855,7 @@
     "The TIA's two channels: AUDC, AUDF and AUDV once per frame. Any cartridge.": "Los dos canales de la TIA: AUDC, AUDF y AUDV una vez por frame. Cualquier cartucho.",
     "The two channels loop with lengths that take too long to meet again: the imported song loops where the longer one ends.": "Los dos canales repiten con longitudes que tardan demasiado en coincidir: la canción importada repite donde acaba el más largo.",
     "the two squares: playfield and background colours": "los dos cuadros: colores de playfield y fondo",
+    "The voices all go to AUDV0, so the TIA's channel 1 is free: the effect sounds there, with the TIA's own sounds (noise included), and the song keeps all its voices. Its instrument becomes a TIA one. DPC+ and CDFJ games do this; who did it first is still to be found.": "Todas las voces van a AUDV0, así que el canal 1 del TIA queda libre: el efecto suena allí, con los sonidos propios del TIA (ruido incluido), y la canción conserva todas sus voces. Su instrumento pasa a ser del TIA. Lo hacen juegos de DPC+ y CDFJ; quién lo hizo primero está por averiguar.",
     "The whole song from the start. Space in the pattern plays from the cursor.": "Toda la canción desde el principio. Espacio en el patrón toca desde el cursor.",
     "the worst note": "la peor nota",
     "The {0} format has no space data yet: 4 KB banks assumed.": "El formato {0} aún no tiene datos de espacio: se suponen bancos de 4 KB.",
@@ -876,6 +880,7 @@
     "This model runs on {0}, not on this computer. Your messages, and any file, selection or build output you attach, will be sent there.": "Este modelo funciona en {0}, no en este ordenador. Tus mensajes, y cualquier fichero, selección o salida de compilación que adjuntes, se enviarán allí.",
     "This song has more than 3 voices.": "Esta canción tiene más de 3 voces.",
     "TIA": "TIA",
+    "TIA channel 1": "Canal 1 del TIA",
     "TIA chip": "Chip TIA",
     "TIATracker song imported as {0}.": "Canción de TIATracker importada como {0}.",
     "Timing": "Temporización",
@@ -949,6 +954,7 @@
     "What you hear is the TIA counter by counter, as Chris Brenner described it (\"TIA Sounding Off in the Digital Domain\"), with the two channels mixed by his formula as Thomas Jentzsch simplified it. The pitches are those of Ron Fries' TIASOUND and of the tables by Eckhard Stolberg and Paul Slocum.": "Lo que se oye es el TIA contador a contador, como lo describió Chris Brenner («TIA Sounding Off in the Digital Domain»), con los dos canales mezclados por su fórmula tal como la simplificó Thomas Jentzsch. Los tonos son los de TIASOUND de Ron Fries y los de las tablas de Eckhard Stolberg y Paul Slocum.",
     "Where a dragged panel will dock": "Dónde se acoplará un panel arrastrado",
     "Where the build leaves the ROM, relative to the project. Run and debug open it.": "Dónde deja la ROM la compilación, relativo al proyecto. Ejecutar y depurar la abren.",
+    "While the effect sounds, the song's notes on this channel wait (usually channel 1).": "Mientras suena el efecto, las notas de la canción en este canal esperan (normalmente el canal 1).",
     "Whole word": "Palabra completa",
     "width": "ancho",
     "Window": "Ventana",
@@ -1048,5 +1054,5 @@
     "{0}:{1}: no listing to place the breakpoint: build first.": "{0}:{1}: no hay listado para situar el punto de ruptura: compila antes.",
     "±{0}": "±{0}"
   },
-  "total": 1045
+  "total": 1051
 }

@@ -66,6 +66,7 @@ class MusicEditor {
   std::vector<Song> undo_, redo_;
   bool dirty_ = false, changed_ = false;
   int revision_ = 0;  // goes up with every change, for what is worked out from the song
+  int previewChannel_ = 0;  // where the note being previewed sounds (kTiaChannel: the TIA's channel 1)
   int order_ = 0, row_ = 0, channel_ = 0, field_ = 0;  // the cursor: field 0 note, 1 instrument, 2 effect
   int instrument_ = 0, octave_ = 4, step_ = 1;
   enum class View { Tracker, PianoRoll, Registers };

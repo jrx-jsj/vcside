@@ -33,6 +33,8 @@ static const char* kPlayer = R"PLAYER(
 ; RAM: MUSIC_RAM and the MUSIC_RAM_BYTES - 1 bytes after it, in zero page.
 ; MUSIC_CHANNELS: 2 for the TIA; DPC+ (MUSIC_DPC = 1) has 1 to 3 voices, and the
 ; player writes their WAVEFORMx and NOTEx instead of AUDCx, AUDFx and AUDVx.
+; MUSIC_TIA_EFFECTS (DPC+): sound effects on the TIA's channel 1, which the voices
+; leave free; MusicFrame writes their AUDC1, AUDF1 and AUDV1.
 ; ---------------------------------------------------------------------------
 
 MusicOrder        = MUSIC_RAM       ; order entry of the next row ($FF: stopped)
@@ -56,7 +58,13 @@ MusicPitch2       = MUSIC_RAM+22
 MusicPitchIndex2  = MUSIC_RAM+24
 MusicState2       = MUSIC_RAM+25
   ENDIF
+  IF MUSIC_TIA_EFFECTS
+MusicTia          = MUSIC_RAM+5+7*MUSIC_CHANNELS  ; the effect's next frame (2 bytes)
+MusicTiaLeft      = MusicTia+2      ; its frames left + 1 (0: none)
+MUSIC_RAM_BYTES   = 8 + 7 * MUSIC_CHANNELS
+  ELSE
 MUSIC_RAM_BYTES   = 5 + 7 * MUSIC_CHANNELS
+  ENDIF
 
 MusicInit SUBROUTINE
     ldx #MUSIC_RAM_BYTES-1
@@ -75,6 +83,9 @@ MusicFrame SUBROUTINE
   IF MUSIC_DPC
     lda AMPLITUDE          ; the kernel's sound goes on while the player works
     sta AUDV0
+  ENDIF
+  IF MUSIC_TIA_EFFECTS
+    jsr MusicTiaFrame
   ENDIF
     lda MusicOrder
     cmp #$FF
@@ -179,6 +190,22 @@ MusicEffect SUBROUTINE
     tay
     ldx MusicEffectSound,y
     lda MusicEffectChannel,y
+  IF MUSIC_TIA_EFFECTS
+    bpl .voice
+    lda MusicTiaLo,x       ; $FF: on the TIA's channel 1; X is its table
+    sta MusicTia
+    lda MusicTiaHi,x
+    sta MusicTia+1
+    ldy #0
+    lda (MusicTia),y       ; its frames + 1
+    sta MusicTiaLeft
+    inc MusicTia
+    bne .tiaReady
+    inc MusicTia+1
+.tiaReady
+    rts
+.voice                     ; (bpl keeps the flags of the channel's lda)
+  ENDIF
     bne .channel1
     jsr MusicStart0
     lda #$80
@@ -200,6 +227,36 @@ MusicEffect SUBROUTINE
     jsr MusicStart2
     lda #$80
     sta MusicPitchIndex2
+    rts
+  ENDIF
+
+  IF MUSIC_TIA_EFFECTS
+; The sound effect on the TIA's channel 1: this frame's AUDC1, AUDF1 and AUDV1.
+MusicTiaFrame SUBROUTINE
+    lda MusicTiaLeft
+    beq .done              ; none
+    dec MusicTiaLeft
+    beq .over
+    ldy #0
+    lda (MusicTia),y
+    sta AUDC1
+    iny
+    lda (MusicTia),y
+    sta AUDF1
+    iny
+    lda (MusicTia),y
+    sta AUDV1
+    lda MusicTia
+    clc
+    adc #3
+    sta MusicTia
+    bcc .done
+    inc MusicTia+1
+.done
+    rts
+.over
+    lda #0                 ; it is over: silent
+    sta AUDV1
     rts
   ENDIF
 
@@ -460,6 +517,11 @@ static const char* kCPlayer = R"PLAYER(
  *                                     the frequency for setNote (2^32 x Hz / 20000);
  *                                     restart: a note started (resetWave, if wanted)
  * and copy the amplitude stream to AUDV0 on every line, with AUDC0 = 0.
+ *
+ * Sound effects on the TIA's channel 1 (MUSIC_TIA_EFFECTS): music_frame leaves this
+ * frame's AUDC1, AUDF1 and AUDV1 in music_tia[0], [1] and [2], for the game to write
+ * once per frame (AUDV1 is 0 once the effect is over); music_tia_left is 0 when none
+ * sounds, for a game that also uses channel 1 for itself.
  * ------------------------------------------------------------------------- */
 
 #define MUSIC_OVERBLANK_LINES 63
@@ -491,6 +553,11 @@ static uint8_t music_cdfj_samples[MUSIC_VOICES][32];
 #else
 uint8_t music_level[312 - MUSIC_OVERBLANK_LINES];
 uint8_t music_nibbles[31];
+#endif
+#if MUSIC_TIA_EFFECTS
+uint8_t music_tia[3];               /* AUDC1, AUDF1 and AUDV1 for this frame */
+uint8_t music_tia_left;             /* frames left of the effect + 1 (0: none) */
+static uint16_t music_tia_at;       /* its next frame, in music_tia_data */
 #endif
 
 static void music_start(music_voice *voice, int sound)
@@ -527,10 +594,21 @@ void music_init(void)
     }
     music_order = music_row = music_wait = 0;
     music_pointer = music_order_offset[0];
+#if MUSIC_TIA_EFFECTS
+    music_tia_left = 0;
+    music_tia[0] = music_tia[1] = music_tia[2] = 0;
+#endif
 }
 
 void music_effect(int effect)
 {
+#if MUSIC_TIA_EFFECTS
+    if (music_effect_voice[effect] == 0xFF) {           /* on the TIA's channel 1 */
+        music_tia_at = music_tia_offset[music_effect_sound[effect]];
+        music_tia_left = music_tia_data[music_tia_at++];
+        return;
+    }
+#endif
     music_voice *voice = &music_voices[music_effect_voice[effect]];
     music_start(voice, music_effect_sound[effect]);
     voice->pitch_index = 0x80;
@@ -627,6 +705,16 @@ void music_frame(int lines)
     }
 voices:
     for (int i = 0; i < MUSIC_VOICES; i++) music_voice_frame(&music_voices[i]);
+#if MUSIC_TIA_EFFECTS
+    if (music_tia_left && --music_tia_left) {           /* the effect's frame on the TIA's channel 1 */
+        music_tia[0] = music_tia_data[music_tia_at];
+        music_tia[1] = music_tia_data[music_tia_at + 1];
+        music_tia[2] = music_tia_data[music_tia_at + 2];
+        music_tia_at += 3;
+    } else {
+        music_tia[2] = 0;                               /* none, or it is over: silent */
+    }
+#endif
 #if MUSIC_CDFJ
     /* each voice's waveform at one of the levels the cartridge's sum allows */
     (void)lines;
@@ -869,7 +957,8 @@ static std::string cList(const std::vector<long long>& values, const char* inden
 
 // The song as C data (no pointers: the tables stay in flash), then the C player.
 static ExportResult writeC(const Song& song, Builder& builder, std::map<std::tuple<int, int, int>, Event>& events,
-                           const std::vector<std::pair<std::string, std::pair<int, int>>>& effects, const ExportOptions& options, ExportResult& result) {
+                           const std::vector<std::pair<std::string, std::pair<int, int>>>& effects, const std::vector<std::vector<TiaFrame>>& tiaTables,
+                           const ExportOptions& options, ExportResult& result) {
   std::ostringstream out;
   int dataBytes = 0;
   int channels = song.channelCount();
@@ -886,6 +975,7 @@ static ExportResult writeC(const Song& song, Builder& builder, std::map<std::tup
   out << "#define MUSIC_ORDER_LENGTH " << song.order.size() << "\n";
   out << "#define MUSIC_LOOP_TO " << (song.loopTo >= 0 ? std::to_string(song.loopTo) : "MUSIC_ORDER_LENGTH  /* stops at the end */") << "\n";
   out << "#define MUSIC_MIX " << mixFactor(song.gain, channels) << "u  /* the sum of the voices to quarters of a level, in 1/65536 */\n";
+  out << "#define MUSIC_TIA_EFFECTS " << tiaTables.size() << "  /* sound effects on the TIA's channel 1 (music_tia) */\n";
   for (size_t index = 0; index < effects.size(); index++) out << "#define " << effects[index].first << " " << index << "\n";
   // patterns, one after another, and where each order entry starts
   std::vector<long long> patternBytes, orderOffset, orderRows;
@@ -976,6 +1066,18 @@ static ExportResult writeC(const Song& song, Builder& builder, std::map<std::tup
   out << "static const uint8_t music_effect_sound[] = {\n" << cList(effectSound) << "};\n";
   out << "static const uint8_t music_effect_voice[] = {\n" << cList(effectVoice) << "};\n";
   dataBytes += (int)builder.sounds.entries.size() * 4 + (int)effects.size() * 2;
+  // sound effects on the TIA's channel 1: frames + 1, then AUDC1, AUDF1 and AUDV1 for each frame
+  if (!tiaTables.empty()) {
+    std::vector<long long> offsets, bytes;
+    for (auto& frames : tiaTables) {
+      offsets.push_back((long long)bytes.size());
+      bytes.push_back((long long)frames.size() + 1);
+      for (auto& frame : frames) bytes.insert(bytes.end(), {frame.control, frame.frequency, frame.volume});
+    }
+    out << "static const uint16_t music_tia_offset[] = {\n" << cList(offsets) << "};\n";
+    out << "static const uint8_t music_tia_data[] = {\n" << cList(bytes) << "};\n";
+    dataBytes += (int)offsets.size() * 2 + (int)bytes.size();
+  }
   // waveforms: 32 levels each; noise ones have the register's feedback mask instead
   std::vector<long long> masks;
   out << "static const uint8_t music_waves[][32] = {\n";
@@ -1081,8 +1183,10 @@ ExportResult exportSong(const Song& song, double audioClock, const ExportOptions
   if (song.loopTo >= 0)
     for (int pass = 0; pass < 4 && walk(song.loopTo); pass++) {
     }
-  // sound effects
-  std::vector<std::pair<std::string, std::pair<int, int>>> effects;  // symbol, sound and channel
+  // sound effects; in a song of samples, those on the TIA's channel 1 become tables of
+  // AUDC1, AUDF1 and AUDV1 frame by frame, played as the editor plays them (channel $FF)
+  std::vector<std::pair<std::string, std::pair<int, int>>> effects;  // symbol, sound (or table) and channel
+  std::vector<std::vector<TiaFrame>> tiaTables;
   std::set<std::string> symbols;
   for (auto& effect : song.effects) {
     std::string symbol = effectSymbol(effect.name);
@@ -1092,6 +1196,15 @@ ExportResult exportSong(const Song& song, double audioClock, const ExportOptions
     }
     if (!symbols.insert(symbol).second) {
       builder.problem(F("Sound effect {0}: another one has the same name", {effect.name}));
+      continue;
+    }
+    if (song.samples() && effect.tia) {
+      int index = (int)(&effect - song.effects.data());
+      bool endless = false;
+      std::vector<TiaFrame> frames = tiaEffectFrames(song, audioClock, index, kMaxTiaEffectFrames, &endless);
+      if (endless) builder.problem(F("Sound effect {0} on the TIA's channel 1 lasts more than {1} frames: its volume envelope must end on 0", {effect.name, std::to_string(kMaxTiaEffectFrames)}));
+      effects.push_back({symbol, {(int)tiaTables.size(), 0xFF}});
+      tiaTables.push_back(frames);
       continue;
     }
     effects.push_back({symbol, {builder.sound(effect.instrument, effect.note, 0, 0), std::clamp(effect.channel, 0, channels - 1)}});
@@ -1122,7 +1235,7 @@ ExportResult exportSong(const Song& song, double audioClock, const ExportOptions
       result.problems.push_back(F("{0} waveforms at {1} volumes do not fit in DPC+'s 128 waveform slots", {std::to_string(waves), std::to_string(most)}));
     if (result.problems.size() > before) return result;
   }
-  if (options.target == ExportTarget::C || cdfj) return writeC(song, builder, events, effects, options, result);
+  if (options.target == ExportTarget::C || cdfj) return writeC(song, builder, events, effects, tiaTables, options, result);
 
   // the text
   std::ostringstream out;
@@ -1137,7 +1250,7 @@ ExportResult exportSong(const Song& song, double audioClock, const ExportOptions
     out << "; and put 'inline <this file>' where the program never runs into it (after a goto).\n";
     out << "\nMUSIC_RAM = " << options.ramStart << "\n";
   } else if (dpc) {
-    int ramBytes = 5 + 7 * channels;
+    int ramBytes = 5 + 7 * channels + (tiaTables.empty() ? 0 : 3);
     out << ";\n; DPC+: include this file three times, with MUSIC_PART set before each:\n";
     out << ";   MUSIC_PART SET 1   in a bank of 6507 code: the player and the song (after DPCplus.h)\n";
     out << ";   MUSIC_PART SET 2   in the display data: the waveforms (" << (1 + (int)builder.waves.entries.size() * dpcMaxLevel(channels)) * 32 << " bytes)\n";
@@ -1165,6 +1278,7 @@ ExportResult exportSong(const Song& song, double audioClock, const ExportOptions
   out << "MUSIC_LOOP_TO = " << (song.loopTo >= 0 ? std::to_string(song.loopTo) : "MUSIC_ORDER_LENGTH  ; stops at the end") << "\n";
   out << "MUSIC_CHANNELS = " << channels << "\n";
   out << "MUSIC_DPC = " << (dpc ? 1 : 0) << "\n";
+  out << "MUSIC_TIA_EFFECTS = " << tiaTables.size() << "  ; sound effects on the TIA's channel 1\n";
   for (size_t index = 0; index < effects.size(); index++) out << effects[index].first << " = " << index << "\n";
   out << kPlayer;
   out << "\n; ---- the song ----\n";
@@ -1222,6 +1336,21 @@ ExportResult exportSong(const Song& song, double audioClock, const ExportOptions
   out << "MusicEffectSound\n" << (effects.empty() ? "    .byte 0\n" : byteList(effectSounds));
   out << "MusicEffectChannel\n" << (effects.empty() ? "    .byte 0\n" : byteList(effectChannels));
   dataBytes += (int)effects.size() * 2;
+  // sound effects on the TIA's channel 1: frames + 1, then AUDC1, AUDF1 and AUDV1 for each frame
+  if (!tiaTables.empty()) {
+    std::string lows = "MusicTiaLo\n", highs = "MusicTiaHi\n";
+    for (size_t index = 0; index < tiaTables.size(); index++) {
+      lows += listSeparator(index) + "<MusicTiaData" + std::to_string(index);
+      highs += listSeparator(index) + ">MusicTiaData" + std::to_string(index);
+    }
+    out << lows << "\n" << highs << "\n";
+    for (size_t index = 0; index < tiaTables.size(); index++) {
+      std::vector<int> bytes = {(int)tiaTables[index].size() + 1};
+      for (auto& frame : tiaTables[index]) bytes.insert(bytes.end(), {frame.control, frame.frequency, frame.volume});
+      out << "MusicTiaData" << index << "\n" << byteList(bytes);
+      dataBytes += 2 + (int)bytes.size();
+    }
+  }
   // envelopes: length, loop ($FF none), values; releases: length, $FF, values
   auto pointerTables = [&](const char* name, const char* dataName, size_t count) {
     std::string low = std::string(name) + "Lo\n", high = std::string(name) + "Hi\n";

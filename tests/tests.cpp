@@ -885,6 +885,7 @@ static void testElfSpace() {
       std::ifstream musicFile(dpcDir / "theme.music.asm");
       std::string musicText((std::istreambuf_iterator<char>(musicFile)), {});
       CHECK(musicText.find("MUSIC_PART = 3") != std::string::npos && musicText.find("MUSIC_EFFECT_FIRE") != std::string::npos);
+      CHECK(musicText.find("MUSIC_TIA_EFFECTS = 1 ") != std::string::npos);  // "bump", on the TIA's channel 1
       std::string dasm = findInPath("dasm");
       if (!dasm.empty()) {
         std::string command = "cd \"" + dpcDir.string() + "\" && \"" + dasm + "\" main.asm -f3 -oexample.bin > dasm.log 2>&1";
@@ -907,6 +908,7 @@ static void testElfSpace() {
     std::ifstream makefile(cdfjDir / "Makefile"), musicFile(cdfjDir / "theme.music.h");
     std::string makeText((std::istreambuf_iterator<char>(makefile)), {}), musicText((std::istreambuf_iterator<char>(musicFile)), {});
     CHECK(makeText.find("NAME      = voices") != std::string::npos && musicText.find("#define MUSIC_CDFJ 1") != std::string::npos);
+    CHECK(musicText.find("#define MUSIC_TIA_EFFECTS 1 ") != std::string::npos);
     std::string make = findInPath("make"), dasm = findInPath("dasm"), gcc = findInPath("arm-none-eabi-gcc");
     if (make.empty() || dasm.empty() || gcc.empty()) {
       std::printf("  (no make, dasm or arm-none-eabi-gcc: the CDFJ example is not built)\n");
@@ -930,8 +932,10 @@ static void testElfSpace() {
   CHECK(Project::create(elfDir.string(), "walker", Language::ElfC, "NTSC", &project, &error, "animation"));
   for (auto fileName : {"Makefile", "include/vcsLib.h", "src/main.c", "src/memcpy_long.S", "src/hero.vcsgfx", "src/hero.gfx.h", "src/theme.vcsmusic", "src/theme.music.h"})
     CHECK(fs::exists(elfDir / fileName));
-  std::ifstream mainFile(elfDir / "src" / "main.c"), headerFile(elfDir / "src" / "hero.gfx.h");
+  std::ifstream mainFile(elfDir / "src" / "main.c"), headerFile(elfDir / "src" / "hero.gfx.h"), elfMusicFile(elfDir / "src" / "theme.music.h");
   std::string mainText((std::istreambuf_iterator<char>(mainFile)), {}), headerText((std::istreambuf_iterator<char>(headerFile)), {});
+  std::string elfMusicText((std::istreambuf_iterator<char>(elfMusicFile)), {});
+  CHECK(elfMusicText.find("#define MUSIC_TIA_EFFECTS 1 ") != std::string::npos && mainText.find("vcsWrite5(AUDV1, music_tia[2]);") != std::string::npos);
   CHECK(mainText.find("walker - made with VCSIDE") != std::string::npos && mainText.find("hero.gfx.h") != std::string::npos);
   CHECK(mainText.find("music_frame(lines + MUSIC_OVERBLANK_LINES);") != std::string::npos);
   CHECK(headerText.find("static const vcsgfx_animation hero_walk = {hero_walk_steps, 4, 1};") != std::string::npos);
@@ -2416,6 +2420,37 @@ static void testMusicExport() {
               compared, skipped, heardFrames, effectsPlayed, mostInstructions);
 }
 
+// Every other sound effect of a song of samples goes to the TIA's channel 1, with a copy of
+// its instrument whose volume ends (an effect there must end). Returns how many.
+static int markTiaEffects(vcs::music::Song& song, double clock) {
+  using namespace vcs::music;
+  int marked = 0;
+  for (size_t index = 0; index < song.effects.size(); index += 2) {
+    SoundEffect& effect = song.effects[index];
+    if (effect.instrument >= (int)song.instruments.size()) continue;
+    Instrument sound = song.instruments[effect.instrument];
+    Envelope& volume = sound.volumes[0];
+    volume.loop = -1;
+    if (volume.values.empty() || volume.values.back() != 0) volume.values.push_back(0);
+    song.instruments.push_back(sound);
+    effect.instrument = (int)song.instruments.size() - 1;
+    effect.tia = true;
+    bool endless = false;
+    CHECK(!tiaEffectFrames(song, clock, (int)index, kMaxTiaEffectFrames, &endless).empty() && !endless);
+    marked++;
+  }
+  return marked;
+}
+
+// The TIA's channel 1 as the exported player left it, against the editor's: the volume
+// always, AUDC1 and AUDF1 while it sounds.
+static bool sameTia(const vcs::music::FrameRegisters& expected, int control, int frequency, int volume, int* heard) {
+  if (volume != expected.tiaVolume) return false;
+  if (!volume) return true;
+  (*heard)++;
+  return control == expected.tiaControl && frequency == expected.tiaFrequency;
+}
+
 // The DPC+ export: songs played as samples, assembled and run on a 6502 frame by frame;
 // each voice's WAVEFORM must point at its waveform scaled to its volume, and its NOTE at
 // its frequency (the phase step at DPC+'s 20 kHz). Skipped without DASM.
@@ -2441,12 +2476,13 @@ static void testDpcExport() {
   four.voices = 4;
   CHECK(!exportSong(four, audioClockHz("NTSC"), {ExportTarget::DpcPlus, "", "NTSC"}).ok);
   CHECK(!exportSong(blankSong(), audioClockHz("NTSC"), {ExportTarget::DpcPlus, "", "NTSC"}).ok);  // a TIA song
-  int compared = 0, skipped = 0, soundingFrames = 0, effectsPlayed = 0;
+  int compared = 0, skipped = 0, soundingFrames = 0, effectsPlayed = 0, tiaFrames = 0;
   for (unsigned seed = 1; seed <= 40; seed++) {
     Song random = randomSampleSong(seed);
     random.voices = std::min(random.voices, 3);
     std::string tv = seed % 3 == 0 ? "PAL" : "NTSC";
     double clock = audioClockHz(tv);
+    markTiaEffects(random, clock);
     ExportResult result = exportSong(random, clock, {ExportTarget::DpcPlus, "", tv});
     bool ambiguousSong = false;
     for (auto& problem : result.problems) ambiguousSong = ambiguousSong || problem.find("depending on what came before") != std::string::npos;
@@ -2483,6 +2519,11 @@ static void testDpcExport() {
       }
       FrameRegisters expected = player.nextFrame();
       same = same && cpu.call(assembled.frame);
+      if (same && !sameTia(expected, cpu.memory[0x16], cpu.memory[0x18], cpu.memory[0x1A], &tiaFrames)) {
+        same = false;
+        std::printf("  seed %u, frame %d: TIA channel 1 %d %d %d, editor %d %d %d\n", seed, frame, cpu.memory[0x16], cpu.memory[0x18], cpu.memory[0x1A],
+                    expected.tiaControl, expected.tiaFrequency, expected.tiaVolume);
+      }
       for (int voice = 0; voice < voices && same; voice++) {
         // the 32 samples the voice's WAVEFORM points at
         const uint8_t* wave = &cpu.memory[0x4000 + 32 * (cpu.memory[0xE0 + voice] & 0x7F)];
@@ -2506,9 +2547,9 @@ static void testDpcExport() {
     compared++;
     if (!same) break;
   }
-  CHECK(compared >= 25 && soundingFrames > 10000 && effectsPlayed > 50);
-  std::printf("  exported DPC+ player: %d songs the same as the editor's (%d skipped as ambiguous; %d voice frames with sound, %d effects)\n", compared, skipped,
-              soundingFrames, effectsPlayed);
+  CHECK(compared >= 25 && soundingFrames > 10000 && effectsPlayed > 50 && tiaFrames > 100);
+  std::printf("  exported DPC+ player: %d songs the same as the editor's (%d skipped as ambiguous; %d voice frames with sound, %d effects, %d frames on the TIA's channel 1)\n",
+              compared, skipped, soundingFrames, effectsPlayed, tiaFrames);
 }
 
 // The CDFJ export: the C player compiled with the computer's C compiler, its two hooks
@@ -2537,14 +2578,17 @@ static void testCdfjExport() {
               "  for (int f = 0; f < frames; f++) {\n    int effect;\n    if (scanf(\"%d\", &effect) != 1) return 1;\n"
               "    if (effect >= 0) music_effect(effect);\n    for (int v = 0; v < 4; v++) given_sounding[v] = 0;\n    music_frame(262);\n"
               "    for (int v = 0; v < MUSIC_VOICES; v++) {\n      for (int k = 0; k < 32; k++) printf(\"%d \", given_wave[v][k]);\n"
-              "      printf(\"%d %u %d \", given_sounding[v], (unsigned)given_note[v], given_restart[v]);\n    }\n    printf(\"\\n\");\n  }\n  return 0;\n}\n";
+              "      printf(\"%d %u %d \", given_sounding[v], (unsigned)given_note[v], given_restart[v]);\n    }\n"
+              "#if MUSIC_TIA_EFFECTS\n    printf(\"%d %d %d\", music_tia[0], music_tia[1], music_tia[2]);\n#else\n    printf(\"0 0 0\");\n#endif\n"
+              "    printf(\"\\n\");\n  }\n  return 0;\n}\n";
   }
-  int compared = 0, skipped = 0, soundingFrames = 0, restarts = 0;
+  int compared = 0, skipped = 0, soundingFrames = 0, restarts = 0, tiaFrames = 0;
   for (unsigned seed = 1; seed <= 24; seed++) {
     Song random = randomSampleSong(seed);
     random.voices = std::min(random.voices, 3);
     std::string tv = seed % 3 == 0 ? "PAL" : "NTSC";
     double clock = audioClockHz(tv);
+    markTiaEffects(random, clock);
     ExportResult result = exportSong(random, clock, {ExportTarget::Cdfj, "", tv});
     bool ambiguousSong = false;
     for (auto& problem : result.problems) ambiguousSong = ambiguousSong || problem.find("depending on what came before") != std::string::npos;
@@ -2607,14 +2651,21 @@ static void testCdfjExport() {
           std::printf("  seed %u, frame %d, voice %d: level %d, step %u, restart %d; C sounding %d frequency %u restart %d\n", seed, frame, voice, level,
                       expected.phaseStep[voice], (int)expected.restart[voice], sounding, frequency, restart);
       }
+      int control = -1, frequency = -1, volume = -1;
+      output >> control >> frequency >> volume;
+      if (same && !sameTia(expected, control, frequency, volume, &tiaFrames)) {
+        same = false;
+        std::printf("  seed %u, frame %d: TIA channel 1 %d %d %d, editor %d %d %d\n", seed, frame, control, frequency, volume, expected.tiaControl,
+                    expected.tiaFrequency, expected.tiaVolume);
+      }
     }
     CHECK(same);
     compared++;
     if (!same) break;
   }
-  CHECK(compared >= 15 && soundingFrames > 5000 && restarts > 100);
-  std::printf("  exported CDFJ player: %d songs the same as the editor's (%d skipped as ambiguous; %d voice frames with sound, %d notes started)\n", compared,
-              skipped, soundingFrames, restarts);
+  CHECK(compared >= 15 && soundingFrames > 5000 && restarts > 100 && tiaFrames > 50);
+  std::printf("  exported CDFJ player: %d songs the same as the editor's (%d skipped as ambiguous; %d voice frames with sound, %d notes started, %d frames on the TIA's channel 1)\n",
+              compared, skipped, soundingFrames, restarts, tiaFrames);
 }
 
 // The exported C player against the editor's: songs played as samples, compiled with the
@@ -2858,6 +2909,19 @@ static void testSampleExport() {
   std::string error;
   CHECK(fromJson(toJson(song), &read, &error) && read.samples() && read.channelCount() == 3 && read.gain == 20);
   CHECK(read.instruments[1].wave == Waveform::Noise && read.instruments[1].noiseBits == 9 && read.instruments[0].drawn[5] == 7 && read.patterns[0].cells[2][3].note == 64);
+  // a sound effect on the TIA's channel 1: kept in JSON, its instrument a TIA one (the snare,
+  // a drum: AUDC 8 frame by frame), played apart from the voices and ending with its envelope
+  SoundEffect zap;
+  zap.name = "zap", zap.instrument = 1, zap.tia = true;
+  song.effects = {zap};
+  CHECK(fromJson(toJson(song), &read, &error) && read.effects.size() == 1 && read.effects[0].tia && song.playsOnTia(1) && !song.playsOnTia(0));
+  std::vector<TiaFrame> zapFrames = tiaEffectFrames(song, ntsc, 0, kMaxTiaEffectFrames);
+  CHECK(zapFrames.size() == 6 && zapFrames[5].volume == 0 && zapFrames[0].control == 8 && zapFrames[0].frequency == 2 && zapFrames[0].volume == 14 && zapFrames[2].frequency == 6);
+  Player zapPlayer;
+  zapPlayer.playEffect(song, ntsc, 0);
+  FrameRegisters zapRegisters = zapPlayer.nextFrame();
+  CHECK(zapRegisters.tiaVolume == 14 && !zapRegisters.sounding[0] && !zapRegisters.sounding[1] && !zapRegisters.sounding[2]);
+  song.effects.clear();
   // TIA songs go to DASM or batari Basic, samples to C
   CHECK(!exportSong(song, ntsc, {}).ok && !exportSong(blankSong(), ntsc, {ExportTarget::C, "", "NTSC"}).ok);
   ExportResult c = exportSong(song, ntsc, {ExportTarget::C, "", "NTSC"});
@@ -2877,15 +2941,18 @@ static void testSampleExport() {
               "  for (int f = 0; f < frames; f++) {\n    int effect;\n    if (scanf(\"%d\", &effect) != 1) return 1;\n"
               "    if (effect >= 0) music_effect(effect);\n    music_frame(lines);\n"
               "    for (int i = 0; i < lines - MUSIC_OVERBLANK_LINES; i++) printf(\"%d \", music_level[i]);\n"
-              "    for (int j = 0; j < 31; j++) printf(\"%d \", music_nibbles[j]);\n    printf(\"\\n\");\n  }\n  return 0;\n}\n";
+              "    for (int j = 0; j < 31; j++) printf(\"%d \", music_nibbles[j]);\n"
+              "#if MUSIC_TIA_EFFECTS\n    printf(\"%d %d %d\", music_tia[0], music_tia[1], music_tia[2]);\n#else\n    printf(\"0 0 0\");\n#endif\n"
+              "    printf(\"\\n\");\n  }\n  return 0;\n}\n";
   }
-  int compared = 0, skipped = 0, effectsPlayed = 0;
+  int compared = 0, skipped = 0, effectsPlayed = 0, tiaFrames = 0;
   long loudLines = 0;
   for (unsigned seed = 1; seed <= 24; seed++) {
     Song random = randomSampleSong(seed);
     int lines = seed % 3 == 0 ? 312 : 262;
     std::string tv = lines == 312 ? "PAL" : "NTSC";
     double clock = audioClockHz(tv);
+    markTiaEffects(random, clock);
     ExportResult result = exportSong(random, clock, {ExportTarget::C, "", tv});
     bool ambiguousSong = false;
     for (auto& problem : result.problems) ambiguousSong = ambiguousSong || problem.find("depending on what came before") != std::string::npos;
@@ -2926,7 +2993,8 @@ static void testSampleExport() {
     for (int frame = 0; frame < frames && same; frame++) {
       if (schedule[frame] >= 0) player.playEffect(random, clock, schedule[frame]), effectsPlayed++;
       std::vector<uint8_t> expected;
-      mixer.render(random, player.nextFrame(), lines, expected);
+      FrameRegisters registers = player.nextFrame();
+      mixer.render(random, registers, lines, expected);
       int kernel = lines - 63;
       const uint8_t* overblank = expected.data() + kernel;
       std::vector<int> wanted(expected.begin(), expected.begin() + kernel);
@@ -2938,15 +3006,22 @@ static void testSampleExport() {
         same = got == wanted[index];
         if (!same) std::printf("  seed %u, frame %d, value %zu: C %d, editor %d\n", seed, frame, index, got, wanted[index]);
       }
+      int control = -1, frequency = -1, volume = -1;
+      output >> control >> frequency >> volume;
+      if (same && !sameTia(registers, control, frequency, volume, &tiaFrames)) {
+        same = false;
+        std::printf("  seed %u, frame %d: TIA channel 1 %d %d %d, editor %d %d %d\n", seed, frame, control, frequency, volume, registers.tiaControl,
+                    registers.tiaFrequency, registers.tiaVolume);
+      }
       for (uint8_t level : expected) loudLines += level > 0;
     }
     CHECK(same);
     compared++;
     if (!same) break;
   }
-  CHECK(compared >= 15 && loudLines > 100000 && effectsPlayed > 50);
-  std::printf("  exported C player: %d songs the same as the editor's, line by line (%d skipped as ambiguous; %ld lines with sound, %d effects)\n", compared,
-              skipped, loudLines, effectsPlayed);
+  CHECK(compared >= 15 && loudLines > 100000 && effectsPlayed > 50 && tiaFrames > 20);
+  std::printf("  exported C player: %d songs the same as the editor's, line by line (%d skipped as ambiguous; %ld lines with sound, %d effects, %d frames on the TIA's channel 1)\n",
+              compared, skipped, loudLines, effectsPlayed, tiaFrames);
 }
 
 // ---- assistant ---------------------------------------------------------------------

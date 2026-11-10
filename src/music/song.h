@@ -102,11 +102,15 @@ struct Pattern {
 
 // A sound for the game to play when something happens (a jump, a shot): an instrument
 // and a note on a channel. While it sounds, the song's notes on that channel wait.
+// In a song played as samples it can instead sound on the TIA's channel 1, which the
+// voices leave free (they all go to AUDV0): the instrument plays as a TIA instrument,
+// with real TIA noise, and the song keeps all its voices.
 struct SoundEffect {
   std::string name = "effect";
   int instrument = 0;
   int note = 60;    // as a note of the song (the transposition applies)
   int channel = 1;
+  bool tia = false;  // samples: on the TIA's channel 1 instead of a voice
 };
 
 struct SongTuningSettings {
@@ -157,9 +161,13 @@ struct Song {
   // The notes heard with each instrument (after the transposition), for the tuning by hand.
   std::vector<int> notesOf(int instrument) const;
   // What a cell's note sounds as at its start: tuned by hand, or the closest pitch.
-  NotePitch pitchOf(int note, const Instrument& instrument, double audioClock) const;
+  // onTia: played on the TIA even in a song of samples (a sound effect on channel 1).
+  NotePitch pitchOf(int note, const Instrument& instrument, double audioClock, bool onTia = false) const;
   // Frame by frame, what a note writes to AUDC and AUDF (at least one step; the last stays).
-  std::vector<PitchStep> pitchSequence(int note, const Instrument& instrument, double audioClock) const;
+  std::vector<PitchStep> pitchSequence(int note, const Instrument& instrument, double audioClock, bool onTia = false) const;
+  // The instrument sounds on the TIA: every one in a TIA song; in a song of samples, one
+  // that a sound effect on the TIA's channel 1 uses.
+  bool playsOnTia(int instrument) const;
   // Samples: frame by frame, the phase step per scanline (2^32 = one cycle) of a note, with
   // the pitch envelope in cents (at least one step; the last stays). Exact pitch.
   std::vector<uint32_t> phaseSteps(int note, const Instrument& instrument, double audioClock) const;

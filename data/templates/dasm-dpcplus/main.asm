@@ -11,8 +11,9 @@
 ; waveforms in the display data, the frequencies in the frequency table.
 ;
 ; The joystick moves the square; the fire button plays the "fire" effect and
-; reaching an edge plays "bump". An effect takes the third voice while it
-; sounds. The background shows the sound: each line's luminance is the
+; reaching an edge plays "bump". "fire" takes the third voice while it
+; sounds; "bump" plays on the TIA's channel 1, as a TIA sound (MusicFrame writes
+; AUDC1, AUDF1 and AUDV1). The background shows the sound: each line's luminance is the
 ; amplitude written to AUDV0 on it.
 ;
 ; DPCplus.arm is DPC+'s ARM driver, copied from batari Basic when the project
@@ -55,7 +56,9 @@ HeroX   ds 1            ; colour clocks from the left
 HeroY   ds 1            ; lines from the top of the screen
 Button  ds 1            ; the fire button on the last frame (0 = down)
 Bump    ds 1            ; not 0: the square has just reached an edge
-MusicRam ds 26          ; the music player's (5 bytes + 7 per voice)
+MusicRam ds 29          ; the music player's (5 bytes + 7 per voice, and 3 for
+                        ; sound effects on the TIA's channel 1)
+MusicRamEnd
 MUSIC_RAM = MusicRam
 
 ; ---- The ARM driver --------------------------------------------------------
@@ -273,6 +276,9 @@ PosObject
 ; the player and the song
 MUSIC_PART SET 1
         include "theme.music.asm"
+  IF MusicRam + MUSIC_RAM_BYTES > MusicRamEnd
+        ERR                     ; MusicRam is too small: make it MUSIC_RAM_BYTES long
+  ENDIF
 
         ORG $6FF0
         RORG $FFF0

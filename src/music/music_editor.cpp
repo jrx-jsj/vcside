@@ -28,7 +28,7 @@ MusicAudio& musicAudio() {
 MusicEditor::~MusicEditor() {
   // the song this editor plays stops with it
   musicAudio().stop();
-  if (previewKey_ >= 0 || previewMouse_) musicAudio().noteOff(channel_);
+  if (previewKey_ >= 0 || previewMouse_) musicAudio().noteOff(previewChannel_);
 }
 
 bool MusicEditor::load(const std::string& path, std::string* error) {
@@ -154,10 +154,12 @@ static std::string cellNote(int note) {
 
 void MusicEditor::preview(int note) {
   if (instrument_ < 0 || instrument_ >= (int)song_.instruments.size()) return;
-  musicAudio().noteOn(song_, tv_, channel_, note, instrument_);
+  // an instrument of sound effects on the TIA's channel 1 is heard there
+  previewChannel_ = song_.samples() && song_.playsOnTia(instrument_) ? kTiaChannel : channel_;
+  musicAudio().noteOn(song_, tv_, previewChannel_, note, instrument_);
 }
 
-void MusicEditor::stopPreview() { musicAudio().noteOff(channel_); }
+void MusicEditor::stopPreview() { musicAudio().noteOff(previewChannel_); }
 
 void MusicEditor::play(bool fromCursor) {
   std::string error;
@@ -950,7 +952,10 @@ void MusicEditor::instrumentEditor() {
   Instrument& instrument = song_.instruments[instrument_];
   ImGui::SetNextItemWidth(-FLT_MIN);
   if (ImGui::InputText("##iname", &instrument.name)) changed();
-  if (song_.samples()) {
+  // in a song of samples, an instrument of sound effects on the TIA's channel 1 is a TIA one
+  const bool onTia = song_.playsOnTia(instrument_);
+  if (song_.samples() && onTia) ImGui::TextWrapped("%s", T("Sound effects on the TIA's channel 1 use it: it plays as a TIA instrument there."));
+  if (!onTia) {
     waveEditor(instrument);
   } else {
     if (ImGui::RadioButton(T("Melodic"), !instrument.drum)) instrument.drum = false, changed();
@@ -958,7 +963,7 @@ void MusicEditor::instrumentEditor() {
     if (ImGui::RadioButton(T("Drum"), instrument.drum)) instrument.drum = true, changed();
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", T("Fixed AUDC and AUDF frame by frame, whatever the note."));
   }
-  if (!drum(instrument) && !song_.samples()) {
+  if (onTia && !instrument.drum) {
     ImGui::SeparatorText(T("Sounds it may use"));
     ImGui::TextWrapped("%s", T("For each note the tuning picks the closest pitch among these."));
     for (auto& distortion : distortions()) {
@@ -994,7 +999,7 @@ void MusicEditor::instrumentEditor() {
   ImGui::TextDisabled("%s", releaseVariant_ == 0 ? T("After a note off (===). Empty: silent at once.")
                                                  : F("After a note off when the note has the effect R{0}. Empty: silent at once.", {std::to_string(releaseVariant_)}).c_str());
   if (envelope("release", instrument.releases[releaseVariant_], 0, 15, nullptr, 0)) changed();
-  if (song_.samples()) {
+  if (!onTia) {
     ImGui::SeparatorText(T("Pitch"));
     ImGui::TextDisabled("%s", T("Added to the note frame by frame, in cents (positive is higher); the last value stays."));
     // a semitone for vibrato, one or two octaves for slides and drums
@@ -1023,7 +1028,7 @@ void MusicEditor::instrumentEditor() {
     ImGui::TextDisabled("%s", cents ? T("Added to the note frame by frame (positive is higher); the last value stays.")
                                     : T("Added to AUDF frame by frame (positive is lower); the last value stays."));
     if (cents ? envelope("pitch", instrument.pitch, -100, 100, nullptr, 0) : envelope("pitch", instrument.pitch, -8, 8, nullptr, 0)) changed();
-    noteTuningEditor(instrument);
+    if (!song_.samples()) noteTuningEditor(instrument);  // the notes of a TIA song
   }
   ImGui::Spacing();
   if (ImGui::Button(T("Try it"))) preview((octave_ + 1) * 12 + 9), previewMouse_ = true;
@@ -1256,7 +1261,16 @@ void MusicEditor::effectsPanel() {
   ImGui::SameLine();
   for (int index = 0; index < song_.channelCount(); index++) {
     ImGui::SameLine();
-    if (ImGui::RadioButton(std::to_string(index).c_str(), channel == index)) effect.channel = index, changed();
+    if (ImGui::RadioButton(std::to_string(index).c_str(), channel == index && !(song_.samples() && effect.tia))) effect.channel = index, effect.tia = false, changed();
+  }
+  if (song_.samples()) {
+    ImGui::SameLine();
+    if (ImGui::RadioButton(T("TIA channel 1"), effect.tia)) effect.tia = true, changed();
+    if (ImGui::IsItemHovered())
+      ImGui::SetTooltip("%s", T("The voices all go to AUDV0, so the TIA's channel 1 is free: the effect sounds there, with the TIA's own sounds (noise included), and the song keeps all its voices. Its instrument becomes a TIA one. DPC+ and CDFJ games do this; who did it first is still to be found."));
+    if (effect.tia) ImGui::TextDisabled("%s", T("The game writes AUDC1, AUDF1 and AUDV1 once per frame, as the player leaves them (see the export)."));
+  } else if (ImGui::IsItemHovered()) {
+    ImGui::SetTooltip("%s", T("While the effect sounds, the song's notes on this channel wait (usually channel 1)."));
   }
   if (ImGui::Button(T("Play it"))) {
     std::string error;
