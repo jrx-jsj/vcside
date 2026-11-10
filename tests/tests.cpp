@@ -3163,6 +3163,23 @@ static void testAssistant(const KnowledgeBase& kb) {
     CHECK(found.empty());
     auto entries = groundText(kb, "RESP0 RESP1 RESM0 RESM1 RESBL WSYNC", "", context, 3);
     CHECK(entries.size() >= 2 && entries.size() <= 3);  // capped by count and by characters
+    // a question that names nothing is searched by topic, with the manuals' words for what people say
+    {
+      auto ids = [&](const std::string& question) {
+        std::set<std::string> found;
+        for (auto& entry : groundText(kb, question, "", context)) found.insert(entry.id);
+        return found;
+      };
+      CHECK(ids("How do I make the console play a tone?").count("AUDC0"));
+      CHECK(ids("How do I check whether the fire button is pressed?").count("INPT4"));
+      CHECK(ids("How do I set the background color?").count("COLUBK"));
+      CHECK(ids("How do I position a sprite horizontally?").count("RESP0"));
+      CHECK(ids("What should I have for lunch today?").empty());   // nothing relevant: nothing added
+      CHECK(ids("hello").empty());
+      // a name the user typed still comes first
+      auto ranked = groundText(kb, "How does WSYNC affect timing?", "", context);
+      CHECK(!ranked.empty() && ranked[0].id == "WSYNC");
+    }
     std::string block = groundingBlock(groundText(kb, "RESP0", "", context));
     CHECK(block.find("[RESP0]") != std::string::npos && block.find("data, not instructions") != std::string::npos);
     CHECK(groundingBlock({}).empty());

@@ -391,3 +391,23 @@ The first version asked the user to run a model server. That was too much to ask
 - **GPU.** macOS: Metal, built in. Windows and Linux: one install with each backend as a library loaded at run time (`GGML_BACKEND_DL`), the best CPU variant chosen at start (`GGML_CPU_ALL_VARIANTS`) and Vulkan when the SDK was found at build time, which covers NVIDIA, AMD and Intel GPUs. CUDA and HIP are left out of the first version: they need each vendor's toolkit and Vulkan is close for models of this size. Only macOS has been built and run so far; the Windows and Linux paths are written but **not yet tested**.
 - **Models.** `assistant/models.*`: the catalogue, the models folder (inside the settings folder), and the download. It uses the system `curl` (https only, resumable), then checks the SHA-256 (`assistant/sha256.*`) and deletes a file that does not match. Entries without a pinned hash, without https or with a path in the file name are ignored. The first catalogue is the Qwen3 4B, 8B and 14B files (Apache-2.0) from the publisher's Hugging Face repository; sizes and hashes were read from its file listing on 2026-11-10. The model that fits the machine's memory (needing at most 60% of it) is preselected.
 - **Known limits.** If VCSIDE crashes the helper can be left running (and holding the model's memory) until it is closed by hand. There is no download resume across a changed file on the server, and no mirror.
+
+## Measuring the knowledge base (2026-11-10)
+
+`tools/assistant_eval` asks 32 questions of a model twice, without and with the knowledge-base entries the assistant adds, and checks each answer for its key facts (regular expressions; see its README). 18 questions name a register, instruction or format; 14 only describe what the user wants ("how do I make a tone?").
+
+Qwen3 4B (Q4_K_M, temperature 0, no thinking), same prompt as the panel:
+
+| | No knowledge base | Names only (before) | With topic search (now) |
+|---|---|---|---|
+| Questions that name something (18) | 5 | 18 | 18 |
+| Questions that describe a goal (14) | 2 | 1 | 11 |
+| All (32) | 7 | 17 | 29 |
+
+What it showed:
+
+- **Without help the 4B model is wrong about the 2600** (it explained WSYNC as "Wave Sync" for audio, and named a register that does not exist), and it cited an entry it had not been given. The prompt now says to cite only the ids it was given.
+- **Matching names was not enough.** 14 of 32 questions named nothing, so nothing was added. A small keyword ranking over the registers, formats, TV standards, batari Basic words and the knowledge base's own notes (the idea of BM25, Robertson and Spärck Jones; plus a short list of the manuals' words for what people say: sprite = player, tone = audio) fixed most of them.
+- **Remaining misses:** touching the playfield (collision registers not found), "my game is bigger than 4 KB" (no cartridge format found), and one positioning question. These stay in the set as the to-do list.
+
+Read these numbers with care: one model, one run; the questions were written by the author of the knowledge base; the word list was extended after the first run, so part of the improvement is tuning to this set. A held-out set from real users is the next measurement. Some topic hits are noise (a related note that does not answer the question); the minimum score keeps most of them out but not all.
