@@ -2449,6 +2449,7 @@ void App::assistantPanel() {
     context.selection = active->editor.selectedText();
     if (!context.selection.empty()) context.selectionFirst = active->editor.selectedLines().first + 1, context.selectionLast = active->editor.selectedLines().second + 1;
   }
+  context.showDoc = [this](const std::string& word) { showDoc(word); };
   context.readOpenFile = [this](const std::string& relative, std::string* text) {  // as the editor holds it, unsaved changes included
     if (!project_) return false;
     for (auto& openedFile : files_)

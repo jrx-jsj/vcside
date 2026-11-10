@@ -14,6 +14,7 @@
 #include <sstream>
 
 #include "assistant/chat_tabs.h"
+#include "assistant/validate.h"
 #include "assistant/http.h"
 #include "assistant/markdown.h"
 #include "assistant/secrets.h"
@@ -128,6 +129,29 @@ bool beginFittedCombo(const char* id, const std::string& shown, float maxWidth, 
 // together. There is no bold or italic face, so bold is drawn twice a little apart and italic
 // in the dimmer text colour.
 
+// Registers and instructions in the text of an answer open their entry in the documentation. Set by the panel while it
+// draws a message; never inside a code block or a diff (those are drawn elsewhere).
+struct MdLinks {
+  const KnowledgeBase* kb = nullptr;
+  std::function<void(const std::string&)> open;
+};
+MdLinks* gLinks = nullptr;
+
+// The name a word stands for when it is a register or an instruction of the knowledge base ("" otherwise). In prose only
+// UPPERCASE names count (the word "and" is not AND); in `inline code` any case does.
+std::string linkedName(const std::string& word, bool inCode) {
+  if (!gLinks || !gLinks->kb || !gLinks->open) return "";
+  size_t first = 0, last = word.size();
+  while (first < last && !std::isalnum((unsigned char)word[first])) first++;
+  while (last > first && !std::isalnum((unsigned char)word[last - 1]) && word[last - 1] != '_') last--;
+  std::string name = word.substr(first, last - first);
+  if (name.size() < 3 || name.size() > 12) return "";
+  for (char c : name)
+    if (!std::isalnum((unsigned char)c) && c != '_') return "";
+  if (!inCode && std::any_of(name.begin(), name.end(), [](char c) { return std::islower((unsigned char)c); })) return "";
+  return gLinks->kb->reg(name) || gLinks->kb->instruction(name) ? name : "";
+}
+
 struct Word {
   std::string text;
   bool bold, italic, code;
@@ -203,7 +227,22 @@ void drawRuns(const std::vector<MdRun>& runs, ImFont* mono, float scale, bool st
       if (!codeContinues) closeBox(position.x + visibleWidth + codePad);
     }
     ImU32 color = word.italic && !accent ? dimColor : textColor;
+    std::string linked = linkedName(word.text, word.code);
+    ImVec2 wordMin = position, wordMax(position.x + visibleWidth, position.y + lineHeight);
+    bool overLink = !linked.empty() && ImGui::IsMouseHoveringRect(wordMin, wordMax) && ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows);
+    if (!linked.empty()) color = ImGui::GetColorU32(theme::colv(theme::Role::UiAccent));
     drawList->AddText(font, size, position, color, word.text.c_str());
+    if (!linked.empty()) {  // underlined; the hand and a line from the entry on hover; a click opens it
+      drawList->AddLine(ImVec2(position.x, position.y + size + 1), ImVec2(position.x + visibleWidth, position.y + size + 1), color, overLink ? 1.6f : 1.0f);
+      if (overLink) {
+        ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+        std::string summary;
+        if (const Register* reg = gLinks->kb->reg(linked)) summary = reg->name + ": " + reg->summary;
+        else if (const Instruction* instruction = gLinks->kb->instruction(linked)) summary = instruction->mnemonic + ": " + instruction->summary;
+        ImGui::SetTooltip("%s\n%s", summary.c_str(), T("Click to open it in the documentation"));
+        if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) gLinks->open(linked);
+      }
+    }
     if (word.bold || strong) drawList->AddText(font, size, ImVec2(position.x + 0.8f, position.y), color, word.text.c_str());
     x += wordWidth;
     if (word.code && !codeContinues) x += codePad;
@@ -299,17 +338,20 @@ AssistantPanel::~AssistantPanel() {
 }
 
 std::string AssistantPanel::systemPrompt() const {
+  // Agent mode: the work is done with the tools. Ask mode: answers, and changes as blocks the user reviews.
+  const std::string agentRule = "\nYou are in Agent mode: do the task yourself. Read the files you need, then change them with edit_file, one change at a time; do not paste the new code into your answer unless asked, and say briefly what you changed.";
   std::ifstream file(dataDir() + "/assistant/system.txt");
   if (file) {
     std::stringstream text;
     text << file.rdbuf();
-    if (!text.str().empty()) return text.str() + (settings_.agent ? "\n" + toolPrompt(settings_.toolProfile) : std::string());
+    if (!text.str().empty()) return text.str() + (settings_.agent ? "\n" + toolPrompt(settings_.toolProfile) + agentRule : std::string());
   }
-  return std::string(kFallbackPrompt) + (settings_.agent ? "\n" + toolPrompt(settings_.toolProfile) : std::string());
+  return std::string(kFallbackPrompt) + (settings_.agent ? "\n" + toolPrompt(settings_.toolProfile) + agentRule : std::string());
 }
 
 void AssistantPanel::newChat() {
   request_.cancel();
+  firstPass_.cancel(), firstPassPending_ = false;
   chat_ = Chat();
   streaming_.clear(), error_.clear(), lastRequest_.clear();
   promptTokens_ = completionTokens_ = droppedTurns_ = 0;
@@ -335,6 +377,7 @@ void AssistantPanel::storeActiveTab() {
 
 void AssistantPanel::loadTab(int index) {
   request_.cancel();
+  firstPass_.cancel(), firstPassPending_ = false;
   ChatTabState& tab = tabs_[index];
   chat_ = tab.chat;
   streaming_.clear(), error_.clear(), lastRequest_.clear();
@@ -612,6 +655,27 @@ bool drawChip(const char* id, const std::string& label, ImVec4 tint, const std::
 
 // The row above the input: what goes along with the question. The open file or the selected lines and the
 // build errors are there by themselves; a cross takes one out until it changes; @ in the input adds more.
+// Ask answers and proposes changes the user reviews; Agent does the work with the tools (read, edit, build), every change
+// still waiting for a click. A combo as wide as the Send button, so it fits whatever language the labels are in.
+void AssistantPanel::modeSwitch(float width) {
+  bool busy = request_.running() || firstPassPending_ || pendingEditActive_ || !pendingRun_.empty() || waitingBuild_;
+  ImGui::BeginDisabled(busy);
+  ImGui::SetNextItemWidth(width);
+  if (ImGui::BeginCombo("##mode", settings_.agent ? T("Agent") : T("Ask"))) {
+    for (int agent = 0; agent < 2; agent++) {
+      if (ImGui::Selectable(agent ? T("Agent") : T("Ask"), settings_.agent == (agent == 1))) settings_.agent = agent == 1, changed_ = true;
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s", agent ? T("Agent: reads your project and makes the changes itself with its tools. Every change, build and run waits for your click.")
+                                      : T("Ask: answers your question and proposes changes in the chat, which you review and apply."));
+    }
+    ImGui::EndCombo();
+  }
+  ImGui::EndDisabled();
+  if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+    ImGui::SetTooltip("%s", settings_.agent ? T("Agent: reads your project and makes the changes itself with its tools. Every change, build and run waits for your click.")
+                                            : T("Ask: answers your question and proposes changes in the chat, which you review and apply."));
+}
+
 void AssistantPanel::drawContextChips(const PanelContext& context) {
   ContextSources sources;
   sources.fileRelative = context.fileRelative;
@@ -847,13 +911,33 @@ bool AssistantPanel::overBudget(const Provider& provider) {
   return true;
 }
 
+// The first message of a chat starts with a short question to the model for the tab's title, the language and the request in
+// English (the reference and the index are English); the question itself is sent when that comes back, a second or two later.
 void AssistantPanel::send(const PanelContext& context, const std::string& question) {
   Provider* provider = settings_.provider();
   if (!provider || question.empty()) return;
   if (overBudget(*provider)) return;
   if (chat_.id.empty()) chat_.id = ChatStore::newId();
-  if (chat_.title.empty()) chat_.title = oneLine(question, 48);
+  if (chat_.title.empty()) chat_.title = oneLine(question, 48);  // until the model gives a better one
   chat_.provider = provider->name, chat_.model = provider->model;
+  bool first = chat_.messages.empty();
+  chat_.messages.push_back({"user", question, {}, "", ""});  // shown at once, in its bubble
+  streaming_.clear(), error_.clear(), notice_.clear();
+  scrollDown_ = true;
+  if (first) {
+    firstPassQuestion_ = question;
+    firstPassPending_ = true;
+    waitingText_ = T("Understanding your request");
+    requestStartedAt_ = ImGui::GetTime();
+    firstPass_.start(*provider, question);
+    return;
+  }
+  dispatch(context, question, "");
+}
+
+void AssistantPanel::dispatch(const PanelContext& context, const std::string& question, const std::string& english) {
+  Provider* provider = settings_.provider();
+  if (!provider) return;
   Attachments attachments;
   attachments.projectInfo = context.projectInfo;
   // What the chips above the input say: the open file or the selected lines, the build errors and the
@@ -885,7 +969,7 @@ void AssistantPanel::send(const PanelContext& context, const std::string& questi
   // The whole project, not only what is open: the files that match the question go along as excerpts
   // (searched in an index of the project's files), and a map of the files and their names.
   int excerptCount = 0;
-  std::string searchText = question + " " + oneLine(context.selection, 400) + " " + oneLine(context.errors, 400);
+  std::string searchText = question + " " + english + " " + oneLine(context.selection, 400) + " " + oneLine(context.errors, 400);
   if (!context.projectDir.empty()) {
     index_.update(context.projectDir);
     std::string excerpts;
@@ -901,20 +985,21 @@ void AssistantPanel::send(const PanelContext& context, const std::string& questi
     attachments.excerpts = excerpts;
     attachments.projectMap = index_.map(searchText, 900);
   }
-  std::string codeText = attachments.selection + "\n" + attachments.errors + "\n" + utf8Cut(attachments.fileText, 8000);
+  // The reference entries come from what the question asks and from the selection and the errors; the names in a whole
+  // attached file (STA, LDA, VSYNC...) are in every file and would crowd out what was asked.
+  std::string codeText = attachments.selection + "\n" + attachments.errors;
   std::vector<GroundedEntry> entries;
-  if (context.kb) entries = groundText(*context.kb, question, codeText, context.grounding);
+  if (context.kb) entries = groundText(*context.kb, english.empty() ? question : question + " " + english, codeText, context.grounding);
   attachments.grounding = groundingBlock(entries);
   streamingReference_.clear();
   for (auto& entry : entries) streamingReference_.push_back(entry.id);
   std::string turn = userTurn(question, attachments);
-  std::vector<Message> messages = buildMessages(systemPrompt(), chat_.messages, turn, provider->contextTokens, 1024, &droppedTurns_);
-  chat_.messages.push_back({"user", question, {}, "", attachedNote});
+  std::vector<ChatMessage> history(chat_.messages.begin(), chat_.messages.end() - 1);  // the question itself is `turn`
+  std::vector<Message> messages = buildMessages(systemPrompt(), history, turn, provider->contextTokens, 1024, &droppedTurns_);
+  chat_.messages.back().attached = attachedNote;
   turnText_ = turn;
   agentSteps_ = 0, callCounts_.clear(), pendingEditActive_ = false, pendingEditFromChat_ = false, pendingRun_.clear(), waitingBuild_ = false;
-  notice_.clear();
   lastRequest_ = chatRequestBody(*provider, messages);
-  streaming_.clear(), error_.clear();
   {
     int files = (attachments.fileText.empty() ? 0 : 1) + (int)attachments.extraFiles.size();
     waitingText_ = files > 0 && excerptCount > 0 ? F("Reading your question, {0} file(s) and {1} part(s) of the project", {std::to_string(files), std::to_string(excerptCount)})
@@ -930,6 +1015,10 @@ void AssistantPanel::send(const PanelContext& context, const std::string& questi
 void AssistantPanel::finishAnswer(const PanelContext& context, const std::string& note) {
   if (!streaming_.empty()) {
     ChatMessage answer{"assistant", streaming_ + (note.empty() ? "" : "\n\n[" + note + "]"), streamingReference_, ""};
+    if (context.kb) {  // names in its code that exist nowhere: said after the answer, not corrected
+      auto unknown = unknownNames(streaming_, *context.kb, [this](const std::string& word) { return index_.knows(word); }, 6, context.grounding.batariBasic);
+      for (size_t k = 0; k < unknown.size(); k++) answer.warnings += (k ? ", " : "") + unknown[k];
+    }
     chat_.messages.push_back(answer);
   }
   spentTokens_ += lastUsageSpent_;  // this request's tokens, as the server counted them
@@ -1213,7 +1302,7 @@ void AssistantPanel::drawEditBlock(const PanelContext& context, const EditBlock&
   ImGui::TextUnformatted(where.c_str());
   ImGui::PopStyleColor();
   ImGui::SameLine();
-  ImGui::BeginDisabled(pendingEditActive_ || request_.running());
+  ImGui::BeginDisabled(pendingEditActive_ || request_.running() || firstPassPending_);
   if (theme::dialogButton(T("Review and apply..."), ImVec2(0, 0), true)) {
     pendingEdit_ = placement.edit;
     pendingEditActive_ = true, pendingEditFromChat_ = true;
@@ -1269,6 +1358,15 @@ void AssistantPanel::agentCards(const PanelContext& context) {
 }
 
 void AssistantPanel::poll(const PanelContext& context) {
+  FirstPass first;
+  if (firstPassPending_ && firstPass_.poll(&first)) {
+    firstPassPending_ = false;
+    if (first.ok) {
+      chat_.title = first.title;
+      saveChat(context);
+    }
+    dispatch(context, firstPassQuestion_, first.ok ? first.english : "");
+  }
   if (waitingBuild_) {
     if (context.building) buildSeen_ = true;
     else if (buildSeen_ || ++buildFrames_ > 3) {
@@ -1316,8 +1414,38 @@ void AssistantPanel::drawMessage(const ChatMessage& message, const std::string& 
       return;
     }
   }
-  ImGui::PushStyleColor(ImGuiCol_Text, theme::colv(user ? theme::Role::UiAccent : theme::Role::UiTextDim));
-  ImGui::TextUnformatted(user ? T("You") : T("Assistant"));
+  if (user) {  // what you typed, in a bubble: tinted, rounded, set off to the right, shown as typed
+    ImDrawList* drawList = ImGui::GetWindowDrawList();
+    ImDrawListSplitter splitter;
+    splitter.Split(drawList, 2);
+    splitter.SetCurrentChannel(drawList, 1);
+    float available = ImGui::GetContentRegionAvail().x, pad = ImGui::GetFontSize() * 0.7f, left = available * 0.10f;
+    ImVec2 origin = ImGui::GetCursorScreenPos();
+    ImGui::SetCursorScreenPos(ImVec2(origin.x + left + pad, origin.y + pad));
+    ImGui::BeginGroup();
+    ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + available - left - pad * 2);
+    ImGui::TextUnformatted(text.c_str());
+    ImGui::PopTextWrapPos();
+    ImGui::EndGroup();
+    ImVec2 low(origin.x + left, origin.y), high(origin.x + available - 1, ImGui::GetItemRectMax().y + pad);
+    splitter.SetCurrentChannel(drawList, 0);
+    ImVec4 accent = theme::colv(theme::Role::UiAccent);
+    drawList->AddRectFilled(low, high, ImGui::GetColorU32(ImVec4(accent.x, accent.y, accent.z, 0.16f)), pad * 1.2f);
+    drawList->AddRect(low, high, ImGui::GetColorU32(ImVec4(accent.x, accent.y, accent.z, 0.55f)), pad * 1.2f, 0, 1.0f);
+    splitter.Merge(drawList);
+    ImGui::SetCursorScreenPos(ImVec2(origin.x, high.y + ImGui::GetStyle().ItemSpacing.y));
+    if (!message.attached.empty()) {
+      ImGui::PushStyleColor(ImGuiCol_Text, theme::colv(theme::Role::UiTextDim));
+      ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + available);
+      ImGui::TextWrapped("%s", F("Sent with: {0}", {message.attached}).c_str());
+      ImGui::PopTextWrapPos();
+      ImGui::PopStyleColor();
+    }
+    ImGui::Spacing();
+    return;
+  }
+  ImGui::PushStyleColor(ImGuiCol_Text, theme::colv(theme::Role::UiTextDim));
+  ImGui::TextUnformatted(T("Assistant"));
   ImGui::PopStyleColor();
   int blockIndex = 0;
   for (auto& block : splitBlocks(text)) {
@@ -1389,6 +1517,13 @@ void AssistantPanel::drawMessage(const ChatMessage& message, const std::string& 
     if (ImGui::IsItemHovered())
       ImGui::SetTooltip("%s", T("VCSIDE found these in its reference (instructions, registers, cartridge formats, TV standards) for your question and gave them to the model, which was asked to answer from them and to say when something is not confirmed."));
   }
+  if (!message.warnings.empty() && !user) {
+    ImGui::PushStyleColor(ImGuiCol_Text, theme::colv(theme::Role::MsgWarning));
+    ImGui::TextWrapped("%s", F("Not found in the reference or in your files: {0}. The model may have made them up: check them before using them.", {message.warnings}).c_str());
+    ImGui::PopStyleColor();
+    if (ImGui::IsItemHovered())
+      ImGui::SetTooltip("%s", T("These names are in the code of the answer, but they are not registers, instructions or formats that VCSIDE knows, nor names in your project, nor defined by the answer itself."));
+  }
   if (user && !message.attached.empty()) {
     ImGui::PushStyleColor(ImGuiCol_Text, theme::colv(theme::Role::UiTextDim));
     ImGui::TextWrapped("%s", F("Sent with: {0}", {message.attached}).c_str());
@@ -1436,7 +1571,7 @@ void AssistantPanel::draw(const PanelContext& context, ImFont* mono, bool* open)
   else if (modelsFor_ != provider->baseUrl && !fetchingModels_) refreshModels();
 
   // the open conversations
-  bool busyNow = request_.running() || pendingEditActive_ || !pendingRun_.empty() || waitingBuild_;
+  bool busyNow = request_.running() || firstPassPending_ || pendingEditActive_ || !pendingRun_.empty() || waitingBuild_;
   drawTabs(busyNow);
 
   // header: where the text goes, the model, and the buttons (icons, with a tooltip each)
@@ -1489,8 +1624,10 @@ void AssistantPanel::draw(const PanelContext& context, ImFont* mono, bool* open)
       ImGui::TextWrapped("%s", T("Ask about your code, the TIA, the 6502 or the cartridge formats. The names VCSIDE knows in your question and in what you attach are looked up in its knowledge base and shown to the model."));
       ImGui::PopStyleColor();
     }
+    MdLinks links{context.kb, context.showDoc};
+    gLinks = &links;
     for (size_t i = 0; i < chat_.messages.size(); i++) drawMessage(chat_.messages[i], chat_.messages[i].content, context, mono, (int)i);
-    if (request_.running() || !streaming_.empty()) {
+    if (request_.running() || firstPassPending_ || !streaming_.empty()) {
       ChatMessage live{"assistant", streaming_, {}, ""};  // the knowledge-base footer comes with the finished answer
       if (streaming_.empty()) {
         // before the first word: what is going on, and for how long
@@ -1507,6 +1644,7 @@ void AssistantPanel::draw(const PanelContext& context, ImFont* mono, bool* open)
         drawMessage(live, streaming_, context, mono, 9999);
       }
     }
+    gLinks = nullptr;
     agentCards(context);
     if (!notice_.empty()) {
       ImGui::PushStyleColor(ImGuiCol_Text, theme::colv(theme::Role::UiTextDim));
@@ -1524,7 +1662,7 @@ void AssistantPanel::draw(const PanelContext& context, ImFont* mono, bool* open)
 
   // what goes along with the question: chips the user can take out, and "@" to add files
   drawContextChips(context);
-  if (settings_.explainErrors && !context.errors.empty() && !request_.running() && !pendingEditActive_ && pendingRun_.empty() && !waitingBuild_) {
+  if (settings_.explainErrors && !context.errors.empty() && !request_.running() && !firstPassPending_ && !pendingEditActive_ && pendingRun_.empty() && !waitingBuild_) {
     ImGui::SameLine();
     if (theme::dialogButton(T("Explain the errors"), ImVec2(0, 0), true)) pendingQuestion_ = "Explain these build errors and how to fix them.";
   }
@@ -1540,7 +1678,7 @@ void AssistantPanel::draw(const PanelContext& context, ImFont* mono, bool* open)
   }
   // input
   if (focusInput_) ImGui::SetKeyboardFocusHere(), focusInput_ = false;
-  bool running = request_.running();
+  bool running = request_.running() || firstPassPending_;
   bool waitingForUser = pendingEditActive_ || !pendingRun_.empty() || waitingBuild_;
   float buttonWidth = theme::em(90);
   ImGui::BeginDisabled(running || waitingForUser);
@@ -1567,14 +1705,27 @@ void AssistantPanel::draw(const PanelContext& context, ImFont* mono, bool* open)
   }
   mentionX_ = inputMin.x, mentionY_ = inputMin.y, mentionWidth_ = inputWidth;
   ImGui::SameLine();
+  ImVec2 buttonCorner = ImGui::GetCursorScreenPos();
   bool clicked = false;
   if (running) {
-    if (theme::dialogButton(T("Stop"), ImVec2(buttonWidth, 0))) request_.cancel();
+    if (theme::dialogButton(T("Stop"), ImVec2(buttonWidth, 0))) {
+      if (firstPassPending_) {  // before the question went out: take it back into the box
+        firstPass_.cancel();
+        firstPassPending_ = false;
+        input_ = firstPassQuestion_;
+        if (!chat_.messages.empty()) chat_.messages.pop_back();
+        if (chat_.messages.empty()) chat_.title.clear();
+      } else {
+        request_.cancel();
+      }
+    }
   } else {
     ImGui::BeginDisabled(!builtinReady || waitingForUser);
     clicked = theme::primaryButton(T("Send"), ImVec2(buttonWidth, 0));
     ImGui::EndDisabled();
   }
+  ImGui::SetCursorScreenPos(ImVec2(buttonCorner.x, buttonCorner.y + ImGui::GetFrameHeight() + ImGui::GetStyle().ItemSpacing.y));  // under the button: how the assistant works
+  modeSwitch(buttonWidth);
   if (!pendingQuestion_.empty()) {  // from "Explain this error" in Problems, or the button above
     if (!running && !waitingForUser && builtinReady && (provider->isLocal() || provider->builtin || remoteConfirmed_.count(provider->baseUrl))) {
       send(context, pendingQuestion_);
@@ -1602,6 +1753,7 @@ void AssistantPanel::dialogs() {
   embedEngine_.poll();
   if (!drawnThisFrame_) {  // the panel is closed: stop the answer and give the memory back
     request_.cancel();
+    firstPass_.cancel(), firstPassPending_ = false;
     engine_.stop();
     embedWorker_.cancel();
     embedEngine_.stop();

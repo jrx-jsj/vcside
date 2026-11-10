@@ -15,6 +15,7 @@
 #include "assistant/edits.h"
 #include "assistant/embeddings.h"
 #include "assistant/engine.h"
+#include "assistant/first_pass.h"
 #include "assistant/grounding.h"
 #include "assistant/models.h"
 #include "assistant/project_index.h"
@@ -38,6 +39,7 @@ struct PanelContext {
   std::string fileRelative;  // the open file, relative to the project (for the index and the chips)
   int selectionFirst = 0, selectionLast = 0;  // the selected lines, 1-based
   int cursorLine = 0;                         // the cursor's line, 1-based (a long file is cut around it)
+  std::function<void(const std::string& word)> showDoc;  // opens a register or an instruction in the documentation
   std::function<bool(const std::string& relative, std::string* text)> readOpenFile;  // the editor's text of an open file
   // for the agent's tools
   std::string spaceReport, symbols;                    // snapshots, see ToolEnv
@@ -148,9 +150,13 @@ class AssistantPanel {
   float chipsRowHeight_ = 0;  // as measured on the last frame (one row of chips, or two when they wrap)
   float mentionX_ = 0, mentionY_ = 0, mentionWidth_ = 0;  // where the input is, for the list above it
   void drawContextChips(const PanelContext& context);
+  void modeSwitch(float width);
   void updateMention(const PanelContext& context);
   void drawMention(const PanelContext& context, float inputX, float inputY, float width);
   void pickMention(const PanelContext& context, const std::string& entry);
+  FirstPassRequest firstPass_;
+  bool firstPassPending_ = false;
+  std::string firstPassQuestion_;
   mutable ProjectIndex index_;                                 // the project's files, searched for each question
   ImFont* monoFont_ = nullptr;
   long long spentTokens_ = 0;                          // remote tokens used this session
@@ -187,6 +193,7 @@ class AssistantPanel {
   std::string pendingRemote_, projectDir_;
 
   void send(const PanelContext& context, const std::string& question);
+  void dispatch(const PanelContext& context, const std::string& question, const std::string& english);
   void poll(const PanelContext& context);
   void finishAnswer(const PanelContext& context, const std::string& note);
   void saveChat(const PanelContext& context);

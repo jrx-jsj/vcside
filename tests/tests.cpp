@@ -43,6 +43,8 @@
 #include "assistant/embeddings.h"
 #include "assistant/context_items.h"
 #include "assistant/edits.h"
+#include "assistant/validate.h"
+#include "assistant/first_pass.h"
 #include <imgui.h>
 #include "assistant/secrets.h"
 #include "assistant/models.h"
@@ -3874,6 +3876,74 @@ static void testEditBlocks() {
   fs::remove_all(root);
 }
 
+static void testUnknownNames(const KnowledgeBase& kb) {
+  using namespace vcs::assistant;
+  auto inProject = [](const std::string& word) { return word == "jumpheight" || word == "player_y"; };
+  auto names = [&](const std::string& answer) { return unknownNames(answer, kb, inProject); };
+  auto has = [](const std::vector<std::string>& list, const char* name) { return std::find(list.begin(), list.end(), name) != list.end(); };
+  // real registers, instructions, project names and what the answer defines are fine; a made-up register is not
+  auto invented = names("Read it with:\n```asm\n  lda PADDLE\n  and #1\n  sta JUMP_COUNTER\n  lda INPT4\n  bmi NoJump\n  lda JUMPHEIGHT\n```\n");
+  CHECK(has(invented, "PADDLE") && has(invented, "JUMP_COUNTER") && !has(invented, "INPT4") && !has(invented, "JUMPHEIGHT") && !has(invented, "NOJUMP") && invented.size() == 2);
+  // defined by the answer itself
+  auto defined = names("```asm\nJUMP_COUNTER = $80\nFLAGS EQU $81\nSPEED SET 3\nHEIGHT DS 1\nStart\n  lda #0\n  sta JUMP_COUNTER\n  sta FLAGS\n  lda SPEED\n  lda HEIGHT\n```\n");
+  CHECK(defined.empty());
+  // only code counts: shouting in the prose is not a register; inline code is code
+  CHECK(names("This is WRONG and the TIA hates it, use RAM. SWCHA and RESP0 are real.").empty());
+  auto inline_ = names("Read `PADDLE` and `INPT4` and the mnemonic `LDA`, then `lda #$FF` and `%10101010`.");
+  CHECK(inline_.size() == 1 && inline_[0] == "PADDLE");
+  // lower case and short names are not judged; each unknown name is listed once, in order
+  CHECK(names("```\n  lda paddle\n  lda XY\n```").empty());
+  auto twice = names("```\n  lda FOO\n  sta BAR\n  lda FOO\n```");
+  CHECK(twice.size() == 2 && twice[0] == "FOO" && twice[1] == "BAR");
+  CHECK(unknownNames("```\nA1B C2D E3F G4H I5J K6L M7N\n```", kb, inProject, 3).size() == 3);
+  // a word of batari Basic is real there and invented in assembly
+  CHECK(unknownNames("`PADDLE`", kb, inProject, 6, false).size() == 1 && unknownNames("`PADDLE`", kb, inProject, 6, true).empty());
+  // directives, formats and TV standards are known
+  CHECK(names("```\n  processor 6502\n  SEG CODE\n  ORG $F000\n```\nUse F8 or 4K, NTSC or PAL").size() == 1);  // CODE is not a word of the knowledge base
+  CHECK(names("An unfinished block ```asm\n  lda PADDLE").size() == 1);
+}
+
+static void testFirstPass() {
+  using namespace vcs::assistant;
+  // the reply, read
+  auto reply = parseFirstPass("{\"language\": \"es\", \"title\": \"Salto con el botón\", \"english\": \"Implement the jump action when the button is pressed\"}");
+  CHECK(reply.ok && reply.language == "es" && reply.title == "Salto con el botón" && reply.english.find("jump action") != std::string::npos);
+  auto fenced = parseFirstPass("<think>hmm</think>\n```json\n{\"language\":\"EN\",\"title\":\"\\\"Read the fire button.\\\"\",\"english\":\"x\"}\n```");
+  CHECK(fenced.ok && fenced.language == "en" && fenced.title == "Read the fire button");
+  CHECK(!parseFirstPass("Sure! Here is a title: Jump").ok && !parseFirstPass("{\"language\":\"es\"}").ok && !parseFirstPass("{broken").ok && !parseFirstPass("").ok);
+  // titles: one line, no quotes or final period, whole characters, a limit
+  CHECK(cleanTitle("  \"Leer\n el   mando.\"  ") == "Leer el mando");
+  CHECK(cleanTitle("# Title: ") == "Title");
+  std::string accents = cleanTitle(std::string(40, 'a') + "ñandú ñandú ñandú");
+  CHECK(accents.size() <= 44 && sanitizeUtf8(accents) == accents && accents.size() > 40 && accents.substr(accents.size() - 3) == "...");
+  // the request: asked of a server, answered in either dialect
+  {
+    std::string body = R"({"choices":[{"message":{"content":"{\"language\":\"es\",\"title\":\"Leer el mando\",\"english\":\"Read the joystick\"}"}}]})";
+    MockServer server("HTTP/1.1 200 OK\r\nContent-Length: " + std::to_string(body.size()) + "\r\n\r\n" + body);
+    Provider provider;
+    provider.baseUrl = server.url(), provider.model = "m";
+    FirstPassRequest request;
+    request.start(provider, "¿cómo leo el mando?");
+    FirstPass answer;
+    for (int i = 0; i < 300 && !request.poll(&answer); i++) usleep(10000);
+    CHECK(answer.ok && answer.title == "Leer el mando" && answer.english == "Read the joystick");
+    request.cancel();
+    server.thread.join();
+    server.thread = std::thread([] {});
+    auto sent = nlohmann::json::parse(server.request.substr(server.request.find("\r\n\r\n") + 4));
+    CHECK(sent["stream"] == false && sent["messages"].size() == 2 && sent["messages"][1]["content"] == "¿cómo leo el mando?" && !sent.contains("stream_options"));
+  }
+  {
+    Provider provider;
+    provider.baseUrl = "http://127.0.0.1:1/v1";  // nothing listens there
+    FirstPassRequest request;
+    request.start(provider, "x");
+    FirstPass answer;
+    for (int i = 0; i < 300 && !request.poll(&answer); i++) usleep(10000);
+    CHECK(!answer.ok && !answer.error.empty());
+  }
+}
+
 static void testAssistant(const KnowledgeBase& kb) {
   using namespace vcs::assistant;
   // SSE, fed one byte at a time, with CRLF, comments and a data line split over two
@@ -4193,6 +4263,8 @@ int main() {
   testEmbeddings();
   testContextChips();
   testEditBlocks();
+  testUnknownNames(kb);
+  testFirstPass();
   std::printf("%d checks, %d failures\n", checks, failures);
   return failures ? 1 : 0;
 }

@@ -35,6 +35,7 @@ class ProjectIndex {
   std::vector<std::pair<std::string, std::string>> missing() const;
   void setVector(const std::string& key, const std::vector<float>& vector);
   size_t embedded() const;
+  bool knows(const std::string& lowerCaseWord) const { return documentFrequency_.count(lowerCaseWord) > 0; }  // a word that occurs in the project's files
   std::map<std::string, bool> keysInUse() const;  // the key of every chunk (for pruning the cache)
   const std::string& embeddingModel() const { return modelId_; }
 

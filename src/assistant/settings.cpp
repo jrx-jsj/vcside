@@ -128,6 +128,7 @@ bool ChatStore::load(const std::string& id, bool archived, Chat* chat) const {
       message.content = item.value("content", std::string());
       message.kind = item.value("kind", std::string());
       message.attached = item.value("attached", std::string());
+      message.warnings = item.value("warnings", std::string());
       if (item.contains("reference") && item["reference"].is_array())
         for (auto& id : item["reference"])
           if (id.is_string()) message.reference.push_back(id.get<std::string>());
@@ -144,6 +145,7 @@ bool ChatStore::save(const Chat& chat) {
     json item = {{"role", message.role}, {"content", sanitizeUtf8(message.content)}};
     if (!message.reference.empty()) item["reference"] = message.reference;
     if (!message.kind.empty()) item["kind"] = message.kind;
+    if (!message.warnings.empty()) item["warnings"] = sanitizeUtf8(message.warnings);
     if (!message.attached.empty()) item["attached"] = sanitizeUtf8(message.attached);
     value["messages"].push_back(item);
   }
