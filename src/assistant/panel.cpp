@@ -11,6 +11,7 @@
 #include <sstream>
 
 #include "assistant/http.h"
+#include "assistant/markdown.h"
 #include "i18n.h"
 #include "paths.h"
 #include "theme_ui.h"
@@ -34,6 +35,124 @@ std::string oneLine(const std::string& text, size_t limit) {
   if (line.size() > limit) line = line.substr(0, limit) + "...";
   return line;
 }
+
+// ---- drawing Markdown ------------------------------------------------------------------
+// Words are laid out by hand so that bold, code and plain text can share a line and wrap
+// together. There is no bold or italic face, so bold is drawn twice a little apart and italic
+// in the dimmer text colour.
+
+struct Word {
+  std::string text;
+  bool bold, italic, code;
+};
+
+std::vector<Word> wordsOf(const std::vector<MdRun>& runs) {
+  std::vector<Word> result;
+  for (auto& run : runs) {
+    size_t pos = 0;
+    while (pos < run.text.size()) {
+      size_t end = run.text.find(' ', pos);
+      end = end == std::string::npos ? run.text.size() : end + 1;  // the space stays with its word
+      result.push_back({run.text.substr(pos, end - pos), run.bold, run.italic, run.code});
+      pos = end;
+    }
+  }
+  return result;
+}
+
+// Draws the runs wrapped to the width left at the cursor (a hanging indent of `indent` pixels
+// for the lines after the first) and advances the layout. Returns nothing: the cursor moves.
+void drawRuns(const std::vector<MdRun>& runs, ImFont* mono, float scale, bool strong, float indent) {
+  ImDrawList* drawList = ImGui::GetWindowDrawList();
+  ImFont* plainFont = ImGui::GetFont();
+  float plainSize = ImGui::GetFontSize() * scale, codeSize = (mono ? mono->FontSize : ImGui::GetFontSize()) * scale;
+  float lineHeight = std::max(plainSize, codeSize) + 2.0f;
+  ImVec2 origin = ImGui::GetCursorScreenPos();
+  float width = std::max(ImGui::GetContentRegionAvail().x, 40.0f);
+  ImU32 textColor = ImGui::GetColorU32(strong ? theme::colv(theme::Role::UiAccent) : ImGui::GetStyleColorVec4(ImGuiCol_Text));
+  ImU32 dimColor = ImGui::GetColorU32(theme::colv(theme::Role::UiTextDim));
+  ImU32 codeBackground = ImGui::GetColorU32(theme::colv(theme::Role::EdBackground));
+  float x = indent, y = 0;
+  bool lineEmpty = true;
+  for (auto& word : wordsOf(runs)) {
+    ImFont* font = word.code && mono ? mono : plainFont;
+    float size = word.code ? codeSize : plainSize;
+    float wordWidth = font->CalcTextSizeA(size, FLT_MAX, 0.0f, word.text.c_str()).x;
+    float visibleWidth = font->CalcTextSizeA(size, FLT_MAX, 0.0f, word.text.c_str(), word.text.c_str() + word.text.find_last_not_of(' ') + 1).x;
+    if (!lineEmpty && x + visibleWidth > width) {
+      x = indent, y += lineHeight, lineEmpty = true;
+    }
+    ImVec2 position(origin.x + x, origin.y + y);
+    if (word.code) drawList->AddRectFilled(ImVec2(position.x - 1, position.y), ImVec2(position.x + visibleWidth + 1, position.y + lineHeight - 1), codeBackground, 2.0f);
+    ImU32 color = word.italic && !strong ? dimColor : textColor;
+    drawList->AddText(font, size, position, color, word.text.c_str());
+    if (word.bold || strong) drawList->AddText(font, size, ImVec2(position.x + 0.8f, position.y), color, word.text.c_str());
+    x += wordWidth;
+    lineEmpty = false;
+  }
+  ImGui::Dummy(ImVec2(width, y + lineHeight));
+}
+
+void drawMarkdown(const std::string& text, ImFont* mono) {
+  float gap = ImGui::GetTextLineHeight() * 0.35f;
+  int tableIndex = 0;
+  for (auto& block : parseMarkdown(text)) {
+    switch (block.kind) {
+      case MdBlock::Heading: {
+        static const float scales[] = {1.0f, 1.35f, 1.2f, 1.1f, 1.0f, 1.0f, 1.0f};
+        ImGui::Dummy(ImVec2(0, gap));
+        drawRuns(block.runs, mono, scales[block.level], true, 0);
+        break;
+      }
+      case MdBlock::Bullet:
+      case MdBlock::Number: {
+        float em = ImGui::GetFontSize();
+        float marginLeft = block.level * em * 1.2f;
+        std::string marker = block.kind == MdBlock::Bullet ? std::string(block.level % 2 ? "-" : "\xe2\x80\xa2") : std::to_string(block.number) + ".";
+        ImVec2 at = ImGui::GetCursorScreenPos();
+        ImGui::GetWindowDrawList()->AddText(ImVec2(at.x + marginLeft, at.y), ImGui::GetColorU32(theme::colv(theme::Role::UiTextDim)), marker.c_str());
+        ImGui::Indent(marginLeft + em * 1.3f);
+        drawRuns(block.runs, mono, 1.0f, false, 0);
+        ImGui::Unindent(marginLeft + em * 1.3f);
+        break;
+      }
+      case MdBlock::Quote: {
+        ImVec2 at = ImGui::GetCursorScreenPos();
+        float em = ImGui::GetFontSize();
+        ImGui::Indent(em * 0.9f);
+        ImVec2 before = ImGui::GetCursorScreenPos();
+        drawRuns(block.runs, mono, 1.0f, false, 0);
+        ImGui::Unindent(em * 0.9f);
+        float bottom = ImGui::GetCursorScreenPos().y - ImGui::GetStyle().ItemSpacing.y;
+        ImGui::GetWindowDrawList()->AddRectFilled(ImVec2(at.x + 2, before.y), ImVec2(at.x + 5, bottom), ImGui::GetColorU32(theme::colv(theme::Role::UiAccent)));
+        break;
+      }
+      case MdBlock::Rule: ImGui::Separator(); break;
+      case MdBlock::Table: {
+        size_t columns = 0;
+        for (auto& row : block.rows) columns = std::max(columns, row.size());
+        if (columns == 0) break;
+        ImGui::PushID(tableIndex++);
+        if (ImGui::BeginTable("md_table", (int)columns, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp)) {
+          for (size_t r = 0; r < block.rows.size(); r++) {
+            ImGui::TableNextRow();
+            for (size_t c = 0; c < columns; c++) {
+              ImGui::TableSetColumnIndex((int)c);
+              static const std::vector<MdRun> none;
+              drawRuns(c < block.rows[r].size() ? block.rows[r][c] : none, mono, 1.0f, r == 0, 0);
+            }
+          }
+          ImGui::EndTable();
+        }
+        ImGui::PopID();
+        break;
+      }
+      default: drawRuns(block.runs, mono, 1.0f, false, 0); break;
+    }
+    ImGui::Dummy(ImVec2(0, gap));
+  }
+}
+
 }  // namespace
 
 AssistantPanel::AssistantPanel() : settings_(Settings::fromJson(nlohmann::json::object())) {}
@@ -248,20 +367,52 @@ void AssistantPanel::drawMessage(const ChatMessage& message, const std::string& 
     if (!block.code) {
       std::string prose = block.text;
       while (!prose.empty() && (prose.back() == '\n' || prose.back() == ' ')) prose.pop_back();
-      if (!prose.empty()) ImGui::TextWrapped("%s", prose.c_str());
+      if (!prose.empty()) {
+        if (user) ImGui::TextWrapped("%s", prose.c_str());  // what you typed is shown as typed
+        else drawMarkdown(prose, mono);
+      }
     } else {
       ImGui::PushFont(mono);
       ImGui::PushStyleColor(ImGuiCol_ChildBg, theme::colv(theme::Role::EdBackground));
       float lines = 1;
       for (char c : block.text) lines += c == '\n';
       float height = std::min(lines, 18.0f) * ImGui::GetTextLineHeight() + ImGui::GetStyle().WindowPadding.y * 2;
-      if (ImGui::BeginChild("code", ImVec2(0, height), ImGuiChildFlags_Borders, ImGuiWindowFlags_HorizontalScrollbar)) ImGui::TextUnformatted(block.text.c_str());
+      float margin = ImGui::GetFontSize() * 0.9f;  // the blocks do not run to the window's edge
+      if (ImGui::BeginChild("code", ImVec2(-margin, height), ImGuiChildFlags_Borders, ImGuiWindowFlags_HorizontalScrollbar)) {
+        ImGui::TextUnformatted(block.text.c_str());
+        // the copy icon sits inside the block, top right, and stays there when the code scrolls
+        ImGuiID id = ImGui::GetID("copy");
+        float size = ImGui::GetFontSize() * 1.15f, pad = 5.0f;
+        ImVec2 corner = ImGui::GetWindowPos();
+        float right = corner.x + ImGui::GetWindowWidth() - (ImGui::GetScrollMaxY() > 0 ? ImGui::GetStyle().ScrollbarSize : 0.0f) - pad;
+        ImVec2 low(right - size, corner.y + pad), high(right, corner.y + pad + size);
+        bool hovered = ImGui::IsWindowHovered() && ImGui::IsMouseHoveringRect(low, high);
+        bool copied = copiedId_ == id && ImGui::GetTime() - copiedAt_ < 1.4;
+        if (hovered) {
+          ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+          ImGui::SetTooltip("%s", copied ? T("Copied") : T("Copy"));
+          if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+            ImGui::SetClipboardText(block.text.c_str());
+            copiedId_ = id, copiedAt_ = ImGui::GetTime();
+          }
+        }
+        ImDrawList* drawList = ImGui::GetWindowDrawList();
+        ImU32 background = ImGui::GetColorU32(theme::colv(theme::Role::EdBackground));
+        ImU32 color = ImGui::GetColorU32(theme::colv(hovered || copied ? theme::Role::UiAccent : theme::Role::UiTextDim));
+        drawList->AddRectFilled(ImVec2(low.x - 3, low.y - 3), ImVec2(high.x + 3, high.y + 3), background, 4.0f);
+        if (copied) {  // a check mark
+          drawList->AddPolyline(std::vector<ImVec2>{{low.x + size * 0.15f, low.y + size * 0.55f}, {low.x + size * 0.42f, low.y + size * 0.82f}, {low.x + size * 0.88f, low.y + size * 0.2f}}.data(), 3, color, 0, 2.0f);
+        } else {  // two sheets
+          float s = size * 0.68f;
+          drawList->AddRect(ImVec2(low.x, low.y), ImVec2(low.x + s, low.y + s), color, 2.0f, 0, 1.4f);
+          drawList->AddRectFilled(ImVec2(low.x + size - s, low.y + size - s), ImVec2(high.x, high.y), background, 2.0f);
+          drawList->AddRect(ImVec2(low.x + size - s, low.y + size - s), ImVec2(high.x, high.y), color, 2.0f, 0, 1.4f);
+        }
+      }
       ImGui::EndChild();
       ImGui::PopStyleColor();
       ImGui::PopFont();
-      if (theme::dialogButton(T("Copy"), ImVec2(0, 0), true)) ImGui::SetClipboardText(block.text.c_str());
       if (!user && context.canApply) {
-        ImGui::SameLine();
         if (theme::dialogButton(T("Apply..."), ImVec2(0, 0), true)) {
           applyCode_ = block.text;
           applyFn_ = context.apply;

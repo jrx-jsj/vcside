@@ -36,6 +36,7 @@
 #include "assistant/engine.h"
 #include "assistant/grounding.h"
 #include "assistant/http.h"
+#include "assistant/markdown.h"
 #include "assistant/models.h"
 #include "assistant/prompt.h"
 #include "assistant/provider.h"
@@ -3140,6 +3141,46 @@ static void testBundledModel() {
 #endif
 }
 
+// ---- Markdown in answers ----------------------------------------------------------------
+static void testMarkdown() {
+  using namespace vcs::assistant;
+  std::printf("markdown\n");
+  auto runs = parseInline("use **HMP0** and `RESP0`, not *this*; 2 * 3 stays; [docs](http://x) too");
+  CHECK(runs.size() >= 6);
+  CHECK(runs[1].bold && runs[1].text == "HMP0");
+  bool codeRun = false, italicRun = false, star = false, link = false;
+  for (auto& run : runs) {
+    codeRun = codeRun || (run.code && run.text == "RESP0");
+    italicRun = italicRun || (run.italic && run.text == "this");
+    star = star || run.text.find("2 * 3") != std::string::npos;
+    link = link || run.text.find("docs too") != std::string::npos || run.text.find("docs") != std::string::npos;
+  }
+  CHECK(codeRun && italicRun && star && link);
+  // unfinished marks stay as typed (an answer that is still streaming)
+  auto open = parseInline("half **bold");
+  CHECK(open.size() == 1 && open[0].text == "half **bold" && !open[0].bold);
+  auto snake = parseInline("the my__name__x identifier");
+  CHECK(snake.size() == 1 && !snake[0].bold);
+  CHECK(parseInline("a\\*b").size() == 1 && parseInline("a\\*b")[0].text == "a*b");  // escaped
+
+  auto blocks = parseMarkdown("### Title\n\nFirst line\nsecond line.\n\n- one\n- two **b**\n  - nested\n1. first\n2. second\n> quoted\n---\n| a | b |\n|---|---|\n| 1 | 2 |\n");
+  CHECK(blocks.size() == 10);
+  CHECK(blocks[0].kind == MdBlock::Heading && blocks[0].level == 3 && blocks[0].runs[0].text == "Title");
+  CHECK(blocks[1].kind == MdBlock::Paragraph && blocks[1].runs[0].text == "First line second line.");  // wrapped lines join
+  CHECK(blocks[2].kind == MdBlock::Bullet && blocks[3].kind == MdBlock::Bullet && blocks[3].runs.size() == 2 && blocks[3].runs[1].bold);
+  CHECK(blocks[4].kind == MdBlock::Bullet && blocks[4].level == 1);
+  CHECK(blocks[5].kind == MdBlock::Number && blocks[5].number == 1 && blocks[6].number == 2);
+  CHECK(blocks[7].kind == MdBlock::Quote && blocks[8].kind == MdBlock::Rule);
+  CHECK(blocks[9].kind == MdBlock::Table && blocks[9].rows.size() == 2 && blocks[9].rows[0].size() == 2 && blocks[9].rows[1][1][0].text == "2");  // the separator row is dropped
+  CHECK(parseMarkdown("").empty() && parseMarkdown("\n\n").empty());
+  // a number in a sentence is not a list, and neither is a hyphen inside a word
+  auto plain = parseMarkdown("2026 was a year\nwell-known 3.5 mm");
+  CHECK(plain.size() == 1 && plain[0].kind == MdBlock::Paragraph);
+  // what the answer in the bug report looked like
+  auto answer = parseMarkdown("Use **HMP0** ($04, W):\n\n- **HMP0** ($04, W): motion\n- **HMP1**: motion\n");
+  CHECK(answer.size() == 3 && answer[1].kind == MdBlock::Bullet && answer[1].runs[0].bold);
+}
+
 #ifndef _WIN32
 // A one-shot HTTP server on loopback: reads a request, answers with `reply`, closes.
 struct MockServer {
@@ -3479,6 +3520,7 @@ int main() {
   testHeader(kb, data);
   testAssistant(kb);
   testBundledModel();
+  testMarkdown();
   std::printf("%d checks, %d failures\n", checks, failures);
   return failures ? 1 : 0;
 }

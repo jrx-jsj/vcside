@@ -244,6 +244,7 @@
     "Context tokens": "Tokens de contexto",
     "Continue": "Continuar",
     "Controllers": "Mandos",
+    "Copied": "Copiado",
     "Copied as {0}.": "Copiado como {0}.",
     "Copied: paste it in the program; every save of this file rewrites it.": "Copiado: pégalo en el programa; cada vez que guardes este archivo se reescribe.",
     "Copied: paste it wherever you want to share it.": "Copiado: pégalo donde quieras compartirlo.",
@@ -1074,5 +1075,5 @@
     "{0}:{1}: no listing to place the breakpoint: build first.": "{0}:{1}: no hay listado para situar el punto de ruptura: compila antes.",
     "±{0}": "±{0}"
   },
-  "total": 1071
+  "total": 1072
 }

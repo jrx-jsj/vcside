@@ -74,6 +74,8 @@ class AssistantPanel {
   Download download_;
   std::vector<CatalogModel> catalog_;
   bool catalogLoaded_ = false, drawnThisFrame_ = false;
+  unsigned int copiedId_ = 0;                          // the code block whose copy icon was just pressed
+  double copiedAt_ = 0;
   Hardware hardware_;                                  // what this computer offers, asked once
   std::future<std::vector<Device>> probe_;
   Recommendation recommendation_;                      // the model that fits it best
