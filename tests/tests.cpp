@@ -834,7 +834,7 @@ static void testElfSpace() {
   }
 
   // the DASM example: its graphics, the tables they give, and a program that assembles
-  CHECK(Project::examples(Language::Dasm).size() == 1 && Project::examples(Language::BatariBasic).empty());
+  CHECK(Project::examples(Language::Dasm).size() == 2 && Project::examples(Language::BatariBasic).empty());
   for (const char* tvStandard : {"NTSC", "PAL", "AUTO"}) {
     fs::path animationDir = dir / (std::string("anim-") + tvStandard);
     CHECK(Project::create(animationDir.string(), "walker", Language::Dasm, tvStandard, &project, &error, "animation"));
@@ -860,6 +860,39 @@ static void testElfSpace() {
     }
   }
   CHECK(!Project::create((dir / "none").string(), "x", Language::Dasm, "NTSC", &project, &error, "nope") && !error.empty());
+  // the DPC+ example: the driver copied from batari Basic (here a stand-in, through $bB),
+  // the song exported in three parts, and a 32K image
+  {
+    fs::path fakeBb = dir / "fake-bb";
+    fs::create_directories(fakeBb / "includes");
+    std::ofstream(fakeBb / "includes" / "DPCplus.arm", std::ios::binary) << std::string(3072, '\0');
+    const char* realBb = std::getenv("bB");
+    std::string savedBb = realBb ? realBb : "";
+    auto setBb = [](const std::string& value) {
+#ifdef _WIN32
+      _putenv_s("bB", value.c_str());
+#else
+      if (value.empty()) unsetenv("bB");
+      else setenv("bB", value.c_str(), 1);
+#endif
+    };
+    setBb(fakeBb.string());
+    for (const char* tvStandard : {"NTSC", "PAL"}) {
+      fs::path dpcDir = dir / (std::string("dpc-") + tvStandard);
+      CHECK(Project::create(dpcDir.string(), "voices", Language::Dasm, tvStandard, &project, &error, "dpcplus"));
+      CHECK(project.format == "DPC+");
+      for (auto fileName : {"main.asm", "2600.h", "DPCplus.arm", "theme.vcsmusic", "theme.music.asm"}) CHECK(fs::exists(dpcDir / fileName));
+      std::ifstream musicFile(dpcDir / "theme.music.asm");
+      std::string musicText((std::istreambuf_iterator<char>(musicFile)), {});
+      CHECK(musicText.find("MUSIC_PART = 3") != std::string::npos && musicText.find("MUSIC_EFFECT_FIRE") != std::string::npos);
+      std::string dasm = findInPath("dasm");
+      if (!dasm.empty()) {
+        std::string command = "cd \"" + dpcDir.string() + "\" && \"" + dasm + "\" main.asm -f3 -oexample.bin > dasm.log 2>&1";
+        CHECK(std::system(command.c_str()) == 0 && fs::file_size(dpcDir / "example.bin", errorCode) == 32768);
+      }
+    }
+    setBb(savedBb);
+  }
   // the ELF example: the template with the example's main.c, and hero.gfx.h next to it
   CHECK(Project::examples(Language::ElfC).size() == 1);
   fs::path elfDir = dir / "anim-elf";
@@ -2163,7 +2196,7 @@ static void assembleSong(const std::string& dasm, const std::string& exportText,
     if (!dpc)
       source << "    ORG $1000\n" << exportText;
     else
-      source << "WAVEFORM0 = $E0\nWAVEFORM1 = $E1\nWAVEFORM2 = $E2\nNOTE0 = $E3\nNOTE1 = $E4\nNOTE2 = $E5\n"
+      source << "WAVEFORM0 = $E0\nWAVEFORM1 = $E1\nWAVEFORM2 = $E2\nNOTE0 = $E3\nNOTE1 = $E4\nNOTE2 = $E5\nAMPLITUDE = $E6\n"
              << "    ORG $1000\nMUSIC_PART SET 1\n" << exportText << "    ORG $4000\nMUSIC_PART SET 2\n" << exportText
              << "    ORG $6000\nMUSIC_PART SET 3\n" << exportText;
   }

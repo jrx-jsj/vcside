@@ -72,6 +72,10 @@ MusicInit SUBROUTINE
     rts
 
 MusicFrame SUBROUTINE
+  IF MUSIC_DPC
+    lda AMPLITUDE          ; the kernel's sound goes on while the player works
+    sta AUDV0
+  ENDIF
     lda MusicOrder
     cmp #$FF
     beq .voices
@@ -204,6 +208,10 @@ MusicEffect SUBROUTINE
 
 ; A row's event for the channel: Y is the offset in the row and moves past it.
 MusicEvent{1} SUBROUTINE
+  IF MUSIC_DPC
+    lda AMPLITUDE          ; the kernel's sound goes on while the player works
+    sta AUDV0
+  ENDIF
     lda (MusicPointer),y
     iny
     tax
@@ -309,6 +317,10 @@ MusicNoteOff{1} SUBROUTINE
 
 ; This frame's AUDC, AUDF and AUDV for the channel (DPC+: its WAVEFORM and NOTE).
 MusicVoice{1} SUBROUTINE
+  IF MUSIC_DPC
+    lda AMPLITUDE          ; the kernel's sound goes on while the player works
+    sta AUDV0
+  ENDIF
     lda MusicState{1}
     bmi .sounding
 .silent
@@ -1131,6 +1143,7 @@ ExportResult exportSong(const Song& song, double audioClock, const ExportOptions
     out << "; Define MUSIC_RAM (" << ramBytes << " bytes of zero page) first. Call MusicInit once and MusicFrame once\n";
     out << "; per frame; with AUDC0 = 0, the kernel copies the voices' sum to AUDV0 on every line:\n";
     out << ";     lda AMPLITUDE\n;     sta AUDV0\n";
+    out << "; MusicFrame does the same a few times while it works (it takes several lines).\n";
     out << "; Each voice's volume is one of " << dpcMaxLevel(channels) + 1 << " levels (DPC+ adds the voices and AUDV0 takes 4 bits),\n";
     out << "; and noise repeats every 32 steps of its register.\n";
     out << "\n  IFNCONST MUSIC_PART\n    ERR ; set MUSIC_PART to 1, 2 or 3 before including this file\n  ENDIF\n";

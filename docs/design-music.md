@@ -111,7 +111,7 @@ With AUDC = 0 the TIA outputs AUDV as a level, so a program that writes AUDV0 on
 - **Import:**
   - TIATracker `.ttt`: its instruments, percussion and patterns.
   - MIDI files (later): notes per channel, then tuned.
-- **Example projects:** the DASM example and the batari Basic template play a short song, with a sound effect on the fire button and another when the hero (or the square) reaches an edge or a wall. The C (ELF) template and its example play a 3-voice song as samples, with the same two effects.
+- **Example projects:** the DASM example and the batari Basic template play a short song, with a sound effect on the fire button and another when the hero (or the square) reaches an edge or a wall. The C (ELF) template and its example play a 3-voice song as samples, with the same two effects. The DASM example "music on a DPC+ cartridge" plays that song on DPC+'s three voices, with the same effects; each scanline's luminance is the amplitude written to AUDV0.
 
 ## Credits
 

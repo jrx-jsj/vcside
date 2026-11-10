@@ -15,6 +15,7 @@
 #include "music/tuning.h"
 #include "i18n.h"
 #include "paths.h"
+#include "toolchain.h"
 
 namespace fs = std::filesystem;
 using nlohmann::json;
@@ -465,8 +466,19 @@ static void replaceAll(std::string& text, const std::string& search, const std::
 }
 
 std::vector<std::pair<std::string, const char*>> Project::examples(Language language) {
-  if (language == Language::Dasm || language == Language::ElfC) return {{"animation", N_("Example: an animated sprite")}};
+  if (language == Language::Dasm) return {{"animation", N_("Example: an animated sprite")}, {"dpcplus", N_("Example: music on a DPC+ cartridge")}};
+  if (language == Language::ElfC) return {{"animation", N_("Example: an animated sprite")}};
   return {};
+}
+
+// DPC+'s ARM driver, from the batari Basic VCSIDE installs (or $bB's): VCSIDE does not
+// carry it, the project gets a copy. Empty when there is none.
+static std::string findDpcPlusDriver() {
+  std::vector<fs::path> places = {fs::path(Toolchain::toolsDir()) / "bb" / "includes" / "DPCplus.arm"};
+  if (const char* bb = std::getenv("bB")) places.push_back(fs::path(bb) / "includes" / "DPCplus.arm");
+  for (auto& place : places)
+    if (fs::exists(place)) return place.string();
+  return "";
 }
 
 // A .vcsgfx of an example comes with the tables its program includes (.gfx.asm, or .gfx.h
@@ -531,6 +543,14 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
       if (error) *error = F("Template not found in {0}", {exampleDir.string()});
       return false;
     }
+    std::string dpcDriver;
+    if (example == "dpcplus") {
+      dpcDriver = findDpcPlusDriver();
+      if (dpcDriver.empty()) {
+        if (error) *error = T("The DPC+ example takes the cartridge's ARM driver (DPCplus.arm) from batari Basic: install batari Basic first (Tools).");
+        return false;
+      }
+    }
     bool pal = tvIs50Hz(tvStandard);
     const char* lines50 = "VBLANK_LINES   = 45\nVISIBLE_LINES  = 228\nOVERSCAN_LINES = 36";
     const char* lines60 = "VBLANK_LINES   = 37\nVISIBLE_LINES  = 192\nOVERSCAN_LINES = 30";
@@ -551,6 +571,10 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
     for (auto& entry : fs::directory_iterator(exampleDir, errorCode))
       if ((entry.path().extension() == ".vcsgfx" || entry.path().extension() == ".vcsmusic") && !fs::exists(fs::path(newProject.dir) / entry.path().filename()))
         fs::copy_file(entry.path(), fs::path(newProject.dir) / entry.path().filename(), errorCode);
+    if (!dpcDriver.empty()) {
+      if (!fs::exists(fs::path(newProject.dir) / "DPCplus.arm")) fs::copy_file(dpcDriver, fs::path(newProject.dir) / "DPCplus.arm", errorCode);
+      newProject.format = "DPC+";
+    }
     writeGfxIncludes(newProject.dir, false);
     writeMusicIncludes(newProject.dir, tvStandard);
     newProject.main = "main.asm";
