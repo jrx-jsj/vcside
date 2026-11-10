@@ -4,3 +4,6 @@
 compile_commands.json
 .cache/
 __pycache__/
+
+# Private notes: feedback from people, drafts. Never committed.
+/notes/
