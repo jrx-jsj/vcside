@@ -448,15 +448,15 @@ void AssistantPanel::draw(const PanelContext& context, ImFont* mono, bool* open)
   snprintf(title, sizeof title, "%s###assistant", T("Assistant"));
   ImGui::SetNextWindowSize(ImVec2(theme::em(560), theme::em(620)), ImGuiCond_FirstUseEver);
   ImGui::SetNextWindowPos(ImVec2(theme::em(120), theme::em(90)), ImGuiCond_FirstUseEver);
-  if (!ImGui::Begin(title, open)) {
-    ImGui::End();
+  if (!theme::beginPanel(title, open)) {
+    theme::endPanel();
     return;
   }
   Provider* provider = settings_.provider();
   if (!provider) {
     ImGui::TextWrapped("%s", T("No model is set up yet. Choose one in the settings."));
     if (theme::dialogButton(T("Settings..."))) wantSettings_ = true;
-    ImGui::End();
+    theme::endPanel();
     return;
   }
   // models for this server
@@ -566,7 +566,7 @@ void AssistantPanel::draw(const PanelContext& context, ImFont* mono, bool* open)
       focusInput_ = true;
     }
   }
-  ImGui::End();
+  theme::endPanel();
 }
 
 void AssistantPanel::dialogs() {
