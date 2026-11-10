@@ -600,6 +600,29 @@ bool applySearchReplace(const std::string& text, const json& edits, std::string*
   return true;
 }
 
+bool readProjectFile(const std::string& projectDir, const std::string& relative, std::string* text, std::string* error, size_t maxBytes) {
+  std::string absolute, why;
+  if (!resolveInProject(projectDir, relative, &absolute, &why)) {
+    if (error) *error = why;
+    return false;
+  }
+  std::error_code ec;
+  if (!fs::is_regular_file(absolute, ec)) {
+    if (error) *error = "no such file: " + relative;
+    return false;
+  }
+  if (maxBytes == 0) maxBytes = 256 * 1024;
+  if ((size_t)fs::file_size(absolute, ec) > maxBytes) {
+    if (error) *error = "too big: " + relative;
+    return false;
+  }
+  if (!readText(absolute, text) || looksBinary(*text) || !isTextFileName(absolute)) {
+    if (error) *error = "not a text file: " + relative;
+    return false;
+  }
+  return true;
+}
+
 ToolResult runTool(const ToolEnv& env, const ToolCall& call) {
   const std::string& name = call.name;
   if (name == "project_info") return ok((env.projectInfo.empty() ? std::string("no project open") : env.projectInfo) + "\n");

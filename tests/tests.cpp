@@ -41,6 +41,7 @@
 #include "assistant/chat_tabs.h"
 #include "assistant/project_index.h"
 #include "assistant/embeddings.h"
+#include "assistant/context_items.h"
 #include <imgui.h>
 #include "assistant/secrets.h"
 #include "assistant/models.h"
@@ -3689,6 +3690,111 @@ static void testEmbeddings() {
   fs::remove_all(project);
 }
 
+static void testContextChips() {
+  namespace fs = std::filesystem;
+  using namespace vcs::assistant;
+  auto labels = [](const ContextSet& set) { std::string text; for (auto& chip : set.chips("errors")) text += chip.label + "|"; return text; };
+  ContextSet set;
+  ContextSources sources;
+  sources.fileRelative = "main.asm";
+  set.sync(sources);
+  CHECK(labels(set) == "main.asm|");
+  // a selection stands for the file and names its lines
+  sources.hasSelection = true, sources.selectionFirst = 12, sources.selectionLast = 20;
+  set.sync(sources);
+  CHECK(labels(set) == "main.asm:12-20|");
+  sources.selectionLast = 12;
+  set.sync(sources);
+  CHECK(labels(set) == "main.asm:12|");
+  // errors come with their own chip
+  sources.hasErrors = true, sources.errorsKey = "e1";
+  set.sync(sources);
+  CHECK(labels(set) == "main.asm:12|errors|");
+  // removing one keeps it removed while its source stays the same...
+  set.remove(1);
+  set.sync(sources);
+  CHECK(labels(set) == "main.asm:12|");
+  // ...and brings it back when the errors change
+  sources.errorsKey = "e2";
+  set.sync(sources);
+  CHECK(labels(set) == "main.asm:12|errors|");
+  // removing the selection does not fall back to the file; another selection or file brings it back
+  set.remove(0);
+  set.sync(sources);
+  CHECK(labels(set) == "errors|");
+  sources.selectionFirst = 3, sources.selectionLast = 4;
+  set.sync(sources);
+  CHECK(labels(set) == "main.asm:3-4|errors|");
+  sources.hasSelection = false;
+  set.sync(sources);
+  CHECK(labels(set) == "main.asm|errors|");
+  set.remove(0);
+  sources.fileRelative = "other.asm";
+  set.sync(sources);
+  CHECK(labels(set) == "other.asm|errors|");
+  // added files are listed once, after the automatic ones, and can be removed
+  set.addFiles({"src/kernel.asm", "constants.h", "src/kernel.asm"});
+  CHECK(labels(set) == "other.asm|errors|src/kernel.asm|constants.h|" && set.addedCount() == 2);
+  set.remove(2);
+  CHECK(labels(set) == "other.asm|errors|constants.h|");
+  sources.fileRelative = "";
+  sources.hasSelection = false, sources.hasErrors = false;
+  set.sync(sources);
+  CHECK(labels(set) == "constants.h|");  // nothing open: only what was added
+
+  // the project's files for @
+  fs::path root = fs::temp_directory_path() / "vcside_context_test";
+  fs::remove_all(root);
+  fs::create_directories(root / "src" / "deep" / "er");
+  fs::create_directories(root / "build");
+  fs::create_directories(root / ".git");
+  auto write = [](const fs::path& path, const std::string& text) { std::ofstream(path, std::ios::binary) << text; };
+  write(root / "main.asm", "  nop\n");
+  write(root / "constants.h", "A = 1\n");
+  write(root / "src" / "kernel.asm", "Kernel\n  rts\n");
+  write(root / "src" / "keys.asm", "Keys\n  rts\n");
+  write(root / "src" / "deep" / "er" / "kernel_old.asm", "Old\n  rts\n");
+  write(root / ".env", "SECRET=1\n");
+  write(root / "game.bin", "xx");
+  write(root / "build" / "out.lst", "x\n");
+  write(root / ".git" / "config", "x\n");
+  std::string dir = root.string();
+  auto all = listProjectEntries(dir, "", 50);
+  CHECK(std::find(all.begin(), all.end(), "src/") != all.end() && std::find(all.begin(), all.end(), "main.asm") != all.end());
+  for (auto& entry : all) CHECK(entry != ".env" && entry != "game.bin" && entry.rfind("build", 0) != 0 && entry.rfind(".git", 0) != 0);
+  auto kernel = listProjectEntries(dir, "kern", 5);
+  CHECK(kernel.size() == 2 && kernel[0] == "src/kernel.asm" && kernel[1] == "src/deep/er/kernel_old.asm");  // the name starts with it; shallow first
+  auto folder = listProjectEntries(dir, "src", 5);
+  CHECK(!folder.empty() && folder[0] == "src/");
+  CHECK(listProjectEntries(dir, "mnasm", 5).size() == 1);  // its letters in order: main.asm
+  CHECK(listProjectEntries(dir, "zzzz", 5).empty() && listProjectEntries(dir, "env", 5).empty());
+  CHECK(listProjectEntries(dir, "", 3).size() == 3);
+  size_t total = 0;
+  auto inSrc = filesInFolder(dir, "src", 2, &total);
+  CHECK(total == 3 && inSrc.size() == 2 && inSrc[0] == "src/deep/er/kernel_old.asm");
+  CHECK(filesInFolder(dir, "../elsewhere", 5, &total).empty() && total == 0);
+
+  // what is sent: the chips' text within a budget
+  ContextSet chosen;
+  ContextSources open;
+  open.fileRelative = "main.asm", open.hasErrors = true, open.errorsKey = "k";
+  chosen.sync(open);
+  chosen.addFiles({"src/kernel.asm", ".env", "missing.asm"});
+  ContextText editor{"  nop\n  nop\n", "", "main.asm:3: error: x\n"};
+  auto gathered = gatherContext(chosen.chips("Build errors"), editor, dir, 10000);
+  CHECK(gathered.fileName == "main.asm" && gathered.fileText == editor.fileText && gathered.errors == editor.errors);
+  CHECK(gathered.extraFiles.size() == 1 && gathered.extraFiles[0].first == "src/kernel.asm" && gathered.extraFiles[0].second == "Kernel\n  rts\n");
+  CHECK(gathered.notes.size() == 2);  // .env (secrets) and the missing file said why they are not there
+  CHECK(gathered.summary == "main.asm, Build errors, src/kernel.asm");
+  auto tight = gatherContext(chosen.chips("Build errors"), ContextText{std::string(500, 'x'), "", "err\n"}, dir, 100);
+  CHECK(tight.fileText.size() == 100 && tight.errors.empty() && tight.extraFiles.empty() && !tight.notes.empty());  // the file used the budget
+  open.hasSelection = true, open.selectionFirst = 1, open.selectionLast = 2;
+  chosen.sync(open);
+  auto selected = gatherContext(chosen.chips("Build errors"), ContextText{"whole file", "  nop\n  nop\n", ""}, dir, 10000);
+  CHECK(selected.selectionLabel == "main.asm:1-2" && selected.selection == "  nop\n  nop\n" && selected.fileText.empty());
+  fs::remove_all(root);
+}
+
 static void testAssistant(const KnowledgeBase& kb) {
   using namespace vcs::assistant;
   // SSE, fed one byte at a time, with CRLF, comments and a data line split over two
@@ -4006,6 +4112,7 @@ int main() {
   testInvalidUtf8();
   testProjectIndex();
   testEmbeddings();
+  testContextChips();
   std::printf("%d checks, %d failures\n", checks, failures);
   return failures ? 1 : 0;
 }

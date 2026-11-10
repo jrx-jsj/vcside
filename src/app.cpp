@@ -2446,6 +2446,7 @@ void App::assistantPanel() {
     if (project_) context.fileRelative = fs::relative(active->path, project_->dir).generic_string();
     context.fileText = active->editor.text();
     context.selection = active->editor.selectedText();
+    if (!context.selection.empty()) context.selectionFirst = active->editor.selectedLines().first + 1, context.selectionLast = active->editor.selectedLines().second + 1;
     context.canApply = true;
     context.apply = [this, path = active->path](const std::string& code) {  // looked up again: the file may have been closed
       for (auto& openedFile : files_)

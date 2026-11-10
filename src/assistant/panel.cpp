@@ -563,6 +563,157 @@ void AssistantPanel::refreshModels() {
   });
 }
 
+// ---- the chips above the input and the @ list ---------------------------------------------------
+
+namespace {
+// The input box tells the panel where its cursor is, and drops the "@name" that was just chosen.
+int inputCallback(ImGuiInputTextCallbackData* data) {
+  auto* state = static_cast<int*>(data->UserData);  // points at the cursor; the deletion comes through the next two ints
+  state[0] = data->CursorPos;
+  if (state[1] >= 0) {
+    data->DeleteChars(state[1], state[2]);
+    state[1] = -1;
+  }
+  return 0;
+}
+
+// One chip: its label, a cross to remove it. Returns true when the cross was pressed.
+bool drawChip(const char* id, const std::string& label, ImVec4 tint, const std::string& tooltip) {
+  const ImGuiStyle& style = ImGui::GetStyle();
+  float height = ImGui::GetFrameHeight() * 0.95f, cross = height * 0.42f;
+  float width = style.FramePadding.x * 1.5f + ImGui::CalcTextSize(label.c_str()).x + style.ItemInnerSpacing.x + cross + style.FramePadding.x;
+  ImVec2 at = ImGui::GetCursorScreenPos();
+  ImGui::PushID(id);
+  ImGui::InvisibleButton("chip", ImVec2(width, height));
+  bool hoveredChip = ImGui::IsItemHovered();
+  ImVec2 crossMin(at.x + width - style.FramePadding.x - cross, at.y + (height - cross) * 0.5f);
+  ImVec2 mouse = ImGui::GetIO().MousePos;
+  bool overCross = hoveredChip && mouse.x >= crossMin.x - 3 && mouse.x <= crossMin.x + cross + 3;
+  bool removed = ImGui::IsItemClicked(ImGuiMouseButton_Left) && overCross;
+  ImGui::PopID();
+  ImDrawList* drawList = ImGui::GetWindowDrawList();
+  ImVec2 end(at.x + width, at.y + height);
+  drawList->AddRectFilled(at, end, ImGui::GetColorU32(ImVec4(tint.x, tint.y, tint.z, 0.20f)), height * 0.5f);
+  drawList->AddRect(at, end, ImGui::GetColorU32(ImVec4(tint.x, tint.y, tint.z, 0.9f)), height * 0.5f, 0, 1.2f);
+  ImU32 textColour = ImGui::GetColorU32(theme::colv(theme::Role::UiText));
+  drawList->AddText(ImVec2(at.x + style.FramePadding.x * 1.5f, at.y + (height - ImGui::GetTextLineHeight()) * 0.5f), textColour, label.c_str());
+  ImU32 crossColour = ImGui::GetColorU32(overCross ? theme::colv(theme::Role::MsgError) : theme::colv(theme::Role::UiTextDim));
+  drawList->AddLine(crossMin, ImVec2(crossMin.x + cross, crossMin.y + cross), crossColour, 1.6f);
+  drawList->AddLine(ImVec2(crossMin.x + cross, crossMin.y), ImVec2(crossMin.x, crossMin.y + cross), crossColour, 1.6f);
+  if (hoveredChip) {
+    ImGui::SetMouseCursor(overCross ? ImGuiMouseCursor_Hand : ImGuiMouseCursor_Arrow);
+    ImGui::SetTooltip("%s", overCross ? T("Take it out of what is sent") : tooltip.c_str());
+  }
+  return removed;
+}
+}  // namespace
+
+// The row above the input: what goes along with the question. The open file or the selected lines and the
+// build errors are there by themselves; a cross takes one out until it changes; @ in the input adds more.
+void AssistantPanel::drawContextChips(const PanelContext& context) {
+  ContextSources sources;
+  sources.fileRelative = context.fileRelative;
+  sources.hasSelection = !context.selection.empty();
+  sources.selectionFirst = context.selectionFirst, sources.selectionLast = context.selectionLast;
+  sources.hasErrors = !context.errors.empty();
+  sources.errorsKey = std::to_string(std::hash<std::string>()(context.errors));
+  contextSet_.sync(sources);
+  auto chips = contextSet_.chips(T("Build errors"));
+  float areaHeight = ImGui::GetFrameHeight() * 2.1f;
+  chipsTopY_ = ImGui::GetCursorScreenPos().y;  // the @ list goes above this row
+  if (ImGui::BeginChild("context_chips", ImVec2(0, areaHeight), ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar)) {
+    float available = ImGui::GetContentRegionAvail().x, used = 0, gap = ImGui::GetStyle().ItemSpacing.x;
+    int removeIndex = -1;
+    ImVec4 accent = theme::colv(theme::Role::UiAccent), warning = theme::colv(theme::Role::MsgWarning);
+    for (size_t i = 0; i < chips.size(); i++) {
+      const ContextChip& chip = chips[i];
+      std::string label = ellipsizeText(chip.label, theme::em(180));
+      float width = ImGui::GetStyle().FramePadding.x * 3.5f + ImGui::CalcTextSize(label.c_str()).x + ImGui::GetStyle().ItemInnerSpacing.x + ImGui::GetFrameHeight() * 0.4f;
+      if (i > 0 && used + width + gap < available) ImGui::SameLine(), used += gap;
+      else if (i > 0) used = 0;
+      std::string tooltip = chip.kind == ContextChip::Errors ? std::string(T("The errors of the last build")) : chip.kind == ContextChip::Selection ? F("The selected lines of {0}", {chip.path}) : chip.path;
+      if (drawChip(("c" + std::to_string(i)).c_str(), label, chip.kind == ContextChip::Errors ? warning : accent, tooltip)) removeIndex = (int)i;
+      used += width;
+    }
+    if (chips.empty() || !contextSet_.addedCount()) {
+      if (!chips.empty()) ImGui::SameLine();
+      ImGui::PushStyleColor(ImGuiCol_Text, theme::colv(theme::Role::UiTextDim));
+      ImGui::TextUnformatted(T("@ adds a file or a folder"));
+      ImGui::PopStyleColor();
+    }
+    if (!mentionNote_.empty() && ImGui::GetTime() - mentionNoteAt_ < 6.0) {
+      ImGui::PushStyleColor(ImGuiCol_Text, theme::colv(theme::Role::MsgWarning));
+      ImGui::TextUnformatted(mentionNote_.c_str());
+      ImGui::PopStyleColor();
+    }
+    if (removeIndex >= 0) contextSet_.remove((size_t)removeIndex);
+  }
+  ImGui::EndChild();
+}
+
+// Looks at what is being typed: an "@" at the start of a word, up to the cursor, opens the list.
+void AssistantPanel::updateMention(const PanelContext& context) {
+  mentionStart_ = -1;
+  int cursor = std::min(inputState_.cursor, (int)input_.size());
+  int at = cursor - 1;
+  while (at >= 0 && input_[at] != '@' && !std::isspace((unsigned char)input_[at])) at--;
+  if (at < 0 || input_[at] != '@' || (at > 0 && !std::isspace((unsigned char)input_[at - 1])) || at == mentionDismissed_) return;
+  if (context.projectDir.empty()) return;
+  mentionStart_ = at;
+  mentionQuery_ = input_.substr((size_t)at + 1, (size_t)(cursor - at - 1));
+  std::string key = context.projectDir + "|" + mentionQuery_;
+  if (key != mentionListFor_) {
+    mentionEntries_ = listProjectEntries(context.projectDir, mentionQuery_, 8);
+    mentionListFor_ = key;
+    mentionIndex_ = 0;
+  }
+}
+
+void AssistantPanel::pickMention(const PanelContext& context, const std::string& entry) {
+  if (!entry.empty() && entry.back() == '/') {  // a folder: its files, up to a limit
+    constexpr size_t kMaxFolderFiles = 8;
+    size_t total = 0;
+    auto files = filesInFolder(context.projectDir, entry, kMaxFolderFiles, &total);
+    contextSet_.addFiles(files);
+    if (total > files.size()) mentionNote_ = F("{0} has {1} files: the first {2} were added", {entry, std::to_string(total), std::to_string(files.size())}), mentionNoteAt_ = ImGui::GetTime();
+    else if (files.empty()) mentionNote_ = F("{0} has no text files", {entry}), mentionNoteAt_ = ImGui::GetTime();
+  } else {
+    contextSet_.addFiles({entry});
+  }
+  inputState_.deleteStart = mentionStart_;
+  inputState_.deleteLength = 1 + (int)mentionQuery_.size();
+  mentionStart_ = -1, mentionListFor_.clear();
+  focusInput_ = true;
+}
+
+// The list sits above the input, inside the panel (a window of its own would end up behind the panel
+// whenever the panel is brought to the front).
+void AssistantPanel::drawMention(const PanelContext& context, float inputX, float inputY, float width) {
+  if (mentionStart_ < 0) return;
+  float row = ImGui::GetTextLineHeightWithSpacing();
+  float height = std::max(1, (int)mentionEntries_.size()) * row + ImGui::GetStyle().WindowPadding.y * 2;
+  (void)inputY;
+  ImGui::SetCursorScreenPos(ImVec2(inputX, chipsTopY_ - height - 2));
+  ImVec4 listBackground = ImGui::GetStyleColorVec4(ImGuiCol_PopupBg);
+  listBackground.w = 1.0f;  // nothing shows through it
+  ImGui::PushStyleColor(ImGuiCol_ChildBg, listBackground);
+  if (ImGui::BeginChild("##mention", ImVec2(std::min(width, theme::em(420)), height), ImGuiChildFlags_Borders, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoNav)) {
+    if (mentionEntries_.empty()) ImGui::TextDisabled("%s", T("No file or folder matches"));
+    std::string chosenEntry;
+    for (int i = 0; i < (int)mentionEntries_.size(); i++) {
+      bool folder = mentionEntries_[i].back() == '/';
+      if (folder) ImGui::PushStyleColor(ImGuiCol_Text, theme::colv(theme::Role::UiAccent));
+      if (ImGui::Selectable(mentionEntries_[i].c_str(), i == mentionIndex_)) chosenEntry = mentionEntries_[i];
+      if (folder) ImGui::PopStyleColor();
+      ImGuiIO& io = ImGui::GetIO();
+      if (ImGui::IsItemHovered() && (io.MouseDelta.x != 0 || io.MouseDelta.y != 0)) mentionIndex_ = i;
+    }
+    if (!chosenEntry.empty()) pickMention(context, chosenEntry);
+  }
+  ImGui::EndChild();
+  ImGui::PopStyleColor();
+}
+
 // ---- searching the project by meaning ------------------------------------------------------
 
 const CatalogModel* AssistantPanel::embedModel() {
@@ -700,10 +851,21 @@ void AssistantPanel::send(const PanelContext& context, const std::string& questi
   chat_.provider = provider->name, chat_.model = provider->model;
   Attachments attachments;
   attachments.projectInfo = context.projectInfo;
-  // No switches: the selection and the build errors go along when there are any, and the open file
-  // when nothing is selected (a selection says which part matters). The line under the input says so.
-  attachments.selection = context.selection;
-  attachments.errors = context.errors;
+  // What the chips above the input say: the open file or the selected lines, the build errors and the
+  // files added with @, within what the model's window can hold.
+  GatheredContext gathered = gatherContext(contextSet_.chips(T("Build errors")), {context.fileText, context.selection, context.errors}, context.projectDir,
+                                           (size_t)std::max(4000, provider->contextTokens * 2));
+  attachments.selection = gathered.selection, attachments.selectionLabel = gathered.selectionLabel;
+  attachments.errors = gathered.errors;
+  attachments.fileName = gathered.fileName, attachments.fileText = gathered.fileText;
+  attachments.extraFiles = gathered.extraFiles;
+  std::string attachedNote = gathered.summary;
+  if (!gathered.notes.empty()) {
+    attachedNote += attachedNote.empty() ? "" : " ";
+    attachedNote += "(" + std::string(T("cut or left out")) + ": ";
+    for (size_t i = 0; i < gathered.notes.size(); i++) attachedNote += (i ? ", " : "") + gathered.notes[i];
+    attachedNote += ")";
+  }
   // The whole project, not only what is open: the files that match the question go along as excerpts
   // (searched in an index of the project's files), and a map of the files and their names.
   std::string searchText = question + " " + oneLine(context.selection, 400) + " " + oneLine(context.errors, 400);
@@ -712,7 +874,7 @@ void AssistantPanel::send(const PanelContext& context, const std::string& questi
     std::string excerpts;
     std::vector<float> meaning = queryVector(searchText);  // empty when search by meaning is off or not ready
     const CatalogModel* searchModel = embedModel();
-    for (auto& hit : index_.search(searchText, 3, context.selection.empty() ? context.fileRelative : std::string(), meaning.empty() ? nullptr : &meaning, searchModel ? searchModel->minSimilarity : 0.45)) {
+    for (auto& hit : index_.search(searchText, 3, gathered.fileName, meaning.empty() ? nullptr : &meaning, searchModel ? searchModel->minSimilarity : 0.45)) {
       std::string piece = "--- " + hit.file + ":" + std::to_string(hit.firstLine) + "-" + std::to_string(hit.lastLine) + "\n```\n" + utf8Cut(hit.text, 1200) + "\n```\n";
       if (excerpts.size() + piece.size() > 3200) break;
       excerpts += piece;
@@ -720,7 +882,6 @@ void AssistantPanel::send(const PanelContext& context, const std::string& questi
     attachments.excerpts = excerpts;
     attachments.projectMap = index_.map(searchText, 900);
   }
-  if (context.selection.empty()) attachments.fileName = context.fileName, attachments.fileText = context.fileText;
   std::string codeText = attachments.selection + "\n" + attachments.errors + "\n" + utf8Cut(attachments.fileText, 8000);
   std::vector<GroundedEntry> entries;
   if (context.kb) entries = groundText(*context.kb, question, codeText, context.grounding);
@@ -729,7 +890,7 @@ void AssistantPanel::send(const PanelContext& context, const std::string& questi
   for (auto& entry : entries) streamingReference_.push_back(entry.id);
   std::string turn = userTurn(question, attachments);
   std::vector<Message> messages = buildMessages(systemPrompt(), chat_.messages, turn, provider->contextTokens, 1024, &droppedTurns_);
-  chat_.messages.push_back({"user", question, {}, ""});
+  chat_.messages.push_back({"user", question, {}, "", attachedNote});
   turnText_ = turn;
   agentSteps_ = 0, callCounts_.clear(), pendingEditActive_ = false, pendingRun_.clear(), waitingBuild_ = false;
   lastRequest_ = chatRequestBody(*provider, messages);
@@ -1101,6 +1262,11 @@ void AssistantPanel::drawMessage(const ChatMessage& message, const std::string& 
     ImGui::TextWrapped("%s", line.c_str());
     ImGui::PopStyleColor();
   }
+  if (user && !message.attached.empty()) {
+    ImGui::PushStyleColor(ImGuiCol_Text, theme::colv(theme::Role::UiTextDim));
+    ImGui::TextWrapped("%s", F("Sent with: {0}", {message.attached}).c_str());
+    ImGui::PopStyleColor();
+  }
   ImGui::Spacing();
   ImGui::Separator();
   ImGui::Spacing();
@@ -1187,7 +1353,7 @@ void AssistantPanel::draw(const PanelContext& context, ImFont* mono, bool* open)
   embedCard();
 
   // conversation
-  float footer = ImGui::GetFrameHeightWithSpacing() * 2 + ImGui::GetTextLineHeightWithSpacing() * 4;
+  float footer = ImGui::GetFrameHeightWithSpacing() * 2 + ImGui::GetTextLineHeightWithSpacing() * 4 + ImGui::GetFrameHeight() * 2.1f + ImGui::GetStyle().ItemSpacing.y;
   if (ImGui::BeginChild("conversation", ImVec2(0, -footer), ImGuiChildFlags_None)) {
     if (chat_.messages.empty() && streaming_.empty()) {
       ImGui::PushStyleColor(ImGuiCol_Text, theme::colv(theme::Role::UiTextDim));
@@ -1209,15 +1375,8 @@ void AssistantPanel::draw(const PanelContext& context, ImFont* mono, bool* open)
   }
   ImGui::EndChild();
 
-  // what goes along with the question, said in words (there is nothing to switch)
-  {
-    std::string along;
-    if (!context.selection.empty()) along = T("the selection");
-    else if (!context.fileText.empty()) along = context.fileName;
-    if (!context.errors.empty()) along += (along.empty() ? "" : ", ") + std::string(T("the build errors"));
-    if (!context.projectDir.empty()) along += (along.empty() ? "" : ", ") + std::string(T("the parts of the project that match"));
-    if (!along.empty()) ImGui::TextDisabled("%s", F("Sent with your question: {0}", {along}).c_str());
-  }
+  // what goes along with the question: chips the user can take out, and "@" to add files
+  drawContextChips(context);
   if (settings_.explainErrors && !context.errors.empty() && !request_.running() && !pendingEditActive_ && pendingRun_.empty() && !waitingBuild_) {
     ImGui::SameLine();
     if (theme::dialogButton(T("Explain the errors"), ImVec2(0, 0), true)) pendingQuestion_ = "Explain these build errors and how to fix them.";
@@ -1238,9 +1397,28 @@ void AssistantPanel::draw(const PanelContext& context, ImFont* mono, bool* open)
   bool waitingForUser = pendingEditActive_ || !pendingRun_.empty() || waitingBuild_;
   float buttonWidth = theme::em(90);
   ImGui::BeginDisabled(running || waitingForUser);
+  // Enter sends, unless the @ list is open: then it chooses; Up and Down move in the list, Escape closes it
+  bool listWasOpen = mentionStart_ >= 0 && !mentionEntries_.empty();
+  if (listWasOpen) {
+    if (ImGui::IsKeyPressed(ImGuiKey_DownArrow)) mentionIndex_ = std::min(mentionIndex_ + 1, (int)mentionEntries_.size() - 1);
+    if (ImGui::IsKeyPressed(ImGuiKey_UpArrow)) mentionIndex_ = std::max(mentionIndex_ - 1, 0);
+    if (ImGui::IsKeyPressed(ImGuiKey_Escape)) mentionDismissed_ = mentionStart_;
+  }
+  int callbackState[3] = {inputState_.cursor, inputState_.deleteStart, inputState_.deleteLength};
   bool enter = ImGui::InputTextMultiline("##input", &input_, ImVec2(-buttonWidth - ImGui::GetStyle().ItemSpacing.x, ImGui::GetTextLineHeightWithSpacing() * 3.2f),
-                                         ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_CtrlEnterForNewLine);
+                                         ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_CtrlEnterForNewLine | ImGuiInputTextFlags_CallbackAlways, inputCallback, callbackState);
+  inputState_.cursor = callbackState[0], inputState_.deleteStart = callbackState[1];
+  ImVec2 inputMin = ImGui::GetItemRectMin();
+  float inputWidth = ImGui::GetItemRectSize().x;
   ImGui::EndDisabled();
+  if (!ImGui::IsItemActive() && !ImGui::IsItemFocused() && mentionStart_ >= 0 && !ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows)) mentionStart_ = -1;
+  updateMention(context);
+  if (mentionStart_ < 0) mentionDismissed_ = (mentionDismissed_ >= 0 && mentionDismissed_ < (int)input_.size() && input_[mentionDismissed_] == '@') ? mentionDismissed_ : -1;
+  if (enter && listWasOpen && mentionStart_ >= 0 && mentionIndex_ < (int)mentionEntries_.size()) {
+    pickMention(context, mentionEntries_[mentionIndex_]);
+    enter = false;
+  }
+  mentionX_ = inputMin.x, mentionY_ = inputMin.y, mentionWidth_ = inputWidth;
   ImGui::SameLine();
   bool clicked = false;
   if (running) {
@@ -1266,6 +1444,7 @@ void AssistantPanel::draw(const PanelContext& context, ImFont* mono, bool* open)
       focusInput_ = true;
     }
   }
+  drawMention(context, mentionX_, mentionY_, mentionWidth_);
   theme::endPanel();
 }
 

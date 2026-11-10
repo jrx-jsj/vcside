@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 
+#include "assistant/context_items.h"
 #include "assistant/embeddings.h"
 #include "assistant/engine.h"
 #include "assistant/grounding.h"
@@ -33,7 +34,8 @@ struct PanelContext {
   std::string projectInfo;  // "DASM, F8, NTSC, main.asm"
   GroundingContext grounding;
   std::string fileName, fileText, selection, errors;
-  std::string fileRelative;  // the open file, relative to the project (for the index)
+  std::string fileRelative;  // the open file, relative to the project (for the index and the chips)
+  int selectionFirst = 0, selectionLast = 0;  // the selected lines, 1-based
   bool canApply = false;
   std::function<void(const std::string& code)> apply;  // replaces the selection, or inserts at the cursor
   // for the agent's tools
@@ -129,6 +131,22 @@ class AssistantPanel {
   void updateEmbeddings(const PanelContext& context);
   std::vector<float> queryVector(const std::string& text);
   void embedCard();
+  // the chips above the input and the @ list
+  ContextSet contextSet_;
+  struct InputState {
+    int cursor = 0;
+    int deleteStart = -1, deleteLength = 0;  // text for the input to drop on its next frame (the "@name" just chosen)
+  } inputState_;
+  std::vector<std::string> mentionEntries_;
+  std::string mentionQuery_, mentionNote_, mentionListFor_;
+  int mentionStart_ = -1, mentionIndex_ = 0, mentionDismissed_ = -1;
+  double mentionNoteAt_ = 0;
+  float chipsTopY_ = 0;
+  float mentionX_ = 0, mentionY_ = 0, mentionWidth_ = 0;  // where the input is, for the list above it
+  void drawContextChips(const PanelContext& context);
+  void updateMention(const PanelContext& context);
+  void drawMention(const PanelContext& context, float inputX, float inputY, float width);
+  void pickMention(const PanelContext& context, const std::string& entry);
   mutable ProjectIndex index_;                                 // the project's files, searched for each question
   ImFont* monoFont_ = nullptr;
   long long spentTokens_ = 0;                          // remote tokens used this session

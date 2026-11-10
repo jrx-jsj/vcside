@@ -69,6 +69,10 @@ bool isSecretFile(const std::string& fileName);
 // Makefile, .vcsproj and scripts: an edit changes what Build runs.
 bool isBuildFile(const std::string& fileName);
 
+// The text of a project file for the model or the context chips: through the sandbox, text only
+// (no ROMs, images or files with NUL bytes), at most maxBytes (0 = the usual limit of 256 KB).
+bool readProjectFile(const std::string& projectDir, const std::string& relative, std::string* text, std::string* error, size_t maxBytes = 0);
+
 // Runs a read tool, or turns edit_file into a proposal (nothing is written). build and
 // run_emulator are the panel's: they return an error here.
 ToolResult runTool(const ToolEnv& env, const ToolCall& call);

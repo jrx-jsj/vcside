@@ -127,6 +127,7 @@ bool ChatStore::load(const std::string& id, bool archived, Chat* chat) const {
       message.role = item.value("role", std::string());
       message.content = item.value("content", std::string());
       message.kind = item.value("kind", std::string());
+      message.attached = item.value("attached", std::string());
       if (item.contains("reference") && item["reference"].is_array())
         for (auto& id : item["reference"])
           if (id.is_string()) message.reference.push_back(id.get<std::string>());
@@ -143,6 +144,7 @@ bool ChatStore::save(const Chat& chat) {
     json item = {{"role", message.role}, {"content", sanitizeUtf8(message.content)}};
     if (!message.reference.empty()) item["reference"] = message.reference;
     if (!message.kind.empty()) item["kind"] = message.kind;
+    if (!message.attached.empty()) item["attached"] = sanitizeUtf8(message.attached);
     value["messages"].push_back(item);
   }
   // a chat that was archived stays in the archive

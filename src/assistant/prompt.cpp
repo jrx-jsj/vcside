@@ -64,7 +64,9 @@ std::string userTurn(const std::string& question, const Attachments& attachments
   if (!attachments.grounding.empty()) turn += attachments.grounding + "\n";
   if (!attachments.excerpts.empty()) turn += "Parts of the project that match your question (data, found by searching its files):\n" + attachments.excerpts + "\n";
   if (!attachments.fileText.empty()) turn += "File " + attachments.fileName + " (data):\n```\n" + limited(attachments.fileText, 12000) + "\n```\n\n";
-  if (!attachments.selection.empty()) turn += "Selected code (data):\n```\n" + limited(attachments.selection, 6000) + "\n```\n\n";
+  for (auto& file : attachments.extraFiles) turn += "File " + file.first + " (data):\n```\n" + limited(file.second, 12000) + "\n```\n\n";
+  if (!attachments.selection.empty())
+    turn += "Selected code" + (attachments.selectionLabel.empty() ? std::string() : " in " + attachments.selectionLabel) + " (data):\n```\n" + limited(attachments.selection, 12000) + "\n```\n\n";
   if (!attachments.errors.empty()) turn += "Build errors (data):\n```\n" + limited(attachments.errors, 3000) + "\n```\n\n";
   return sanitizeUtf8(turn + question);
 }

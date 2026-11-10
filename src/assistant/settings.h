@@ -35,6 +35,7 @@ struct ChatMessage {
   std::string role, content;
   std::vector<std::string> reference;  // ids of the knowledge-base entries the answer was grounded on
   std::string kind;                    // "": a message; "call": the assistant asked for a tool; "result": the tool's answer
+  std::string attached = {};           // what went along with a question: "main.asm:12-20, Build errors"
 };
 struct Chat {
   std::string id;      // file name without extension
