@@ -1019,7 +1019,7 @@ std::vector<std::string> App::debugArgs(const std::string& emulator) {
   } else if (emulator == "stella") {
     // Stella's debugger runs <userdir>/<rom name>.script when it opens, and
     // VCSIDE launches it with -userdir set to the build folder.
-    fs::remove(project_->stem() + ".stella.script", errorCode);  // VCSIDE 0.1 wrote this one
+    fs::remove(project_->stem() + ".stella.script", errorCode);  // VCSIDE 0.1.0 wrote this one
     std::string path = project_->stem() + ".script";
     if (placed.empty()) {
       fs::remove(path, errorCode);

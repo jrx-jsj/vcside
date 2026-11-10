@@ -24,7 +24,7 @@
   <img alt="Knowledge base: CC BY-SA 4.0" src="https://img.shields.io/badge/knowledge%20base-CC%20BY--SA%204.0-lightgrey">
   <img alt="Templates: CC0" src="https://img.shields.io/badge/templates-CC0-brightgreen">
   <img alt="Platforms" src="https://img.shields.io/badge/platforms-macOS%20%C2%B7%20Windows%20%C2%B7%20Linux-orange">
-  <img alt="Status: 0.1" src="https://img.shields.io/badge/status-first%20version%20(0.1)-yellow">
+  <img alt="Status: 0.1.0" src="https://img.shields.io/badge/status-first%20version%20(0.1.0)-yellow">
 </p>
 
 ---
@@ -38,7 +38,7 @@
 - **Optional AI that stays on your computer.** An assistant with a language model that runs locally through a helper that ships with VCSIDE (or any server you already run). It looks things up in the reference, can read your project, proposes edits you accept or reject, and explains build errors. Off until you turn it on; nothing leaves your machine unless you set up a remote model.
 - **Yours to theme and translate.** Every colour is a named role in a theme file; the interface is available in English and Spanish, with a catalogue format for more.
 
-> Status: first version (0.1). Design and phases in [`docs/design.md`](docs/design.md).
+> Status: first version (0.1.0). Design and phases in [`docs/design.md`](docs/design.md).
 
 ## What it does today
 
