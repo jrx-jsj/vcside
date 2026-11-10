@@ -340,18 +340,20 @@ AssistantPanel::~AssistantPanel() {
 std::string AssistantPanel::systemPrompt() const {
   // Agent mode: the work is done with the tools. Ask mode: answers, and changes as blocks the user reviews.
   const std::string agentRule = "\nYou are in Agent mode: do the task yourself. Read the files you need, then change them with edit_file, one change at a time; do not paste the new code into your answer unless asked, and say briefly what you changed.";
+  const std::string englishRule = translateThisTurn_ ? "\nThe user's messages have been translated to English for you: answer in English, whatever language the user writes in. Code, register names, labels and file names stay exactly as they are." : std::string();
   std::ifstream file(dataDir() + "/assistant/system.txt");
   if (file) {
     std::stringstream text;
     text << file.rdbuf();
-    if (!text.str().empty()) return text.str() + (settings_.agent ? "\n" + toolPrompt(settings_.toolProfile) + agentRule : std::string());
+    if (!text.str().empty()) return text.str() + (settings_.agent ? "\n" + toolPrompt(settings_.toolProfile) + agentRule : std::string()) + englishRule;
   }
-  return std::string(kFallbackPrompt) + (settings_.agent ? "\n" + toolPrompt(settings_.toolProfile) + agentRule : std::string());
+  return std::string(kFallbackPrompt) + (settings_.agent ? "\n" + toolPrompt(settings_.toolProfile) + agentRule : std::string()) + englishRule;
 }
 
 void AssistantPanel::newChat() {
   request_.cancel();
   firstPass_.cancel(), firstPassPending_ = false;
+  translation_.cancel(), translating_ = false, translateThisTurn_ = false, chatLanguage_.clear();
   chat_ = Chat();
   streaming_.clear(), error_.clear(), lastRequest_.clear();
   promptTokens_ = completionTokens_ = droppedTurns_ = 0;
@@ -378,6 +380,8 @@ void AssistantPanel::storeActiveTab() {
 void AssistantPanel::loadTab(int index) {
   request_.cancel();
   firstPass_.cancel(), firstPassPending_ = false;
+  translation_.cancel(), translating_ = false, translateThisTurn_ = false;
+  chatLanguage_.clear();
   ChatTabState& tab = tabs_[index];
   chat_ = tab.chat;
   streaming_.clear(), error_.clear(), lastRequest_.clear();
@@ -658,7 +662,7 @@ bool drawChip(const char* id, const std::string& label, ImVec4 tint, const std::
 // Ask answers and proposes changes the user reviews; Agent does the work with the tools (read, edit, build), every change
 // still waiting for a click. A combo as wide as the Send button, so it fits whatever language the labels are in.
 void AssistantPanel::modeSwitch(float width) {
-  bool busy = request_.running() || firstPassPending_ || pendingEditActive_ || !pendingRun_.empty() || waitingBuild_;
+  bool busy = busyWithModel() || pendingEditActive_ || !pendingRun_.empty() || waitingBuild_;
   ImGui::BeginDisabled(busy);
   ImGui::SetNextItemWidth(width);
   if (ImGui::BeginCombo("##mode", settings_.agent ? T("Agent") : T("Ask"))) {
@@ -924,12 +928,19 @@ void AssistantPanel::send(const PanelContext& context, const std::string& questi
   chat_.messages.push_back({"user", question, {}, "", ""});  // shown at once, in its bubble
   streaming_.clear(), error_.clear(), notice_.clear();
   scrollDown_ = true;
-  if (first) {
+  // the prose goes to be translated and the code and names stay out of it, unless it is English already
+  auto isMnemonic = [&](const std::string& word) { return context.kb && context.kb->instruction(word) != nullptr; };
+  MaskedText masked = maskCode(question, isMnemonic);
+  bool translate = settings_.workInEnglish && masked.hasProse() && !looksEnglish(masked.text);
+  translateThisTurn_ = false;
+  if (first || translate) {
+    questionMask_ = masked;
     firstPassQuestion_ = question;
+    firstPassNeedsEnglish_ = translate;
     firstPassPending_ = true;
     waitingText_ = T("Understanding your request");
     requestStartedAt_ = ImGui::GetTime();
-    firstPass_.start(*provider, question);
+    firstPass_.start(*provider, masked.text, first, translate);
     return;
   }
   dispatch(context, question, "");
@@ -993,7 +1004,8 @@ void AssistantPanel::dispatch(const PanelContext& context, const std::string& qu
   attachments.grounding = groundingBlock(entries);
   streamingReference_.clear();
   for (auto& entry : entries) streamingReference_.push_back(entry.id);
-  std::string turn = userTurn(question, attachments);
+  std::string turn = userTurn(english.empty() ? question : english, attachments);
+  chat_.messages.back().english = english;
   std::vector<ChatMessage> history(chat_.messages.begin(), chat_.messages.end() - 1);  // the question itself is `turn`
   std::vector<Message> messages = buildMessages(systemPrompt(), history, turn, provider->contextTokens, 1024, &droppedTurns_);
   chat_.messages.back().attached = attachedNote;
@@ -1033,6 +1045,23 @@ void AssistantPanel::finishAnswer(const PanelContext& context, const std::string
     return;
   }
   saveChat(context);
+  if (translateThisTurn_ && note != "stopped" && error_.empty() && !answer.empty() && !chat_.messages.empty() && chat_.messages.back().role == "assistant" && chat_.messages.back().kind.empty())
+    startTranslation(context);  // the final answer, not a tool call
+}
+
+// The model answered in English: its prose goes back into the user's language, its code and names untouched.
+void AssistantPanel::startTranslation(const PanelContext& context) {
+  Provider* provider = settings_.provider();
+  if (!provider || chatLanguage_.empty()) return;
+  auto isMnemonic = [&](const std::string& word) { return context.kb && context.kb->instruction(word) != nullptr; };
+  answerMask_ = maskCode(chat_.messages.back().content, isMnemonic);
+  if (!answerMask_.hasProse()) return;  // only code: nothing to translate
+  translatingIndex_ = (int)chat_.messages.size() - 1;
+  translating_ = true;
+  waitingText_ = F("Translating the answer to {0}", {languageName(chatLanguage_)});
+  requestStartedAt_ = ImGui::GetTime();
+  int tokens = std::clamp(estimateTokens(answerMask_.text) * 2 + 100, 300, 3500);
+  translation_.start(*provider, translationPrompt(languageName(chatLanguage_), "English"), answerMask_.text, tokens, 120);
 }
 
 // ---- the agent --------------------------------------------------------------------------
@@ -1302,7 +1331,7 @@ void AssistantPanel::drawEditBlock(const PanelContext& context, const EditBlock&
   ImGui::TextUnformatted(where.c_str());
   ImGui::PopStyleColor();
   ImGui::SameLine();
-  ImGui::BeginDisabled(pendingEditActive_ || request_.running() || firstPassPending_);
+  ImGui::BeginDisabled(pendingEditActive_ || busyWithModel());
   if (theme::dialogButton(T("Review and apply..."), ImVec2(0, 0), true)) {
     pendingEdit_ = placement.edit;
     pendingEditActive_ = true, pendingEditFromChat_ = true;
@@ -1358,14 +1387,36 @@ void AssistantPanel::agentCards(const PanelContext& context) {
 }
 
 void AssistantPanel::poll(const PanelContext& context) {
+  if (translating_) {
+    std::string translated, error;
+    if (translation_.poll(&translated, &error)) {
+      translating_ = false;
+      bool restored = false;
+      std::string text = error.empty() ? unmaskCode(translated, answerMask_.spans, &restored) : std::string();
+      if (restored && !text.empty() && translatingIndex_ >= 0 && translatingIndex_ < (int)chat_.messages.size()) {
+        ChatMessage& message = chat_.messages[translatingIndex_];
+        message.english = message.content;  // what the model wrote stays for the history it sees
+        message.content = text;
+        saveChat(context);
+      } else {
+        notice_ = T("The answer could not be translated, so it is shown in English.");
+      }
+    }
+  }
   FirstPass first;
   if (firstPassPending_ && firstPass_.poll(&first)) {
     firstPassPending_ = false;
-    if (first.ok) {
-      chat_.title = first.title;
-      saveChat(context);
+    if (first.ok && !first.title.empty()) chat_.title = first.title;
+    std::string english;
+    if (first.ok && !first.language.empty() && first.language != "en") chatLanguage_ = first.language;
+    if (first.ok && firstPassNeedsEnglish_ && first.language != "en") {  // the translation, with the code and names put back
+      bool restored = false;
+      english = unmaskCode(first.english, questionMask_.spans, &restored);
+      if (!restored) english.clear();  // a marker was lost: the question goes as it was
     }
-    dispatch(context, firstPassQuestion_, first.ok ? first.english : "");
+    translateThisTurn_ = !english.empty() && !chatLanguage_.empty();
+    saveChat(context);
+    dispatch(context, firstPassQuestion_, english);
   }
   if (waitingBuild_) {
     if (context.building) buildSeen_ = true;
@@ -1571,7 +1622,7 @@ void AssistantPanel::draw(const PanelContext& context, ImFont* mono, bool* open)
   else if (modelsFor_ != provider->baseUrl && !fetchingModels_) refreshModels();
 
   // the open conversations
-  bool busyNow = request_.running() || firstPassPending_ || pendingEditActive_ || !pendingRun_.empty() || waitingBuild_;
+  bool busyNow = busyWithModel() || pendingEditActive_ || !pendingRun_.empty() || waitingBuild_;
   drawTabs(busyNow);
 
   // header: where the text goes, the model, and the buttons (icons, with a tooltip each)
@@ -1645,6 +1696,11 @@ void AssistantPanel::draw(const PanelContext& context, ImFont* mono, bool* open)
       }
     }
     gLinks = nullptr;
+    if (translating_) {
+      double elapsed = std::max(0.0, ImGui::GetTime() - requestStartedAt_);
+      static const char* dots[] = {"   ", ".  ", ".. ", "..."};
+      ImGui::TextDisabled("%s%s  %d s", waitingText_.c_str(), dots[(int)(elapsed * 2.5) % 4], (int)elapsed);
+    }
     agentCards(context);
     if (!notice_.empty()) {
       ImGui::PushStyleColor(ImGuiCol_Text, theme::colv(theme::Role::UiTextDim));
@@ -1662,7 +1718,7 @@ void AssistantPanel::draw(const PanelContext& context, ImFont* mono, bool* open)
 
   // what goes along with the question: chips the user can take out, and "@" to add files
   drawContextChips(context);
-  if (settings_.explainErrors && !context.errors.empty() && !request_.running() && !firstPassPending_ && !pendingEditActive_ && pendingRun_.empty() && !waitingBuild_) {
+  if (settings_.explainErrors && !context.errors.empty() && !busyWithModel() && !pendingEditActive_ && pendingRun_.empty() && !waitingBuild_) {
     ImGui::SameLine();
     if (theme::dialogButton(T("Explain the errors"), ImVec2(0, 0), true)) pendingQuestion_ = "Explain these build errors and how to fix them.";
   }
@@ -1678,7 +1734,7 @@ void AssistantPanel::draw(const PanelContext& context, ImFont* mono, bool* open)
   }
   // input
   if (focusInput_) ImGui::SetKeyboardFocusHere(), focusInput_ = false;
-  bool running = request_.running() || firstPassPending_;
+  bool running = busyWithModel();
   bool waitingForUser = pendingEditActive_ || !pendingRun_.empty() || waitingBuild_;
   float buttonWidth = theme::em(90);
   ImGui::BeginDisabled(running || waitingForUser);
@@ -1715,6 +1771,9 @@ void AssistantPanel::draw(const PanelContext& context, ImFont* mono, bool* open)
         input_ = firstPassQuestion_;
         if (!chat_.messages.empty()) chat_.messages.pop_back();
         if (chat_.messages.empty()) chat_.title.clear();
+      } else if (translating_) {  // keep the answer in English
+        translation_.cancel();
+        translating_ = false;
       } else {
         request_.cancel();
       }
@@ -1754,6 +1813,7 @@ void AssistantPanel::dialogs() {
   if (!drawnThisFrame_) {  // the panel is closed: stop the answer and give the memory back
     request_.cancel();
     firstPass_.cancel(), firstPassPending_ = false;
+    translation_.cancel(), translating_ = false;
     engine_.stop();
     embedWorker_.cancel();
     embedEngine_.stop();
@@ -1849,6 +1909,9 @@ void AssistantPanel::settingsDialog() {
   if (ImGui::Checkbox(T("Chat panel"), &settings_.chat)) changed_ = true, settings_.asked = true;
   if (ImGui::Checkbox(T("Agent (reads project files, proposes edits, builds when you allow it)"), &settings_.agent)) changed_ = true;
   if (ImGui::Checkbox(T("Explain errors (a button in Problems and in the assistant)"), &settings_.explainErrors)) changed_ = true;
+  if (ImGui::Checkbox(T("Work in English: translate my questions and the answers (code and names are not translated)"), &settings_.workInEnglish)) changed_ = true;
+  if (ImGui::IsItemHovered())
+    ImGui::SetTooltip("%s", T("The reference, the project index and most models work best in English. Your question goes to the model in English and its answer comes back in your language; code, registers, labels and file names are never translated. Each translation takes a few seconds."));
   if (ImGui::Checkbox(T("Search the project by meaning (a small model, downloaded once)"), &settings_.smartSearch)) changed_ = true;
   if (settings_.smartSearch) ImGui::TextDisabled("%s", T("Each part of your project is turned into numbers on this computer; the numbers stay in the project's .vcsai/index folder, which git ignores."));
   ImGui::SetNextItemWidth(theme::em(140));

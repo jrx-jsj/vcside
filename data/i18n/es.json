@@ -866,6 +866,7 @@
     "The agent can only see this project's folder. Every edit waits for your click; building and running ask first.": "El agente solo ve la carpeta de este proyecto. Cada cambio espera tu clic; compilar y ejecutar preguntan antes.",
     "The animation {0} has no steps.": "La animación {0} no tiene pasos.",
     "The animation {0} needs two batari Basic variables (its counter and its step): choose them in the animation.": "La animación {0} necesita dos variables de batari Basic (su contador y su paso): elígelas en la animación.",
+    "The answer could not be translated, so it is shown in English.": "No se pudo traducir la respuesta, así que se muestra en inglés.",
     "The assistant repeated the same tool call and was stopped.": "El asistente repitió la misma llamada a una herramienta y se detuvo.",
     "The assistant runs a language model on this computer. Download {0} ({1}, licence {2}) from {3}? The file is checked against a fixed checksum, and nothing from your project is sent.": "El asistente ejecuta un modelo de lenguaje en este ordenador. ¿Descargar {0} ({1}, licencia {2}) desde {3}? El archivo se comprueba con una suma de verificación fija y no se envía nada de tu proyecto.",
     "The assistant used its {0} tool calls for this message. Send another message to let it go on.": "El asistente ha usado sus {0} llamadas a herramientas para este mensaje. Envía otro mensaje para que siga.",
@@ -909,6 +910,7 @@
     "The project's ({0})": "El del proyecto ({0})",
     "The project's batari Basic ({0}) does not exist.": "No existe el batari Basic del proyecto ({0}).",
     "The project's DASM ({0}) does not exist.": "No existe el DASM del proyecto ({0}).",
+    "The reference, the project index and most models work best in English. Your question goes to the model in English and its answer comes back in your language; code, registers, labels and file names are never translated. Each translation takes a few seconds.": "La referencia, el índice del proyecto y la mayoría de los modelos funcionan mejor en inglés. Tu pregunta llega al modelo en inglés y su respuesta vuelve en tu idioma; el código, los registros, las etiquetas y los nombres de archivo nunca se traducen. Cada traducción tarda unos segundos.",
     "The register moves 32 times per cycle of the note: the note sets how bright the noise is. 4, 5 and 9 bits repeat like the TIA's.": "El registro avanza 32 veces por ciclo de la nota: la nota marca lo brillante que es el ruido. Con 4, 5 y 9 bits se repite como el de la TIA.",
     "The ROM does not exist yet: build first ({0}).": "La ROM aún no existe: compila primero ({0}).",
     "The ROM is {0} bytes, more than the format allows ({1}): the code overflows.": "La ROM tiene {0} bytes, más de los que admite el formato ({1}): el código se desborda.",
@@ -978,6 +980,7 @@
     "Tools...": "Herramientas...",
     "Tracker": "Tracker",
     "trak-ball": "trackball",
+    "Translating the answer to {0}": "Traduciendo la respuesta a {0}",
     "Transpose": "Transponer",
     "Tree guides": "Guías del árbol",
     "Triangle": "Triángulo",
@@ -1051,6 +1054,7 @@
     "Window title": "Título de las ventanas",
     "With the kernel option background the table of colours goes to the background: the playfield keeps one colour.": "Con la opción de kernel background, la tabla de colores va al fondo: el playfield se queda con un solo color.",
     "Word": "Palabra",
+    "Work in English: translate my questions and the answers (code and names are not translated)": "Trabajar en inglés: traducir mis preguntas y las respuestas (el código y los nombres no se traducen)",
     "Worst note {0} cents, average {1}": "Peor nota {0} cents, media {1}",
     "write": "escritura",
     "Writes {0}. Its settings (main source, ROM, format...) can be changed afterwards in Build > Project settings...": "Escribe {0}. Sus ajustes (fuente principal, ROM, formato...) se pueden cambiar después en Compilar > Ajustes del proyecto...",
@@ -1151,5 +1155,5 @@
     "{0}:{1}: no listing to place the breakpoint: build first.": "{0}:{1}: no hay listado para situar el punto de ruptura: compila antes.",
     "±{0}": "±{0}"
   },
-  "total": 1148
+  "total": 1152
 }

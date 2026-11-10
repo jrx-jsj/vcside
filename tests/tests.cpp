@@ -45,6 +45,7 @@
 #include "assistant/edits.h"
 #include "assistant/validate.h"
 #include "assistant/first_pass.h"
+#include "assistant/mask.h"
 #include <imgui.h>
 #include "assistant/secrets.h"
 #include "assistant/models.h"
@@ -3910,6 +3911,9 @@ static void testFirstPass() {
   CHECK(reply.ok && reply.language == "es" && reply.title == "Salto con el botón" && reply.english.find("jump action") != std::string::npos);
   auto fenced = parseFirstPass("<think>hmm</think>\n```json\n{\"language\":\"EN\",\"title\":\"\\\"Read the fire button.\\\"\",\"english\":\"x\"}\n```");
   CHECK(fenced.ok && fenced.language == "en" && fenced.title == "Read the fire button");
+  // a reply for the English text alone has no title; one that was asked for it needs the text
+  CHECK(parseFirstPass("{\"language\":\"es\",\"english\":\"Read the button\"}", false, true).ok && !parseFirstPass("{\"language\":\"es\",\"title\":\"T\"}", true, true).ok);
+  CHECK(languageName("es") == "Spanish" && languageName("xx") == "xx" && translationPrompt("Spanish", "English").find("[[1]]") != std::string::npos);
   CHECK(!parseFirstPass("Sure! Here is a title: Jump").ok && !parseFirstPass("{\"language\":\"es\"}").ok && !parseFirstPass("{broken").ok && !parseFirstPass("").ok);
   // titles: one line, no quotes or final period, whole characters, a limit
   CHECK(cleanTitle("  \"Leer\n el   mando.\"  ") == "Leer el mando");
@@ -3923,7 +3927,7 @@ static void testFirstPass() {
     Provider provider;
     provider.baseUrl = server.url(), provider.model = "m";
     FirstPassRequest request;
-    request.start(provider, "¿cómo leo el mando?");
+    request.start(provider, "¿cómo leo el mando?", true, true);
     FirstPass answer;
     for (int i = 0; i < 300 && !request.poll(&answer); i++) usleep(10000);
     CHECK(answer.ok && answer.title == "Leer el mando" && answer.english == "Read the joystick");
@@ -3931,17 +3935,52 @@ static void testFirstPass() {
     server.thread.join();
     server.thread = std::thread([] {});
     auto sent = nlohmann::json::parse(server.request.substr(server.request.find("\r\n\r\n") + 4));
-    CHECK(sent["stream"] == false && sent["messages"].size() == 2 && sent["messages"][1]["content"] == "¿cómo leo el mando?" && !sent.contains("stream_options"));
+    CHECK(sent["stream"] == false && sent["messages"].size() == 2 && sent["messages"][1]["content"] == "¿cómo leo el mando?" && !sent.contains("stream_options") && sent["messages"][0]["content"].get<std::string>().find("english") != std::string::npos);
   }
   {
     Provider provider;
     provider.baseUrl = "http://127.0.0.1:1/v1";  // nothing listens there
     FirstPassRequest request;
-    request.start(provider, "x");
+    request.start(provider, "x", true, false);
     FirstPass answer;
     for (int i = 0; i < 300 && !request.poll(&answer); i++) usleep(10000);
     CHECK(!answer.ok && !answer.error.empty());
   }
+}
+
+static void testMasking(const KnowledgeBase& kb) {
+  using namespace vcs::assistant;
+  auto isMnemonic = [&](const std::string& word) { return kb.instruction(word) != nullptr; };
+  auto mask = [&](const std::string& text) { return maskCode(text, isMnemonic); };
+  // inline code, fenced code and names are taken out, and put back as they were
+  auto question = mask("Implementa el salto: mira `lda INPT4` y SWCHA en src/main.asm; $F000 y #$80 también.\n```asm\n  lda INPT4\n  bmi Skip\n```\n¿Qué hago con playerX?");
+  CHECK(question.text.find("`") == std::string::npos && question.text.find("INPT4") == std::string::npos && question.text.find("SWCHA") == std::string::npos && question.text.find("main.asm") == std::string::npos);
+  CHECK(question.text.find("Implementa el salto: mira [[1]] y [[") == 0 && question.spans[0] == "`lda INPT4`" && question.spans.size() >= 7);  // the code first, then the names
+  CHECK(question.text.find("¿Qué hago con") != std::string::npos && question.hasProse());
+  bool ok = false;
+  CHECK(unmaskCode(question.text, question.spans, &ok) == "Implementa el salto: mira `lda INPT4` y SWCHA en src/main.asm; $F000 y #$80 también.\n```asm\n  lda INPT4\n  bmi Skip\n```\n¿Qué hago con playerX?" && ok);
+  // the translation keeps the markers in other places: still fine
+  CHECK(unmaskCode("Check [[2]] and [[1]].", {"AUDV0", "`sta`"}, &ok) == "Check `sta` and AUDV0." && ok);
+  // lines of assembly pasted without a fence are code too
+  auto pasted = mask("Esto no funciona:\n  lda INPT4\n  bmi Skip\n  jsr Jump\nSkip\n  rts\nPor qué?");
+  CHECK(pasted.spans.size() == 1 && pasted.spans[0].find("jsr Jump") != std::string::npos && pasted.text.find("Esto no funciona:\n[[1]]\nPor") == 0);
+  // prose is left alone: ordinary words, one capital, numbers, a sentence that mentions a mnemonic in words
+  auto plain = mask("El salto dura 12 frames. Quiero que Mario suba rápido y que ande a la derecha.");
+  CHECK(plain.spans.empty() && plain.text == "El salto dura 12 frames. Quiero que Mario suba rápido y que ande a la derecha.");
+  CHECK(mask("Usa and, or y load en español").spans.empty());
+  // a lost, doubled or invented marker is refused and the text comes back as it was
+  CHECK(unmaskCode("Falta [[1]]", {"A1", "B2"}, &ok) == "Falta [[1]]" && !ok);
+  CHECK(unmaskCode("[[1]] y [[1]]", {"A1"}, &ok) == "[[1]] y [[1]]" && !ok);
+  CHECK(unmaskCode("[[1]] y [[7]]", {"A1"}, &ok) == "[[1]] y [[7]]" && !ok);
+  CHECK(unmaskCode("[[1] roto", {"A1"}, &ok) == "[[1] roto" && !ok);
+  CHECK(unmaskCode("nada que devolver", {}, &ok) == "nada que devolver" && ok);
+  // text that already has [[ is not masked (its markers could be confused with ours)
+  CHECK(mask("array[[0]] en C").spans.empty());
+  // only code: no prose to translate
+  CHECK(!mask("`lda #1`").hasProse() && !mask("```\n  lda #1\n  sta COLUBK\n```").hasProse() && mask("Hola, ¿qué tal?").hasProse());
+  // is it English already?
+  CHECK(looksEnglish("How do I read the fire button?") && looksEnglish("What does WSYNC do") && !looksEnglish("¿Cómo leo el botón?") && !looksEnglish("como leo el boton de disparo") &&
+        !looksEnglish("Implementa el salto") && !looksEnglish("Wie lese ich den Knopf") && !looksEnglish("123"));
 }
 
 static void testAssistant(const KnowledgeBase& kb) {
@@ -4265,6 +4304,7 @@ int main() {
   testEditBlocks();
   testUnknownNames(kb);
   testFirstPass();
+  testMasking(kb);
   std::printf("%d checks, %d failures\n", checks, failures);
   return failures ? 1 : 0;
 }

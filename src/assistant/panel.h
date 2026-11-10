@@ -16,6 +16,7 @@
 #include "assistant/embeddings.h"
 #include "assistant/engine.h"
 #include "assistant/first_pass.h"
+#include "assistant/mask.h"
 #include "assistant/grounding.h"
 #include "assistant/models.h"
 #include "assistant/project_index.h"
@@ -154,6 +155,17 @@ class AssistantPanel {
   void updateMention(const PanelContext& context);
   void drawMention(const PanelContext& context, float inputX, float inputY, float width);
   void pickMention(const PanelContext& context, const std::string& entry);
+  // Working in English: the prose of the question goes to be translated (its code and names kept out), the model answers in
+  // English, and the prose of the answer is translated back
+  std::string chatLanguage_;                           // the user's language in this chat ("es"), "" while unknown
+  MaskedText questionMask_;
+  bool firstPassNeedsEnglish_ = false, translateThisTurn_ = false;
+  OneShotRequest translation_;
+  bool translating_ = false;
+  int translatingIndex_ = -1;
+  MaskedText answerMask_;
+  void startTranslation(const PanelContext& context);
+  bool busyWithModel() const { return request_.running() || firstPassPending_ || translating_; }
   FirstPassRequest firstPass_;
   bool firstPassPending_ = false;
   std::string firstPassQuestion_;
@@ -212,7 +224,7 @@ class AssistantPanel {
   bool prepareBuiltin(Provider& provider);   // starts the helper when the model is there; true once it answers
   void builtinCard(Provider& provider);      // download offer, progress, loading, errors
   void modelCombo(Provider& provider, const char* label, float width);
-  std::string systemPrompt() const;
+  std::string systemPrompt() const;  // for the turn in hand: in English when the question was translated
   void firstStartDialog();
   void settingsDialog();
   void inspectorDialog();

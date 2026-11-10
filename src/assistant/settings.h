@@ -17,6 +17,7 @@ struct Settings {
   bool chat = false;   // the chat panel
   // Planned features, remembered so the first-start answer is kept as given.
   bool agent = false, completion = false, explainErrors = false;
+  bool workInEnglish = true;         // translate the question to English and the answer back, code and names untouched
   bool smartSearch = false;          // search the project by meaning too (embeddings; downloads a small model)
   std::string embeddingModel = "qwen3-embedding-0.6b";
   int budgetTokens = 0;  // remote models: stop asking after this many tokens in a session (0 = no limit)
@@ -35,6 +36,7 @@ struct ChatMessage {
   std::string role, content;
   std::vector<std::string> reference;  // ids of the knowledge-base entries the answer was grounded on
   std::string kind;                    // "": a message; "call": the assistant asked for a tool; "result": the tool's answer
+  std::string english = {};            // what the model saw or wrote when the text was translated (content is what the user sees)
   std::string warnings = {};           // names in the answer's code that exist neither in the reference nor in the project, comma separated
   std::string attached = {};           // what went along with a question: "main.asm:12-20, Build errors"
 };

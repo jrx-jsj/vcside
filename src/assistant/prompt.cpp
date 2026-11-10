@@ -78,7 +78,7 @@ std::vector<Message> buildMessages(const std::string& systemPrompt, const std::v
   size_t first = history.size();
   int used = 0;
   while (first > 0) {
-    int cost = estimateTokens(history[first - 1].content);
+    int cost = estimateTokens(history[first - 1].english.empty() ? history[first - 1].content : history[first - 1].english);
     if (used + cost > budget) break;
     used += cost;
     first--;
@@ -88,7 +88,7 @@ std::vector<Message> buildMessages(const std::string& systemPrompt, const std::v
   if (droppedTurns) *droppedTurns = (int)first;
   std::vector<Message> messages;
   messages.push_back({"system", systemPrompt});
-  for (size_t i = first; i < history.size(); i++) messages.push_back({history[i].role, history[i].content});
+  for (size_t i = first; i < history.size(); i++) messages.push_back({history[i].role, history[i].english.empty() ? history[i].content : history[i].english});
   messages.push_back({"user", turn});
   return messages;
 }

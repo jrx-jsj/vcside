@@ -4,28 +4,11 @@
 
 #include <nlohmann/json.hpp>
 
-#include "assistant/http.h"
 #include "assistant/prompt.h"
 
 namespace vcs::assistant {
 
 using json = nlohmann::json;
-
-namespace {
-const char* kInstruction =
-    "You prepare a user's request for an assistant. Reply with ONLY a JSON object, nothing else:\n"
-    "{\"language\": \"<ISO 639-1 code of the language the user writes in>\", "
-    "\"title\": \"<a title of at most 5 words, in the user's language, that names the task>\", "
-    "\"english\": \"<the request translated to English; unchanged if it already is English. Keep code, register names, labels and file names exactly as written>\"}";
-
-std::string stripThinking(std::string text) {
-  size_t open = text.find("<think>");
-  size_t close = text.find("</think>");
-  if (open != std::string::npos && close != std::string::npos && close > open) text.erase(open, close + 8 - open);
-  else if (close != std::string::npos) text.erase(0, close + 8);
-  return text;
-}
-}  // namespace
 
 std::string cleanTitle(const std::string& text, size_t maxBytes) {
   std::string line;
@@ -43,9 +26,9 @@ std::string cleanTitle(const std::string& text, size_t maxBytes) {
   return line;
 }
 
-FirstPass parseFirstPass(const std::string& modelText) {
+FirstPass parseFirstPass(const std::string& modelText, bool needTitle, bool needEnglish) {
   FirstPass result;
-  std::string text = stripThinking(modelText);
+  std::string text = withoutThinking(modelText);
   size_t open = text.find('{');
   size_t close = text.rfind('}');
   if (open == std::string::npos || close == std::string::npos || close < open) {
@@ -63,69 +46,40 @@ FirstPass parseFirstPass(const std::string& modelText) {
   result.language = field("language");
   for (char& c : result.language) c = (char)std::tolower((unsigned char)c);
   if (result.language.size() > 8) result.language.clear();
-  result.ok = !result.title.empty();
-  if (!result.ok) result.error = "the reply has no title";
+  result.ok = (!needTitle || !result.title.empty()) && (!needEnglish || !result.english.empty());
+  if (!result.ok) result.error = "the reply lacks " + std::string(needTitle && result.title.empty() ? "a title" : "the English text");
   return result;
 }
 
-void FirstPassRequest::cancel() {
-  cancel_ = true;
-  if (thread_.joinable()) thread_.join();
-  running_ = false;
-}
-
-void FirstPassRequest::start(const Provider& provider, const std::string& question) {
-  cancel();
-  cancel_ = false;
-  { std::lock_guard<std::mutex> lock(mutex_); ready_ = false, result_ = FirstPass(); }
-  running_ = true;
-  thread_ = std::thread([this, provider, question]() {
-    FirstPass result;
-    // a long request is not translated whole: the title comes from its start
-    std::string asked = utf8Cut(question, 1500);
-    std::string body = chatRequestBody(provider, {{"system", kInstruction}, {"user", asked}});
-    json request = json::parse(body, nullptr, false);
-    if (request.is_object()) {
-      request["stream"] = false;
-      request.erase("stream_options");
-      request["temperature"] = 0;
-      request["max_tokens"] = 400;
-      HttpRequest http;
-      http.method = "POST";
-      http.url = chatUrl(provider);
-      http.headers = chatHeaders(provider);
-      http.body = request.dump(-1, ' ', false, json::error_handler_t::replace);
-      http.connectSeconds = 3;
-      http.idleSeconds = 25;
-      std::string answer;
-      HttpResult sent = httpRequest(http, [&](const char* bytes, size_t size) { return answer.append(bytes, size), answer.size() < (1u << 20); }, cancel_);
-      if (sent.status / 100 == 2 && sent.error.empty()) {
-        json reply = json::parse(answer, nullptr, false);
-        std::string content;
-        if (reply.is_object() && reply.contains("choices") && reply["choices"].is_array() && !reply["choices"].empty() && reply["choices"][0].contains("message") &&
-            reply["choices"][0]["message"].contains("content") && reply["choices"][0]["message"]["content"].is_string())
-          content = reply["choices"][0]["message"]["content"].get<std::string>();
-        else if (reply.is_object() && reply.contains("content") && reply["content"].is_array() && !reply["content"].empty() && reply["content"][0].contains("text") && reply["content"][0]["text"].is_string())
-          content = reply["content"][0]["text"].get<std::string>();  // the Anthropic dialect
-        result = parseFirstPass(content);
-      } else {
-        result.error = sent.error.empty() ? "HTTP " + std::to_string(sent.status) : sent.error;
-      }
-    }
-    if (!cancel_) {
-      std::lock_guard<std::mutex> lock(mutex_);
-      result_ = result, ready_ = true;
-    }
-    running_ = false;
-  });
+void FirstPassRequest::start(const Provider& provider, const std::string& maskedQuestion, bool needTitle, bool needEnglish) {
+  needTitle_ = needTitle, needEnglish_ = needEnglish;
+  std::string fields = "\"language\": \"<ISO 639-1 code of the language the user writes in>\"";
+  if (needTitle) fields += ", \"title\": \"<a title of at most 5 words, in the user's language, that names the task>\"";
+  if (needEnglish) fields += ", \"english\": \"<the request translated to English; unchanged if it already is English>\"";
+  std::string system = "You prepare a user's request for an assistant. Tokens like [[1]] stand for code or names: copy them exactly as they are, in the same places. Reply with ONLY a JSON object, nothing else:\n{" + fields + "}";
+  // a long request is not translated whole: the title comes from its start
+  request_.start(provider, system, utf8Cut(maskedQuestion, 3000), needEnglish ? 1200 : 120, 30);
 }
 
 bool FirstPassRequest::poll(FirstPass* result) {
-  std::lock_guard<std::mutex> lock(mutex_);
-  if (!ready_) return false;
-  *result = result_;
-  ready_ = false;
+  std::string text, error;
+  if (!request_.poll(&text, &error)) return false;
+  *result = error.empty() ? parseFirstPass(text, needTitle_, needEnglish_) : FirstPass();
+  if (!error.empty()) result->error = error;
   return true;
+}
+
+std::string languageName(const std::string& isoCode) {
+  static const char* names[][2] = {{"es", "Spanish"}, {"fr", "French"}, {"de", "German"}, {"it", "Italian"}, {"pt", "Portuguese"}, {"ca", "Catalan"}, {"gl", "Galician"}, {"eu", "Basque"},
+                                   {"nl", "Dutch"}, {"pl", "Polish"}, {"ru", "Russian"}, {"ja", "Japanese"}, {"zh", "Chinese"}, {"ko", "Korean"}, {"tr", "Turkish"}, {"sv", "Swedish"}};
+  for (auto& item : names)
+    if (isoCode == item[0]) return item[1];
+  return isoCode;
+}
+
+std::string translationPrompt(const std::string& to, const std::string& from) {
+  return "Translate the user's text from " + from + " to " + to + ". Tokens like [[1]] stand for code or names: copy each one exactly as it is, in the place where it belongs, and never drop or add one. "
+         "Keep the line breaks and the Markdown (lists, bold, headings). Do not explain and do not add anything. Reply with only the translation.";
 }
 
 }  // namespace vcs::assistant
