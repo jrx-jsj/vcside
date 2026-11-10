@@ -22,7 +22,7 @@
     "bgHi": "$base2",
     "fg": "$base00",
     "fgEm": "$base01",
-    "dim": "$base1",
+    "dim": "$base00",
     "shade": "#000000"
   },
   "colours": {

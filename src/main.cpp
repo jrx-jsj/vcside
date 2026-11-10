@@ -595,8 +595,18 @@ int main(int argc, char** argv) {
       if (shot.empty() && (SDL_GetWindowFlags(ideWindow.sdlWindow) & (SDL_WINDOW_MINIMIZED | SDL_WINDOW_HIDDEN | SDL_WINDOW_OCCLUDED))) continue;
       SDL_GL_MakeCurrent(ideWindow.sdlWindow, gGl);
       ImGuiIO& io = ImGui::GetIO();
-      // zoom: every font made again at the new size, and the style's sizes scaled
-      if (float zoom = ideWindow.app->zoomWanted()) {
+      // zoom: every font made again at the new size, and the style's sizes scaled. Also when
+      // the window moves to a screen with another pixel density or system scaling (a laptop's
+      // Retina panel and an external monitor): fonts rasterised for the other screen look
+      // blurred there, and text drifts off its line by a pixel.
+      float zoom = ideWindow.app->zoomWanted();
+      float density = std::max(1.0f, SDL_GetWindowPixelDensity(ideWindow.sdlWindow));
+      float uiScale = std::max(1.0f, SDL_GetWindowDisplayScale(ideWindow.sdlWindow) / density);
+      if (density != ideWindow.density || uiScale != ideWindow.uiScale) {
+        ideWindow.density = density, ideWindow.uiScale = uiScale;
+        if (!zoom) zoom = ideWindow.app->zoom();
+      }
+      if (zoom) {
         ImFont* monoFont = ideWindow.buildFonts(zoom);
         ImGui_ImplOpenGL3_DestroyFontsTexture();
         ImGui_ImplOpenGL3_CreateFontsTexture();
