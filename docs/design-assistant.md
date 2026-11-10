@@ -468,3 +468,11 @@ Implemented in `src/assistant/tools.*` (the tools and the sandbox, no UI, all te
 ## Explain errors (phase 7, first half, 2026-11-10)
 
 An option of its own in the first-start question and in the settings. When on, the assistant window shows *Explain the errors* whenever the last build has errors, and each row of *Problems* has *Explain this error* in its right-click menu (it opens the assistant). Both send plain chat with the error attached; the knowledge-base grounding of the error text is already part of every request. Nothing new is needed from the model, so it works with any provider. Extra code completion (the other half of phase 7) is not built.
+
+## Graphics and music files (phase 6, 2026-11-10)
+
+- **`gfx_describe`** reads a `.vcsgfx` with the editor's own loader and answers the way the sprite editor shows it: each layer as rows of `#` and `.` with the row's TIA colour, each playfield as 40 columns, and the warnings `gfx::check` gives for the file's kernel profile. **`music_describe`** does the same for a `.vcsmusic`: target, speed, instruments, order, and the notes of one pattern as a tracker grid (`C-4 0 .` = note, instrument, effect). Both are read tools; small models need them because a table of `$3C` bytes in JSON says little.
+- **Edits are validated.** An `edit_file` on a `.vcsgfx` or `.vcsmusic` is parsed with the real loader before the user sees it; a file the editor could not open is returned to the model as an error ("would not load in the editor: ..."), never offered as a diff.
+- **Evaluation.** `agent_run.py` has two tasks for them (frames of a sprite, instruments of a song). The model guidance that was to replace the catalogue's guesses is **not** written: five to seven tasks and two models are not enough to rank anything, and the knowledge-base measurement above was run on one model. What the runs do show is stated where they are reported; the catalogue stays marked provisional.
+
+First run with the two new tasks (Qwen3 4B): 4 of 7. `gfx_describe` worked (the model answered "4 frames" from it). The song task failed because the model wrote its call as `` ```tool music_describe {...}``` `` (name in front of the arguments, on one line), a shape the parser did not know; it does now, with tests, but the task was not run again.

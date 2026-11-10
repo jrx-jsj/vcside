@@ -3319,12 +3319,32 @@ static void testAgentTools(const KnowledgeBase& kb) {
   CHECK(parsed.name == "kb_lookup" && parsed.args["id"] == "WSYNC");
   CHECK(findToolCall("{\"tool\":\"build_errors\"}", &parsed) && parsed.name == "build_errors");
   CHECK(findToolCall("```json\n{\"tool\":\"search\",\"args\":{\"text\":\"}\"}}\n```", &parsed) && parsed.args["text"] == "}");
+  CHECK(findToolCall("```tool music_describe {\"path\": \"a.vcsmusic\", \"pattern\": 0} ```", &parsed) && parsed.name == "music_describe" && parsed.args["pattern"] == 0);
+  CHECK(findToolCall("```tool\nkb_lookup {\"id\": \"WSYNC\"}\n```", &parsed) && parsed.name == "kb_lookup");
   CHECK(!findToolCall("Use ```asm\nlda #0\n``` here", &parsed));
   CHECK(!findToolCall("```tool\n{\"tool\": \"rm_rf\"}\n```", &parsed));
   CHECK(!findToolCall("The JSON {\"tool\":\"read_file\"} is an example", &parsed));  // not at the start
-  CHECK(toolNames(0).size() == 9 && toolNames(1).size() == 10 && toolNames(2).size() == 12);
+  CHECK(toolNames(0).size() == 11 && toolNames(1).size() == 12 && toolNames(2).size() == 14);
   CHECK(toolPrompt(0).find("edit_file") == std::string::npos && toolPrompt(2).find("run_emulator") != std::string::npos);
   CHECK(estimateTokens(toolPrompt(2)) < 1100);  // the design budget for the tool descriptions
+
+  // graphics and music files: described, and an edit that would not load is refused
+  std::string data = VCSIDE_SOURCE_DATA;
+  fs::copy_file(data + "/templates/dasm-animation/hero.vcsgfx", root / "hero.vcsgfx");
+  fs::copy_file(data + "/templates/bb/theme.vcsmusic", root / "theme.vcsmusic");
+  auto gfxText = call("gfx_describe", {{"path", "hero.vcsgfx"}});
+  CHECK(!gfxText.error && gfxText.text.find("sprite ") != std::string::npos && gfxText.text.find('#') != std::string::npos && gfxText.text.find("$") != std::string::npos);
+  auto musicText = call("music_describe", {{"path", "theme.vcsmusic"}});
+  CHECK(!musicText.error && musicText.text.find("instruments:") != std::string::npos && musicText.text.find("pattern 0") != std::string::npos);
+  CHECK(call("gfx_describe", {{"path", "main.asm"}}).error && call("music_describe", {{"path", "../x.vcsmusic"}}).error);
+  write(root / "broken.vcsgfx", "not json");
+  CHECK(call("gfx_describe", {{"path", "broken.vcsgfx"}}).error);
+  std::string heroText;
+  { std::ifstream in(root / "hero.vcsgfx"); std::ostringstream buffer; buffer << in.rdbuf(); heroText = buffer.str(); }
+  size_t cut = heroText.find_last_of('}');
+  auto breaking = call("edit_file", {{"path", "hero.vcsgfx"}, {"edits", {{{"search", heroText.substr(cut > 30 ? cut - 30 : 0, 31)}, {"replace", "  ,,,"}}}}});
+  CHECK(breaking.error && breaking.text.find("would not load") != std::string::npos);
+  CHECK(call("edit_file", {{"path", "new.vcsmusic"}, {"content", "oops"}}).error);
 
   fs::remove_all(root);
   fs::remove_all(root.parent_path() / "vcside_agent_outside");

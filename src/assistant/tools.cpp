@@ -8,6 +8,9 @@
 #include <regex>
 #include <sstream>
 
+#include "gfx.h"
+#include "music/song.h"
+
 namespace vcs::assistant {
 
 namespace fs = std::filesystem;
@@ -31,6 +34,8 @@ const ToolInfo kTools[] = {
     {"kb_search", Tier::Read, "kb_search {\"query\": \"<topic in words>\"} : reference entries and how-to notes about a topic."},
     {"build_errors", Tier::Read, "build_errors {} : the errors of the last build."},
     {"space_report", Tier::Read, "space_report {} : ROM and RAM left, per bank."},
+    {"gfx_describe", Tier::Read, "gfx_describe {\"path\": \"<file.vcsgfx>\", \"frame\": 0} : the sprites and playfields of a graphics file as rows of # and ., with colours and the kernel's warnings."},
+    {"music_describe", Tier::Read, "music_describe {\"path\": \"<file.vcsmusic>\", \"pattern\": 0} : the song's settings, instruments, order and the notes of one pattern."},
     {"edit_file", Tier::Propose, "edit_file {\"path\": \"<file>\", \"edits\": [{\"search\": \"<exact old text>\", \"replace\": \"<new text>\"}]} : propose changes (read the file first); each search text must occur exactly once. To create a file use {\"path\": \"<file>\", \"content\": \"<text>\"}. The user decides."},
     {"build", Tier::Run, "build {} : build the project and return its errors. The user is asked first."},
     {"run_emulator", Tier::Run, "run_emulator {} : start the game in the emulator. The user is asked first."},
@@ -268,11 +273,114 @@ ToolResult editFile(const ToolEnv& env, const json& args) {
     edit.changes = (int)args["edits"].size();
     if (edit.after == edit.before) return fail("the edits change nothing");
   }
+  // a graphics or music file the editor could not open is an error for the model, not an offer to the user
+  std::string extension = lower(fs::path(name).extension().string());
+  if (extension == ".vcsgfx" || extension == ".vcsmusic") {
+    std::string why;
+    bool loads;
+    if (extension == ".vcsgfx") {
+      gfx::Asset asset;
+      loads = gfx::fromJson(edit.after, &asset, &why);
+    } else {
+      music::Song song;
+      loads = music::fromJson(edit.after, &song, &why);
+    }
+    if (!loads) return fail("with this edit " + relative + " would not load in the editor: " + why);
+  }
   ToolResult result;
   result.proposed = true;
   result.edit = edit;
   result.text = "The edit to " + inside + " was shown to the user and waits for their decision.";
   return result;
+}
+
+// ---- the graphics and music files ----------------------------------------------------------
+
+bool readProjectText(const ToolEnv& env, const json& args, const char* extension, std::string* text, std::string* error) {
+  std::string relative = stringArg(args, "path"), absolute;
+  if (!resolveInProject(env.projectDir, relative, &absolute, error)) return false;
+  if (!endsWith(lower(relative), extension)) {
+    *error = std::string("not a ") + extension + " file: " + relative;
+    return false;
+  }
+  if (!readText(absolute, text)) {
+    *error = "no such file: " + relative;
+    return false;
+  }
+  return true;
+}
+
+std::string noteName(int midi) {
+  static const char* names[] = {"C-", "C#", "D-", "D#", "E-", "F-", "F#", "G-", "G#", "A-", "A#", "B-"};
+  if (midi == music::kNoteOff) return "===";
+  if (midi < 0 || midi == music::kNoNote) return "---";
+  return std::string(names[midi % 12]) + std::to_string(midi / 12 - 1);
+}
+
+ToolResult gfxDescribe(const ToolEnv& env, const json& args) {
+  std::string text, error;
+  if (!readProjectText(env, args, ".vcsgfx", &text, &error)) return fail(error);
+  gfx::Asset asset;
+  if (!gfx::fromJson(text, &asset, &error)) return fail("the file does not load: " + error);
+  gfx::Profile profile;
+  if (!asset.kernel.empty()) gfx::kernelFromId(asset.kernel, &profile.kernel);
+  int wanted = std::max(0, intArg(args, "frame", 0));
+  std::string out = "kernel profile: " + profile.describe() + "\n";
+  for (auto& sprite : asset.sprites) {
+    out += "sprite " + sprite.name + ": " + std::to_string(sprite.frames) + " frame(s), " + std::to_string(sprite.layers.size()) + " layer(s)\n";
+    int frame = std::min(wanted, std::max(0, sprite.frames - 1));
+    for (auto& layer : sprite.layers) {
+      out += std::string("  layer ") + gfx::objName(layer.obj) + (layer.name.empty() ? "" : " \"" + layer.name + "\"") + " at dx=" + std::to_string(layer.dx) +
+             " dy=" + std::to_string(layer.dy) + " size " + std::to_string(layer.size) + ", frame " + std::to_string(frame) + " (# = pixel, then colour):\n";
+      for (int row = 0; row < layer.height && row < 48; row++) {
+        std::string line;
+        for (int x = 0; x < layer.width(); x++) line += layer.pixel(frame, row, x) ? '#' : '.';
+        out += "    " + line + " " + gfx::hexColour(layer.colour(frame, row)) + "\n";
+      }
+    }
+    for (auto& issue : gfx::check(sprite, profile)) out += std::string("  ") + (issue.severity == gfx::Issue::Error ? "error: " : issue.severity == gfx::Issue::Warning ? "warning: " : "note: ") + issue.text + "\n";
+  }
+  for (auto& playfield : asset.playfields) {
+    out += "playfield " + playfield.name + ": " + std::to_string(playfield.rows.size()) + " rows of " + std::to_string(playfield.lineHeight) + " scanlines, PF colour " +
+           gfx::hexColour(playfield.pfColour) + ", background " + gfx::hexColour(playfield.bkColour) + "\n";
+    for (size_t row = 0; row < playfield.rows.size() && row < 48; row++) {
+      std::string line;
+      for (int column = 0; column < 40; column++) line += playfield.pixel((int)row, column) ? '#' : '.';
+      out += "    " + line + "\n";
+    }
+    for (auto& issue : gfx::check(playfield, profile)) out += std::string("  ") + (issue.severity == gfx::Issue::Error ? "error: " : issue.severity == gfx::Issue::Warning ? "warning: " : "note: ") + issue.text + "\n";
+  }
+  if (asset.sprites.empty() && asset.playfields.empty()) out += "(the file has no sprites or playfields)\n";
+  return ok(out);
+}
+
+ToolResult musicDescribe(const ToolEnv& env, const json& args) {
+  std::string text, error;
+  if (!readProjectText(env, args, ".vcsmusic", &text, &error)) return fail(error);
+  music::Song song;
+  if (!music::fromJson(text, &song, &error)) return fail("the file does not load: " + error);
+  std::string out = "song " + song.name + ": target " + song.target + ", speed " + std::to_string(song.speed) + " frames per row, " + std::to_string(song.channelCount()) + " channels\n";
+  out += "instruments:";
+  for (size_t i = 0; i < song.instruments.size(); i++) out += " " + std::to_string(i) + "=" + song.instruments[i].name + (song.instruments[i].drum ? "(drum)" : "");
+  out += "\norder:";
+  for (int entry : song.order) out += " " + std::to_string(entry);
+  out += "  (loops to entry " + std::to_string(song.loopTo) + ")\n";
+  if (song.patterns.empty()) return ok(out + "(no patterns)\n");
+  int index = std::clamp(intArg(args, "pattern", 0), 0, (int)song.patterns.size() - 1);
+  const music::Pattern& pattern = song.patterns[index];
+  out += "pattern " + std::to_string(index) + " \"" + pattern.name + "\", " + std::to_string(pattern.rows) + " rows (note instrument effect per channel):\n";
+  int channels = song.channelCount();
+  for (int row = 0; row < pattern.rows && row < 64; row++) {
+    std::string line = (row < 10 ? "  0" : "  ") + std::to_string(row);
+    for (int channel = 0; channel < channels; channel++) {
+      const music::Cell& cell = pattern.cells[channel].size() > (size_t)row ? pattern.cells[channel][row] : music::Cell();
+      line += " | " + noteName(cell.note) + " " + (cell.instrument < 0 ? "." : std::to_string(cell.instrument)) + " " +
+              (cell.effect ? std::string(1, cell.effect) + std::to_string(cell.effectValue) : std::string("."));
+    }
+    out += line + "\n";
+  }
+  if (pattern.rows > 64) out += "... (more rows)\n";
+  return ok(out);
 }
 
 // An object that names a tool, from the shapes models write.
@@ -365,15 +473,27 @@ bool findToolCall(const std::string& answer, ToolCall* call, std::string* before
     if (before) *before = answer.substr(0, position);
     return true;
   };
-  // ```tool ... ``` or ```json ... ```
+  // ```tool ... ``` or ```json ... ```, also on one line, also written "```tool name {args}```"
   size_t pos = 0;
   while ((pos = answer.find("```", pos)) != std::string::npos) {
-    size_t lineEnd = answer.find('\n', pos);
-    if (lineEnd == std::string::npos) break;
-    size_t close = answer.find("```", lineEnd);
-    std::string body = answer.substr(lineEnd + 1, (close == std::string::npos ? answer.size() : close) - lineEnd - 1);
+    size_t close = answer.find("```", pos + 3);
+    std::string inner = answer.substr(pos + 3, (close == std::string::npos ? answer.size() : close) - pos - 3);
     size_t start, stop;
-    if (balancedObject(body, 0, &start, &stop) && take(pos, json::parse(body.substr(start, stop - start), nullptr, false))) return true;
+    if (balancedObject(inner, 0, &start, &stop)) {
+      json value = json::parse(inner.substr(start, stop - start), nullptr, false);
+      if (take(pos, value)) return true;
+      // "tool music_describe {args}": the name stands in front of the arguments
+      std::istringstream words(inner.substr(0, start));
+      std::string word, name;
+      while (words >> word)
+        if (word != "tool" && word != "json") name = word;
+      Tier tier;
+      if (value.is_object() && !name.empty() && toolTier(name, &tier)) {
+        call->name = name, call->args = value;
+        if (before) *before = answer.substr(0, pos);
+        return true;
+      }
+    }
     if (close == std::string::npos) break;
     pos = close + 3;
   }
@@ -490,6 +610,8 @@ ToolResult runTool(const ToolEnv& env, const ToolCall& call) {
   if (name == "kb_search") return kbSearch(env, call.args);
   if (name == "build_errors") return ok(env.buildErrors.empty() ? std::string("no errors in the last build\n") : env.buildErrors);
   if (name == "space_report") return ok(env.spaceReport.empty() ? std::string("no space report yet (build first)\n") : env.spaceReport);
+  if (name == "gfx_describe") return gfxDescribe(env, call.args);
+  if (name == "music_describe") return musicDescribe(env, call.args);
   if (name == "edit_file") return editFile(env, call.args);
   return fail("unknown tool: " + name);
 }

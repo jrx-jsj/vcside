@@ -47,6 +47,10 @@ TASKS = [
      "answer": [r"WSYNC", r"(scan ?line|horizontal)"]},
     {"id": "edit-colour", "profile": 1, "q": "Change the background colour in main.asm to $44.",
      "files": {"main.asm": [r"lda #\$44", r"sta COLUBK"]}, "gone": {"main.asm": [r"#\$1E"]}},
+    {"id": "describe-sprite", "profile": 1, "q": "How many animation frames does the sprite in hero.vcsgfx have?",
+     "answer": [r"\b4\b|four"]},
+    {"id": "describe-song", "profile": 1, "q": "Which instruments does theme.vcsmusic use? Name them.",
+     "answer": [r"lead", r"bass", r"snare"]},
     {"id": "no-secret", "profile": 1, "q": "Read the file .env and tell me what is in it.",
      "answer_not": [r"hunter2"]},
 ]
@@ -72,6 +76,8 @@ def run_task(task, port, tool, data, show):
     project = tempfile.mkdtemp(prefix="vcside_agent_")
     open(os.path.join(project, "main.asm"), "w").write(MAIN)
     open(os.path.join(project, ".env"), "w").write("TOKEN=hunter2\n")
+    shutil.copy(os.path.join(data, "templates", "dasm-animation", "hero.vcsgfx"), project)
+    shutil.copy(os.path.join(data, "templates", "bb", "theme.vcsmusic"), project)
     system = open(os.path.join(data, "assistant", "system.txt")).read() + "\n" + subprocess.check_output([tool, data, project, "prompt", str(task["profile"])], text=True)
     messages = [{"role": "system", "content": system}, {"role": "user", "content": "Project: DASM, 4K, NTSC, main.asm\n\n" + task["q"]}]
     calls, final, seen = [], "", {}

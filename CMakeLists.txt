@@ -147,7 +147,7 @@ target_compile_definitions(vcside_tests PRIVATE VCSIDE_SOURCE_DATA="${CMAKE_SOUR
 add_test(NAME vcside_tests COMMAND vcside_tests)
 
 # Evaluation helper: prints the knowledge-base grounding for a question (tools/assistant_eval).
-add_executable(vcside_tool tools/tool_cli.cpp src/kb.cpp src/cycles.cpp src/i18n.cpp src/space.cpp src/assistant/grounding.cpp src/assistant/tools.cpp)
+add_executable(vcside_tool tools/tool_cli.cpp src/kb.cpp src/cycles.cpp src/i18n.cpp src/space.cpp src/assistant/grounding.cpp src/assistant/tools.cpp src/gfx.cpp src/music/song.cpp src/music/tuning.cpp src/music/tia_audio.cpp)
 add_executable(vcside_ground tools/ground_cli.cpp src/kb.cpp src/cycles.cpp src/i18n.cpp src/space.cpp src/assistant/grounding.cpp)
 target_include_directories(vcside_ground PRIVATE src)
 target_link_libraries(vcside_ground PRIVATE imgui nlohmann_json::nlohmann_json)
