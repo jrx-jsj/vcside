@@ -2445,6 +2445,7 @@ void App::assistantPanel() {
     context.fileName = fs::path(active->path).filename().string();
     if (project_) context.fileRelative = fs::relative(active->path, project_->dir).generic_string();
     context.fileText = active->editor.text();
+    context.cursorLine = active->editor.cursor().line + 1;
     context.selection = active->editor.selectedText();
     if (!context.selection.empty()) context.selectionFirst = active->editor.selectedLines().first + 1, context.selectionLast = active->editor.selectedLines().second + 1;
     context.canApply = true;

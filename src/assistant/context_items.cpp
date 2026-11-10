@@ -159,46 +159,86 @@ std::vector<std::string> filesInFolder(const std::string& projectDir, const std:
 
 // ---- what is sent ----------------------------------------------------------------------------
 
+namespace {
+// At most `budget` characters in whole lines, the lines around centerLine when the text is longer (and from the
+// start when centerLine is 0). A single line longer than the budget is cut in the middle of the line.
+std::string cutToLines(const std::string& text, size_t budget, int centerLine, ContextCut* cut) {
+  std::vector<std::string> lines;
+  size_t start = 0;
+  while (start < text.size()) {
+    size_t end = text.find('\n', start);
+    end = end == std::string::npos ? text.size() : end + 1;
+    lines.push_back(text.substr(start, end - start));
+    start = end;
+  }
+  cut->totalLines = (int)lines.size();
+  if (text.size() <= budget) {
+    cut->firstLine = 1, cut->lastLine = (int)lines.size();
+    return text;
+  }
+  if (lines.empty() || budget == 0) return "";
+  int center = std::clamp(centerLine <= 0 ? 1 : centerLine, 1, (int)lines.size()) - 1;
+  int first = center, last = center;
+  size_t used = lines[center].size();
+  if (used > budget) {
+    cut->firstLine = cut->lastLine = center + 1;
+    return utf8Cut(lines[center], budget);
+  }
+  bool grew = true;
+  while (grew) {  // alternate below and above, so the cursor stays near the middle
+    grew = false;
+    if (last + 1 < (int)lines.size() && used + lines[last + 1].size() <= budget) used += lines[++last].size(), grew = true;
+    if (first > 0 && centerLine > 0 && used + lines[first - 1].size() <= budget) used += lines[--first].size(), grew = true;
+  }
+  std::string result;
+  for (int i = first; i <= last; i++) result += lines[i];
+  cut->firstLine = first + 1, cut->lastLine = last + 1;
+  return result;
+}
+}  // namespace
+
 GatheredContext gatherContext(const std::vector<ContextChip>& chips, const ContextText& text, const std::string& projectDir, size_t budgetChars) {
   GatheredContext result;
   size_t left = budgetChars;
   std::vector<std::string> names;
-  auto take = [&](const std::string& source, const std::string& label, std::string* into) {
-    std::string piece = utf8Cut(source, left);
-    if (piece.size() < source.size()) result.notes.push_back(label);
-    left -= piece.size();
+  auto take = [&](const std::string& source, const std::string& label, int centerLine, std::string* into) {
+    ContextCut cut;
+    cut.label = label;
+    std::string piece = cutToLines(source, left, centerLine, &cut);
+    if (piece.size() < source.size()) {
+      if (piece.empty()) cut.reason = "no room left";
+      result.notes.push_back(cut);
+    }
+    left -= std::min(left, piece.size());
     *into = sanitizeUtf8(piece);
   };
   for (auto& chip : chips) {
     switch (chip.kind) {
       case ContextChip::Selection:
         result.selectionLabel = chip.label;
-        take(text.selection, chip.label, &result.selection);
+        take(text.selection, chip.label, 0, &result.selection);
         names.push_back(chip.label);
         break;
       case ContextChip::File:
         result.fileName = chip.path;
-        take(text.fileText, chip.path, &result.fileText);
+        take(text.fileText, chip.path, text.cursorLine, &result.fileText);
         names.push_back(chip.label);
         break;
       case ContextChip::Errors:
-        take(text.errors, chip.label, &result.errors);
+        take(text.errors, chip.label, 0, &result.errors);
         names.push_back(chip.label);
         break;
       case ContextChip::Path: {
         std::string content, error;
         if (!readProjectFile(projectDir, chip.path, &content, &error)) {
-          result.notes.push_back(chip.path + ": " + error);
-          break;
-        }
-        if (left == 0) {
-          result.notes.push_back(chip.path);
+          ContextCut cut;
+          cut.label = chip.path, cut.reason = error;
+          result.notes.push_back(cut);
           break;
         }
         std::string piece;
-        take(content, chip.path, &piece);
-        result.extraFiles.push_back({chip.path, piece});
-        names.push_back(chip.label);
+        take(content, chip.path, 0, &piece);
+        if (!piece.empty()) result.extraFiles.push_back({chip.path, piece}), names.push_back(chip.label);
         break;
       }
     }

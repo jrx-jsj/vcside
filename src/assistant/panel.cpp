@@ -854,31 +854,45 @@ void AssistantPanel::send(const PanelContext& context, const std::string& questi
   attachments.projectInfo = context.projectInfo;
   // What the chips above the input say: the open file or the selected lines, the build errors and the
   // files added with @, within what the model's window can hold.
-  GatheredContext gathered = gatherContext(contextSet_.chips(T("Build errors")), {context.fileText, context.selection, context.errors}, context.projectDir,
+  GatheredContext gathered = gatherContext(contextSet_.chips(T("Build errors")), {context.fileText, context.selection, context.errors, context.cursorLine}, context.projectDir,
                                            (size_t)std::max(4000, provider->contextTokens * 2));
   attachments.selection = gathered.selection, attachments.selectionLabel = gathered.selectionLabel;
   attachments.errors = gathered.errors;
   attachments.fileName = gathered.fileName, attachments.fileText = gathered.fileText;
   attachments.extraFiles = gathered.extraFiles;
+  // What went along, and what did not go whole and why (the window of the model is what limits it).
   std::string attachedNote = gathered.summary;
   if (!gathered.notes.empty()) {
-    attachedNote += attachedNote.empty() ? "" : " ";
-    attachedNote += "(" + std::string(T("cut or left out")) + ": ";
-    for (size_t i = 0; i < gathered.notes.size(); i++) attachedNote += (i ? ", " : "") + gathered.notes[i];
-    attachedNote += ")";
+    auto number = [](int value) {  // 1830 -> "1,830"
+      std::string digits = std::to_string(value), grouped;
+      for (size_t k = 0; k < digits.size(); k++) grouped += (k && (digits.size() - k) % 3 == 0 ? "," : "") + std::string(1, digits[k]);
+      return grouped;
+    };
+    std::string cuts;
+    for (auto& cut : gathered.notes) {
+      std::string part;
+      if (!cut.reason.empty()) part = cut.label + ": " + cut.reason;
+      else if (cut.firstLine <= 1) part = F("{0}: the first {1} of {2} lines", {cut.label, number(cut.lastLine), number(cut.totalLines)});
+      else part = F("{0}: lines {1} to {2} of {3}, around the cursor", {cut.label, number(cut.firstLine), number(cut.lastLine), number(cut.totalLines)});
+      cuts += (cuts.empty() ? "" : "; ") + part;
+    }
+    attachedNote += (attachedNote.empty() ? "" : " ") + std::string("(") + cuts + " - " + F("the model's window is {0}K tokens", {std::to_string(provider->contextTokens / 1024)}) + ")";
   }
   // The whole project, not only what is open: the files that match the question go along as excerpts
   // (searched in an index of the project's files), and a map of the files and their names.
+  int excerptCount = 0;
   std::string searchText = question + " " + oneLine(context.selection, 400) + " " + oneLine(context.errors, 400);
   if (!context.projectDir.empty()) {
     index_.update(context.projectDir);
     std::string excerpts;
+    excerptCount = 0;
     std::vector<float> meaning = queryVector(searchText);  // empty when search by meaning is off or not ready
     const CatalogModel* searchModel = embedModel();
     for (auto& hit : index_.search(searchText, 3, gathered.fileName, meaning.empty() ? nullptr : &meaning, searchModel ? searchModel->minSimilarity : 0.45)) {
       std::string piece = "--- " + hit.file + ":" + std::to_string(hit.firstLine) + "-" + std::to_string(hit.lastLine) + "\n```\n" + utf8Cut(hit.text, 1200) + "\n```\n";
       if (excerpts.size() + piece.size() > 3200) break;
       excerpts += piece;
+      excerptCount++;
     }
     attachments.excerpts = excerpts;
     attachments.projectMap = index_.map(searchText, 900);
@@ -896,6 +910,14 @@ void AssistantPanel::send(const PanelContext& context, const std::string& questi
   agentSteps_ = 0, callCounts_.clear(), pendingEditActive_ = false, pendingRun_.clear(), waitingBuild_ = false;
   lastRequest_ = chatRequestBody(*provider, messages);
   streaming_.clear(), error_.clear();
+  {
+    int files = (attachments.fileText.empty() ? 0 : 1) + (int)attachments.extraFiles.size();
+    waitingText_ = files > 0 && excerptCount > 0 ? F("Reading your question, {0} file(s) and {1} part(s) of the project", {std::to_string(files), std::to_string(excerptCount)})
+                   : files > 0                   ? F("Reading your question and {0} file(s)", {std::to_string(files)})
+                   : excerptCount > 0            ? F("Reading your question and {0} part(s) of the project", {std::to_string(excerptCount)})
+                                                 : std::string(T("Reading your question"));
+    requestStartedAt_ = ImGui::GetTime();
+  }
   request_.start(*provider, messages);
   scrollDown_ = true;
 }
@@ -979,6 +1001,8 @@ void AssistantPanel::continueAgent(const PanelContext& /*context*/) {  // the hi
   std::vector<Message> messages = buildMessages(systemPrompt(), history, chat_.messages.back().content, provider->contextTokens, 1024, &droppedTurns_);
   lastRequest_ = chatRequestBody(*provider, messages);
   streaming_.clear();
+  waitingText_ = T("Reading the result of the tool");
+  requestStartedAt_ = ImGui::GetTime();
   request_.start(*provider, messages);
   scrollDown_ = true;
 }
@@ -1256,12 +1280,14 @@ void AssistantPanel::drawMessage(const ChatMessage& message, const std::string& 
     }
     ImGui::PopID();
   }
-  if (!message.reference.empty()) {
-    std::string line = std::string(T("Reference")) + ":";
-    for (auto& id : message.reference) line += " " + id;
+  if (!message.reference.empty() && !user) {  // after the answer: which reference entries it was given
+    std::string line = std::string(T("From the knowledge base")) + ":";
+    for (size_t k = 0; k < message.reference.size(); k++) line += (k ? ", " : " ") + message.reference[k];
     ImGui::PushStyleColor(ImGuiCol_Text, theme::colv(theme::Role::UiTextDim));
     ImGui::TextWrapped("%s", line.c_str());
     ImGui::PopStyleColor();
+    if (ImGui::IsItemHovered())
+      ImGui::SetTooltip("%s", T("VCSIDE found these in its reference (instructions, registers, cartridge formats, TV standards) for your question and gave them to the model, which was asked to answer from them and to say when something is not confirmed."));
   }
   if (user && !message.attached.empty()) {
     ImGui::PushStyleColor(ImGuiCol_Text, theme::colv(theme::Role::UiTextDim));
@@ -1365,8 +1391,21 @@ void AssistantPanel::draw(const PanelContext& context, ImFont* mono, bool* open)
     }
     for (size_t i = 0; i < chat_.messages.size(); i++) drawMessage(chat_.messages[i], chat_.messages[i].content, context, mono, (int)i);
     if (request_.running() || !streaming_.empty()) {
-      ChatMessage live{"assistant", streaming_, streamingReference_, ""};
-      drawMessage(live, streaming_.empty() ? std::string("...") : streaming_, context, mono, 9999);
+      ChatMessage live{"assistant", streaming_, {}, ""};  // the knowledge-base footer comes with the finished answer
+      if (streaming_.empty()) {
+        // before the first word: what is going on, and for how long
+        ImGui::PushStyleColor(ImGuiCol_Text, theme::colv(theme::Role::UiTextDim));
+        ImGui::TextUnformatted(T("Assistant"));
+        ImGui::PopStyleColor();
+        double elapsed = std::max(0.0, ImGui::GetTime() - requestStartedAt_);
+        static const char* dots[] = {"   ", ".  ", ".. ", "..."};
+        ImGui::TextDisabled("%s%s  %d s", waitingText_.c_str(), dots[(int)(elapsed * 2.5) % 4], (int)elapsed);
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+      } else {
+        drawMessage(live, streaming_, context, mono, 9999);
+      }
     }
     agentCards(context);
     if (!error_.empty()) {

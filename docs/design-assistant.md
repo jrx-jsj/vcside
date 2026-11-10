@@ -532,3 +532,9 @@ Asked for by the user, following Cursor's model. Each chunk of the project becom
 The keyword-only result is poor because questions are written in words the code never uses ("¿dónde se lee el mando?" against `SWCHA`). Misses are mostly near ones: the chunk next to the right one. A threshold of 0.5 leaves a little noise on greetings (two chunks for "hello"); 0.55 lost two correct answers. One project and twenty questions written by the author are a first measurement, not a result.
 
 **Credits.** Qwen3-Embedding: Alibaba Cloud, Qwen team (https://huggingface.co/Qwen/Qwen3-Embedding-0.6B-GGUF, Apache-2.0). The way Cursor indexes (chunks, embeddings, a cache by content hash): see above. Reciprocal rank fusion: Gordon V. Cormack, Charles L. A. Clarke and Stefan Büttcher, "Reciprocal Rank Fusion outperforms Condorcet and individual rank learning methods", SIGIR 2009 (to verify).
+
+## Saying what is going on (2026-11-10)
+
+- **Before the first word** the answer area shows what the model is doing and for how long ("Reading your question, 1 file(s) and 3 part(s) of the project... 4 s", with moving dots) instead of "...". After a tool call it says it is reading the tool's result.
+- **The knowledge-base entries** the answer was given are a footer after it, "From the knowledge base: LDA, STA, read-controls", with a tooltip that says what they are; not a line before the answer.
+- **When something does not go whole** the "Sent with: ..." line of the question says how much and why: "ositopanda.asm: the first 181 of 1,148 lines - the model's window is 2K tokens". A long open file is cut in whole lines **around the cursor** (alternating below and above, so the cursor stays near the middle), not at its start; a selection, the errors and the files added with @ are cut from their start. A file the sandbox refuses, or one that found no room left, is named with the reason.

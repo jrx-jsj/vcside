@@ -59,16 +59,23 @@ std::vector<std::string> filesInFolder(const std::string& projectDir, const std:
 
 // What the chips come to, within a budget of characters: the selection or the file, the errors and the
 // added files, in that order, each cut to what is left. notes says what was cut or could not be read.
+// Something that did not go whole: a text cut to lines first..last of total, or a file that could not be read.
+struct ContextCut {
+  std::string label;
+  int firstLine = 0, lastLine = 0, totalLines = 0;
+  std::string reason;  // set when nothing was sent (a file the sandbox refuses, or no room left)
+};
 struct GatheredContext {
   std::string fileName, fileText;      // the open file as a chip
   std::string selectionLabel, selection;
   std::string errors;
   std::vector<std::pair<std::string, std::string>> extraFiles;  // path, text
-  std::vector<std::string> notes;
+  std::vector<ContextCut> notes;
   std::string summary;                 // "main.asm:12-20, build errors, constants.h"
 };
 struct ContextText {  // what the editor holds
   std::string fileText, selection, errors;
+  int cursorLine = 0;  // 1-based; a file too long for the budget is cut around it, not at its start
 };
 GatheredContext gatherContext(const std::vector<ContextChip>& chips, const ContextText& text, const std::string& projectDir, size_t budgetChars);
 

@@ -3787,11 +3787,26 @@ static void testContextChips() {
   CHECK(gathered.notes.size() == 2);  // .env (secrets) and the missing file said why they are not there
   CHECK(gathered.summary == "main.asm, Build errors, src/kernel.asm");
   auto tight = gatherContext(chosen.chips("Build errors"), ContextText{std::string(500, 'x'), "", "err\n"}, dir, 100);
-  CHECK(tight.fileText.size() == 100 && tight.errors.empty() && tight.extraFiles.empty() && !tight.notes.empty());  // the file used the budget
+  CHECK(tight.fileText.size() == 100 && tight.errors.empty() && tight.extraFiles.empty() && tight.notes.size() >= 2);  // the file used the budget
   open.hasSelection = true, open.selectionFirst = 1, open.selectionLast = 2;
   chosen.sync(open);
   auto selected = gatherContext(chosen.chips("Build errors"), ContextText{"whole file", "  nop\n  nop\n", ""}, dir, 10000);
   CHECK(selected.selectionLabel == "main.asm:1-2" && selected.selection == "  nop\n  nop\n" && selected.fileText.empty());
+  // a long file is cut in whole lines around the cursor, not at its start; the note says which lines of how many
+  std::string longFile;
+  for (int line = 1; line <= 100; line++) longFile += "line " + std::to_string(100 + line) + "\n";  // 9 characters each
+  ContextSet single;
+  ContextSources only;
+  only.fileRelative = "main.asm";
+  single.sync(only);
+  auto around = gatherContext(single.chips("e"), ContextText{longFile, "", "", 60}, dir, 90);  // room for 10 lines
+  CHECK(around.fileText.size() <= 90 && around.fileText.find("line 160\n") != std::string::npos && around.fileText.find("line 101") == std::string::npos);
+  CHECK(around.notes.size() == 1 && around.notes[0].label == "main.asm" && around.notes[0].totalLines == 100 && around.notes[0].firstLine > 1 && around.notes[0].lastLine < 100 &&
+        around.notes[0].firstLine <= 60 && around.notes[0].lastLine >= 60 && around.notes[0].reason.empty());
+  auto atStart = gatherContext(single.chips("e"), ContextText{longFile, "", "", 0}, dir, 90);
+  CHECK(atStart.notes.size() == 1 && atStart.notes[0].firstLine == 1 && atStart.fileText.rfind("line 101\n", 0) == 0);
+  auto whole = gatherContext(single.chips("e"), ContextText{longFile, "", "", 60}, dir, 5000);
+  CHECK(whole.notes.empty() && whole.fileText == longFile);
   fs::remove_all(root);
 }
 

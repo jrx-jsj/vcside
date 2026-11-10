@@ -36,6 +36,7 @@ struct PanelContext {
   std::string fileName, fileText, selection, errors;
   std::string fileRelative;  // the open file, relative to the project (for the index and the chips)
   int selectionFirst = 0, selectionLast = 0;  // the selected lines, 1-based
+  int cursorLine = 0;                         // the cursor's line, 1-based (a long file is cut around it)
   bool canApply = false;
   std::function<void(const std::string& code)> apply;  // replaces the selection, or inserts at the cursor
   // for the agent's tools
@@ -141,6 +142,8 @@ class AssistantPanel {
   std::string mentionQuery_, mentionNote_, mentionListFor_;
   int mentionStart_ = -1, mentionIndex_ = 0, mentionDismissed_ = -1;
   double mentionNoteAt_ = 0;
+  double requestStartedAt_ = 0;                        // when the question went out, for the waiting line
+  std::string waitingText_;                            // what the model is doing before its first word
   float chipsTopY_ = 0;
   float chipsRowHeight_ = 0;  // as measured on the last frame (one row of chips, or two when they wrap)
   float mentionX_ = 0, mentionY_ = 0, mentionWidth_ = 0;  // where the input is, for the list above it
