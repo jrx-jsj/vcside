@@ -28,6 +28,11 @@ void applyImGui(const Resolved& resolved);
 // A dialog: BeginPopupModal with the dialog look (a dark title band over three stripes,
 // a thick border, room around the content). Ends with ImGui::EndPopup, like it.
 bool beginModal(const char* name, bool* open = nullptr, ImGuiWindowFlags flags = 0);
+// A panel or tool window: ImGui::Begin with the IDE's look, the three stripes beside its
+// title (after the dock's tabs when docked). Floating, its title band is a dialog's (dark, taller).
+// Always ends with endPanel, whatever beginPanel returned (as ImGui::Begin and End).
+bool beginPanel(const char* name, bool* open = nullptr, ImGuiWindowFlags flags = 0);
+void endPanel();
 // The three stripes (dialog.stripe1-3) filling a rectangle, top to bottom, and the height
 // they take at the top of the window.
 void drawStripes(ImDrawList* drawList, const ImVec2& min, const ImVec2& max);

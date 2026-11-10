@@ -42,6 +42,56 @@ bool beginModal(const char* name, bool* open, ImGuiWindowFlags flags) {
   return true;
 }
 
+bool beginPanel(const char* name, bool* open, ImGuiWindowFlags flags) {
+  // docked on the last frame: the dock's tabs show the name, there is no title band
+  ImGuiWindow* previous = ImGui::FindWindowByName(name);
+  bool floating = !previous || !previous->DockIsActive;
+  int colours = 0, styles = 0;
+  if (floating) {
+    ImU32 title = col(Role::DlgTitle);
+    ImGui::PushStyleColor(ImGuiCol_TitleBg, title);
+    ImGui::PushStyleColor(ImGuiCol_TitleBgActive, title);
+    ImGui::PushStyleColor(ImGuiCol_TitleBgCollapsed, title);
+    ImGui::PushStyleColor(ImGuiCol_Text, col(Role::DlgTitleText));  // the title and its close button
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(em(12), em(8)));  // a taller title band
+    colours = 4, styles = 1;
+  }
+  bool shown = ImGui::Begin(name, open, flags);
+  ImGui::PopStyleVar(styles);
+  ImGui::PopStyleColor(colours);
+  return shown;
+}
+
+void endPanel() {
+  // the stripes beside the title: in the title band of a floating window, between the
+  // title and the close button; docked, in the tab row, after the tabs
+  ImGuiWindow* window = ImGui::GetCurrentWindow();
+  if (!window->Collapsed && !window->Hidden) {
+    const ImGuiStyle& style = ImGui::GetStyle();
+    ImRect bar = window->TitleBarRect();
+    float left = 0, right = bar.Max.x - window->WindowBorderSize - em(10);
+    bool place = true;
+    if (window->DockIsActive) {
+      ImGuiTabBar* tabs = window->DockNode ? window->DockNode->TabBar : nullptr;
+      if (tabs) bar = tabs->BarRect, left = tabs->BarRect.Min.x + std::min(tabs->WidthAllTabs, tabs->BarRect.GetWidth());
+      else place = false;  // a dock without tabs: no title to go beside
+    } else {
+      const char* titleEnd = ImGui::FindRenderedTextEnd(window->Name);
+      left = bar.Min.x + style.FramePadding.x + ImGui::CalcTextSize(window->Name, titleEnd).x;
+      if (window->HasCloseButton) right -= ImGui::GetFontSize() + style.FramePadding.x;
+    }
+    left += em(12);
+    float height = stripesHeight(), middle = std::round((bar.Min.y + bar.Max.y) * 0.5f);
+    if (place && right - left > em(24)) {
+      ImDrawList* drawList = window->DrawList;
+      drawList->PushClipRect(window->Rect().Min, window->Rect().Max, false);
+      drawStripes(drawList, ImVec2(left, middle - std::round(height * 0.5f)), ImVec2(right, middle - std::round(height * 0.5f) + height));
+      drawList->PopClipRect();
+    }
+  }
+  ImGui::End();
+}
+
 bool dialogEscape() {
   return ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && ImGui::IsKeyPressed(ImGuiKey_Escape, false);
 }
@@ -191,8 +241,8 @@ void Editor::draw(Library& library, const std::string& current, const Hooks& hoo
   if (!open) return;
   if (selected_.empty() || !library.find(selected_)) selected_ = current;
   ImGui::SetNextWindowSize(ImVec2(em(900), em(640)), ImGuiCond_FirstUseEver);
-  if (!ImGui::Begin((std::string(T("Themes")) + "###themes").c_str(), &open)) {
-    ImGui::End();
+  if (!beginPanel((std::string(T("Themes")) + "###themes").c_str(), &open)) {
+    endPanel();
     return;
   }
   if (dialogEscape() && !ImGui::IsAnyItemActive()) open = false;  // closes like the dialogs
@@ -220,7 +270,7 @@ void Editor::draw(Library& library, const std::string& current, const Hooks& hoo
   Theme* edited = library.find(selected_);
   if (!edited) {
     ImGui::EndChild();
-    ImGui::End();
+    endPanel();
     return;
   }
   std::string error;
@@ -297,7 +347,7 @@ void Editor::draw(Library& library, const std::string& current, const Hooks& hoo
     edited = library.find(selected_);
     if (!edited) {
       ImGui::EndChild();
-      ImGui::End();
+      endPanel();
       return;
     }
   }
@@ -329,7 +379,7 @@ void Editor::draw(Library& library, const std::string& current, const Hooks& hoo
     edited = library.find(selected_);
     if (!edited) {
       ImGui::EndChild();
-      ImGui::End();
+      endPanel();
       return;
     }
   }
@@ -491,7 +541,7 @@ void Editor::draw(Library& library, const std::string& current, const Hooks& hoo
     for (auto& note : resolved.notes) ImGui::TextDisabled("%s", note.c_str());
   }
   ImGui::EndChild();
-  ImGui::End();
+  endPanel();
 
   // changes show at once; the file is written when no field is being dragged or typed in
   if (changed && !edited->builtIn) {

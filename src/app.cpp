@@ -2025,13 +2025,13 @@ void App::statusBar() {
 void App::projectPanel() {
   char title[64];
   snprintf(title, sizeof title, "%s###project", T("Project"));
-  if (!ImGui::Begin(title)) {
-    ImGui::End();
+  if (!theme::beginPanel(title)) {
+    theme::endPanel();
     return;
   }
   if (folder_.empty()) {  // the welcome page, in the editor's place, has the ways in
     ImGui::TextDisabled("%s", T("No project open."));
-    ImGui::End();
+    theme::endPanel();
     return;
   }
   // A folder that can be built and has no project file yet (or a detected one not saved)
@@ -2141,7 +2141,7 @@ void App::projectPanel() {
   if (row(folder_, 0, rootName, files::Kind::Folder, true, rootOpen, false, false)) toggle(folder_), rootOpen = !rootOpen;
   if (rootOpen) tree(folder_, 1, false);
   ImGui::PopStyleVar();
-  ImGui::End();
+  theme::endPanel();
 }
 
 // Asks Git (in the background) which files and folders of the project it ignores. Without
@@ -2280,15 +2280,15 @@ void App::welcome() {
 
 void App::editorsPanel() {
   ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-  bool open = ImGui::Begin("Editor###editors", nullptr, ImGuiWindowFlags_NoScrollbar);
+  bool open = theme::beginPanel("Editor###editors", nullptr, ImGuiWindowFlags_NoScrollbar);
   ImGui::PopStyleVar();
   if (!open) {
-    ImGui::End();
+    theme::endPanel();
     return;
   }
   if (files_.empty() && folder_.empty()) {
     welcome();
-    ImGui::End();
+    theme::endPanel();
     return;
   }
   if (files_.empty()) {
@@ -2296,7 +2296,7 @@ void App::editorsPanel() {
     ImGui::TextDisabled("VCSIDE %s", VCSIDE_VERSION);
     ImGui::SetCursorPosX(20);
     ImGui::TextDisabled("F7 %s   F5 %s   F6 %s   F1 %s", T("Build"), T("Build and run"), T("Build and debug"), T("Documentation"));
-    ImGui::End();
+    theme::endPanel();
     return;
   }
   if (ImGui::BeginTabBar("files", ImGuiTabBarFlags_Reorderable | ImGuiTabBarFlags_AutoSelectNewTabs | ImGuiTabBarFlags_FittingPolicyScroll)) {
@@ -2342,7 +2342,7 @@ void App::editorsPanel() {
     }
     ImGui::EndTabBar();
   }
-  ImGui::End();
+  theme::endPanel();
 }
 
 void App::closeDialogs() {
@@ -2436,7 +2436,7 @@ void App::assistantPanel() {
 void App::outputPanel() {
   char title[64];
   snprintf(title, sizeof title, "%s###output", T("Output"));
-  bool open = ImGui::Begin(title);
+  bool open = theme::beginPanel(title);
   bottomDock_ = ImGui::GetWindowDockID();
   if (open) {
     ImGui::PushFont(mono_);
@@ -2445,13 +2445,13 @@ void App::outputPanel() {
     outputScroll_ = false;
     ImGui::PopFont();
   }
-  ImGui::End();
+  theme::endPanel();
 }
 
 void App::problemsPanel() {
   char title[64];
   snprintf(title, sizeof title, "%s (%d)###problems", T("Problems"), (int)diagnostics_.size());
-  if (ImGui::Begin(title)) {
+  if (theme::beginPanel(title)) {
     if (ImGui::BeginTable("diag", 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable | ImGuiTableFlags_ScrollY)) {
       ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 60);
       ImGui::TableSetupColumn(T("File"), ImGuiTableColumnFlags_WidthFixed, 200);
@@ -2488,7 +2488,7 @@ void App::problemsPanel() {
       ImGui::EndTable();
     }
   }
-  ImGui::End();
+  theme::endPanel();
 }
 
 // From an address the emulator shows (PC, a break, a crash) to its source line.
@@ -2708,7 +2708,7 @@ void App::spacePanel() {
   char title[64];
   snprintf(title, sizeof title, "%s###space", T("Space"));
   if (bottomDock_) ImGui::SetNextWindowDockID(bottomDock_, ImGuiCond_FirstUseEver);
-  if (ImGui::Begin(title)) {
+  if (theme::beginPanel(title)) {
     if (spaceRunning_) ImGui::TextDisabled("%s", T("Measuring..."));
     if (!spaceNote_.empty()) ImGui::TextWrapped("%s", spaceNote_.c_str());
     if (elfSpace_) {
@@ -2774,7 +2774,7 @@ void App::spacePanel() {
       if (space_->cartRam) spaceBar(*space_->cartRam, warnPercent);
     }
   }
-  ImGui::End();
+  theme::endPanel();
 }
 
 // Shows whether an entry is fully verified and where its facts come from.
@@ -2810,8 +2810,8 @@ void App::docsPanel() {
   char title[64];
   snprintf(title, sizeof title, "%s###docs", T("Documentation"));
   if (focusDocs_) ImGui::SetNextWindowFocus();
-  if (!ImGui::Begin(title)) {
-    ImGui::End();
+  if (!theme::beginPanel(title)) {
+    theme::endPanel();
     return;
   }
   if (focusDocs_ && !docTopic_.empty()) docQuery_ = docTopic_;
@@ -3019,7 +3019,7 @@ void App::docsPanel() {
     for (auto& note : kb_.tiaNotes()) bullet(note);
   }
   ImGui::EndChild();
-  ImGui::End();
+  theme::endPanel();
 }
 
 void App::newProjectDialog() {
