@@ -98,6 +98,7 @@ void App::loadSettings() {
   showPages_ = settings.value("show_pages", true);
   zoom_ = std::clamp(settings.value("zoom", settings.value("editor_zoom", 1.0f)), 0.5f, 3.0f);
   tools_.loadSettings(settings.value("tools", std::map<std::string, std::string>{}));
+  assistant_.load(settings.value("assistant", nlohmann::json::object()));
   // A new docked panel needs the default layout once (imgui.ini would keep it floating).
   if (settings.value("layout_version", 0) < kLayoutVersion) {
     resetLayout_ = true;
@@ -113,6 +114,7 @@ void App::saveSettings() {
             {"zoom", zoom_},
             {"theme", themeId_},
             {"tools", tools_.userPaths()},
+            {"assistant", assistant_.save()},
             {"layout_version", kLayoutVersion}};
   std::ofstream(configDir() + "settings.json") << settings.dump(2) << "\n";
   settingsSeen_ = ++gSettingsSaved;
@@ -1603,7 +1605,10 @@ void App::frame() {
     problemsPanel();
     spacePanel();
     docsPanel();
+    assistantPanel();
   }
+  assistant_.dialogs();
+  if (assistant_.takeChanged()) saveSettings();
   newProjectDialog();
   toolsDialog();
   noProjectDialog();
@@ -1661,6 +1666,7 @@ MenuBar App::buildMenuBar(bool native) {
     langs.push_back(languageItem);
   }
   std::vector<MenuItem> settings = {item(native ? T("Tools...") : T("Tools"), native ? "Ctrl+," : "", [this] { showTools_ = true; }),
+                                    item(T("Assistant..."), "", [this] { assistant_.openSettings(); }),
                                     sub(T("Language"), langs)};
   if (native) bar.push_back(sub("VCSIDE", settings));
 
@@ -1862,6 +1868,7 @@ MenuBar App::buildMenuBar(bool native) {
            zoom_ != 1.0f),
       MenuItem::sep(),
       sub(T("Theme"), themeMenu),
+      item(T("Assistant"), "", [this] { showAssistant_ = !showAssistant_; }, assistant_.enabled(), showAssistant_ && assistant_.enabled()),
       item(T("Reset layout"), "", [this] { resetLayout_ = true; }),
   }));
   if (!native) bar.push_back(sub(T("Settings"), settings));
@@ -2355,6 +2362,40 @@ void App::closeDialogs() {
     if (theme::dialogButton(T("Cancel")) || theme::dialogEscape()) ImGui::CloseCurrentPopup();
     ImGui::EndPopup();
   }
+}
+
+void App::assistantPanel() {
+  if (!assistant_.enabled() || !showAssistant_) return;
+  assistant::PanelContext context;
+  context.kb = &kb_;
+  if (project_) {
+    context.projectDir = project_->dir;
+    const char* language = project_->language == Language::BatariBasic ? "batari Basic" : project_->language == Language::ElfC ? "C for ELF" : "DASM";
+    context.projectInfo = std::string(language) + ", " + project_->format + ", " + project_->tv + ", " + project_->main;
+    context.grounding.format = project_->format;
+    context.grounding.tv = project_->tv;
+    context.grounding.batariBasic = project_->language == Language::BatariBasic;
+  }
+  if (activeFile_ >= 0 && activeFile_ < (int)files_.size() && files_[activeFile_]->path.size() && !files_[activeFile_]->gfx &&
+      !files_[activeFile_]->music && !files_[activeFile_]->image && !files_[activeFile_]->form) {
+    OpenFile* active = files_[activeFile_].get();
+    context.fileName = fs::path(active->path).filename().string();
+    context.fileText = active->editor.text();
+    context.selection = active->editor.selectedText();
+    context.canApply = true;
+    context.apply = [this, path = active->path](const std::string& code) {  // looked up again: the file may have been closed
+      for (auto& openedFile : files_)
+        if (openedFile->path == path) openedFile->editor.typeText(code);
+    };
+  }
+  std::string errors;
+  for (auto& diagnostic : diagnostics_) {
+    if (diagnostic.severity != Diagnostic::Error) continue;
+    errors += fs::path(diagnostic.file).filename().string() + (diagnostic.line ? ":" + std::to_string(diagnostic.line) : "") + ": " + diagnostic.message + "\n";
+    if (errors.size() > 3000) break;
+  }
+  context.errors = errors;
+  assistant_.draw(context, mono_, &showAssistant_);
 }
 
 void App::outputPanel() {

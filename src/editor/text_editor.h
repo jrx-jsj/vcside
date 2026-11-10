@@ -93,6 +93,7 @@ class TextEditor {
   bool dirty() const { return dirty_; }
   void markSaved() { dirty_ = false; }
 
+  std::string selectedText() const;  // what is selected ("" if nothing)
   void undo();
   void redo();
   void copy();
@@ -159,7 +160,6 @@ class TextEditor {
   void deleteSelection();
   void del();
   void moveCursor(Coord target, bool select);
-  std::string selectedText() const;
   Coord clamp(Coord coord) const;
   int visualCol(int line, int byteCol) const;
   int byteCol(int line, int visCol) const;
