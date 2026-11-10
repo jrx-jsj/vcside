@@ -622,8 +622,10 @@ void AssistantPanel::drawContextChips(const PanelContext& context) {
   contextSet_.sync(sources);
   auto chips = contextSet_.chips(T("Build errors"));
   chipsTopY_ = ImGui::GetCursorScreenPos().y;  // the @ list goes above this row
-  // as tall as its chips: one row usually, more when they wrap or a note shows
-  if (ImGui::BeginChild("context_chips", ImVec2(0, 0), ImGuiChildFlags_AutoResizeY, ImGuiWindowFlags_NoScrollbar)) {
+  // as tall as its chips: one row usually, more when they wrap or a note shows. A group, not a child window:
+  // it takes exactly the room its items use, so the input always starts below it, at any display scale.
+  ImGui::BeginGroup();
+  {
     float available = ImGui::GetContentRegionAvail().x, used = 0, gap = ImGui::GetStyle().ItemSpacing.x;
     int removeIndex = -1;
     ImVec4 accent = theme::colv(theme::Role::UiAccent), warning = theme::colv(theme::Role::MsgWarning);
@@ -650,7 +652,7 @@ void AssistantPanel::drawContextChips(const PanelContext& context) {
     }
     if (removeIndex >= 0) contextSet_.remove((size_t)removeIndex);
   }
-  ImGui::EndChild();
+  ImGui::EndGroup();
   chipsRowHeight_ = ImGui::GetItemRectSize().y;
 }
 
