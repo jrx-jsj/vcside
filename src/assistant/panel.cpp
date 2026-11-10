@@ -619,9 +619,9 @@ void AssistantPanel::drawContextChips(const PanelContext& context) {
   sources.errorsKey = std::to_string(std::hash<std::string>()(context.errors));
   contextSet_.sync(sources);
   auto chips = contextSet_.chips(T("Build errors"));
-  float areaHeight = ImGui::GetFrameHeight() * 2.1f;
   chipsTopY_ = ImGui::GetCursorScreenPos().y;  // the @ list goes above this row
-  if (ImGui::BeginChild("context_chips", ImVec2(0, areaHeight), ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar)) {
+  // as tall as its chips: one row usually, more when they wrap or a note shows
+  if (ImGui::BeginChild("context_chips", ImVec2(0, 0), ImGuiChildFlags_AutoResizeY, ImGuiWindowFlags_NoScrollbar)) {
     float available = ImGui::GetContentRegionAvail().x, used = 0, gap = ImGui::GetStyle().ItemSpacing.x;
     int removeIndex = -1;
     ImVec4 accent = theme::colv(theme::Role::UiAccent), warning = theme::colv(theme::Role::MsgWarning);
@@ -649,6 +649,7 @@ void AssistantPanel::drawContextChips(const PanelContext& context) {
     if (removeIndex >= 0) contextSet_.remove((size_t)removeIndex);
   }
   ImGui::EndChild();
+  chipsRowHeight_ = ImGui::GetItemRectSize().y;
 }
 
 // Looks at what is being typed: an "@" at the start of a word, up to the cursor, opens the list.
@@ -1353,7 +1354,9 @@ void AssistantPanel::draw(const PanelContext& context, ImFont* mono, bool* open)
   embedCard();
 
   // conversation
-  float footer = ImGui::GetFrameHeightWithSpacing() * 2 + ImGui::GetTextLineHeightWithSpacing() * 4 + ImGui::GetFrameHeight() * 2.1f + ImGui::GetStyle().ItemSpacing.y;
+  // below it: the chips (their height from the last frame) and the input, nothing more
+  float inputHeight = ImGui::GetTextLineHeightWithSpacing() * 3.2f;
+  float footer = std::max(chipsRowHeight_, ImGui::GetFrameHeight()) + inputHeight + ImGui::GetStyle().ItemSpacing.y * 2;
   if (ImGui::BeginChild("conversation", ImVec2(0, -footer), ImGuiChildFlags_None)) {
     if (chat_.messages.empty() && streaming_.empty()) {
       ImGui::PushStyleColor(ImGuiCol_Text, theme::colv(theme::Role::UiTextDim));
@@ -1405,7 +1408,7 @@ void AssistantPanel::draw(const PanelContext& context, ImFont* mono, bool* open)
     if (ImGui::IsKeyPressed(ImGuiKey_Escape)) mentionDismissed_ = mentionStart_;
   }
   int callbackState[3] = {inputState_.cursor, inputState_.deleteStart, inputState_.deleteLength};
-  bool enter = ImGui::InputTextMultiline("##input", &input_, ImVec2(-buttonWidth - ImGui::GetStyle().ItemSpacing.x, ImGui::GetTextLineHeightWithSpacing() * 3.2f),
+  bool enter = ImGui::InputTextMultiline("##input", &input_, ImVec2(-buttonWidth - ImGui::GetStyle().ItemSpacing.x, inputHeight),
                                          ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_CtrlEnterForNewLine | ImGuiInputTextFlags_CallbackAlways, inputCallback, callbackState);
   inputState_.cursor = callbackState[0], inputState_.deleteStart = callbackState[1];
   ImVec2 inputMin = ImGui::GetItemRectMin();

@@ -142,6 +142,7 @@ class AssistantPanel {
   int mentionStart_ = -1, mentionIndex_ = 0, mentionDismissed_ = -1;
   double mentionNoteAt_ = 0;
   float chipsTopY_ = 0;
+  float chipsRowHeight_ = 0;  // as measured on the last frame (one row of chips, or two when they wrap)
   float mentionX_ = 0, mentionY_ = 0, mentionWidth_ = 0;  // where the input is, for the list above it
   void drawContextChips(const PanelContext& context);
   void updateMention(const PanelContext& context);
