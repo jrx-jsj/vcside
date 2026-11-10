@@ -605,17 +605,46 @@ void AssistantPanel::builtinCard(Provider& provider) {
   }
 }
 
-void AssistantPanel::refreshModels() {
-  Provider* provider = settings_.provider();
-  if (!provider || provider->builtin || fetchingModels_) return;
-  Provider copy = *provider;
-  modelsFor_ = provider->baseUrl;
-  fetchingModels_ = true;
-  modelsFuture_ = std::async(std::launch::async, [copy]() {
-    std::string error;
-    auto ids = listModels(copy, &error);
-    return std::make_pair(ids, error);
-  });
+// The few messages the model list gives, in the language of the interface (anything else is shown as the service said it).
+static std::string listMessage(const std::string& message) {
+  if (message == "The service refused the key: check it, or save it again.") return T("The service refused the key: check it, or save it again.");
+  if (message == "The service has no list of models at this address; type the name of the model.") return T("The service has no list of models at this address; type the name of the model.");
+  if (message == "The service lists no models.") return T("The service lists no models.");
+  return message;
+}
+
+// The model of a remote service: a list asked of the service itself, with a box to filter it (OpenRouter has hundreds) and the
+// name typed as it is when the list does not have it or cannot be had. A refresh icon asks again.
+void AssistantPanel::modelPicker(Provider& provider, const char* label, float width, bool withRefresh) {
+  const ModelLists::Entry& entry = modelLists_.of(provider);
+  std::string shown = provider.model.empty() ? std::string(T("(choose a model)")) : provider.model;
+  if (beginFittedCombo(label, shown, width, theme::em(380))) {
+    if (ImGui::IsWindowAppearing()) modelFilter_.clear(), ImGui::SetKeyboardFocusHere();
+    ImGui::SetNextItemWidth(-1);
+    ImGui::InputTextWithHint("##modelfilter", T("Type to filter, or the name of a model"), &modelFilter_);
+    std::string needle;
+    for (char c : modelFilter_) needle += (char)std::tolower((unsigned char)c);
+    bool exact = false;
+    int shownCount = 0;
+    for (auto& id : entry.ids) {
+      std::string lower;
+      for (char c : id) lower += (char)std::tolower((unsigned char)c);
+      if (!needle.empty() && lower.find(needle) == std::string::npos) continue;
+      exact = exact || id == modelFilter_;
+      if (++shownCount > 200) break;
+      if (ImGui::Selectable(id.c_str(), id == provider.model)) provider.model = id, changed_ = true;
+    }
+    if (!modelFilter_.empty() && !exact && ImGui::Selectable(F("Use \"{0}\"", {modelFilter_}).c_str())) provider.model = modelFilter_, changed_ = true;
+    if (entry.ids.empty()) {
+      std::string why = modelLists_.needsKey(provider) ? std::string(T("Save an API key to list its models, or type the name of one.")) : entry.fetching ? std::string(T("Asking the service...")) : entry.error.empty() ? std::string(T("The list has not been asked for yet.")) : listMessage(entry.error);
+      ImGui::TextDisabled("%s", why.c_str());
+    }
+    ImGui::EndCombo();
+  }
+  if (withRefresh) {
+    ImGui::SameLine();
+    if (iconButton("##refresh", Icon::Refresh, T("Ask the service for its models again"))) modelLists_.request(provider, true);
+  }
 }
 
 // ---- the chips above the input and the @ list ---------------------------------------------------
@@ -1634,14 +1663,11 @@ void AssistantPanel::draw(const PanelContext& context, ImFont* mono, bool* open)
     theme::endPanel();
     return;
   }
-  // models for this server
-  if (fetchingModels_ && modelsFuture_.valid() && modelsFuture_.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-    auto result = modelsFuture_.get();
-    models_ = result.first, modelsError_ = result.second, fetchingModels_ = false;
-  }
+  // models for this service
+  modelLists_.poll();
   bool builtinReady = true;
   if (provider->builtin) builtinReady = prepareBuiltin(*provider);
-  else if (modelsFor_ != provider->baseUrl && !fetchingModels_) refreshModels();
+  else modelLists_.request(*provider);
 
   // the open conversations
   bool busyNow = busyWithModel() || pendingEditActive_ || !pendingRun_.empty() || waitingBuild_;
@@ -1660,15 +1686,7 @@ void AssistantPanel::draw(const PanelContext& context, ImFont* mono, bool* open)
   if (provider->builtin) {
     modelCombo(*provider, "##model", comboMax);
   } else {
-    std::string shown = provider->model.empty() ? std::string(T("(choose a model)")) : provider->model;
-    if (beginFittedCombo("##model", shown, comboMax, theme::em(360))) {
-      for (auto& id : models_)
-        if (ImGui::Selectable(id.c_str(), id == provider->model)) provider->model = id, changed_ = true;
-      if (models_.empty()) ImGui::TextDisabled("%s", modelsError_.empty() ? T("The server lists no models.") : modelsError_.c_str());
-      ImGui::EndCombo();
-    }
-    ImGui::SameLine();
-    if (iconButton("##refresh", Icon::Refresh, T("Refresh the list of models"))) refreshModels();
+    modelPicker(*provider, "##model", comboMax, true);
   }
   ImGui::SameLine();
   float rightEdge = ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x;
@@ -1964,6 +1982,7 @@ void AssistantPanel::settingsDialog() {
     catalog_ = loadCatalog(dataDir() + "/assistant/models.json");
     catalogLoaded_ = true;
   }
+  if (!knownLoaded_) known_ = loadKnownProviders(dataDir() + "/assistant/providers.json"), knownLoaded_ = true;
   int removeIndex = -1;
   for (size_t i = 0; i < settings_.providers.size(); i++) {
     Provider& provider = settings_.providers[i];
@@ -1992,8 +2011,18 @@ void AssistantPanel::settingsDialog() {
     changed_ |= ImGui::InputText(T("Name"), &provider.name);
     ImGui::SetNextItemWidth(theme::em(360));
     changed_ |= ImGui::InputText(T("Address"), &provider.baseUrl);
-    ImGui::SetNextItemWidth(theme::em(260));
-    changed_ |= ImGui::InputText(T("Model"), &provider.model);
+    modelLists_.request(provider);
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted(T("Model"));
+    ImGui::SameLine();
+    modelPicker(provider, "##settingsmodel", theme::em(320), true);
+    {  // how the list is doing, in words
+      const ModelLists::Entry& entry = modelLists_.of(provider);
+      if (entry.fetching) ImGui::TextDisabled("%s", T("Asking the service for its models..."));
+      else if (entry.fetched && entry.error.empty()) ImGui::TextDisabled("%s", F("{0} models available", {std::to_string(entry.ids.size())}).c_str());
+      else if (!entry.error.empty()) ImGui::TextColored(theme::colv(theme::Role::MsgWarning), "%s", listMessage(entry.error).c_str());
+      else if (modelLists_.needsKey(provider)) ImGui::TextDisabled("%s", T("Save an API key below and the list of models appears here."));
+    }
     ImGui::SetNextItemWidth(theme::em(160));
     if (ImGui::BeginCombo(T("Protocol"), provider.dialect == "anthropic" ? "Anthropic Messages" : "OpenAI chat completions")) {
       if (ImGui::Selectable("OpenAI chat completions", provider.dialect != "anthropic")) provider.dialect = "openai", changed_ = true;
@@ -2003,7 +2032,15 @@ void AssistantPanel::settingsDialog() {
       }
       ImGui::EndCombo();
     }
-    if (!provider.isLocal()) keyControls(provider);
+    if (!provider.isLocal()) {
+      for (auto& known : known_)
+        if (known.id == provider.preset && !known.keyPage.empty()) {
+          ImGui::TextDisabled("%s", F("{0} gives the key at {1}", {known.name, known.keyPage}).c_str());
+          ImGui::SameLine();
+          if (theme::dialogButton(T("Open"), ImVec2(0, 0), true)) SDL_OpenURL(known.keyPage.c_str());
+        }
+      keyControls(provider);
+    }
     ImGui::SetNextItemWidth(theme::em(200));
     changed_ |= ImGui::InputText(T("Key variable"), &provider.keyEnv);
     ImGui::SetNextItemWidth(theme::em(120));
@@ -2019,6 +2056,28 @@ void AssistantPanel::settingsDialog() {
     changed_ = true;
   }
   ImGui::Separator();
+  if (!knownLoaded_) known_ = loadKnownProviders(dataDir() + "/assistant/providers.json"), knownLoaded_ = true;
+  if (theme::dialogButton(T("Add a service..."))) ImGui::OpenPopup("##addservice");
+  if (ImGui::BeginPopup("##addservice")) {
+    for (auto& known : known_) {
+      if (ImGui::Selectable(known.name.c_str())) {
+        Provider made = providerFrom(known);
+        std::string base = made.name;
+        for (int number = 2;; number++) {  // each name once: the key is kept under it
+          bool taken = false;
+          for (auto& existing : settings_.providers) taken = taken || existing.name == made.name;
+          if (!taken) break;
+          made.name = base + " " + std::to_string(number);
+        }
+        settings_.providers.push_back(made);
+        settings_.active = (int)settings_.providers.size() - 1;
+        changed_ = true;
+      }
+      if (ImGui::IsItemHovered() && !known.note.empty()) ImGui::SetTooltip("%s", known.note.c_str());
+    }
+    ImGui::EndPopup();
+  }
+  ImGui::SameLine();
   if (theme::dialogButton(T("Add a model server"))) {
     settings_.providers.push_back(Provider());
     changed_ = true;
@@ -2026,7 +2085,6 @@ void AssistantPanel::settingsDialog() {
   ImGui::Spacing();
   if (theme::primaryButton(T("Close")) || theme::dialogEscape()) {
     opened = false;
-    refreshModels();
     ImGui::CloseCurrentPopup();
   }
   ImGui::EndPopup();

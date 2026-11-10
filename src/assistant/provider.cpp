@@ -3,6 +3,7 @@
 #include "assistant/provider.h"
 
 #include <cstdlib>
+#include <fstream>
 
 #include "assistant/secrets.h"
 #include <nlohmann/json.hpp>
@@ -263,5 +264,37 @@ std::vector<Provider> detectLocalServers() {
     found.push_back(provider);
   }
   return found;
+}
+}  // namespace vcs::assistant
+
+namespace vcs::assistant {
+std::vector<KnownProvider> loadKnownProviders(const std::string& jsonPath) {
+  std::vector<KnownProvider> list;
+  std::ifstream input(jsonPath);
+  json root = json::parse(input, nullptr, false);
+  if (!root.is_object() || !root.contains("providers") || !root["providers"].is_array()) return list;
+  auto text = [](const json& item, const char* key) { return item.contains(key) && item[key].is_string() ? item[key].get<std::string>() : std::string(); };
+  for (auto& item : root["providers"]) {
+    if (!item.is_object()) continue;
+    KnownProvider known;
+    known.id = text(item, "id"), known.name = text(item, "name"), known.dialect = text(item, "dialect"), known.baseUrl = text(item, "base_url");
+    known.keyPage = text(item, "key_page"), known.note = text(item, "note");
+    known.contextTokens = item.value("context_tokens", 32768);
+    // only https services, and a protocol that exists
+    if (known.id.empty() || known.name.empty() || known.baseUrl.rfind("https://", 0) != 0 || (known.dialect != "openai" && known.dialect != "anthropic")) continue;
+    if (!known.keyPage.empty() && known.keyPage.rfind("https://", 0) != 0) known.keyPage.clear();
+    list.push_back(known);
+  }
+  return list;
+}
+
+Provider providerFrom(const KnownProvider& known) {
+  Provider provider;
+  provider.name = known.name;
+  provider.dialect = known.dialect;
+  provider.baseUrl = known.baseUrl;
+  provider.preset = known.id;
+  provider.contextTokens = known.contextTokens;
+  return provider;
 }
 }  // namespace vcs::assistant

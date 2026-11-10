@@ -24,6 +24,7 @@ json Settings::toJson() const {
                                   {"base_url", provider.baseUrl},
                                   {"model", provider.model},
                                   {"builtin", provider.builtin},
+                                  {"preset", provider.preset},
                                   {"key_env", provider.keyEnv},
                                   {"context_tokens", provider.contextTokens}});
   return value;
@@ -53,6 +54,7 @@ Settings Settings::fromJson(const json& input) {
       provider.baseUrl = item.value("base_url", std::string());
       provider.model = item.value("model", std::string());
       provider.builtin = item.value("builtin", false);
+      provider.preset = item.value("preset", std::string());
       provider.keyEnv = item.value("key_env", std::string());
       provider.contextTokens = std::clamp(item.value("context_tokens", 8192), 1024, 1 << 20);
       settings.providers.push_back(provider);

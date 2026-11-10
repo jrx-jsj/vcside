@@ -46,6 +46,7 @@
 #include "assistant/validate.h"
 #include "assistant/first_pass.h"
 #include "assistant/mask.h"
+#include "assistant/model_list.h"
 #include <imgui.h>
 #include "assistant/secrets.h"
 #include "assistant/models.h"
@@ -4010,6 +4011,84 @@ static void testMasking(const KnowledgeBase& kb) {
         !looksEnglish("Implementa el salto") && !looksEnglish("Wie lese ich den Knopf") && !looksEnglish("123"));
 }
 
+static void testKnownProviders() {
+  using namespace vcs::assistant;
+  // the shipped list: only https services and real protocols; Gemini through its OpenAI-compatible address
+  auto known = loadKnownProviders(std::string(VCSIDE_SOURCE_DATA) + "/assistant/providers.json");
+  CHECK(known.size() >= 4);
+  const KnownProvider* gemini = nullptr;
+  for (auto& item : known) {
+    CHECK(item.baseUrl.rfind("https://", 0) == 0 && (item.dialect == "openai" || item.dialect == "anthropic") && !item.name.empty());
+    if (item.id == "gemini") gemini = &item;
+  }
+  CHECK(gemini && gemini->baseUrl == "https://generativelanguage.googleapis.com/v1beta/openai" && gemini->dialect == "openai" && gemini->keyPage.rfind("https://", 0) == 0);
+  Provider made = providerFrom(*gemini);
+  CHECK(made.preset == "gemini" && made.name == "Google Gemini" && !made.isLocal() && made.model.empty());
+  CHECK(Settings::fromJson(([&] { Settings s; s.providers.push_back(made); return s.toJson(); })()).providers.back().preset == "gemini");
+  // a list with a plain-http service or an invented protocol is not offered
+  namespace fs = std::filesystem;
+  fs::path file = fs::temp_directory_path() / "vcside_providers_test.json";
+  { std::ofstream(file) << R"({"providers":[{"id":"a","name":"A","dialect":"openai","base_url":"http://insecure.example/v1"},{"id":"b","name":"B","dialect":"soap","base_url":"https://b.example/v1"},{"id":"c","name":"C","dialect":"openai","base_url":"https://c.example/v1","key_page":"http://c.example"}]})"; }
+  auto filtered = loadKnownProviders(file.string());
+  CHECK(filtered.size() == 1 && filtered[0].id == "c" && filtered[0].keyPage.empty());
+  fs::remove(file);
+
+  // the names a service lists: prefix off, only for chatting, each once, sorted
+  Provider google;
+  google.baseUrl = "https://generativelanguage.googleapis.com/v1beta/openai";
+  auto names = normaliseModelIds({"models/gemini-2.5-pro", "models/gemini-2.5-flash", "models/text-embedding-004", "models/imagen-3.0", "models/gemini-2.5-flash", "models/aqa", "models/veo-2.0"}, google);
+  CHECK(names == std::vector<std::string>({"gemini-2.5-flash", "gemini-2.5-pro"}));
+  Provider openai;
+  openai.baseUrl = "https://api.openai.com/v1";
+  auto openaiNames = normaliseModelIds({"gpt-4o", "whisper-1", "text-embedding-3-small", "dall-e-3", "tts-1", "o3-mini", "omni-moderation-latest", "models/not-stripped"}, openai);
+  CHECK(openaiNames == std::vector<std::string>({"gpt-4o", "models/not-stripped", "o3-mini"}));
+  CHECK(describeModelListError("HTTP 403: API key not valid").find("refused the key") != std::string::npos && describeModelListError("HTTP 404").find("type the name") != std::string::npos &&
+        describeModelListError("connection refused") == "connection refused");
+
+  // asking a service: the key goes as a Bearer header, the answer is cleaned, nothing is asked without a key
+  setenv("VCSIDE_TEST_KEY", "sk-test-abcdef", 1);
+  {
+    std::string body = R"({"data":[{"id":"models/gemini-2.5-flash"},{"id":"models/text-embedding-004"},{"id":"models/gemini-2.5-pro"}]})";
+    MockServer server("HTTP/1.1 200 OK\r\nContent-Length: " + std::to_string(body.size()) + "\r\n\r\n" + body);
+    Provider remote;
+    remote.name = "Mock Gemini";
+    remote.baseUrl = server.url();
+    remote.keyEnv = "VCSIDE_TEST_KEY";
+    ModelLists lists;
+    CHECK(!lists.needsKey(remote) && lists.of(remote).ids.empty() && !lists.of(remote).fetched);
+    lists.request(remote);
+    CHECK(lists.of(remote).fetching);
+    for (int i = 0; i < 300 && lists.of(remote).fetching; i++) usleep(10000), lists.poll();
+    CHECK(lists.of(remote).fetched && lists.of(remote).error.empty() && lists.of(remote).ids.size() == 2);  // a plain http address is not Google's: the prefix stays
+    server.thread.join();
+    server.thread = std::thread([] {});
+    CHECK(server.request.find("GET /v1/models") == 0 && server.request.find("Authorization: Bearer sk-test-abcdef") != std::string::npos);
+    lists.request(remote);  // the same address and key: not asked again
+    CHECK(!lists.of(remote).fetching);
+  }
+  {
+    Provider remote;
+    remote.name = "Keyless";
+    remote.baseUrl = "https://api.example.invalid/v1";
+    ModelLists lists;
+    CHECK(lists.needsKey(remote));
+    lists.request(remote);
+    CHECK(!lists.of(remote).fetching && !lists.of(remote).fetched);  // nothing is asked without a key
+  }
+  {
+    MockServer server("HTTP/1.1 403 Forbidden\r\nContent-Length: 49\r\n\r\n{\"error\":{\"message\":\"API key not valid. Please pass\"}}");
+    Provider remote;
+    remote.name = "Refused";
+    remote.baseUrl = server.url();
+    remote.keyEnv = "VCSIDE_TEST_KEY";
+    ModelLists lists;
+    lists.request(remote);
+    for (int i = 0; i < 300 && lists.of(remote).fetching; i++) usleep(10000), lists.poll();
+    CHECK(lists.of(remote).fetched && lists.of(remote).ids.empty() && lists.of(remote).error.find("refused the key") != std::string::npos);
+  }
+  unsetenv("VCSIDE_TEST_KEY");
+}
+
 static void testAssistant(const KnowledgeBase& kb) {
   using namespace vcs::assistant;
   // SSE, fed one byte at a time, with CRLF, comments and a data line split over two
@@ -4333,6 +4412,7 @@ int main() {
   testFirstPass();
   testLengthStops();
   testMasking(kb);
+  testKnownProviders();
   std::printf("%d checks, %d failures\n", checks, failures);
   return failures ? 1 : 0;
 }

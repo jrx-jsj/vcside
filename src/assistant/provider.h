@@ -28,6 +28,7 @@ struct Provider {
   std::string dialect = "openai";                 // "openai"; "anthropic" is planned
   std::string baseUrl = "http://127.0.0.1:11434/v1";
   std::string model;
+  std::string preset;                             // the id of the known service it was made from ("gemini"), "" for any other
   bool builtin = false;                           // the helper that ships with VCSIDE; model = catalogue id
   std::string keyEnv;                             // name of an environment variable holding the key
   int contextTokens = 8192;
@@ -82,6 +83,14 @@ std::vector<std::string> listModels(const Provider& provider, std::string* error
 }  // namespace vcs::assistant
 
 namespace vcs::assistant {
+// A service VCSIDE knows (data/assistant/providers.json): choosing it fills the address and the protocol.
+struct KnownProvider {
+  std::string id, name, dialect, baseUrl, keyPage, note;
+  int contextTokens = 32768;
+};
+std::vector<KnownProvider> loadKnownProviders(const std::string& jsonPath);
+Provider providerFrom(const KnownProvider& known);
+
 // Looks (on loopback only, short timeouts) for the servers local models usually run on:
 // llama.cpp's llama-server (8080), Ollama (11434) and LM Studio (1234). One provider per
 // server that answers, with its first model.

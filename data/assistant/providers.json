@@ -1,0 +1,41 @@
+{
+  "_comment": "Services VCSIDE knows how to talk to. Choosing one fills the address and the protocol; the models are asked of the service itself once a key is saved. The Gemini address and its list of models are from Google's 'OpenAI compatibility' page (read 2026-11-11); the others are from general knowledge and to be verified (docs/sources.md).",
+  "providers": [
+    {
+      "id": "gemini",
+      "name": "Google Gemini",
+      "dialect": "openai",
+      "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+      "key_page": "https://aistudio.google.com/apikey",
+      "context_tokens": 32768,
+      "note": "Through Google's OpenAI-compatible address. The key is made in Google AI Studio."
+    },
+    {
+      "id": "anthropic",
+      "name": "Anthropic",
+      "dialect": "anthropic",
+      "base_url": "https://api.anthropic.com/v1",
+      "key_page": "https://console.anthropic.com/settings/keys",
+      "context_tokens": 32768,
+      "note": "The Messages API."
+    },
+    {
+      "id": "openai",
+      "name": "OpenAI",
+      "dialect": "openai",
+      "base_url": "https://api.openai.com/v1",
+      "key_page": "https://platform.openai.com/api-keys",
+      "context_tokens": 32768,
+      "note": "Chat completions."
+    },
+    {
+      "id": "openrouter",
+      "name": "OpenRouter",
+      "dialect": "openai",
+      "base_url": "https://openrouter.ai/api/v1",
+      "key_page": "https://openrouter.ai/keys",
+      "context_tokens": 32768,
+      "note": "One key for many models from many makers (a long list: type to filter it)."
+    }
+  ]
+}

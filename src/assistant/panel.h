@@ -17,6 +17,7 @@
 #include "assistant/engine.h"
 #include "assistant/first_pass.h"
 #include "assistant/mask.h"
+#include "assistant/model_list.h"
 #include "assistant/grounding.h"
 #include "assistant/models.h"
 #include "assistant/project_index.h"
@@ -85,11 +86,12 @@ class AssistantPanel {
   bool focusInput_ = false, scrollDown_ = false;
   std::string chatProject_;
   // models and detection run on worker threads
-  std::future<std::pair<std::vector<std::string>, std::string>> modelsFuture_;
   std::future<std::vector<Provider>> detectFuture_;
-  std::vector<std::string> models_;
-  std::string modelsError_, modelsFor_;
-  bool detecting_ = false, fetchingModels_ = false;
+  ModelLists modelLists_;                              // what each service offers, asked of the service
+  std::vector<KnownProvider> known_;
+  bool knownLoaded_ = false;
+  std::string modelFilter_;
+  bool detecting_ = false;
   std::string detectNote_;
   // the built-in model: the helper that ships with VCSIDE and the model files it runs
   Engine engine_;
@@ -222,7 +224,7 @@ class AssistantPanel {
   void decideEdit(const PanelContext& context, bool apply, bool allowFile);
   void undoEverything(const PanelContext& context);
   void agentCards(const PanelContext& context);
-  void refreshModels();
+  void modelPicker(Provider& provider, const char* label, float width, bool withRefresh);
   const CatalogModel* catalogModel(const std::string& id) const;
   bool prepareBuiltin(Provider& provider);   // starts the helper when the model is there; true once it answers
   void builtinCard(Provider& provider);      // download offer, progress, loading, errors
