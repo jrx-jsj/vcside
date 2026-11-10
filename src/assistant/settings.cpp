@@ -14,7 +14,7 @@ namespace fs = std::filesystem;
 using json = nlohmann::json;
 
 json Settings::toJson() const {
-  json value = {{"asked", asked}, {"chat", chat}, {"agent", agent}, {"completion", completion}, {"explain_errors", explainErrors}, {"active", active}};
+  json value = {{"asked", asked}, {"chat", chat}, {"agent", agent}, {"completion", completion}, {"explain_errors", explainErrors}, {"active", active}, {"tool_profile", toolProfile}};
   value["providers"] = json::array();
   for (auto& provider : providers)
     value["providers"].push_back({{"name", provider.name},
@@ -36,6 +36,7 @@ Settings Settings::fromJson(const json& input) {
   settings.completion = value.value("completion", false);
   settings.explainErrors = value.value("explain_errors", false);
   settings.active = value.value("active", 0);
+  settings.toolProfile = std::clamp(value.value("tool_profile", 2), 0, 2);
   if (value.contains("providers") && value["providers"].is_array())
     for (auto& item : value["providers"]) {
       if (!item.is_object()) continue;
@@ -120,6 +121,7 @@ bool ChatStore::load(const std::string& id, bool archived, Chat* chat) const {
       ChatMessage message;
       message.role = item.value("role", std::string());
       message.content = item.value("content", std::string());
+      message.kind = item.value("kind", std::string());
       if (item.contains("reference") && item["reference"].is_array())
         for (auto& id : item["reference"])
           if (id.is_string()) message.reference.push_back(id.get<std::string>());
@@ -135,6 +137,7 @@ bool ChatStore::save(const Chat& chat) {
   for (auto& message : chat.messages) {
     json item = {{"role", message.role}, {"content", message.content}};
     if (!message.reference.empty()) item["reference"] = message.reference;
+    if (!message.kind.empty()) item["kind"] = message.kind;
     value["messages"].push_back(item);
   }
   // a chat that was archived stays in the archive

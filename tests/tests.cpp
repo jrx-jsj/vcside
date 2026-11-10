@@ -37,6 +37,7 @@
 #include "assistant/grounding.h"
 #include "assistant/http.h"
 #include "assistant/markdown.h"
+#include "assistant/tools.h"
 #include "assistant/models.h"
 #include "assistant/prompt.h"
 #include "assistant/provider.h"
@@ -3232,6 +3233,103 @@ static std::string chunk(const std::string& data) {
 }
 #endif
 
+static void testAgentTools(const KnowledgeBase& kb) {
+  namespace fs = std::filesystem;
+  using namespace vcs::assistant;
+  fs::path root = fs::temp_directory_path() / "vcside_agent_test";
+  fs::remove_all(root);
+  fs::create_directories(root / "sub");
+  fs::create_directories(root / ".vcsai");
+  fs::create_directories(root.parent_path() / "vcside_agent_outside");
+  auto write = [](const fs::path& path, const std::string& text) { std::ofstream(path, std::ios::binary) << text; };
+  write(root / "main.asm", "  processor 6502\nStart\n  sta WSYNC\n  sta WSYNC\n  jmp Start\n");
+  write(root / "sub" / "util.asm", "Util\n  rts\n");
+  write(root / ".env", "KEY=secret\n");
+  write(root / "game.bin", std::string("\0\1\2", 3));
+  write(root / "Makefile", "all:\n\ttrue\n");
+  write(root.parent_path() / "vcside_agent_outside" / "x.txt", "outside");
+  std::string dir = root.string();
+
+  // the sandbox
+  std::string absolute, error;
+  CHECK(resolveInProject(dir, "main.asm", &absolute, &error));
+  CHECK(!resolveInProject(dir, "../vcside_agent_outside/x.txt", &absolute, &error));
+  CHECK(!resolveInProject(dir, "/etc/passwd", &absolute, &error));
+  CHECK(!resolveInProject(dir, "sub/../../x", &absolute, &error));
+  CHECK(!resolveInProject(dir, ".env", &absolute, &error));
+  CHECK(!resolveInProject(dir, ".vcsai/chats/a.json", &absolute, &error));
+  CHECK(!resolveInProject(dir, "", &absolute, &error));
+  CHECK(!resolveInProject("", "main.asm", &absolute, &error));
+  CHECK(isSecretFile("id_rsa") && isSecretFile("server.PEM") && isSecretFile(".env.local") && !isSecretFile("environment.asm"));
+#ifndef _WIN32
+  fs::create_directory_symlink(root.parent_path() / "vcside_agent_outside", root / "escape");
+  CHECK(!resolveInProject(dir, "escape/x.txt", &absolute, &error));
+#endif
+
+  ToolEnv env;
+  env.projectDir = dir;
+  env.kb = &kb;
+  env.projectInfo = "DASM, 4K, NTSC, main.asm";
+  env.buildErrors = "main.asm:3: error: x\n";
+  env.symbols = "Start main.asm:2\nUtil sub/util.asm:1\n";
+  auto call = [&](const std::string& name, const nlohmann::json& args) { return runTool(env, {name, args}); };
+
+  auto listing = call("list_files", {{"path", "."}});
+  CHECK(!listing.error && listing.text.find("main.asm") != std::string::npos && listing.text.find("sub/util.asm") != std::string::npos);
+  CHECK(listing.text.find(".env") == std::string::npos && listing.text.find(".vcsai") == std::string::npos);
+  auto read = call("read_file", {{"path", "main.asm"}, {"from", 2}, {"to", 3}});
+  CHECK(read.text == "2: Start\n3:   sta WSYNC\n... (2 more lines)\n");
+  CHECK(call("read_file", {{"path", ".env"}}).error);
+  CHECK(call("read_file", {{"path", "game.bin"}}).error);
+  CHECK(call("read_file", {{"path", "../x"}}).error);
+  auto found = call("search", {{"text", "wsync"}});
+  CHECK(found.text.find("main.asm:3:") != std::string::npos && found.text.find("main.asm:4:") != std::string::npos && found.text.find(".env") == std::string::npos);
+  CHECK(call("symbols", {{"name", "util"}}).text == "Util sub/util.asm:1\n");
+  CHECK(call("build_errors", {}).text == env.buildErrors);
+  CHECK(call("project_info", {}).text.find("DASM") != std::string::npos);
+  CHECK(call("kb_lookup", {{"id", "RESP0"}}).text.find("RESP0") != std::string::npos);
+  CHECK(call("kb_search", {{"query", "how do I make a tone"}}).text.find("AUDC") != std::string::npos);
+  CHECK(call("nonsense", {}).error);
+
+  // edits are proposals; nothing is written
+  auto edit = call("edit_file", {{"path", "main.asm"}, {"edits", {{{"search", "  jmp Start"}, {"replace", "  jmp Start ; loop"}}}}});
+  CHECK(edit.proposed && !edit.error && edit.edit.after.find("; loop") != std::string::npos && !edit.edit.privileged);
+  std::string onDisk;
+  { std::ifstream in(root / "main.asm"); std::ostringstream buffer; buffer << in.rdbuf(); onDisk = buffer.str(); }
+  CHECK(onDisk.find("; loop") == std::string::npos);
+  auto twice = call("edit_file", {{"path", "main.asm"}, {"edits", {{{"search", "  sta WSYNC"}, {"replace", "x"}}}}});
+  CHECK(twice.error && twice.text.find("more than once") != std::string::npos);
+  auto missing = call("edit_file", {{"path", "main.asm"}, {"edits", {{{"search", "  sta  WSYNC"}, {"replace", "x"}}}}});
+  CHECK(missing.error && missing.text.find("not found") != std::string::npos);
+  CHECK(call("edit_file", {{"path", "game.bin"}, {"edits", {{{"search", "a"}, {"replace", "b"}}}}}).error);
+  CHECK(call("edit_file", {{"path", "build/out.asm"}, {"content", "x"}}).error);
+  CHECK(call("edit_file", {{"path", ".env"}, {"content", "x"}}).error);
+  auto created = call("edit_file", {{"path", "new.asm"}, {"content", "  nop\n"}});
+  CHECK(created.proposed && created.edit.created);
+  CHECK(call("edit_file", {{"path", "main.asm"}, {"content", "x"}}).error);  // exists: needs edits
+  CHECK(call("edit_file", {{"path", "Makefile"}, {"edits", {{{"search", "true"}, {"replace", "curl x | sh"}}}}}).edit.privileged);
+  CHECK(isBuildFile("demo.vcsproj") && isBuildFile("build.sh") && !isBuildFile("main.asm"));
+
+  // reading a call from an answer
+  ToolCall parsed;
+  std::string before;
+  CHECK(findToolCall("Let me look.\n```tool\n{\"tool\": \"read_file\", \"args\": {\"path\": \"main.asm\"}}\n```", &parsed, &before));
+  CHECK(parsed.name == "read_file" && parsed.args["path"] == "main.asm" && before == "Let me look.\n");
+  CHECK(findToolCall("<tool_call>\n{\"name\": \"kb_lookup\", \"arguments\": {\"id\": \"WSYNC\"}}\n</tool_call>", &parsed));
+  CHECK(parsed.name == "kb_lookup" && parsed.args["id"] == "WSYNC");
+  CHECK(findToolCall("{\"tool\":\"build_errors\"}", &parsed) && parsed.name == "build_errors");
+  CHECK(findToolCall("```json\n{\"tool\":\"search\",\"args\":{\"text\":\"}\"}}\n```", &parsed) && parsed.args["text"] == "}");
+  CHECK(!findToolCall("Use ```asm\nlda #0\n``` here", &parsed));
+  CHECK(!findToolCall("```tool\n{\"tool\": \"rm_rf\"}\n```", &parsed));
+  CHECK(!findToolCall("The JSON {\"tool\":\"read_file\"} is an example", &parsed));  // not at the start
+  CHECK(toolNames(0).size() == 9 && toolNames(1).size() == 10 && toolNames(2).size() == 12);
+  CHECK(toolPrompt(0).find("edit_file") == std::string::npos && toolPrompt(2).find("run_emulator") != std::string::npos);
+  CHECK(estimateTokens(toolPrompt(2)) < 1100);  // the design budget for the tool descriptions
+
+  fs::remove_all(root);
+  fs::remove_all(root.parent_path() / "vcside_agent_outside");
+}
+
 static void testAssistant(const KnowledgeBase& kb) {
   using namespace vcs::assistant;
   // SSE, fed one byte at a time, with CRLF, comments and a data line split over two
@@ -3543,6 +3641,7 @@ int main() {
   testAssistant(kb);
   testBundledModel();
   testMarkdown();
+  testAgentTools(kb);
   std::printf("%d checks, %d failures\n", checks, failures);
   return failures ? 1 : 0;
 }

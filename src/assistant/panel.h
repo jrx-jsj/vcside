@@ -5,6 +5,7 @@
 #pragma once
 #include <functional>
 #include <future>
+#include <map>
 #include <memory>
 #include <set>
 #include <string>
@@ -16,6 +17,7 @@
 #include "assistant/prompt.h"
 #include "assistant/provider.h"
 #include "assistant/settings.h"
+#include "assistant/tools.h"
 #include "kb.h"
 
 struct ImFont;
@@ -31,6 +33,14 @@ struct PanelContext {
   std::string fileName, fileText, selection, errors;
   bool canApply = false;
   std::function<void(const std::string& code)> apply;  // replaces the selection, or inserts at the cursor
+  // for the agent's tools
+  std::string spaceReport, symbols;                    // snapshots, see ToolEnv
+  bool building = false;                               // a build is running
+  std::string buildStatus;                             // how the last build ended
+  std::function<void()> startBuild, runEmulator;
+  // Writes a file: into the editor buffer when it is open (one undoable step), else to disk.
+  // remove = true deletes a file the assistant created (the user's "undo everything").
+  std::function<bool(const std::string& path, const std::string& text, bool remove)> applyEdit;
 };
 
 class AssistantPanel {
@@ -79,6 +89,19 @@ class AssistantPanel {
   Hardware hardware_;                                  // what this computer offers, asked once
   std::future<std::vector<Device>> probe_;
   Recommendation recommendation_;                      // the model that fits it best
+  // the agent: a call is answered by running a tool, then the model is asked again
+  ImFont* monoFont_ = nullptr;
+  int agentSteps_ = 0;
+  std::map<std::string, int> callCounts_;
+  std::string turnText_;                               // the user's last turn as sent (with its attachments)
+  bool pendingEditActive_ = false;
+  EditProposal pendingEdit_;
+  std::string pendingRun_;                             // "build" or "run_emulator", waiting for a click
+  std::set<std::string> allowedRun_, allowedEdit_;     // this conversation's session grants
+  std::map<std::string, std::pair<bool, std::string>> originals_;  // path -> (created here, text before the first change)
+  bool privilegedTouched_ = false;                     // a Makefile or project file was changed: builds ask again
+  bool waitingBuild_ = false, buildSeen_ = false;
+  int buildFrames_ = 0;
   // dialogs
   std::string applyCode_, applyWhere_;
   std::function<void(const std::string&)> applyFn_;
@@ -90,6 +113,14 @@ class AssistantPanel {
   void poll(const PanelContext& context);
   void finishAnswer(const PanelContext& context, const std::string& note);
   void saveChat(const PanelContext& context);
+  ToolEnv toolEnv(const PanelContext& context) const;
+  void continueAgent(const PanelContext& context);
+  void handleToolCall(const PanelContext& context, const ToolCall& call);
+  void addToolResult(const PanelContext& context, const std::string& tool, const std::string& text, bool error);
+  void performRun(const PanelContext& context, const std::string& tool);
+  void decideEdit(const PanelContext& context, bool apply, bool allowFile);
+  void undoEverything(const PanelContext& context);
+  void agentCards(const PanelContext& context);
   void refreshModels();
   const CatalogModel* catalogModel(const std::string& id) const;
   bool prepareBuiltin(Provider& provider);   // starts the helper when the model is there; true once it answers

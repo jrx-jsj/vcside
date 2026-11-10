@@ -2421,6 +2421,30 @@ void App::assistantPanel() {
     if (errors.size() > 3000) break;
   }
   context.errors = errors;
+  context.building = building_;
+  context.buildStatus = lastStatus_;
+  if (space_) context.spaceReport = space_->summary();
+  for (auto& [name, live] : liveSymbols_) {
+    std::string relativeFile = project_ ? fs::relative(live.file, project_->dir).generic_string() : live.file;
+    context.symbols += name + " " + relativeFile + ":" + std::to_string(live.symbol.line + 1) + "\n";
+  }
+  context.startBuild = [this] { build(0); };
+  context.runEmulator = [this] { run(false); };
+  context.applyEdit = [this](const std::string& path, const std::string& text, bool remove) {
+    for (auto& openedFile : files_)
+      if (openedFile->path == path) {
+        if (openedFile->gfx || openedFile->music || openedFile->image || openedFile->form || remove) return false;
+        openedFile->editor.selectAll();  // one undoable step in the editor
+        openedFile->editor.typeText(text);
+        return true;
+      }
+    std::error_code ignored;
+    if (remove) return fs::remove(path, ignored);
+    fs::create_directories(fs::path(path).parent_path(), ignored);
+    std::ofstream out(path, std::ios::binary);
+    out << text;
+    return (bool)out;
+  };
   assistant_.draw(context, mono_, &showAssistant_);
 }
 
