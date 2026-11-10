@@ -268,11 +268,21 @@ ToolResult editFile(const ToolEnv& env, const json& args) {
     edit.changes = 1;
   } else {
     if (!exists) return fail("no such file: " + relative + " (to create it send \"content\")");
-    if (!readText(absolute, &edit.before) || looksBinary(edit.before)) return fail("cannot edit " + relative);
+    if (!(env.openFileText && env.openFileText(inside, &edit.before)) && !readText(absolute, &edit.before)) return fail("cannot edit " + relative);
+    if (looksBinary(edit.before)) return fail("cannot edit " + relative);
     if (!args.contains("edits") || !args["edits"].is_array() || args["edits"].empty()) return fail("edit_file needs \"edits\": [{\"search\": ..., \"replace\": ...}]");
     if (!applySearchReplace(edit.before, args["edits"], &edit.after, &error)) return fail(error);
     edit.changes = (int)args["edits"].size();
     if (edit.after == edit.before) return fail("the edits change nothing");
+    {  // which lines it touches: what is left when the common start and end are taken away
+      std::vector<std::string> before = splitLines(edit.before), after = splitLines(edit.after);
+      size_t prefix = 0;
+      while (prefix < before.size() && prefix < after.size() && before[prefix] == after[prefix]) prefix++;
+      size_t suffix = 0;
+      while (suffix < before.size() - prefix && suffix < after.size() - prefix && before[before.size() - 1 - suffix] == after[after.size() - 1 - suffix]) suffix++;
+      edit.firstLine = (int)prefix + 1;
+      edit.lastLine = std::max(edit.firstLine, (int)(before.size() - suffix));
+    }
   }
   // a graphics or music file the editor could not open is an error for the model, not an offer to the user
   std::string extension = lower(fs::path(name).extension().string());
@@ -561,6 +571,61 @@ bool resolveInProject(const std::string& projectDir, const std::string& relative
   return true;
 }
 
+namespace {
+std::string trimEnds(const std::string& text) {
+  size_t first = text.find_first_not_of(" \t\r");
+  if (first == std::string::npos) return "";
+  return text.substr(first, text.find_last_not_of(" \t\r") - first + 1);
+}
+
+// Where `search` is in `text` when only the indentation and the spaces at the ends of lines differ (a model copies
+// code and changes tabs into spaces): the byte range of the lines, and how many places match.
+struct LineMatch {
+  size_t start = 0, end = 0;
+  std::vector<int> lines;  // 1-based first line of every match
+};
+LineMatch matchIgnoringIndentation(const std::string& text, const std::string& search) {
+  LineMatch match;
+  std::vector<size_t> starts, ends;
+  size_t position = 0;
+  while (position <= text.size()) {
+    size_t newline = text.find('\n', position);
+    size_t stop = newline == std::string::npos ? text.size() : newline;
+    starts.push_back(position), ends.push_back(stop);
+    if (newline == std::string::npos) break;
+    position = newline + 1;
+  }
+  std::vector<std::string> wanted;
+  {
+    size_t from = 0;
+    while (from <= search.size()) {
+      size_t newline = search.find('\n', from);
+      size_t stop = newline == std::string::npos ? search.size() : newline;
+      wanted.push_back(trimEnds(search.substr(from, stop - from)));
+      if (newline == std::string::npos) break;
+      from = newline + 1;
+    }
+  }
+  bool anyText = false;
+  for (auto& line : wanted) anyText = anyText || !line.empty();
+  if (!anyText) return match;
+  for (size_t first = 0; first + wanted.size() <= starts.size(); first++) {
+    bool same = true;
+    for (size_t k = 0; same && k < wanted.size(); k++) same = trimEnds(text.substr(starts[first + k], ends[first + k] - starts[first + k])) == wanted[k];
+    if (!same) continue;
+    if (match.lines.empty()) match.start = starts[first], match.end = ends[first + wanted.size() - 1];
+    match.lines.push_back((int)first + 1);
+  }
+  return match;
+}
+
+std::string lineList(const std::vector<int>& lines) {
+  std::string out;
+  for (size_t i = 0; i < lines.size() && i < 4; i++) out += (i ? ", " : "") + std::to_string(lines[i]);
+  return lines.size() > 4 ? out + "..." : out;
+}
+}  // namespace
+
 bool applySearchReplace(const std::string& text, const json& edits, std::string* result, std::string* error) {
   std::string current = text;
   int number = 0;
@@ -576,25 +641,34 @@ bool applySearchReplace(const std::string& text, const json& edits, std::string*
       return false;
     }
     size_t first = current.find(search);
-    if (first == std::string::npos) {
-      std::string near;
-      std::string firstLine = search.substr(0, search.find('\n'));
-      while (!firstLine.empty() && (firstLine.back() == ' ' || firstLine.back() == '\r')) firstLine.pop_back();
-      size_t guess = firstLine.empty() ? std::string::npos : current.find(firstLine);
-      if (guess != std::string::npos) {
-        size_t lineStart = current.rfind('\n', guess);
-        lineStart = lineStart == std::string::npos ? 0 : lineStart + 1;
-        near = " The first line of it is at line " + std::to_string(1 + std::count(current.begin(), current.begin() + guess, '\n')) +
-               ", but what follows differs (spaces, tabs and blank lines must match exactly).";
+    if (first != std::string::npos) {
+      if (current.find(search, first + 1) != std::string::npos) {
+        std::vector<int> places;
+        for (size_t at = current.find(search); at != std::string::npos; at = current.find(search, at + 1))
+          places.push_back(1 + (int)std::count(current.begin(), current.begin() + at, '\n'));
+        if (error) *error = "edit " + std::to_string(number) + ": the search text occurs more than once (lines " + lineList(places) + "); include more lines around it so it is unique";
+        return false;
       }
-      if (error) *error = "edit " + std::to_string(number) + ": the search text was not found." + near;
+      current.replace(first, search.size(), replace);
+      continue;
+    }
+    // not exactly: the same lines with other indentation or spaces at their ends, if there is one place for it
+    LineMatch loose = matchIgnoringIndentation(current, search);
+    if (loose.lines.size() == 1) {
+      current.replace(loose.start, loose.end - loose.start, replace);
+      continue;
+    }
+    if (loose.lines.size() > 1) {
+      if (error) *error = "edit " + std::to_string(number) + ": the search text occurs more than once (lines " + lineList(loose.lines) + "); include more lines around it so it is unique";
       return false;
     }
-    if (current.find(search, first + 1) != std::string::npos) {
-      if (error) *error = "edit " + std::to_string(number) + ": the search text occurs more than once; include more lines around it so it is unique";
-      return false;
-    }
-    current.replace(first, search.size(), replace);
+    std::string near;
+    std::string firstLine = trimEnds(search.substr(0, search.find('\n')));
+    size_t guess = firstLine.empty() ? std::string::npos : current.find(firstLine);
+    if (guess != std::string::npos)
+      near = " The first line of it is at line " + std::to_string(1 + std::count(current.begin(), current.begin() + guess, '\n')) + ", but what follows differs.";
+    if (error) *error = "edit " + std::to_string(number) + ": the search text was not found." + near;
+    return false;
   }
   *result = current;
   return true;

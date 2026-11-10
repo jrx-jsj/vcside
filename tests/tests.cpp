@@ -42,6 +42,7 @@
 #include "assistant/project_index.h"
 #include "assistant/embeddings.h"
 #include "assistant/context_items.h"
+#include "assistant/edits.h"
 #include <imgui.h>
 #include "assistant/secrets.h"
 #include "assistant/models.h"
@@ -3810,6 +3811,69 @@ static void testContextChips() {
   fs::remove_all(root);
 }
 
+static void testEditBlocks() {
+  namespace fs = std::filesystem;
+  using namespace vcs::assistant;
+  EditBlock block;
+  std::string problem;
+  // an edit block names its file and holds sections
+  CHECK(parseEditBlock("edit src/main.asm", "<<<<<<< SEARCH\n  lda #1\n=======\n  lda #2\n>>>>>>> REPLACE", &block, &problem) == EditParse::Edit);
+  CHECK(block.path == "src/main.asm" && block.sections.size() == 1 && block.sections[0].search == "  lda #1" && block.sections[0].replace == "  lda #2");
+  CHECK(parseEditBlock("EDIT  a b.asm ", "<<<<<<< SEARCH\nx\n=======\ny\n>>>>>>> REPLACE\nsome text\n<<<<<<< SEARCH\nz\nw\n=======\n>>>>>>> REPLACE\n", &block, &problem) == EditParse::Edit);
+  CHECK(block.path == "a b.asm" && block.sections.size() == 2 && block.sections[1].search == "z\nw" && block.sections[1].replace.empty());
+  CHECK(parseEditBlock("asm src/x.asm", "<<<<< SEARCH\r\nx\r\n=====\r\ny\r\n>>>>> REPLACE\r\n", &block, &problem) == EditParse::Edit && block.path == "src/x.asm" && block.sections[0].search == "x");
+  // an example is not an edit; an edit that is cut or has no file is broken, and says why
+  CHECK(parseEditBlock("asm", "  lda #1\n  sta COLUBK\n", &block, &problem) == EditParse::NotAnEdit);
+  CHECK(parseEditBlock("", "plain text", &block, &problem) == EditParse::NotAnEdit);
+  CHECK(parseEditBlock("edit", "<<<<<<< SEARCH\nx\n=======\ny\n>>>>>>> REPLACE", &block, &problem) == EditParse::Broken && problem.find("file") != std::string::npos);
+  CHECK(parseEditBlock("edit a.asm", "<<<<<<< SEARCH\nx\n=======\ny\n", &block, &problem) == EditParse::Broken && problem.find("cut off") != std::string::npos);
+  CHECK(parseEditBlock("edit a.asm", "<<<<<<< SEARCH\nx\n>>>>>>> REPLACE", &block, &problem) == EditParse::Broken);
+  CHECK(parseEditBlock("edit a.asm", "just code", &block, &problem) == EditParse::Broken);
+  // the arguments for edit_file
+  parseEditBlock("edit a.asm", "<<<<<<< SEARCH\nx\n=======\ny\n>>>>>>> REPLACE", &block, &problem);
+  CHECK(editArguments(block)["edits"][0]["replace"] == "y" && editArguments(block)["path"] == "a.asm");
+  parseEditBlock("edit new.asm", "<<<<<<< SEARCH\n=======\n  nop\n>>>>>>> REPLACE", &block, &problem);
+  CHECK(editArguments(block)["content"] == "  nop\n" && !editArguments(block).contains("edits"));
+
+  // finding the place in the real file
+  fs::path root = fs::temp_directory_path() / "vcside_edit_block_test";
+  fs::remove_all(root);
+  fs::create_directories(root);
+  auto write = [](const fs::path& path, const std::string& text) { std::ofstream(path, std::ios::binary) << text; };
+  write(root / "main.asm", "Start\n\tlda #1\n\tsta COLUBK\n\trts\nLoop\n\tlda #2\n\tsta COLUBK\n\trts\n");
+  ToolEnv env;
+  env.projectDir = root.string();
+  auto locate = [&](const std::string& info, const std::string& body) {
+    EditBlock found;
+    std::string why;
+    if (parseEditBlock(info, body, &found, &why) != EditParse::Edit) return ToolResult();
+    return runTool(env, {"edit_file", editArguments(found)});
+  };
+  // exactly as in the file (the tab is a tab): one place, and which lines
+  auto exact = locate("edit main.asm", "<<<<<<< SEARCH\nLoop\n\tlda #2\n=======\nLoop\n\tlda #3\n>>>>>>> REPLACE");
+  CHECK(exact.proposed && exact.edit.after.find("lda #3") != std::string::npos && exact.edit.firstLine == 6 && exact.edit.lastLine == 6);
+  // the model wrote spaces for the tab: still one place, found by the lines
+  auto loose = locate("edit main.asm", "<<<<<<< SEARCH\nLoop\n    lda #2\n    sta COLUBK\n=======\nLoop\n    lda #9\n    sta COLUBK\n>>>>>>> REPLACE");
+  CHECK(loose.proposed && loose.edit.after.find("lda #9") != std::string::npos && loose.edit.after.find("lda #2") == std::string::npos && loose.edit.firstLine == 6);
+  CHECK(loose.edit.after.find("lda #1") != std::string::npos);  // the rest is untouched
+  // more than one place: not applied, and it says where
+  auto twice = locate("edit main.asm", "<<<<<<< SEARCH\n    sta COLUBK\n    rts\n=======\n    rts\n>>>>>>> REPLACE");
+  CHECK(!twice.proposed && twice.error && twice.text.find("more than once") != std::string::npos && twice.text.find("3") != std::string::npos && twice.text.find("7") != std::string::npos);
+  // not there: not applied
+  auto missing = locate("edit main.asm", "<<<<<<< SEARCH\n  lda #77\n=======\n  lda #78\n>>>>>>> REPLACE");
+  CHECK(!missing.proposed && missing.error && missing.text.find("not found") != std::string::npos);
+  // a file that does not exist needs a new file, and one outside the project is refused
+  CHECK(!locate("edit nothing.asm", "<<<<<<< SEARCH\nx\n=======\ny\n>>>>>>> REPLACE").proposed);
+  CHECK(locate("edit fresh.asm", "<<<<<<< SEARCH\n=======\n  nop\n>>>>>>> REPLACE").edit.created);
+  CHECK(!locate("edit ../outside.asm", "<<<<<<< SEARCH\nx\n=======\ny\n>>>>>>> REPLACE").proposed);
+  CHECK(!locate("edit .env", "<<<<<<< SEARCH\n=======\nTOKEN=1\n>>>>>>> REPLACE").proposed);
+  // nothing was written by any of them
+  std::ifstream after(root / "main.asm");
+  std::string disk((std::istreambuf_iterator<char>(after)), {});
+  CHECK(disk.find("lda #3") == std::string::npos && !fs::exists(root / "fresh.asm"));
+  fs::remove_all(root);
+}
+
 static void testAssistant(const KnowledgeBase& kb) {
   using namespace vcs::assistant;
   // SSE, fed one byte at a time, with CRLF, comments and a data line split over two
@@ -4128,6 +4192,7 @@ int main() {
   testProjectIndex();
   testEmbeddings();
   testContextChips();
+  testEditBlocks();
   std::printf("%d checks, %d failures\n", checks, failures);
   return failures ? 1 : 0;
 }

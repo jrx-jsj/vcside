@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "assistant/context_items.h"
+#include "assistant/edits.h"
 #include "assistant/embeddings.h"
 #include "assistant/engine.h"
 #include "assistant/grounding.h"
@@ -37,8 +38,7 @@ struct PanelContext {
   std::string fileRelative;  // the open file, relative to the project (for the index and the chips)
   int selectionFirst = 0, selectionLast = 0;  // the selected lines, 1-based
   int cursorLine = 0;                         // the cursor's line, 1-based (a long file is cut around it)
-  bool canApply = false;
-  std::function<void(const std::string& code)> apply;  // replaces the selection, or inserts at the cursor
+  std::function<bool(const std::string& relative, std::string* text)> readOpenFile;  // the editor's text of an open file
   // for the agent's tools
   std::string spaceReport, symbols;                    // snapshots, see ToolEnv
   bool building = false;                               // a build is running
@@ -160,6 +160,19 @@ class AssistantPanel {
   int agentSteps_ = 0;
   std::map<std::string, int> callCounts_;
   std::string turnText_;                               // the user's last turn as sent (with its attachments)
+  // a change from a block of the chat's answer, found in the real file, waiting for Apply or Discard
+  struct Placement {
+    double at = -10;           // when it was last looked for (the file may change)
+    bool ok = false;
+    std::string problem;       // why it cannot be placed
+    bool applied = false;      // the text it would write is already in the file
+    EditProposal edit;
+  };
+  std::map<std::string, Placement> placements_;
+  bool pendingEditFromChat_ = false;
+  std::string notice_;        // a line after the conversation: what the last Apply did
+  const Placement& placementOf(const PanelContext& context, const std::string& key, const EditBlock& block);
+  void drawEditBlock(const PanelContext& context, const EditBlock& block, const std::string& key, bool finished);
   bool pendingEditActive_ = false;
   EditProposal pendingEdit_;
   std::string pendingRun_;                             // "build" or "run_emulator", waiting for a click
@@ -169,9 +182,7 @@ class AssistantPanel {
   bool waitingBuild_ = false, buildSeen_ = false;
   int buildFrames_ = 0;
   // dialogs
-  std::string applyCode_, applyWhere_;
-  std::function<void(const std::string&)> applyFn_;
-  bool wantApply_ = false, wantInspector_ = false, wantRemote_ = false, wantHistory_ = false;
+  bool wantInspector_ = false, wantRemote_ = false, wantHistory_ = false;
   std::set<std::string> remoteConfirmed_;
   std::string pendingRemote_, projectDir_;
 
@@ -197,7 +208,6 @@ class AssistantPanel {
   std::string systemPrompt() const;
   void firstStartDialog();
   void settingsDialog();
-  void applyDialog();
   void inspectorDialog();
   void remoteDialog();
   void historyDialog();

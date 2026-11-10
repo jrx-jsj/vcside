@@ -24,7 +24,9 @@ struct ToolEnv {
   std::string buildErrors;   // the last build's diagnostics, one per line
   std::string spaceReport;   // ROM and RAM left, as the Space panel shows them
   std::string symbols;       // "name file:line" per line
-  std::function<std::string(const std::string& query)> findCode;  // ranked search of the project index
+  std::function<std::string(const std::string& query)> findCode;
+  // The text of a file as the editor holds it (unsaved changes included), by its path relative to the project; false if it is not open.
+  std::function<bool(const std::string& relative, std::string* text)> openFileText;  // ranked search of the project index
 };
 
 enum class Tier { Read, Propose, Run };
@@ -42,6 +44,7 @@ struct EditProposal {
   bool created = false;
   bool privileged = false;  // changes what Build runs: no session grant covers it
   int changes = 0;
+  int firstLine = 0, lastLine = 0;  // the lines of the file the change touches (1-based, in the text before; 0 for a new file)
 };
 
 struct ToolResult {

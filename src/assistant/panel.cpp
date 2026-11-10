@@ -314,6 +314,7 @@ void AssistantPanel::newChat() {
   streaming_.clear(), error_.clear(), lastRequest_.clear();
   promptTokens_ = completionTokens_ = droppedTurns_ = 0;
   agentSteps_ = 0, callCounts_.clear(), turnText_.clear();
+  placements_.clear(), notice_.clear(), pendingEditFromChat_ = false;
   pendingEditActive_ = false, pendingRun_.clear(), allowedRun_.clear(), allowedEdit_.clear(), originals_.clear();
   privilegedTouched_ = waitingBuild_ = false;
   focusInput_ = true;
@@ -339,6 +340,7 @@ void AssistantPanel::loadTab(int index) {
   streaming_.clear(), error_.clear(), lastRequest_.clear();
   promptTokens_ = completionTokens_ = droppedTurns_ = 0;
   agentSteps_ = 0, callCounts_.clear(), turnText_.clear();
+  placements_.clear(), notice_.clear(), pendingEditFromChat_ = false;
   pendingEditActive_ = false, pendingRun_.clear(), waitingBuild_ = false;
   originals_ = tab.originals, allowedRun_ = tab.allowedRun, allowedEdit_ = tab.allowedEdit, privilegedTouched_ = tab.privilegedTouched;
   activeTab_ = index, wantTab_ = index;
@@ -907,7 +909,8 @@ void AssistantPanel::send(const PanelContext& context, const std::string& questi
   std::vector<Message> messages = buildMessages(systemPrompt(), chat_.messages, turn, provider->contextTokens, 1024, &droppedTurns_);
   chat_.messages.push_back({"user", question, {}, "", attachedNote});
   turnText_ = turn;
-  agentSteps_ = 0, callCounts_.clear(), pendingEditActive_ = false, pendingRun_.clear(), waitingBuild_ = false;
+  agentSteps_ = 0, callCounts_.clear(), pendingEditActive_ = false, pendingEditFromChat_ = false, pendingRun_.clear(), waitingBuild_ = false;
+  notice_.clear();
   lastRequest_ = chatRequestBody(*provider, messages);
   streaming_.clear(), error_.clear();
   {
@@ -960,6 +963,7 @@ ToolEnv AssistantPanel::toolEnv(const PanelContext& context) const {
   env.buildErrors = context.errors;
   env.spaceReport = context.spaceReport;
   env.symbols = context.symbols;
+  env.openFileText = context.readOpenFile;
   if (!context.projectDir.empty())
     env.findCode = [self = const_cast<AssistantPanel*>(this), dir = context.projectDir](const std::string& query) {
       self->index_.update(dir);
@@ -1067,22 +1071,34 @@ void AssistantPanel::performRun(const PanelContext& context, const std::string& 
 
 void AssistantPanel::decideEdit(const PanelContext& context, bool apply, bool allowFile) {
   EditProposal edit = pendingEdit_;
-  pendingEditActive_ = false;
+  bool fromChat = pendingEditFromChat_;
+  pendingEditActive_ = false, pendingEditFromChat_ = false;
+  auto answer = [&](const std::string& forTheModel, const std::string& forTheUser, bool error) {  // a chat block only tells the user
+    if (fromChat) notice_ = forTheUser;
+    else addToolResult(context, "edit_file " + edit.relative, forTheModel, error), continueAgent(context);
+  };
   if (!apply) {
-    addToolResult(context, "edit_file " + edit.relative, "The user rejected this edit. Do not repeat it; ask what they want instead.", false);
-    continueAgent(context);
+    answer("The user rejected this edit. Do not repeat it; ask what they want instead.", T("Change discarded. Nothing was written."), false);
     return;
+  }
+  // the file must still be what the change was made against: never write over what changed since
+  if (!edit.created) {
+    std::string now;
+    bool read = (context.readOpenFile && context.readOpenFile(edit.relative, &now)) || readProjectFile(context.projectDir, edit.relative, &now, nullptr);
+    if (!read || now != edit.before) {
+      answer("the file changed since the edit was shown, so it was not applied; read it again", F("{0} changed after the change was shown, so nothing was written. Ask for it again.", {edit.relative}), true);
+      return;
+    }
   }
   bool written = context.applyEdit && context.applyEdit(edit.path, edit.after, false);
   if (!written) {
-    addToolResult(context, "edit_file " + edit.relative, "the edit could not be applied (is the file open in a graphics or music editor?)", true);
-  } else {
-    originals_.emplace(edit.path, std::make_pair(edit.created, edit.before));
-    if (edit.privileged) privilegedTouched_ = true;
-    if (allowFile && !edit.privileged) allowedEdit_.insert(edit.path);
-    addToolResult(context, "edit_file " + edit.relative, "The user applied this edit.", false);
+    answer("the edit could not be applied (is the file open in a graphics or music editor?)", F("{0} could not be changed (is it open in a graphics or music editor?).", {edit.relative}), true);
+    return;
   }
-  continueAgent(context);
+  originals_.emplace(edit.path, std::make_pair(edit.created, edit.before));
+  if (edit.privileged) privilegedTouched_ = true;
+  if (allowFile && !edit.privileged) allowedEdit_.insert(edit.path);
+  answer("The user applied this edit.", F("Applied to {0}. Ctrl+Z in the editor undoes it, or \"{1}\".", {edit.relative, T("Undo everything this conversation changed")}), false);
 }
 
 void AssistantPanel::undoEverything(const PanelContext& context) {
@@ -1125,22 +1141,105 @@ void drawDiff(const std::string& before, const std::string& after) {
 }
 }  // namespace
 
+const AssistantPanel::Placement& AssistantPanel::placementOf(const PanelContext& context, const std::string& key, const EditBlock& block) {
+  Placement& placement = placements_[chat_.id + "|" + key];
+  double now = ImGui::GetTime();
+  if (now - placement.at > 1.5) {  // the file may have changed since the answer came
+    placement.at = now;
+    ToolResult found = runTool(toolEnv(context), {"edit_file", editArguments(block)});
+    placement.ok = found.proposed;
+    placement.edit = found.edit;
+    placement.problem = found.proposed ? "" : found.text.rfind("Error: ", 0) == 0 ? found.text.substr(7) : found.text;
+    placement.applied = false;
+    if (!found.proposed && !block.sections.empty() && !block.sections[0].search.empty()) {  // after an Apply the old text is gone: is the new one there?
+      EditBlock reversed = block;
+      bool every = true;
+      for (auto& section : reversed.sections) {
+        std::swap(section.search, section.replace);
+        every = every && !section.search.empty();
+      }
+      placement.applied = every && runTool(toolEnv(context), {"edit_file", editArguments(reversed)}).proposed;
+    }
+  }
+  return placement;
+}
+
+// A change the model proposed in its answer: the lines it removes and adds as a diff, where it goes in the real file
+// (or that it cannot be placed), and a button only when the place is certain. A block with no place is an example.
+void AssistantPanel::drawEditBlock(const PanelContext& context, const EditBlock& block, const std::string& key, bool finished) {
+  ImGui::PushStyleColor(ImGuiCol_Text, theme::colv(theme::Role::UiAccent));
+  ImGui::TextUnformatted(F("Change to {0}", {block.path}).c_str());
+  ImGui::PopStyleColor();
+  size_t lines = 0;
+  for (auto& section : block.sections) lines += (size_t)std::count(section.search.begin(), section.search.end(), '\n') + (section.search.empty() ? 0 : 1) + (size_t)std::count(section.replace.begin(), section.replace.end(), '\n') + 1 + 1;
+  float height = std::min<float>((float)lines, 16.0f) * ImGui::GetTextLineHeight() + ImGui::GetStyle().WindowPadding.y * 2;
+  ImGui::PushFont(monoFont_);
+  ImGui::PushStyleColor(ImGuiCol_ChildBg, theme::colv(theme::Role::EdBackground));
+  if (ImGui::BeginChild("edit_diff", ImVec2(-ImGui::GetFontSize() * 0.9f, height), ImGuiChildFlags_Borders, ImGuiWindowFlags_HorizontalScrollbar)) {
+    auto draw = [](const std::string& text, const char* sign, ImVec4 colour) {
+      std::istringstream in(text);
+      std::string line;
+      while (std::getline(in, line)) ImGui::TextColored(colour, "%s %s", sign, line.c_str());
+    };
+    for (size_t i = 0; i < block.sections.size(); i++) {
+      if (i) ImGui::TextColored(theme::colv(theme::Role::UiTextDim), "  ...");
+      if (!block.sections[i].search.empty()) draw(block.sections[i].search, "-", theme::colv(theme::Role::MsgError));
+      if (!block.sections[i].replace.empty()) draw(block.sections[i].replace, "+", theme::colv(theme::Role::MsgInfo));
+    }
+  }
+  ImGui::EndChild();
+  ImGui::PopStyleColor();
+  ImGui::PopFont();
+  if (!finished) return;
+  const Placement& placement = placementOf(context, key, block);
+  if (!placement.ok && placement.applied) {
+    ImGui::PushStyleColor(ImGuiCol_Text, theme::colv(theme::Role::UiTextDim));
+    ImGui::TextWrapped("%s", F("Already in {0}: the new text is there.", {block.path}).c_str());
+    ImGui::PopStyleColor();
+    return;
+  }
+  if (!placement.ok) {
+    ImGui::PushStyleColor(ImGuiCol_Text, theme::colv(theme::Role::MsgWarning));
+    ImGui::TextWrapped("%s", F("Not applied: it cannot be placed in {0} with certainty. {1}", {block.path, placement.problem}).c_str());
+    ImGui::PopStyleColor();
+    return;
+  }
+  std::string where = placement.edit.created ? F("A new file: {0}", {placement.edit.relative})
+                      : placement.edit.firstLine == placement.edit.lastLine ? F("In {0}, line {1}", {placement.edit.relative, std::to_string(placement.edit.firstLine)})
+                                                                            : F("In {0}, lines {1} to {2}", {placement.edit.relative, std::to_string(placement.edit.firstLine), std::to_string(placement.edit.lastLine)});
+  ImGui::PushStyleColor(ImGuiCol_Text, theme::colv(theme::Role::UiTextDim));
+  ImGui::TextUnformatted(where.c_str());
+  ImGui::PopStyleColor();
+  ImGui::SameLine();
+  ImGui::BeginDisabled(pendingEditActive_ || request_.running());
+  if (theme::dialogButton(T("Review and apply..."), ImVec2(0, 0), true)) {
+    pendingEdit_ = placement.edit;
+    pendingEditActive_ = true, pendingEditFromChat_ = true;
+    scrollDown_ = true;
+  }
+  ImGui::EndDisabled();
+}
+
 void AssistantPanel::agentCards(const PanelContext& context) {
   if (pendingEditActive_) {
     ImGui::Separator();
-    ImGui::TextUnformatted(pendingEdit_.created ? F("New file {0}", {pendingEdit_.relative}).c_str() : F("Proposed change to {0}", {pendingEdit_.relative}).c_str());
+    std::string title = pendingEdit_.created ? F("New file {0}", {pendingEdit_.relative})
+                        : pendingEdit_.firstLine > 0 && pendingEdit_.firstLine == pendingEdit_.lastLine ? F("Proposed change to {0}, line {1}", {pendingEdit_.relative, std::to_string(pendingEdit_.firstLine)})
+                        : pendingEdit_.firstLine > 0 ? F("Proposed change to {0}, lines {1} to {2}", {pendingEdit_.relative, std::to_string(pendingEdit_.firstLine), std::to_string(pendingEdit_.lastLine)})
+                                                     : F("Proposed change to {0}", {pendingEdit_.relative});
+    ImGui::TextUnformatted(title.c_str());
     if (pendingEdit_.privileged) ImGui::TextColored(theme::colv(theme::Role::MsgWarning), "%s", T("This changes what Build runs, so it is asked each time."));
     ImGui::PushFont(monoFont_);
     drawDiff(pendingEdit_.before, pendingEdit_.after);
     ImGui::PopFont();
     ImGui::Spacing();
     if (theme::primaryButton(T("Apply"))) decideEdit(context, true, false);
-    if (!pendingEdit_.privileged) {
+    if (!pendingEdit_.privileged && !pendingEditFromChat_) {
       ImGui::SameLine();
       if (theme::dialogButton(T("Apply and allow edits to this file this session"))) decideEdit(context, true, true);
     }
     ImGui::SameLine();
-    if (theme::dialogButton(T("Reject"))) decideEdit(context, false, false);
+    if (theme::dialogButton(T("Discard"))) decideEdit(context, false, false);
     ImGui::Separator();
   } else if (!pendingRun_.empty()) {
     ImGui::Separator();
@@ -1221,6 +1320,9 @@ void AssistantPanel::drawMessage(const ChatMessage& message, const std::string& 
   int blockIndex = 0;
   for (auto& block : splitBlocks(text)) {
     ImGui::PushID(index * 1000 + blockIndex++);
+    EditBlock edit;
+    std::string editProblem;
+    EditParse kind = (!block.code || user) ? EditParse::NotAnEdit : parseEditBlock(block.language, block.text, &edit, &editProblem);
     if (!block.code) {
       std::string prose = block.text;
       while (!prose.empty() && (prose.back() == '\n' || prose.back() == ' ')) prose.pop_back();
@@ -1228,6 +1330,10 @@ void AssistantPanel::drawMessage(const ChatMessage& message, const std::string& 
         if (user) ImGui::TextWrapped("%s", prose.c_str());  // what you typed is shown as typed
         else drawMarkdown(prose, mono);
       }
+    } else if (kind == EditParse::Edit) {
+      drawEditBlock(context, edit, std::to_string(index) + "/" + std::to_string(blockIndex), index != 9999);
+    } else if (kind == EditParse::Broken && index != 9999) {  // meant as a change but cut off or without a file: said, and not applied
+      ImGui::TextColored(theme::colv(theme::Role::MsgWarning), "%s", F("This change cannot be applied: {0}.", {editProblem}).c_str());
     } else {
       ImGui::PushFont(mono);
       ImGui::PushStyleColor(ImGuiCol_ChildBg, theme::colv(theme::Role::EdBackground));
@@ -1269,14 +1375,6 @@ void AssistantPanel::drawMessage(const ChatMessage& message, const std::string& 
       ImGui::EndChild();
       ImGui::PopStyleColor();
       ImGui::PopFont();
-      if (!user && context.canApply) {
-        if (theme::dialogButton(T("Apply..."), ImVec2(0, 0), true)) {
-          applyCode_ = block.text;
-          applyFn_ = context.apply;
-          applyWhere_ = context.selection.empty() ? F("Inserted at the cursor in {0}", {context.fileName}) : F("Replaces the selection in {0}", {context.fileName});
-          wantApply_ = true;
-        }
-      }
     }
     ImGui::PopID();
   }
@@ -1408,6 +1506,11 @@ void AssistantPanel::draw(const PanelContext& context, ImFont* mono, bool* open)
       }
     }
     agentCards(context);
+    if (!notice_.empty()) {
+      ImGui::PushStyleColor(ImGuiCol_Text, theme::colv(theme::Role::UiTextDim));
+      ImGui::TextWrapped("%s", notice_.c_str());
+      ImGui::PopStyleColor();
+    }
     if (!error_.empty()) {
       ImGui::PushStyleColor(ImGuiCol_Text, theme::colv(theme::Role::MsgError));
       ImGui::TextWrapped("%s", error_.c_str());
@@ -1505,7 +1608,6 @@ void AssistantPanel::dialogs() {
   drawnThisFrame_ = false;
   firstStartDialog();
   settingsDialog();
-  applyDialog();
   inspectorDialog();
   remoteDialog();
   historyDialog();
@@ -1688,25 +1790,6 @@ void AssistantPanel::settingsDialog() {
     refreshModels();
     ImGui::CloseCurrentPopup();
   }
-  ImGui::EndPopup();
-}
-
-void AssistantPanel::applyDialog() {
-  if (wantApply_) ImGui::OpenPopup("###assistant_apply"), wantApply_ = false;
-  char title[96];
-  snprintf(title, sizeof title, "%s###assistant_apply", T("Apply to the editor"));
-  if (!theme::beginModal(title)) return;
-  ImGui::TextUnformatted(applyWhere_.c_str());
-  ImGui::TextDisabled("%s", T("It is one step in the editor's undo history."));
-  ImGui::BeginChild("applycode", ImVec2(theme::em(560), theme::em(260)), ImGuiChildFlags_Borders, ImGuiWindowFlags_HorizontalScrollbar);
-  ImGui::TextUnformatted(applyCode_.c_str());
-  ImGui::EndChild();
-  if (theme::primaryButton(T("Apply"))) {
-    if (applyFn_) applyFn_(applyCode_);
-    ImGui::CloseCurrentPopup();
-  }
-  ImGui::SameLine();
-  if (theme::dialogButton(T("Cancel")) || theme::dialogEscape()) ImGui::CloseCurrentPopup();
   ImGui::EndPopup();
 }
 

@@ -2448,12 +2448,17 @@ void App::assistantPanel() {
     context.cursorLine = active->editor.cursor().line + 1;
     context.selection = active->editor.selectedText();
     if (!context.selection.empty()) context.selectionFirst = active->editor.selectedLines().first + 1, context.selectionLast = active->editor.selectedLines().second + 1;
-    context.canApply = true;
-    context.apply = [this, path = active->path](const std::string& code) {  // looked up again: the file may have been closed
-      for (auto& openedFile : files_)
-        if (openedFile->path == path) openedFile->editor.typeText(code);
-    };
   }
+  context.readOpenFile = [this](const std::string& relative, std::string* text) {  // as the editor holds it, unsaved changes included
+    if (!project_) return false;
+    for (auto& openedFile : files_)
+      if (!openedFile->gfx && !openedFile->music && !openedFile->image && !openedFile->form && !openedFile->path.empty() &&
+          fs::relative(openedFile->path, project_->dir).generic_string() == relative) {
+        *text = openedFile->editor.text();
+        return true;
+      }
+    return false;
+  };
   std::string errors;
   for (auto& diagnostic : diagnostics_) {
     if (diagnostic.severity != Diagnostic::Error) continue;
