@@ -334,7 +334,9 @@
     "Example: an animated sprite": "Ejemplo: un sprite animado",
     "Example: C and music on a CDFJ cartridge": "Ejemplo: C y música en un cartucho CDFJ",
     "Example: music on a DPC+ cartridge": "Ejemplo: música en un cartucho DPC+",
-    "Explain errors (coming later)": "Explicar errores (más adelante)",
+    "Explain errors (a button in Problems and in the assistant)": "Explicar errores (un botón en Problemas y en el asistente)",
+    "Explain the errors": "Explicar los errores",
+    "Explain this error": "Explicar este error",
     "Export": "Exportar",
     "Export the song for the console": "Exportar la canción para la consola",
     "Export to a file...": "Exportar a un archivo...",
@@ -1095,5 +1097,5 @@
     "{0}:{1}: no listing to place the breakpoint: build first.": "{0}:{1}: no hay listado para situar el punto de ruptura: compila antes.",
     "±{0}": "±{0}"
   },
-  "total": 1092
+  "total": 1094
 }

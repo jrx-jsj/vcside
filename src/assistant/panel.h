@@ -52,6 +52,9 @@ class AssistantPanel {
   // True once after the settings changed and the App should save them.
   bool takeChanged() { bool changed = changed_; changed_ = false; return changed; }
   bool enabled() const { return settings_.chat; }
+  bool explainEnabled() const { return settings_.chat && settings_.explainErrors; }
+  // Asks the assistant to explain an error: sent as soon as the panel is open and idle.
+  void explain(const std::string& question) { pendingQuestion_ = question; }
   bool needsFirstStart() const { return !settings_.asked; }
 
   void draw(const PanelContext& context, ImFont* mono, bool* open);  // the panel
@@ -91,6 +94,7 @@ class AssistantPanel {
   Recommendation recommendation_;                      // the model that fits it best
   // the agent: a call is answered by running a tool, then the model is asked again
   ImFont* monoFont_ = nullptr;
+  std::string pendingQuestion_;
   int agentSteps_ = 0;
   std::map<std::string, int> callCounts_;
   std::string turnText_;                               // the user's last turn as sent (with its attachments)

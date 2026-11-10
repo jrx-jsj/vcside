@@ -2481,6 +2481,14 @@ void App::problemsPanel() {
         bool clicked = ImGui::Selectable(diagnostic.severity == Diagnostic::Error ? T("error") : diagnostic.severity == Diagnostic::Warning ? T("warning") : T("info"), false,
                                          ImGuiSelectableFlags_SpanAllColumns);
         ImGui::PopStyleColor();
+        if (assistant_.explainEnabled() && ImGui::BeginPopupContextItem("explain")) {
+          if (ImGui::MenuItem(T("Explain this error"))) {
+            showAssistant_ = true;
+            assistant_.explain("Explain this build error and how to fix it:\n" + fs::path(diagnostic.file).filename().string() +
+                               (diagnostic.line ? ":" + std::to_string(diagnostic.line) : "") + ": " + diagnostic.message);
+          }
+          ImGui::EndPopup();
+        }
         ImGui::PopID();
         ImGui::TableNextColumn();
         if (!diagnostic.file.empty()) {

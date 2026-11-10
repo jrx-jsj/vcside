@@ -788,6 +788,10 @@ void AssistantPanel::draw(const PanelContext& context, ImFont* mono, bool* open)
   ImGui::BeginDisabled(context.errors.empty());
   ImGui::Checkbox(T("Build errors"), &attachErrors_);
   ImGui::EndDisabled();
+  if (settings_.explainErrors && !context.errors.empty() && !request_.running() && !pendingEditActive_ && pendingRun_.empty() && !waitingBuild_) {
+    ImGui::SameLine();
+    if (theme::dialogButton(T("Explain the errors"), ImVec2(0, 0), true)) pendingQuestion_ = "Explain these build errors and how to fix them.";
+  }
   if (!originals_.empty()) {
     ImGui::SameLine();
     if (theme::dialogButton(T("Undo everything this conversation changed"), ImVec2(0, 0), true)) undoEverything(context);
@@ -815,6 +819,13 @@ void AssistantPanel::draw(const PanelContext& context, ImFont* mono, bool* open)
     ImGui::BeginDisabled(!builtinReady || waitingForUser);
     clicked = theme::primaryButton(T("Send"), ImVec2(buttonWidth, 0));
     ImGui::EndDisabled();
+  }
+  if (!pendingQuestion_.empty()) {  // from "Explain this error" in Problems, or the button above
+    if (!running && !waitingForUser && builtinReady && (provider->isLocal() || provider->builtin || remoteConfirmed_.count(provider->baseUrl))) {
+      attachErrors_ = true;
+      send(context, pendingQuestion_);
+    }
+    pendingQuestion_.clear();
   }
   if ((enter || clicked) && !running && !waitingForUser && !input_.empty() && builtinReady) {
     if (!provider->isLocal() && !remoteConfirmed_.count(provider->baseUrl)) {
@@ -859,9 +870,9 @@ void AssistantPanel::firstStartDialog() {
   ImGui::Spacing();
   ImGui::Checkbox(T("Chat (ask about your project and the 2600)"), &chat);
   ImGui::Checkbox(T("Agent (reads project files, proposes edits, builds when you allow it)"), &agent);
+  ImGui::Checkbox(T("Explain errors (a button in Problems and in the assistant)"), &explain);
   ImGui::BeginDisabled();
   ImGui::Checkbox(T("Extra code completion (coming later)"), &completion);
-  ImGui::Checkbox(T("Explain errors (coming later)"), &explain);
   ImGui::EndDisabled();
   ImGui::Spacing();
   if (theme::dialogButton(T("Use none"))) {
@@ -871,7 +882,7 @@ void AssistantPanel::firstStartDialog() {
   }
   ImGui::SameLine();
   if (theme::primaryButton(T("Use the selected"))) {
-    settings_.asked = true, settings_.chat = chat, settings_.agent = chat && agent;
+    settings_.asked = true, settings_.chat = chat, settings_.agent = chat && agent, settings_.explainErrors = chat && explain;
     changed_ = true, opened = false;
     ImGui::CloseCurrentPopup();
   }
@@ -904,6 +915,7 @@ void AssistantPanel::settingsDialog() {
   theme::dialogHeading(T("Features"));
   if (ImGui::Checkbox(T("Chat panel"), &settings_.chat)) changed_ = true, settings_.asked = true;
   if (ImGui::Checkbox(T("Agent (reads project files, proposes edits, builds when you allow it)"), &settings_.agent)) changed_ = true;
+  if (ImGui::Checkbox(T("Explain errors (a button in Problems and in the assistant)"), &settings_.explainErrors)) changed_ = true;
   if (settings_.agent) {
     const char* profiles[] = {T("Read only"), T("Read and propose edits"), T("Also build and run (each time you are asked)")};
     ImGui::SetNextItemWidth(theme::em(320));
