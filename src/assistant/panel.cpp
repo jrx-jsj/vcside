@@ -13,6 +13,7 @@
 #include <mutex>
 #include <sstream>
 
+#include "assistant/chat_tabs.h"
 #include "assistant/http.h"
 #include "assistant/markdown.h"
 #include "assistant/secrets.h"
@@ -51,7 +52,7 @@ std::string oneLine(const std::string& text, size_t limit) {
     if (c == ' ' && !line.empty() && line.back() == ' ') continue;
     line += c;
   }
-  if (line.size() > limit) line = line.substr(0, limit) + "...";
+  if (line.size() > limit) line = utf8Cut(line, limit) + "...";
   return line;
 }
 
@@ -107,15 +108,7 @@ bool iconButton(const char* id, Icon icon, const char* tooltip) {
   return pressed;
 }
 
-std::string ellipsize(const std::string& text, float maxWidth) {
-  if (ImGui::CalcTextSize(text.c_str()).x <= maxWidth) return text;
-  std::string cut = text;
-  while (!cut.empty() && ImGui::CalcTextSize((cut + "...").c_str()).x > maxWidth) {
-    do cut.pop_back();
-    while (!cut.empty() && (cut.back() & 0xC0) == 0x80);  // whole UTF-8 characters
-  }
-  return cut + "...";
-}
+std::string ellipsize(const std::string& text, float maxWidth) { return ellipsizeText(text, maxWidth); }
 
 // A combo as wide as its text (up to maxWidth, then "..."), whose list may be wider.
 bool beginFittedCombo(const char* id, const std::string& shown, float maxWidth, float listWidth) {
@@ -156,16 +149,19 @@ std::vector<Word> wordsOf(const std::vector<MdRun>& runs) {
 
 // Draws the runs wrapped to the width left at the cursor (a hanging indent of `indent` pixels
 // for the lines after the first) and advances the layout. Returns nothing: the cursor moves.
-void drawRuns(const std::vector<MdRun>& runs, ImFont* mono, float scale, bool strong, float indent) {
+void drawRuns(const std::vector<MdRun>& runs, ImFont* mono, float scale, bool strong, float indent, bool accent = false) {
   ImDrawList* drawList = ImGui::GetWindowDrawList();
   ImFont* plainFont = ImGui::GetFont();
   float plainSize = ImGui::GetFontSize() * scale, codeSize = (mono ? mono->FontSize : ImGui::GetFontSize()) * scale;
-  float lineHeight = std::max(plainSize, codeSize) + 2.0f;
+  float lineHeight = std::max(plainSize, codeSize) + 4.0f;  // a little air between lines
   ImVec2 origin = ImGui::GetCursorScreenPos();
   float width = std::max(ImGui::GetContentRegionAvail().x, 40.0f);
-  ImU32 textColor = ImGui::GetColorU32(strong ? theme::colv(theme::Role::UiAccent) : ImGui::GetStyleColorVec4(ImGuiCol_Text));
+  ImU32 textColor = ImGui::GetColorU32(accent ? theme::colv(theme::Role::UiAccent) : ImGui::GetStyleColorVec4(ImGuiCol_Text));
   ImU32 dimColor = ImGui::GetColorU32(theme::colv(theme::Role::UiTextDim));
-  ImU32 codeBackground = ImGui::GetColorU32(theme::colv(theme::Role::EdBackground));
+  // inline code: the text colour at a low alpha over whatever is behind, so it shows on every theme
+  ImVec4 codeTint = ImGui::GetStyleColorVec4(ImGuiCol_Text);
+  codeTint.w = 0.14f;
+  ImU32 codeBackground = ImGui::GetColorU32(codeTint);
   float x = indent, y = 0;
   bool lineEmpty = true;
   for (auto& word : wordsOf(runs)) {
@@ -177,8 +173,8 @@ void drawRuns(const std::vector<MdRun>& runs, ImFont* mono, float scale, bool st
       x = indent, y += lineHeight, lineEmpty = true;
     }
     ImVec2 position(origin.x + x, origin.y + y);
-    if (word.code) drawList->AddRectFilled(ImVec2(position.x - 1, position.y), ImVec2(position.x + visibleWidth + 1, position.y + lineHeight - 1), codeBackground, 2.0f);
-    ImU32 color = word.italic && !strong ? dimColor : textColor;
+    if (word.code) drawList->AddRectFilled(ImVec2(position.x - 2, position.y), ImVec2(position.x + visibleWidth + 2, position.y + lineHeight - 2), codeBackground, 3.0f);
+    ImU32 color = word.italic && !accent ? dimColor : textColor;
     drawList->AddText(font, size, position, color, word.text.c_str());
     if (word.bold || strong) drawList->AddText(font, size, ImVec2(position.x + 0.8f, position.y), color, word.text.c_str());
     x += wordWidth;
@@ -193,9 +189,14 @@ void drawMarkdown(const std::string& text, ImFont* mono) {
   for (auto& block : parseMarkdown(text)) {
     switch (block.kind) {
       case MdBlock::Heading: {
-        static const float scales[] = {1.0f, 1.35f, 1.2f, 1.1f, 1.0f, 1.0f, 1.0f};
-        ImGui::Dummy(ImVec2(0, gap));
-        drawRuns(block.runs, mono, scales[block.level], true, 0);
+        static const float scales[] = {1.0f, 1.55f, 1.32f, 1.15f, 1.05f, 1.0f, 1.0f};
+        ImGui::Dummy(ImVec2(0, gap * 1.5f));
+        drawRuns(block.runs, mono, scales[block.level], true, 0, block.level <= 2);
+        if (block.level <= 2) {  // a rule under the big headings
+          ImVec2 at = ImGui::GetCursorScreenPos();
+          ImGui::GetWindowDrawList()->AddLine(ImVec2(at.x, at.y), ImVec2(at.x + ImGui::GetContentRegionAvail().x, at.y), ImGui::GetColorU32(ImGuiCol_Separator));
+          ImGui::Dummy(ImVec2(0, 2.0f));
+        }
         break;
       }
       case MdBlock::Bullet:
@@ -215,7 +216,9 @@ void drawMarkdown(const std::string& text, ImFont* mono) {
         float em = ImGui::GetFontSize();
         ImGui::Indent(em * 0.9f);
         ImVec2 before = ImGui::GetCursorScreenPos();
+        ImGui::PushStyleColor(ImGuiCol_Text, theme::colv(theme::Role::UiTextDim));
         drawRuns(block.runs, mono, 1.0f, false, 0);
+        ImGui::PopStyleColor();
         ImGui::Unindent(em * 0.9f);
         float bottom = ImGui::GetCursorScreenPos().y - ImGui::GetStyle().ItemSpacing.y;
         ImGui::GetWindowDrawList()->AddRectFilled(ImVec2(at.x + 2, before.y), ImVec2(at.x + 5, bottom), ImGui::GetColorU32(theme::colv(theme::Role::UiAccent)));
@@ -233,7 +236,7 @@ void drawMarkdown(const std::string& text, ImFont* mono) {
             for (size_t c = 0; c < columns; c++) {
               ImGui::TableSetColumnIndex((int)c);
               static const std::vector<MdRun> none;
-              drawRuns(c < block.rows[r].size() ? block.rows[r][c] : none, mono, 1.0f, r == 0, 0);
+              drawRuns(c < block.rows[r].size() ? block.rows[r][c] : none, mono, 1.0f, r == 0, 0, false);
             }
           }
           ImGui::EndTable();
@@ -358,35 +361,18 @@ void AssistantPanel::openSavedChat(const Chat& loaded) {
 void AssistantPanel::drawTabs(bool busy) {
   ensureTabs();
   tabs_[activeTab_].chat.title = chat_.title, tabs_[activeTab_].chat.id = chat_.id;  // the live copy gives the title
-  ImGui::BeginDisabled(busy);        // the answer goes to the conversation it was asked in
-  int selected = -1, toClose = -1;
-  bool wantNew = false;
-  if (ImGui::BeginTabBar("chat_tabs", ImGuiTabBarFlags_FittingPolicyScroll | ImGuiTabBarFlags_TabListPopupButton)) {
-    if (ImGui::TabItemButton("+", ImGuiTabItemFlags_Trailing | ImGuiTabItemFlags_NoTooltip)) wantNew = true;
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", T("New chat"));
-    for (int i = 0; i < (int)tabs_.size(); i++) {
-      std::string title = tabs_[i].chat.title.empty() ? std::string(T("New chat")) : tabs_[i].chat.title;
-      std::string label = ellipsize(title, theme::em(150)) + "###tab" + std::to_string(tabs_[i].uid);
-      bool keepOpen = true;
-      if (ImGui::BeginTabItem(label.c_str(), &keepOpen, wantTab_ == i ? ImGuiTabItemFlags_SetSelected : 0)) {
-        selected = i;
-        ImGui::EndTabItem();
-      }
-      if (ImGui::IsItemHovered() && title.size() > 20) ImGui::SetTooltip("%s", title.c_str());
-      if (!keepOpen) toClose = i;
-    }
-    ImGui::EndTabBar();
+  std::vector<TabView> views;
+  for (auto& tab : tabs_) views.push_back({tab.chat.title.empty() ? std::string(T("New chat")) : tab.chat.title, tab.uid});
+  TabAction action = drawChatTabs(views, activeTab_, &wantTab_, busy, T("New chat"), theme::em(150));
+  switch (action.kind) {
+    case TabAction::New:
+      if (!chat_.messages.empty()) addTab();  // an empty chat is already a new one
+      else focusInput_ = true;
+      break;
+    case TabAction::Close: closeTab(action.index); break;
+    case TabAction::Switch: switchTab(action.index); break;
+    case TabAction::None: break;
   }
-  ImGui::EndDisabled();
-  if (wantNew && !busy) {
-    if (!chat_.messages.empty()) addTab();  // an empty chat is already a new one
-    else focusInput_ = true;
-  } else if (toClose >= 0 && !busy) {
-    closeTab(toClose);
-  } else if (selected >= 0 && selected != activeTab_ && wantTab_ < 0 && !busy) {
-    switchTab(selected);
-  }
-  wantTab_ = -1;
 }
 
 void AssistantPanel::closeProject() {
@@ -543,7 +529,10 @@ void AssistantPanel::refreshModels() {
 
 void AssistantPanel::saveChat(const PanelContext& context) {
   if (context.projectDir.empty() || chat_.messages.empty()) return;
-  ChatStore(context.projectDir).save(chat_);
+  try {
+    ChatStore(context.projectDir).save(chat_);
+  } catch (const std::exception&) {  // a chat that cannot be saved must never end the program
+  }
 }
 
 bool AssistantPanel::overBudget(const Provider& provider) {
@@ -567,7 +556,7 @@ void AssistantPanel::send(const PanelContext& context, const std::string& questi
   attachments.selection = context.selection;
   attachments.errors = context.errors;
   if (context.selection.empty()) attachments.fileName = context.fileName, attachments.fileText = context.fileText;
-  std::string codeText = attachments.selection + "\n" + attachments.errors + "\n" + attachments.fileText.substr(0, 8000);
+  std::string codeText = attachments.selection + "\n" + attachments.errors + "\n" + utf8Cut(attachments.fileText, 8000);
   std::vector<GroundedEntry> entries;
   if (context.kb) entries = groundText(*context.kb, question, codeText, context.grounding);
   attachments.grounding = groundingBlock(entries);
@@ -626,7 +615,8 @@ ToolEnv AssistantPanel::toolEnv(const PanelContext& context) const {
 }
 
 void AssistantPanel::addToolResult(const PanelContext& context, const std::string& tool, const std::string& text, bool error) {
-  std::string shown = text.size() > kMaxResultChars ? text.substr(0, kMaxResultChars) + "\n... (cut)\n" : text;
+  std::string shown = text.size() > kMaxResultChars ? utf8Cut(text, kMaxResultChars) + "\n... (cut)\n" : text;
+  shown = sanitizeUtf8(shown);  // a source file may not be UTF-8 at all
   ChatMessage result;
   result.role = "user";
   result.kind = "result";

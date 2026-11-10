@@ -2,6 +2,8 @@
 // Copyright (C) 2026 Juan Sánchez Jurado
 #include "assistant/settings.h"
 
+#include "assistant/prompt.h"
+
 #include <algorithm>
 #include <chrono>
 #include <ctime>
@@ -133,10 +135,10 @@ bool ChatStore::load(const std::string& id, bool archived, Chat* chat) const {
 
 bool ChatStore::save(const Chat& chat) {
   if (!ensureFolders() || chat.id.empty() || chat.id.find_first_of("/\\") != std::string::npos) return false;
-  json value = {{"title", chat.title}, {"model", chat.model}, {"provider", chat.provider}};
+  json value = {{"title", sanitizeUtf8(chat.title)}, {"model", sanitizeUtf8(chat.model)}, {"provider", sanitizeUtf8(chat.provider)}};
   value["messages"] = json::array();
   for (auto& message : chat.messages) {
-    json item = {{"role", message.role}, {"content", message.content}};
+    json item = {{"role", message.role}, {"content", sanitizeUtf8(message.content)}};
     if (!message.reference.empty()) item["reference"] = message.reference;
     if (!message.kind.empty()) item["kind"] = message.kind;
     value["messages"].push_back(item);
@@ -146,7 +148,7 @@ bool ChatStore::save(const Chat& chat) {
   fs::path archived = fs::path(chatsDir()) / "archive" / (chat.id + ".json");
   std::error_code error;
   if (fs::exists(archived, error)) path = archived;
-  std::ofstream(path) << value.dump(2) << "\n";
+  std::ofstream(path) << value.dump(2, ' ', false, json::error_handler_t::replace) << "\n";
   return true;
 }
 

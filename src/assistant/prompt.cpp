@@ -6,12 +6,54 @@ namespace vcs::assistant {
 
 int estimateTokens(const std::string& text) { return (int)(text.size() * 2 / 7) + 1; }
 
+std::string sanitizeUtf8(const std::string& text) {
+  std::string out;
+  out.reserve(text.size());
+  size_t i = 0;
+  while (i < text.size()) {
+    unsigned char lead = (unsigned char)text[i];
+    size_t length = lead < 0x80 ? 1 : (lead >= 0xC2 && lead <= 0xDF) ? 2 : (lead >= 0xE0 && lead <= 0xEF) ? 3 : (lead >= 0xF0 && lead <= 0xF4) ? 4 : 0;
+    bool valid = length > 0 && i + length <= text.size();
+    for (size_t k = 1; valid && k < length; k++) valid = ((unsigned char)text[i + k] & 0xC0) == 0x80;
+    if (valid && length == 3) {  // no overlong forms, no surrogates
+      unsigned char second = (unsigned char)text[i + 1];
+      if ((lead == 0xE0 && second < 0xA0) || (lead == 0xED && second >= 0xA0)) valid = false;
+    }
+    if (valid && length == 4) {  // 0x10000 to 0x10FFFF only
+      unsigned char second = (unsigned char)text[i + 1];
+      if ((lead == 0xF0 && second < 0x90) || (lead == 0xF4 && second >= 0x90)) valid = false;
+    }
+    if (valid) {
+      out.append(text, i, length);
+      i += length;
+    } else {
+      out += "\xEF\xBF\xBD";
+      i++;
+    }
+  }
+  return out;
+}
+
+std::string utf8Cut(const std::string& text, size_t maxBytes) {
+  if (text.size() <= maxBytes) return text;
+  size_t end = maxBytes;
+  while (end > 0 && ((unsigned char)text[end] & 0xC0) == 0x80) end--;  // text[end] would start the part left out
+  return text.substr(0, end);
+}
+
+std::string utf8Tail(const std::string& text, size_t maxBytes) {
+  if (text.size() <= maxBytes) return text;
+  size_t start = text.size() - maxBytes;
+  while (start < text.size() && ((unsigned char)text[start] & 0xC0) == 0x80) start++;
+  return text.substr(start);
+}
+
 namespace {
 // A file or selection that is too long keeps its start and its end.
 std::string limited(const std::string& text, size_t limit) {
   if (text.size() <= limit) return text;
   size_t half = limit / 2;
-  return text.substr(0, half) + "\n... [" + std::to_string(text.size() - limit) + " characters left out] ...\n" + text.substr(text.size() - half);
+  return utf8Cut(text, half) + "\n... [" + std::to_string(text.size() - limit) + " characters left out] ...\n" + utf8Tail(text, half);
 }
 }  // namespace
 
@@ -22,7 +64,7 @@ std::string userTurn(const std::string& question, const Attachments& attachments
   if (!attachments.fileText.empty()) turn += "File " + attachments.fileName + " (data):\n```\n" + limited(attachments.fileText, 12000) + "\n```\n\n";
   if (!attachments.selection.empty()) turn += "Selected code (data):\n```\n" + limited(attachments.selection, 6000) + "\n```\n\n";
   if (!attachments.errors.empty()) turn += "Build errors (data):\n```\n" + limited(attachments.errors, 3000) + "\n```\n\n";
-  return turn + question;
+  return sanitizeUtf8(turn + question);
 }
 
 std::vector<Message> buildMessages(const std::string& systemPrompt, const std::vector<ChatMessage>& history, const std::string& turn,

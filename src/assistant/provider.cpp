@@ -33,7 +33,7 @@ std::string openAiRequestBody(const Provider& provider, const std::vector<Messag
   body["stream_options"] = {{"include_usage", true}};
   body["messages"] = json::array();
   for (auto& message : messages) body["messages"].push_back({{"role", message.role}, {"content", message.content}});
-  return body.dump();
+  return body.dump(-1, ' ', false, json::error_handler_t::replace);
 }
 
 std::string anthropicRequestBody(const Provider& provider, const std::vector<Message>& messages, int maxTokens) {
@@ -48,7 +48,7 @@ std::string anthropicRequestBody(const Provider& provider, const std::vector<Mes
     else body["messages"].push_back({{"role", message.role}, {"content", message.content}});
   }
   if (!system.empty()) body["system"] = system;
-  return body.dump();
+  return body.dump(-1, ' ', false, json::error_handler_t::replace);
 }
 
 std::string chatRequestBody(const Provider& provider, const std::vector<Message>& messages) {
