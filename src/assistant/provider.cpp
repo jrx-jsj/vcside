@@ -247,7 +247,8 @@ std::vector<Provider> detectLocalServers() {
     const char* name;
     const char* url;
   };
-  static const Known known[] = {{"Ollama", "http://127.0.0.1:11434/v1"}, {"LM Studio", "http://127.0.0.1:1234/v1"}, {"llama-server", "http://127.0.0.1:8080/v1"}};
+  static const Known known[] = {{"Ollama", "http://127.0.0.1:11434/v1"}, {"LM Studio", "http://127.0.0.1:1234/v1"}, {"llama-server", "http://127.0.0.1:8080/v1"},
+                                {"llama-server (9931)", "http://127.0.0.1:9931/v1"}};  // 9931: llama.cpp's announced new default port (release b10240)
   std::vector<Provider> found;
   for (auto& server : known) {
     Provider provider;

@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Juan Sánchez Jurado
 #include "assistant/panel.h"
 
+#include <SDL3/SDL.h>
 #include <imgui.h>
 #include <imgui_stdlib.h>
 
@@ -9,6 +10,7 @@
 #include <filesystem>
 #include <fstream>
 #include <map>
+#include <mutex>
 #include <sstream>
 
 #include "assistant/http.h"
@@ -24,6 +26,18 @@
 namespace vcs::assistant {
 
 namespace {
+// A model file the user already has: the provider's model is "file:<path>".
+std::string ownModelFile(const Provider& provider) { return provider.model.rfind("file:", 0) == 0 ? provider.model.substr(5) : ""; }
+
+std::mutex pickedMutex;
+std::string pickedModel;  // set by the file dialog's callback, taken by the panel
+void SDLCALL modelFilePicked(void*, const char* const* files, int) {
+  if (files && files[0]) {
+    std::lock_guard<std::mutex> lock(pickedMutex);
+    pickedModel = files[0];
+  }
+}
+
 const char* kFallbackPrompt =
     "You are the assistant built into VCSIDE, an IDE for Atari 2600 games. Answer in the user's language. "
     "For facts about the TIA, RIOT, 6502, cartridge formats or batari Basic, use the reference entries you are given "
@@ -204,6 +218,21 @@ const CatalogModel* AssistantPanel::catalogModel(const std::string& id) const {
 
 // Drives the helper for the built-in provider. Returns true when it can take a request.
 bool AssistantPanel::prepareBuiltin(Provider& provider) {
+  {
+    std::lock_guard<std::mutex> lock(pickedMutex);
+    if (!pickedModel.empty()) provider.model = "file:" + pickedModel, pickedModel.clear(), changed_ = true;
+  }
+  if (std::string own = ownModelFile(provider); !own.empty()) {  // a .gguf the user already has
+    if (!fileExists(own)) {
+      engine_.stop();
+      return false;
+    }
+    bool wrongModel = engine_.state() != Engine::State::Stopped && engine_.modelPath() != own;
+    if (wrongModel) engine_.stop();
+    if (engine_.state() == Engine::State::Stopped) engine_.start(own, provider.contextTokens);
+    provider.baseUrl = engine_.baseUrl();
+    return engine_.state() == Engine::State::Ready;
+  }
   if (!catalogLoaded_) {
     catalog_ = loadCatalog(dataDir() + "/assistant/models.json");
     catalogLoaded_ = true;
@@ -240,9 +269,15 @@ bool AssistantPanel::prepareBuiltin(Provider& provider) {
 
 void AssistantPanel::modelCombo(Provider& provider, const char* label, float width) {
   const CatalogModel* current = catalogModel(provider.model);
-  std::string shown = current ? current->name : std::string(T("(choose a model)"));
+  std::string own = ownModelFile(provider);
+  std::string shown = !own.empty() ? std::filesystem::path(own).filename().string() : current ? current->name : std::string(T("(choose a model)"));
   ImGui::SetNextItemWidth(width);
   if (ImGui::BeginCombo(label, shown.c_str())) {
+    if (ImGui::Selectable(T("A model file I already have..."), !own.empty())) {
+      static const SDL_DialogFileFilter filters[] = {{"GGUF models", "gguf"}};
+      SDL_ShowOpenFileDialog(modelFilePicked, nullptr, SDL_GetKeyboardFocus(), filters, 1, nullptr, false);
+    }
+    ImGui::Separator();
     for (auto& model : catalog_) {
       std::string line = model.name + "  -  " + formatBytes(model.bytes) + (isInstalled(model) ? std::string("  (") + T("downloaded") + ")" : "") +
                          (recommendation_.model == &model ? std::string("  (") + T("recommended") + ")" : "");
@@ -253,6 +288,12 @@ void AssistantPanel::modelCombo(Provider& provider, const char* label, float wid
 }
 
 void AssistantPanel::builtinCard(Provider& provider) {
+  if (std::string own = ownModelFile(provider); !own.empty()) {
+    if (!fileExists(own)) ImGui::TextColored(theme::colv(theme::Role::MsgWarning), "%s", F("The model file is missing: {0}", {own}).c_str());
+    else if (engine_.state() == Engine::State::Failed) ImGui::TextColored(theme::colv(theme::Role::MsgError), "%s", engine_.error().c_str());
+    else ImGui::TextUnformatted(F("Loading {0}...", {std::filesystem::path(own).filename().string()}).c_str());
+    return;
+  }
   const CatalogModel* model = catalogModel(provider.model);
   if (!model) {
     ImGui::TextWrapped("%s", T("This build has no model list."));
