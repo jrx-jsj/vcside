@@ -420,3 +420,32 @@ Read these numbers with care: one model, one run; the questions were written by 
   2. otherwise the largest that fits in 60% of the RAM and needs at most 8 GB, because larger models are too slow on a CPU;
   3. if none fits, the smallest is preselected and the panel warns that it may be slow.
   The choice is saved, shown as "recommended" in the model list and explained in the download card ("It fits in the 11.8 GB free on the GPU Apple M1 Pro"); the user can pick any other model. The thresholds are a first guess, to be replaced by measurements in the phase 6 evaluation.
+
+## Tutor mode (idea for later)
+
+Asked for by the user on 2026-11-10; nothing is designed or built yet. A mode of the assistant that guides someone who wants to make a game, instead of only answering questions:
+
+- **Starts from the goal.** "I want to make a game like X" or "a shooter with a scrolling playfield": it breaks the goal into steps (screen and frame, a sprite that moves, input, collisions, sound, score, levels) and proposes the next one.
+- **Adapts to the level.** A few questions at the start and what the user does along the way (the code in the project, the errors, what they ask) tell it whether to explain what a scanline is or to go straight to a kernel. The level is remembered in `.vcsai/` with the project, and the user can correct it.
+- **Recommends readings.** For each step it points to the knowledge-base entries, the Docs panel pages and, where the licence allows linking, external material that fits what the user wants to achieve now, with a one-line reason. It links and cites; it does not copy other people's text.
+- **Works with the project.** The example projects can be the stepping stones (each new feature of VCSIDE already goes into them), and the tutor can suggest the next small change in the user's own code, shown as a proposed edit like any other.
+- **Needs first:** the how-to entries of the knowledge base (started, see below), the agent's read and edit tools (phases 3 and 4), a record of progress per project, and a list of readings with sources and licences checked.
+- **To decide later:** whether it is a separate panel or a mode of the chat, how the level is kept (a few labels, not a score), and which readings are listed. Credit every technique and every reading to its author.
+
+## How-to entries and a Spanish search (2026-11-10)
+
+The measurement above showed that most misses were questions that describe a goal. Two changes:
+
+- **`data/kb/techniques.json`**: 11 how-to entries (position an object horizontally, frame structure, fix a rolling picture, read the controls, detect collisions, make sound, set colours, playfield patterns, wait a precise time, bankswitching, the 48-pixel sprite). Each is a short recipe in our own words built from the register, format and TV entries already in the knowledge base and cited to the same sources; `verified: false` marks the two that include a routine that was not run (positioning, 48-pixel). They are found by topic search like the notes, with a small weight in their favour.
+- **Spanish questions.** The topic search folds accents and has a short list of Spanish words for the same ideas ("posicionar", "disparo", "tono"...). The question that showed the problem was written in Spanish and found almost nothing.
+
+Qwen3 4B, 46 questions (18 naming something, 14 describing a goal in English, 14 in Spanish):
+
+| | No knowledge base | With name matching | With topic search | With how-to entries and Spanish |
+|---|---|---|---|---|
+| Spanish, goal (14) | 2 | not measured | 10 | 14 |
+| English, goal (14) | 2 | 1 | 11 | 14 |
+| Naming something (18) | 5 | 18 | 18 | 18 |
+| All | 9 | - | 39 | 46 |
+
+All 46 pass now, **but** these are the same questions the words and entries were tuned against, so the number is optimistic: it shows the mechanism works, not that every question will. The next measurement needs questions the author did not see. Noise remains: related entries sometimes ride along (a how-to about rolling pictures on a question about NTSC lines).

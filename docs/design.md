@@ -201,6 +201,7 @@ After every build with DASM, the IDE measures how much space is left (`src/space
 
 - **Music editor** (0.2.0): TIA music with its tuning shown and solved, and sample synthesis for ELF and the ARM cartridges. Proposal in [design-music.md](design-music.md).
 - **Optional AI assistant**: an agentic chat panel that works on the project's files and VCSIDE's tools, with small local models or, if the user chooses, remote APIs; off by default. Proposal in [design-assistant.md](design-assistant.md).
+- **Tutor mode** for the assistant (idea from the user, 2026-11-10): a guided path for someone who wants to make a game, adapted to their level, recommending readings for what they want to achieve. Notes in [design-assistant.md](design-assistant.md#tutor-mode-idea-for-later).
 - **Cancel a build in progress** (a button and a menu command), and retry if a save coincides with it.
 - **Send the ROM to the PlusCart** from the IDE. We need to see with the PlusCart authors what route they offer (network or USB) and how it is authorised.
 - **Image for the Chameleon Cart**: generate the file that is written to the cartridge from the ROM, choosing the firmware to use.

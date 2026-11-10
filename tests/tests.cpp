@@ -3330,6 +3330,28 @@ static void testAssistant(const KnowledgeBase& kb) {
     CHECK(found.empty());
     auto entries = groundText(kb, "RESP0 RESP1 RESM0 RESM1 RESBL WSYNC", "", context, 3);
     CHECK(entries.size() >= 2 && entries.size() <= 3);  // capped by count and by characters
+    // the how-to entries: complete, sourced, and found by what people ask (in English and in Spanish)
+    {
+      CHECK(kb.techniques().size() >= 10);
+      for (auto& technique : kb.techniques()) {
+        CHECK(!technique.id.empty() && !technique.title.empty() && !technique.summary.empty() && technique.steps.size() >= 3);
+        CHECK(!technique.sources.empty() && !technique.keywords.empty());
+        for (auto& source : technique.sources) CHECK(kb.source(source) != nullptr);
+        for (auto& name : technique.related) CHECK(kb.reg(name) != nullptr || kb.format(name) != nullptr);  // every register it names exists
+      }
+      auto ids = [&](const std::string& question) {
+        std::set<std::string> found;
+        for (auto& entry : groundText(kb, question, "", context)) found.insert(entry.id);
+        return found;
+      };
+      CHECK(ids("How do I position a sprite horizontally?").count("position-object-x"));
+      CHECK(ids("Para posicionar un sprite en un valor específico de X en la pantalla").count("position-object-x"));
+      CHECK(ids("¿Cómo hago que la consola reproduzca un tono?").count("make-sound"));
+      CHECK(ids("My game is bigger than 4 KB, what can I do?").count("add-banks"));
+      CHECK(ids("Why does my picture roll?").count("fix-rolling-picture") || ids("Why does my picture roll?").count("frame-structure"));
+      auto how = groundText(kb, "How do I position a sprite horizontally?", "", context);
+      CHECK(!how.empty() && how[0].text.find("How-to:") == 0 && how[0].text.find("NOT VERIFIED") != std::string::npos);  // the unrun routine says so
+    }
     // a question that names nothing is searched by topic, with the manuals' words for what people say
     {
       auto ids = [&](const std::string& question) {
@@ -3340,7 +3362,7 @@ static void testAssistant(const KnowledgeBase& kb) {
       CHECK(ids("How do I make the console play a tone?").count("AUDC0"));
       CHECK(ids("How do I check whether the fire button is pressed?").count("INPT4"));
       CHECK(ids("How do I set the background color?").count("COLUBK"));
-      CHECK(ids("How do I position a sprite horizontally?").count("RESP0"));
+      CHECK(ids("How do I position a sprite horizontally?").count("position-object-x"));
       CHECK(ids("What should I have for lunch today?").empty());   // nothing relevant: nothing added
       CHECK(ids("hello").empty());
       // a name the user typed still comes first

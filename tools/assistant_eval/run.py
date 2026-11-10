@@ -76,7 +76,7 @@ def main():
         server.terminate()
         server.wait()
     print("\nplain  grounded")
-    for kind in ("name", "concept", None):
+    for kind in ("name", "concept", "concept-es", None):
         subset = [r for r in rows if kind is None or r["kind"] == kind]
         if subset:
             print(f"{kind or 'all':8} {sum(r['plain'] for r in subset):2}/{len(subset)}  {sum(r['grounded'] for r in subset):2}/{len(subset)}")

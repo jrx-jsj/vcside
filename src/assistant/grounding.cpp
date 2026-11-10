@@ -97,6 +97,16 @@ std::string formatText(const CartFormat& format) {
   return text;
 }
 
+std::string techniqueText(const Technique& technique) {
+  std::string text = "How-to: " + technique.title + "\n" + technique.summary;
+  for (size_t i = 0; i < technique.steps.size(); i++) text += "\n" + std::to_string(i + 1) + ". " + technique.steps[i];
+  if (!technique.example.empty()) text += "\nExample:\n" + technique.example;
+  if (!technique.note.empty()) text += "\nNote: " + technique.note;
+  if (!technique.verified) text += "\n[NOT VERIFIED: some claims in this entry could not be confirmed]";
+  if (!technique.sources.empty()) text += "\nSources: " + joinSources(technique.sources);
+  return text;
+}
+
 std::string tvText(const TvStandard& tv) {
   std::string text = "TV standard " + tv.id + ": " + std::to_string(tv.linesTotal) + " lines (" + std::to_string(tv.vsync) + " vsync, " +
                      std::to_string(tv.vblank) + " vblank, " + std::to_string(tv.visible) + " visible, " + std::to_string(tv.overscan) +
@@ -125,6 +135,34 @@ struct Candidate {
 // Words the user may use for the same thing as the manuals (sprite = player, tone = audio) are
 // added to the question first.
 
+// "posición" -> "posicion": questions in Spanish are matched without accents.
+std::string foldAccents(const std::string& text) {
+  std::string out;
+  for (size_t i = 0; i < text.size(); i++) {
+    unsigned char c = (unsigned char)text[i];
+    if (c == 0xC3 && i + 1 < text.size()) {
+      unsigned char next = (unsigned char)text[i + 1];
+      char plain = 0;
+      switch (next) {
+        case 0xA1: case 0x81: plain = 'a'; break;
+        case 0xA9: case 0x89: plain = 'e'; break;
+        case 0xAD: case 0x8D: plain = 'i'; break;
+        case 0xB3: case 0x93: plain = 'o'; break;
+        case 0xBA: case 0x9A: case 0xBC: case 0x9C: plain = 'u'; break;
+        case 0xB1: case 0x91: plain = 'n'; break;
+        default: break;
+      }
+      if (plain) {
+        out += plain;
+        i++;
+        continue;
+      }
+    }
+    out += (char)c;
+  }
+  return out;
+}
+
 std::string stem(std::string word) {
   if (word.size() > 4 && word.compare(word.size() - 3, 3, "ing") == 0) word.resize(word.size() - 3);
   else if (word.size() > 4 && word.compare(word.size() - 2, 2, "ed") == 0) word.resize(word.size() - 2);
@@ -138,7 +176,12 @@ const std::set<std::string>& stopWords() {
       "who", "where", "will", "would", "should", "could", "you", "your", "our", "not", "but", "any", "all", "its", "than", "then", "there", "their",
       "make", "made", "use", "using", "used", "get", "need", "want", "like", "just", "also", "some", "such", "each", "other", "more", "most", "only",
       "about", "after", "before", "while", "over", "under", "between", "same", "very", "much", "many", "way", "thing", "code", "game", "program",
-      "set", "clear", "work", "check", "operation", "slow", "fast", "video", "write", "read", "value", "bit", "bits"};
+      "set", "clear", "work", "check", "operation", "slow", "fast", "video", "write", "read", "value", "bit", "bits",
+      // Spanish, the language most questions are written in besides English
+      "como", "para", "por", "que", "con", "del", "los", "las", "una", "uno", "unos", "unas", "mas", "pero", "sus", "mis", "cual", "cuales",
+      "donde", "cuando", "quiero", "puedo", "debo", "hago", "hacer", "hace", "usar", "uso", "valor", "especifico", "concreto", "esta", "este",
+      "estan", "esto", "eso", "hay", "tiene", "tengo", "mi", "son", "ser", "muy", "solo", "entonces", "puede", "pueden", "sobre", "desde", "hasta",
+      "cada", "otro", "otra", "algo", "porque", "pues", "cuanto", "cuantos", "cuantas", "que"};
   return list;
 }
 
@@ -170,13 +213,51 @@ const std::map<std::string, std::vector<std::string>>& synonyms() {
       {"switch", {"swchb"}},                                {"difficulty", {"swchb"}},
       {"palette", {"colu", "ntsc", "pal"}},                 {"pal", {"312", "50hz", "colour"}},
       {"ntsc", {"262", "60hz"}},                            {"pixel", {"colour", "clock", "160"}},
-      {"pixels", {"colour", "clock", "160"}}};
+      {"pixels", {"colour", "clock", "160"}},
+      // the same ideas in Spanish (words are matched without accents)
+      {"posicion", {"resp0", "hmove", "wsync"}},            {"posicionar", {"resp0", "hmove", "wsync"}},
+      {"posiciono", {"resp0", "hmove", "wsync"}},           {"colocar", {"resp0", "hmove", "wsync"}},
+      {"situar", {"resp0", "hmove", "wsync"}},              {"horizontal", {"resp0", "hmove", "wsync"}},
+      {"vertical", {"vsync", "scanline"}},                  {"jugador", {"player", "grp0", "grp1"}},
+      {"jugadores", {"player", "grp0", "grp1"}},            {"personaje", {"player", "grp0", "grp1"}},
+      {"colores", {"colu", "colour"}},                      {"fondo", {"colubk", "background"}},
+      {"sonido", {"audio", "audc0", "audf0", "audv0"}},     {"musica", {"audio", "audc0", "audf0", "audv0"}},
+      {"tono", {"audio", "audc0", "audf0", "audv0"}},       {"tonos", {"audio", "audc0", "audf0", "audv0"}},
+      {"reproducir", {"audio", "audc0"}},                   {"reproduzca", {"audio", "audc0"}},
+      {"ruido", {"audio", "audc0", "audv0"}},               {"sonar", {"audio", "audc0", "audf0", "audv0"}},
+      {"pitido", {"audio", "audc0", "audv0"}},              {"suene", {"audio", "audc0", "audf0", "audv0"}},
+      {"boton", {"inpt4", "inpt5", "fire", "button"}},      {"disparo", {"inpt4", "inpt5", "fire", "button"}},
+      {"pulsador", {"inpt4", "inpt5", "fire", "button"}},   {"pulsado", {"inpt4", "inpt5", "fire", "button"}},
+      {"mando", {"swcha", "inpt4"}},                        {"palanca", {"swcha", "inpt4"}},
+      {"colision", {"cxp0fb", "cxm0p", "cxppmm", "cxclr"}}, {"colisiones", {"cxp0fb", "cxm0p", "cxppmm", "cxclr"}},
+      {"toca", {"cxp0fb", "cxm0p", "cxppmm", "cxclr"}},     {"tocar", {"cxp0fb", "cxm0p", "cxppmm", "cxclr"}},
+      {"choca", {"cxp0fb", "cxm0p", "cxppmm", "cxclr"}},    {"detecto", {"collision", "cxp0fb", "cxppmm"}},
+      {"temporizador", {"tim64t", "intim", "timer"}},       {"tiempo", {"timer", "intim", "tim64t"}},
+      {"esperar", {"wsync", "timer", "intim"}},             {"espero", {"wsync", "timer", "intim"}},
+      {"espera", {"wsync", "timer", "intim"}},              {"retardo", {"wsync", "timer", "intim"}},
+      {"linea", {"scanline", "wsync", "line"}},             {"lineas", {"scanline", "wsync", "line"}},
+      {"rueda", {"vsync", "scanline", "262", "312"}},       {"rota", {"vsync", "scanline", "262", "312"}},
+      {"parpadea", {"vsync", "scanline", "frame"}},         {"fotograma", {"frame", "vsync", "scanline", "262"}},
+      {"ancho", {"nusiz0", "copies", "stretch"}},           {"ancha", {"nusiz0", "copies", "stretch"}},
+      {"grande", {"nusiz0", "stretch"}},                    {"campo", {"playfield", "pf0", "pf1", "pf2", "ctrlpf"}},
+      {"muro", {"pf0", "pf1", "pf2"}},                      {"pared", {"pf0", "pf1", "pf2"}},
+      {"puntuacion", {"ctrlpf", "pf0", "pf1"}},             {"marcador", {"ctrlpf", "pf0", "pf1"}},
+      {"banco", {"bankswitching", "hotspot", "bank"}},      {"bancos", {"bankswitching", "hotspot", "bank"}},
+      {"kb", {"bank", "bankswitching", "size"}},             {"ocupa", {"bank", "bankswitching", "size"}},
+      {"supera", {"bank", "bankswitching", "size"}},        {"excede", {"bank", "bankswitching", "size"}},
+      {"tamano", {"bank", "bankswitching", "size"}},
+      {"cartucho", {"cartridge", "bank", "bankswitching"}}, {"memoria", {"ram", "128"}},
+      {"ciclos", {"cycles", "scanline"}},                   {"ciclo", {"cycles", "scanline"}},
+      {"interruptor", {"swchb"}},                           {"dificultad", {"swchb"}},
+      {"reinicio", {"swchb"}},                              {"mover", {"hmove", "hmp0"}},
+      {"movimiento", {"hmove", "hmp0"}},                    {"desplazar", {"hmove", "hmp0"}},
+      {"pixeles", {"colour", "clock", "160"}},              {"pantalla", {"scanline", "frame", "visible"}}};
   return table;
 }
 
 struct TopicDoc {
   std::string kind, id, name, title, body;
-  int source = 0;      // 0 register, 1 format, 2 TV, 3 batari Basic, 4 TIA note, 5 6502 note
+  int source = 0;      // 0 register, 1 format, 2 TV, 3 batari Basic, 4 TIA note, 5 6502 note, 6 how-to
   size_t index = 0;
   bool verified = true;
 };
@@ -203,7 +284,7 @@ std::set<std::string> tokenSet(const std::string& text) {
 std::vector<GroundedEntry> topicSearch(const KnowledgeBase& kb, const std::string& question, size_t limit, bool allowFormats) {
   // the question, with the manuals' words added
   std::set<std::string> query;
-  for (auto& word : words(lowerOf(question))) {
+  for (auto& word : words(foldAccents(lowerOf(question)))) {
     if (shortWord(word) || stopWords().count(word)) continue;
     query.insert(stem(word));
     auto synonym = synonyms().find(word);
@@ -249,6 +330,17 @@ std::vector<GroundedEntry> topicSearch(const KnowledgeBase& kb, const std::strin
     docs.push_back(doc);
   }
 
+  for (size_t i = 0; i < kb.techniques().size(); i++) {
+    const Technique& technique = kb.techniques()[i];
+    std::string keywords = technique.id + " " + technique.title;
+    for (auto& word : technique.keywords) keywords += " " + word;
+    TopicDoc doc{"how-to", technique.id, keywords, technique.summary, ""};
+    for (auto& step : technique.steps) doc.body += " " + step;
+    for (auto& name : technique.related) doc.body += " " + name;
+    doc.source = 6, doc.index = i, doc.verified = technique.verified;
+    docs.push_back(doc);
+  }
+
   struct Fields {
     std::set<std::string> name, title, body;
   };
@@ -279,6 +371,7 @@ std::vector<GroundedEntry> topicSearch(const KnowledgeBase& kb, const std::strin
       if (weight > 0) score += idf * weight, matched++;
       if (weight >= 2.0) headline += idf * weight;
     }
+    if (docs[i].source == 6) score *= 1.15, headline *= 1.15;  // a recipe answers "how do I" better than a register does
     if (matched >= 2 && score >= 9.0 && headline >= 6.0) scored.push_back({i, score, matched});
   }
   std::stable_sort(scored.begin(), scored.end(), [](const Scored& a, const Scored& b) { return a.score > b.score; });
@@ -296,6 +389,7 @@ std::vector<GroundedEntry> topicSearch(const KnowledgeBase& kb, const std::strin
       case 2: entry.text = tvText(kb.tvStandards()[doc.index]); break;
       case 3: entry.text = basicText(kb.basicKeywords().at(doc.id)); break;
       case 4: entry.text = "TIA note: " + kb.tiaNotes()[doc.index]; break;
+      case 6: entry.text = techniqueText(kb.techniques()[doc.index]); break;
       default: entry.text = "6502 note: " + kb.cpuNotes()[doc.index]; break;
     }
     result.push_back(entry);

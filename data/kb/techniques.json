@@ -1,0 +1,450 @@
+{
+ "_comment": "How-to entries for the assistant: what a programmer wants to do, with the registers and the steps. Each one is a short recipe built from the register entries and notes in tia.json, riot.json, formats.json and tv.json (the sources are the same). 'verified': false means a part could not be confirmed from those sources (the routines marked so were not run for this entry). Written for VCSIDE in our own words.",
+ "techniques": [
+  {
+   "id": "position-object-x",
+   "title": "Put a sprite, missile or ball at a given X position",
+   "keywords": [
+    "position",
+    "horizontal",
+    "x",
+    "coordinate",
+    "sprite",
+    "player",
+    "missile",
+    "ball",
+    "place",
+    "move",
+    "resp0",
+    "hmp0",
+    "hmove",
+    "wsync"
+   ],
+   "summary": "Two stages: a coarse position from when RESPx is written in the line (steps of 15 pixels with a divide-by-15 loop), then a fine adjustment of -8..+7 pixels with HMxx and one HMOVE.",
+   "steps": [
+    "STA WSYNC first, so the code starts at a known cycle of a line.",
+    "Divide the wanted X by 15 with SEC / SBC #15 / BCS loop: one pass is 5 cycles = 15 pixels, so the number of passes sets the coarse position.",
+    "Turn the remainder into the fine value for HMxx (high nibble, signed: $70 = 7 pixels left, $00 = none, $80 = 8 pixels right).",
+    "STA RESPx at the end of the loop. The object does not move on the current line: it appears from the next one.",
+    "When every object is placed: STA WSYNC, then STA HMOVE straight away: it has to be strobed at the start of the line. It also blanks the first 8 pixels of that line (the HMOVE comb), so do it on a line that does not matter, such as one in the vertical blank, or hide the column with a border.",
+    "STA HMCLR afterwards, so later HMOVE strobes do not keep moving the objects."
+   ],
+   "related": [
+    "RESP0",
+    "RESP1",
+    "RESM0",
+    "RESM1",
+    "RESBL",
+    "HMP0",
+    "HMOVE",
+    "HMCLR",
+    "WSYNC"
+   ],
+   "sources": [
+    "stella-guide",
+    "towers-tia",
+    "gopher-bin"
+   ],
+   "verified": false,
+   "example": "; A = wanted X (0-159), X register = object: 0 P0, 1 P1, 2 M0, 3 M1, 4 ball\nSetX:  sta WSYNC\n       sec\n.Div:  sbc #15\n       bcs .Div\n       eor #7\n       asl\n       asl\n       asl\n       asl\n       sta HMP0,x   ; fine motion (HMP0..HMBL are consecutive)\n       sta RESP0,x  ; coarse position (RESP0..RESBL are consecutive)\n       rts",
+   "note": "The routine is the usual community form and has not been run for this entry: calibrate the constants in an emulator (the exact pixel depends on the cycles spent before RESPx)."
+  },
+  {
+   "id": "frame-structure",
+   "title": "Structure of a frame: VSYNC, vertical blank, picture, overscan",
+   "keywords": [
+    "frame",
+    "vsync",
+    "vblank",
+    "overscan",
+    "roll",
+    "timer",
+    "structure",
+    "loop",
+    "kernel"
+   ],
+   "summary": "The TIA does not count lines: the program must produce 262 lines every frame on NTSC (3 VSYNC + 37 vertical blank + 192 picture + 30 overscan) and 312 on PAL (3 + 45 + 228 + 36), always the same number.",
+   "steps": [
+    "VSYNC: write 2 to VSYNC, run 3 WSYNC, write 0.",
+    "Vertical blank (VBLANK bit 1 set): 37 lines = 2812 CPU cycles on NTSC. Do the game logic here and time it with TIM64T, then wait on INTIM; 43 is a typical start value, adjust it to your code.",
+    "Picture: write 0 to VBLANK after a WSYNC, then one WSYNC per line for 192 lines.",
+    "Overscan: write 2 to VBLANK, 30 lines = 2280 cycles (a typical TIM64T value is 35), more game logic.",
+    "Jump back to VSYNC. Check the line count in the emulator: a frame that is not constant makes the picture roll."
+   ],
+   "related": [
+    "VSYNC",
+    "VBLANK",
+    "WSYNC",
+    "TIM64T",
+    "INTIM"
+   ],
+   "sources": [
+    "stella-guide",
+    "mos6532"
+   ],
+   "verified": true,
+   "example": "Frame: lda #2\n       sta VSYNC\n       sta WSYNC\n       sta WSYNC\n       sta WSYNC\n       lda #0\n       sta VSYNC\n       lda #43\n       sta TIM64T     ; vertical blank, about 37 lines\n       ; ... game logic ...\n.WaitVB: lda INTIM\n       bne .WaitVB\n       sta WSYNC\n       sta VBLANK     ; A = 0: picture on\n       ldx #192\n.Line: sta WSYNC\n       ; ... draw one line ...\n       dex\n       bne .Line\n       lda #2\n       sta VBLANK     ; picture off\n       lda #35\n       sta TIM64T     ; overscan, about 30 lines\n       ; ... more logic ...\n.WaitOS: lda INTIM\n       bne .WaitOS\n       jmp Frame"
+  },
+  {
+   "id": "fix-rolling-picture",
+   "title": "The picture rolls, flickers or loses sync",
+   "keywords": [
+    "roll",
+    "rolling",
+    "flicker",
+    "unstable",
+    "vsync"
+   ],
+   "summary": "Almost always the number of lines per frame is not constant or not 262 (NTSC) / 312 (PAL), or VSYNC is shorter than 3 lines.",
+   "steps": [
+    "Count the lines your code produces: 3 VSYNC + vertical blank + picture + overscan must add up to 262 on NTSC.",
+    "Look for a section that sometimes takes more or fewer lines: a missing WSYNC, a loop that runs a variable number of times, a branch that crosses a page and costs an extra cycle at the wrong moment.",
+    "If you time a section with a timer, make sure the code between the write and the wait never takes longer than the timer; a timer that expired early or late shifts the whole frame.",
+    "Check with the emulator's scanline counter (Stella reports the detected number of lines) and fix the section that differs.",
+    "An indexed store that wraps into the TIA mirrors can write VSYNC by accident: check stray STA abs,X writes."
+   ],
+   "related": [
+    "VSYNC",
+    "WSYNC",
+    "VBLANK",
+    "INTIM"
+   ],
+   "sources": [
+    "stella-guide",
+    "stella-src"
+   ],
+   "verified": true
+  },
+  {
+   "id": "read-controls",
+   "title": "Read the joystick, the fire button and the console switches",
+   "keywords": [
+    "joystick",
+    "fire",
+    "button",
+    "controller",
+    "input",
+    "swcha",
+    "inpt4",
+    "swchb",
+    "switches",
+    "reset",
+    "select",
+    "pressed",
+    "direction",
+    "read"
+   ],
+   "summary": "Joystick directions come from SWCHA (0 = pressed), the fire button from INPT4 and INPT5 (bit 7, 0 = pressed) and the console switches from SWCHB.",
+   "steps": [
+    "SWCHA bits 7-4 are player 0: 7 = right, 6 = left, 5 = down, 4 = up; bits 3-0 are player 1 in the same order. A bit that reads 0 means pressed.",
+    "Test one direction with BIT or AND, for example LDA SWCHA then AND #%00100000 and BNE when it is not pressed (down).",
+    "INPT4 is the fire button of player 0 and INPT5 of player 1: bit 7 = 0 while pressed. LDA INPT4 then BMI means not pressed.",
+    "SWCHB: bit 0 = RESET, bit 1 = SELECT (0 = pressed), bit 3 = colour/B&W, bits 6 and 7 = difficulty of player 0 and 1.",
+    "Read them once per frame, in the vertical blank or the overscan, not in the middle of the picture."
+   ],
+   "related": [
+    "SWCHA",
+    "INPT4",
+    "INPT5",
+    "SWCHB"
+   ],
+   "sources": [
+    "stella-guide",
+    "mos6532"
+   ],
+   "verified": true,
+   "example": "        lda INPT4\n        bmi NotFire    ; bit 7 = 1: not pressed\n        ; fire is pressed\nNotFire:\n        lda SWCHA\n        and #%00100000 ; bit 5 = player 0 down\n        bne NotDown    ; 1 = not pressed\n        ; down is pressed\nNotDown:"
+  },
+  {
+   "id": "detect-collisions",
+   "title": "Detect that two objects touched",
+   "keywords": [
+    "collision",
+    "collide",
+    "touch",
+    "hit",
+    "overlap",
+    "player",
+    "playfield",
+    "missile",
+    "ball",
+    "cxp0fb",
+    "cxppmm",
+    "cxclr",
+    "wall"
+   ],
+   "summary": "The TIA latches a bit whenever two objects overlap on any pixel, whatever their colours. Read the collision registers after the picture has been drawn and clear the latches with CXCLR before the next frame.",
+   "steps": [
+    "Draw the frame normally; the latches are set during the picture.",
+    "In the overscan or the vertical blank read the register for the pair you care about, bit 7 or bit 6: CXP0FB (player 0 with playfield or ball), CXP1FB, CXM0FB, CXM1FB, CXM0P, CXM1P, CXBLPF, CXPPMM (player with player, missile with missile).",
+    "The other bits of those registers are not driven, so test with BIT (N flag = bit 7, V flag = bit 6) or mask with AND #$80 / #$40.",
+    "STA CXCLR at the start of the next frame (any write clears all 15 latches); otherwise a collision from a previous frame stays set.",
+    "Collisions are pixel overlaps: an object hidden by priority or drawn in the background colour still collides."
+   ],
+   "related": [
+    "CXP0FB",
+    "CXP1FB",
+    "CXM0FB",
+    "CXM1FB",
+    "CXM0P",
+    "CXM1P",
+    "CXBLPF",
+    "CXPPMM",
+    "CXCLR"
+   ],
+   "sources": [
+    "stella-guide",
+    "towers-tia"
+   ],
+   "verified": true,
+   "example": "        bit CXP0FB\n        bmi HitWall    ; bit 7: player 0 touched the playfield\n        bvs HitBall    ; bit 6: player 0 touched the ball\n        ; ... at the start of the next frame:\n        sta CXCLR"
+  },
+  {
+   "id": "make-sound",
+   "title": "Play a tone or a noise",
+   "keywords": [
+    "sound",
+    "tone",
+    "audio",
+    "music",
+    "noise",
+    "beep",
+    "effect",
+    "volume",
+    "pitch",
+    "frequency",
+    "audc0",
+    "audf0",
+    "audv0",
+    "play"
+   ],
+   "summary": "Each of the two channels has a waveform (AUDCx), a pitch divider (AUDFx) and a volume (AUDVx). Write them once and the sound keeps playing until you change it.",
+   "steps": [
+    "AUDC0 bits 3-0 choose the waveform: 4 and 5 give a high pure tone, 12 and 13 a lower pure tone, 6 and 10 the lowest pure tone, 8 white noise, 0 silence.",
+    "AUDF0 bits 4-0 divide the audio clock by AUDF0 + 1: a larger value is a lower note. The audio clock is the colour clock divided by 114 (about 31.4 kHz on NTSC), further divided by the AUDC waveform.",
+    "AUDV0 bits 3-0 set the volume 0-15; write 0 to silence the channel.",
+    "To play a sequence, change AUDF0 (and AUDV0 for the envelope) once per frame or once per note from your frame loop.",
+    "Channel 1 uses AUDC1, AUDF1 and AUDV1 in the same way."
+   ],
+   "related": [
+    "AUDC0",
+    "AUDF0",
+    "AUDV0",
+    "AUDC1",
+    "AUDF1",
+    "AUDV1"
+   ],
+   "sources": [
+    "stella-guide"
+   ],
+   "verified": true,
+   "example": "        lda #4\n        sta AUDC0      ; pure tone\n        lda #15\n        sta AUDF0      ; pitch (larger = lower)\n        lda #8\n        sta AUDV0      ; volume"
+  },
+  {
+   "id": "set-colors",
+   "title": "Choose the background, playfield and sprite colours",
+   "keywords": [
+    "color",
+    "colour",
+    "background",
+    "playfield",
+    "palette",
+    "hue",
+    "luminance",
+    "colubk",
+    "colupf",
+    "colup0",
+    "colup1",
+    "paint"
+   ],
+   "summary": "Each colour register holds the hue in the high nibble and the luminance in bits 3-1 of the low nibble.",
+   "steps": [
+    "COLUBK is the background, COLUPF the playfield and ball, COLUP0 player 0 and missile 0, COLUP1 player 1 and missile 1.",
+    "Value = hue * 16 + luminance * 2: bits 7-4 hue (0-15), bits 3-1 luminance (0-7), bit 0 ignored.",
+    "The hue numbers mean different colours on NTSC, PAL and SECAM (see the TV standards entry). On SECAM only the luminance chooses the colour.",
+    "You can change them in the middle of the picture, per line, for gradients: write the register after a WSYNC.",
+    "With CTRLPF bit 1 (SCORE) the left half of the playfield uses COLUP0 and the right half COLUP1."
+   ],
+   "related": [
+    "COLUBK",
+    "COLUPF",
+    "COLUP0",
+    "COLUP1",
+    "CTRLPF"
+   ],
+   "sources": [
+    "stella-guide"
+   ],
+   "verified": true,
+   "example": "        lda #$9E       ; hue 9, luminance 7\n        sta COLUBK"
+  },
+  {
+   "id": "playfield-pattern",
+   "title": "Draw walls and scenery with the playfield",
+   "keywords": [
+    "playfield",
+    "wall",
+    "maze",
+    "scenery",
+    "pf0",
+    "pf1",
+    "pf2",
+    "ctrlpf",
+    "reflect",
+    "mirror",
+    "bits",
+    "score",
+    "level"
+   ],
+   "summary": "The playfield is 40 pixels wide in two halves of 20 bits (4 pixels each) taken from PF0, PF1 and PF2; the right half repeats or mirrors the left.",
+   "steps": [
+    "PF0 bits 4-7 give the first 4 bits (bit 4 leftmost), then PF1 bits 7-0, then PF2 bits 0-7: PF1 is shown from its highest bit, PF0 and PF2 from their lowest.",
+    "CTRLPF bit 0 = 0 repeats the left half on the right, = 1 mirrors it.",
+    "There is no enable bit: write 0 to PF0, PF1 and PF2 to hide the playfield.",
+    "To change the pattern line by line, rewrite PF0-PF2 after each WSYNC; to make the halves different, write the registers again in the middle of the line, after the left half has been drawn.",
+    "CTRLPF bit 1 (SCORE) colours the left half with COLUP0 and the right with COLUP1; bit 2 draws the playfield in front of the sprites."
+   ],
+   "related": [
+    "PF0",
+    "PF1",
+    "PF2",
+    "CTRLPF",
+    "COLUPF"
+   ],
+   "sources": [
+    "stella-guide",
+    "towers-tia"
+   ],
+   "verified": true
+  },
+  {
+   "id": "wait-exact-time",
+   "title": "Wait a precise time without counting every instruction",
+   "keywords": [
+    "timer",
+    "wait",
+    "delay",
+    "time",
+    "cycles",
+    "intim",
+    "tim64t",
+    "t1024t",
+    "tim8t",
+    "tim1t",
+    "interval",
+    "pause",
+    "sleep"
+   ],
+   "summary": "The RIOT timer counts down by itself: load it with TIM1T, TIM8T, TIM64T or T1024T, do other work, and read INTIM to know when it reached zero.",
+   "steps": [
+    "Pick the divider: TIM1T counts every cycle (up to 255), TIM8T every 8 (up to 2040), TIM64T every 64 (up to 16320 = about 214 lines), T1024T every 1024.",
+    "Write the start value N: the interval is about N times the divider cycles. A scanline is 76 cycles, so TIM64T is the usual choice for whole sections of a frame.",
+    "Do other work, then loop on INTIM until it reads 0 (LDA INTIM / BNE).",
+    "After zero the timer keeps counting down from $FF, one per cycle, until you write a new value.",
+    "To wait for the end of the current scanline use STA WSYNC instead."
+   ],
+   "related": [
+    "TIM1T",
+    "TIM8T",
+    "TIM64T",
+    "T1024T",
+    "INTIM",
+    "WSYNC"
+   ],
+   "sources": [
+    "mos6532",
+    "stella-guide"
+   ],
+   "verified": true,
+   "example": "        lda #43\n        sta TIM64T\n.Wait:  lda INTIM\n        bne .Wait"
+  },
+  {
+   "id": "add-banks",
+   "title": "The game is larger than 4 KB: bankswitching",
+   "keywords": [
+    "bank",
+    "bankswitching",
+    "size",
+    "4k",
+    "8k",
+    "16k",
+    "32k",
+    "rom",
+    "cartridge",
+    "bigger",
+    "larger",
+    "f8",
+    "f6",
+    "f4",
+    "hotspot",
+    "memory",
+    "space"
+   ],
+   "summary": "The CPU sees only 4 KB of cartridge at a time. A bigger ROM is split into 4 KB banks and the program switches between them by touching special addresses (hotspots).",
+   "steps": [
+    "Pick the format by size: F8 = 8 KB (2 banks), F6 = 16 KB (4 banks), F4 = 32 KB (8 banks); 2 KB and 4 KB need no switching.",
+    "F8: accessing $1FF8 selects bank 0 and $1FF9 selects bank 1 (a read or a write). F6: $1FF6 to $1FF9 select banks 0-3. F4: $1FF4 to $1FFB select banks 0-7.",
+    "The vectors at $FFFA-$FFFF must be valid in every bank, because the bank at power-up is not known.",
+    "The code that does the switching should sit at the same addresses in every bank, so execution continues in the new bank on the next instruction.",
+    "Set the format in the project (VCSIDE) and in the emulator; the knowledge base has the full list of formats and the extra-RAM variants (SC)."
+   ],
+   "related": [
+    "F8",
+    "F6",
+    "F4",
+    "4K",
+    "2K"
+   ],
+   "sources": [
+    "horton",
+    "stella-src"
+   ],
+   "verified": true
+  },
+  {
+   "id": "sprite-48-pixels",
+   "title": "A sprite wider than 8 pixels: the 48-pixel technique",
+   "keywords": [
+    "sprite",
+    "wide",
+    "wider",
+    "48",
+    "pixels",
+    "large",
+    "bitmap",
+    "score",
+    "text",
+    "player",
+    "copies",
+    "vdelp0",
+    "vdelp1",
+    "nusiz0",
+    "nusiz1"
+   ],
+   "summary": "One player is 8 pixels wide. Two players with three close copies each (NUSIZ = 3) placed side by side cover 48 pixels, and the six graphics bytes of each line are written in turn with the vertical delay registers.",
+   "steps": [
+    "Set NUSIZ0 and NUSIZ1 to 3 (three copies, 16 pixels apart): each player shows its graphics three times on the line.",
+    "Place player 0 and player 1 8 pixels apart so their copies interleave into a block of 48 pixels.",
+    "Each line needs six different bytes: GRP0 and GRP1 are rewritten in the middle of the line, in fixed cycle windows, with VDELP0 and VDELP1 = 1 so the new value of one player is delayed until the other is written.",
+    "The timing is tight (the whole line is spent on the loads), so the kernel is usually written once and reused for score displays and big text.",
+    "A narrower and simpler alternative: double or quad width with NUSIZ (5 or 7) for one big 16 or 32 pixel block."
+   ],
+   "related": [
+    "NUSIZ0",
+    "NUSIZ1",
+    "GRP0",
+    "GRP1",
+    "VDELP0",
+    "VDELP1",
+    "RESP0",
+    "RESP1"
+   ],
+   "sources": [
+    "stella-guide",
+    "towers-tia"
+   ],
+   "verified": false,
+   "note": "The structure comes from the register descriptions; the exact cycle windows of the six writes were not worked out for this entry. Use a known 48-pixel routine and check it in an emulator."
+  }
+ ]
+}

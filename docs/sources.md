@@ -105,3 +105,7 @@ Read for the design in `docs/design-music.md`; only facts are taken, in our own 
 ## Sources with doubtful licences
 
 All the documentary sources (Stella Programmer's Guide, Towers' notes, 6532 datasheet, MCS6500, NMS, Horton, masswerk) lack an explicit licence in the copies consulted; they were used only to extract facts and have always been rewritten in our own words. Stella (GPL-2), Gopher2600 (GPL-3) and DASM (GPL-2+) were consulted or run without copying text or code.
+
+## How-to entries (`techniques.json`, 2026-11-10)
+
+`data/kb/techniques.json` holds short recipes (what a programmer wants to do, the registers and the steps). They contain no text from other documents: each step restates facts already in `tia.json`, `riot.json`, `formats.json` and `tv.json` and cites the same sources (`stella-guide`, `towers-tia`, `mos6532`, `horton`, `stella-src`, `gopher-bin`). The routines in the examples are the usual community forms written out for VCSIDE; the entries whose routine was not run say so with `verified: false`. The typical timer values (43 and 35 for the vertical blank and overscan) are starting points from the cycle counts in `tv.json`, not measurements.

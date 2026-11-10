@@ -90,6 +90,13 @@ struct BasicKeyword {
   const std::string& summaryText() const;
 };
 
+// A how-to entry (data/kb/techniques.json): what a programmer wants to do, with the registers and the steps.
+struct Technique {
+  std::string id, title, summary, example, note;
+  std::vector<std::string> keywords, steps, related, sources;
+  bool verified = true;
+};
+
 struct KbEntry {
   enum Kind { Mnemonic, Register, Directive, Symbol } kind;
   std::string word, summary;
@@ -119,6 +126,7 @@ class KnowledgeBase {
   const std::vector<std::string>& cpuNotes() const { return cpuNotes_; }
   const std::map<std::string, Source>& sources() const { return sources_; }
   const std::vector<std::string>& tiaNotes() const { return tiaNotes_; }
+  const std::vector<Technique>& techniques() const { return techniques_; }
 
   // Completion candidates whose word starts with prefix (case-insensitive).
   std::vector<KbEntry> complete(const std::string& prefix, size_t max = 30) const;
@@ -132,6 +140,7 @@ class KnowledgeBase {
   std::vector<TvStandard> tv_;
   std::vector<EmulatorInfo> emulators_;
   std::vector<std::string> cpuNotes_, tiaNotes_;
+  std::vector<Technique> techniques_;
   std::map<std::string, Source> sources_;
   std::map<std::string, BasicKeyword> basic_;
 };

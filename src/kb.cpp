@@ -200,6 +200,25 @@ bool KnowledgeBase::load(const std::string& dir, std::string* error) {
     }
   }
   json emulatorsDocument;
+  json techniquesDocument;
+  if (readJson(dir + "/techniques.json", techniquesDocument, error)) {
+    readSources(techniquesDocument, sources_);
+    for (auto& item : techniquesDocument["techniques"]) {
+      Technique technique;
+      technique.id = stringValue(item, "id");
+      technique.title = stringValue(item, "title");
+      technique.summary = stringValue(item, "summary");
+      technique.example = stringValue(item, "example");
+      technique.note = stringValue(item, "note");
+      technique.keywords = stringList(item, "keywords");
+      technique.steps = stringList(item, "steps");
+      technique.related = stringList(item, "related");
+      technique.sources = stringList(item, "sources");
+      technique.verified = item.value("verified", true);
+      if (!technique.id.empty()) techniques_.push_back(technique);
+    }
+  } else if (!techniquesDocument.is_null()) ok = false;
+
   if (readJson(dir + "/emulators.json", emulatorsDocument, error)) {
     readSources(emulatorsDocument, sources_);
     if (emulatorsDocument.contains("emulators") && emulatorsDocument["emulators"].is_object())

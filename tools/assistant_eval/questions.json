@@ -1,37 +1,390 @@
 {
   "_comment": "Questions for tools/assistant_eval/run.py. 'must' are regular expressions (case-insensitive) that ALL have to match the answer; they check the key fact, not the wording. 'kind' is 'name' when the question names a register, instruction or format, 'concept' when it describes what the user wants without naming it. Facts come from the Stella Programmer's Guide and the knowledge base (data/kb); keep them checkable.",
   "questions": [
-    {"id": "wsync", "kind": "name", "q": "What does a write to WSYNC do?", "must": ["halt|stall|wait", "(next|following).{0,30}(line|scanline|horizontal)|horizontal (sync|blank)"]},
-    {"id": "vsync-lines", "kind": "name", "q": "How many scanlines is VSYNC normally held for in a standard frame?", "must": ["\\b(3|three)\\b"]},
-    {"id": "ntsc-lines", "kind": "name", "q": "How many scanlines make a standard NTSC frame?", "must": ["262"]},
-    {"id": "pal-lines", "kind": "name", "q": "How many scanlines make a standard PAL frame?", "must": ["312"]},
-    {"id": "cycles-line", "kind": "concept", "q": "How many CPU cycles fit in one scanline?", "must": ["\\b76\\b"]},
-    {"id": "visible-pixels", "kind": "concept", "q": "How many color clocks are visible on a scanline, and how many in total?", "must": ["\\b160\\b", "\\b228\\b"]},
-    {"id": "ram", "kind": "name", "q": "How much RAM does the console have and at which addresses?", "must": ["\\b128\\b", "\\$?80", "\\$?FF"]},
-    {"id": "f8", "kind": "name", "q": "How does F8 bankswitching work?", "must": ["1FF8", "1FF9"]},
-    {"id": "f6", "kind": "name", "q": "Which addresses switch banks in an F6 cartridge?", "must": ["1FF6", "1FF9"]},
-    {"id": "lda-imm", "kind": "name", "q": "How many cycles does LDA #imm take on the 6507?", "must": ["\\b2\\b"]},
-    {"id": "sta-zp", "kind": "name", "q": "How many cycles does STA zero page take?", "must": ["\\b3\\b"]},
-    {"id": "branch", "kind": "concept", "q": "How many cycles does a taken branch take, and what adds one more?", "must": ["\\b3\\b", "page"]},
-    {"id": "resp0", "kind": "name", "q": "What does a write to RESP0 do?", "must": ["player ?0|player zero|P0", "position|horizontal", "beam|current|moment|time|cycle|clock"]},
-    {"id": "nusiz0", "kind": "name", "q": "What does NUSIZ0 control?", "must": ["cop(y|ies)", "size|width|stretch|double|quad"]},
-    {"id": "pf0", "kind": "name", "q": "Which bits of PF0 are displayed, and in what order?", "must": ["(upper|high|4|four|7)", "revers|backward|opposite|from right|descending|(bit ?4|4).{0,40}(left|first)"]},
-    {"id": "ctrlpf", "kind": "name", "q": "What does CTRLPF bit 0 do?", "must": ["reflect|mirror"]},
-    {"id": "swcha", "kind": "name", "q": "Which bits of SWCHA read the joystick of player 0?", "must": ["(7|high|upper|four)"]},
-    {"id": "tim64t", "kind": "name", "q": "What does writing TIM64T do?", "must": ["\\b64\\b", "timer|interval|count"]},
-    {"id": "inpt4", "kind": "concept", "q": "Which register reads the fire button of joystick 0?", "must": ["INPT4"]},
-    {"id": "hmove", "kind": "name", "q": "What does a write to HMOVE do?", "must": ["motion|move", "HM(P|M|BL)|horizontal"]},
-    {"id": "bb-playfield", "kind": "name", "q": "In batari Basic, what is the playfield: block for?", "must": ["playfield", "draw|define|data|layout|pattern|screen"]},
-    {"id": "bb-drawscreen", "kind": "name", "q": "In batari Basic, what does drawscreen do?", "must": ["screen|frame|kernel|display"]},
-    {"id": "concept-sprite-x", "kind": "concept", "q": "How do I position a sprite horizontally?", "must": ["RESP", "WSYNC|HMOVE|HMP"]},
-    {"id": "concept-roll", "kind": "concept", "q": "Why does my picture roll vertically on the TV?", "must": ["262|312|scanline|VSYNC|lines"]},
-    {"id": "concept-wide-sprite", "kind": "concept", "q": "How can I draw a sprite wider than 8 pixels?", "must": ["NUSIZ|cop(y|ies)|GRP1|two players|VDEL|48"]},
-    {"id": "concept-sound", "kind": "concept", "q": "How do I make the console play a tone?", "must": ["AUD(C|F|V)0"]},
-    {"id": "concept-fire", "kind": "concept", "q": "How do I check whether the fire button is pressed?", "must": ["INPT4|INPT5"]},
-    {"id": "concept-collision", "kind": "concept", "q": "How do I detect that the player touched the playfield?", "must": ["CX(P0FB|P1FB|M0FB)|CXCLR|collision"]},
-    {"id": "concept-banks", "kind": "concept", "q": "My game is bigger than 4 KB. What can I do?", "must": ["bank|F8|F6|F4|bankswitch"]},
-    {"id": "concept-colors", "kind": "concept", "q": "How do I set the background color?", "must": ["COLUBK"]},
-    {"id": "concept-wait-line", "kind": "concept", "q": "How do I wait until the end of the current line?", "must": ["WSYNC"]},
-    {"id": "concept-seconds", "kind": "concept", "q": "How do I wait a precise amount of time without counting every instruction?", "must": ["TIM|INTIM|timer"]}
+    {
+      "id": "wsync",
+      "kind": "name",
+      "q": "What does a write to WSYNC do?",
+      "must": [
+        "halt|stall|wait",
+        "(next|following).{0,30}(line|scanline|horizontal)|horizontal (sync|blank)"
+      ]
+    },
+    {
+      "id": "vsync-lines",
+      "kind": "name",
+      "q": "How many scanlines is VSYNC normally held for in a standard frame?",
+      "must": [
+        "\\b(3|three)\\b"
+      ]
+    },
+    {
+      "id": "ntsc-lines",
+      "kind": "name",
+      "q": "How many scanlines make a standard NTSC frame?",
+      "must": [
+        "262"
+      ]
+    },
+    {
+      "id": "pal-lines",
+      "kind": "name",
+      "q": "How many scanlines make a standard PAL frame?",
+      "must": [
+        "312"
+      ]
+    },
+    {
+      "id": "cycles-line",
+      "kind": "concept",
+      "q": "How many CPU cycles fit in one scanline?",
+      "must": [
+        "\\b76\\b"
+      ]
+    },
+    {
+      "id": "visible-pixels",
+      "kind": "concept",
+      "q": "How many color clocks are visible on a scanline, and how many in total?",
+      "must": [
+        "\\b160\\b",
+        "\\b228\\b"
+      ]
+    },
+    {
+      "id": "ram",
+      "kind": "name",
+      "q": "How much RAM does the console have and at which addresses?",
+      "must": [
+        "\\b128\\b",
+        "\\$?80",
+        "\\$?FF"
+      ]
+    },
+    {
+      "id": "f8",
+      "kind": "name",
+      "q": "How does F8 bankswitching work?",
+      "must": [
+        "1FF8",
+        "1FF9"
+      ]
+    },
+    {
+      "id": "f6",
+      "kind": "name",
+      "q": "Which addresses switch banks in an F6 cartridge?",
+      "must": [
+        "1FF6",
+        "1FF9"
+      ]
+    },
+    {
+      "id": "lda-imm",
+      "kind": "name",
+      "q": "How many cycles does LDA #imm take on the 6507?",
+      "must": [
+        "\\b2\\b"
+      ]
+    },
+    {
+      "id": "sta-zp",
+      "kind": "name",
+      "q": "How many cycles does STA zero page take?",
+      "must": [
+        "\\b3\\b"
+      ]
+    },
+    {
+      "id": "branch",
+      "kind": "concept",
+      "q": "How many cycles does a taken branch take, and what adds one more?",
+      "must": [
+        "\\b3\\b",
+        "page"
+      ]
+    },
+    {
+      "id": "resp0",
+      "kind": "name",
+      "q": "What does a write to RESP0 do?",
+      "must": [
+        "player ?0|player zero|P0",
+        "position|horizontal",
+        "beam|current|moment|time|cycle|clock"
+      ]
+    },
+    {
+      "id": "nusiz0",
+      "kind": "name",
+      "q": "What does NUSIZ0 control?",
+      "must": [
+        "cop(y|ies)",
+        "size|width|stretch|double|quad"
+      ]
+    },
+    {
+      "id": "pf0",
+      "kind": "name",
+      "q": "Which bits of PF0 are displayed, and in what order?",
+      "must": [
+        "(upper|high|4|four|7)",
+        "revers|backward|opposite|from right|descending|(bit ?4|4).{0,40}(left|first)"
+      ]
+    },
+    {
+      "id": "ctrlpf",
+      "kind": "name",
+      "q": "What does CTRLPF bit 0 do?",
+      "must": [
+        "reflect|mirror"
+      ]
+    },
+    {
+      "id": "swcha",
+      "kind": "name",
+      "q": "Which bits of SWCHA read the joystick of player 0?",
+      "must": [
+        "(7|high|upper|four)"
+      ]
+    },
+    {
+      "id": "tim64t",
+      "kind": "name",
+      "q": "What does writing TIM64T do?",
+      "must": [
+        "\\b64\\b",
+        "timer|interval|count"
+      ]
+    },
+    {
+      "id": "inpt4",
+      "kind": "concept",
+      "q": "Which register reads the fire button of joystick 0?",
+      "must": [
+        "INPT4"
+      ]
+    },
+    {
+      "id": "hmove",
+      "kind": "name",
+      "q": "What does a write to HMOVE do?",
+      "must": [
+        "motion|move",
+        "HM(P|M|BL)|horizontal"
+      ]
+    },
+    {
+      "id": "bb-playfield",
+      "kind": "name",
+      "q": "In batari Basic, what is the playfield: block for?",
+      "must": [
+        "playfield",
+        "draw|define|data|layout|pattern|screen"
+      ]
+    },
+    {
+      "id": "bb-drawscreen",
+      "kind": "name",
+      "q": "In batari Basic, what does drawscreen do?",
+      "must": [
+        "screen|frame|kernel|display"
+      ]
+    },
+    {
+      "id": "concept-sprite-x",
+      "kind": "concept",
+      "q": "How do I position a sprite horizontally?",
+      "must": [
+        "RESP",
+        "WSYNC|HMOVE|HMP"
+      ]
+    },
+    {
+      "id": "concept-roll",
+      "kind": "concept",
+      "q": "Why does my picture roll vertically on the TV?",
+      "must": [
+        "262|312|scanline|VSYNC|lines"
+      ]
+    },
+    {
+      "id": "concept-wide-sprite",
+      "kind": "concept",
+      "q": "How can I draw a sprite wider than 8 pixels?",
+      "must": [
+        "NUSIZ|cop(y|ies)|GRP1|two players|VDEL|48"
+      ]
+    },
+    {
+      "id": "concept-sound",
+      "kind": "concept",
+      "q": "How do I make the console play a tone?",
+      "must": [
+        "AUD(C|F|V)0"
+      ]
+    },
+    {
+      "id": "concept-fire",
+      "kind": "concept",
+      "q": "How do I check whether the fire button is pressed?",
+      "must": [
+        "INPT4|INPT5"
+      ]
+    },
+    {
+      "id": "concept-collision",
+      "kind": "concept",
+      "q": "How do I detect that the player touched the playfield?",
+      "must": [
+        "CX(P0FB|P1FB|M0FB)|CXCLR|collision"
+      ]
+    },
+    {
+      "id": "concept-banks",
+      "kind": "concept",
+      "q": "My game is bigger than 4 KB. What can I do?",
+      "must": [
+        "bank|F8|F6|F4|bankswitch"
+      ]
+    },
+    {
+      "id": "concept-colors",
+      "kind": "concept",
+      "q": "How do I set the background color?",
+      "must": [
+        "COLUBK"
+      ]
+    },
+    {
+      "id": "concept-wait-line",
+      "kind": "concept",
+      "q": "How do I wait until the end of the current line?",
+      "must": [
+        "WSYNC"
+      ]
+    },
+    {
+      "id": "concept-seconds",
+      "kind": "concept",
+      "q": "How do I wait a precise amount of time without counting every instruction?",
+      "must": [
+        "TIM|INTIM|timer"
+      ]
+    },
+    {
+      "id": "es-sprite-x",
+      "kind": "concept-es",
+      "q": "¿Cómo posiciono un sprite en un valor concreto de X en la pantalla?",
+      "must": [
+        "RESP",
+        "WSYNC|HMOVE|HMP"
+      ]
+    },
+    {
+      "id": "es-roll",
+      "kind": "concept-es",
+      "q": "¿Por qué mi imagen rueda verticalmente en la tele?",
+      "must": [
+        "262|312|scanline|línea|lineas|líneas|VSYNC"
+      ]
+    },
+    {
+      "id": "es-wide",
+      "kind": "concept-es",
+      "q": "¿Cómo dibujo un sprite más ancho de 8 píxeles?",
+      "must": [
+        "NUSIZ|copia|GRP1|dos jugadores|VDEL|48"
+      ]
+    },
+    {
+      "id": "es-sound",
+      "kind": "concept-es",
+      "q": "¿Cómo hago que la consola reproduzca un tono?",
+      "must": [
+        "AUD(C|F|V)0"
+      ]
+    },
+    {
+      "id": "es-fire",
+      "kind": "concept-es",
+      "q": "¿Cómo compruebo si el botón de disparo está pulsado?",
+      "must": [
+        "INPT4|INPT5"
+      ]
+    },
+    {
+      "id": "es-collision",
+      "kind": "concept-es",
+      "q": "¿Cómo detecto que el jugador toca el campo de juego?",
+      "must": [
+        "CX(P0FB|P1FB|M0FB)|CXCLR|colisi"
+      ]
+    },
+    {
+      "id": "es-banks",
+      "kind": "concept-es",
+      "q": "Mi juego ocupa más de 4 KB, ¿qué puedo hacer?",
+      "must": [
+        "banco|bank|F8|F6|F4"
+      ]
+    },
+    {
+      "id": "es-colors",
+      "kind": "concept-es",
+      "q": "¿Cómo cambio el color del fondo?",
+      "must": [
+        "COLUBK"
+      ]
+    },
+    {
+      "id": "es-wait-line",
+      "kind": "concept-es",
+      "q": "¿Cómo espero hasta el final de la línea actual?",
+      "must": [
+        "WSYNC"
+      ]
+    },
+    {
+      "id": "es-seconds",
+      "kind": "concept-es",
+      "q": "¿Cómo espero un tiempo exacto sin contar cada instrucción?",
+      "must": [
+        "TIM|INTIM|temporizador|timer"
+      ]
+    },
+    {
+      "id": "es-cycles-line",
+      "kind": "concept-es",
+      "q": "¿Cuántos ciclos de CPU caben en una línea?",
+      "must": [
+        "\\b76\\b"
+      ]
+    },
+    {
+      "id": "es-ntsc-lines",
+      "kind": "concept-es",
+      "q": "¿Cuántas líneas tiene un fotograma NTSC?",
+      "must": [
+        "262"
+      ]
+    },
+    {
+      "id": "es-wsync",
+      "kind": "concept-es",
+      "q": "¿Qué hace escribir en WSYNC?",
+      "must": [
+        "detiene|para|espera|pausa|halt|stall|wait",
+        "siguiente|próxima|proxima|sincron"
+      ]
+    },
+    {
+      "id": "es-inpt4",
+      "kind": "concept-es",
+      "q": "¿Qué registro lee el botón de disparo del joystick 0?",
+      "must": [
+        "INPT4"
+      ]
+    }
   ]
 }
