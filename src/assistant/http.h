@@ -41,6 +41,9 @@ struct HttpResult {
 HttpResult httpRequest(const HttpRequest& request, const std::function<bool(const char*, size_t)>& onBody,
                        const std::atomic<bool>& cancel);
 
+// A TCP port on 127.0.0.1 that is free right now (0 if none could be found).
+int freeLoopbackPort();
+
 // Decodes HTTP chunked transfer coding incrementally; exposed for tests.
 class ChunkedDecoder {
  public:

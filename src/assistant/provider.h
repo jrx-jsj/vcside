@@ -28,6 +28,7 @@ struct Provider {
   std::string dialect = "openai";                 // "openai"; "anthropic" is planned
   std::string baseUrl = "http://127.0.0.1:11434/v1";
   std::string model;
+  bool builtin = false;                           // the helper that ships with VCSIDE; model = catalogue id
   std::string keyEnv;                             // name of an environment variable holding the key
   int contextTokens = 8192;
   bool isLocal() const;                           // loopback host

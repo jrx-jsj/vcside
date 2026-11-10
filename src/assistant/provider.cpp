@@ -26,6 +26,8 @@ std::string openAiRequestBody(const Provider& provider, const std::vector<Messag
   json body;
   if (!provider.model.empty()) body["model"] = provider.model;
   body["stream"] = true;
+  // The bundled helper runs a model that may "think" first; for a fast answer it is told not to.
+  if (provider.builtin) body["chat_template_kwargs"] = {{"enable_thinking", false}};
   body["stream_options"] = {{"include_usage", true}};
   body["messages"] = json::array();
   for (auto& message : messages) body["messages"].push_back({{"role", message.role}, {"content", message.content}});

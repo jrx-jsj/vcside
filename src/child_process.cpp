@@ -69,6 +69,7 @@ static SDL_Process* create(const std::vector<std::string>& args, const std::stri
 }
 
 Job::~Job() {
+  stop();
   if (thread_.joinable()) thread_.join();
 }
 
@@ -87,6 +88,10 @@ bool Job::start(const std::vector<std::string>& args, const std::string& workDir
     exitCode_ = -1;
     return false;
   }
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    process_ = process;
+  }
   running_ = true;
   thread_ = std::thread([this, process]() {
     SDL_IOStream* stream = SDL_GetProcessOutput(process);
@@ -96,6 +101,7 @@ bool Job::start(const std::vector<std::string>& args, const std::string& workDir
       if (bytesRead > 0) {
         std::lock_guard<std::mutex> lock(mutex_);
         output_.append(buffer, bytesRead);
+        if (outputLimit_ && output_.size() > outputLimit_ * 2) output_.erase(0, output_.size() - outputLimit_);
       } else if (!stream || SDL_GetIOStatus(stream) != SDL_IO_STATUS_NOT_READY) {
         break;
       } else {
@@ -104,11 +110,25 @@ bool Job::start(const std::vector<std::string>& args, const std::string& workDir
     }
     int code = -1;
     SDL_WaitProcess(process, true, &code);
-    SDL_DestroyProcess(process);
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      process_ = nullptr;
+      SDL_DestroyProcess(process);
+    }
     exitCode_ = code;
     running_ = false;
   });
   return true;
+}
+
+void Job::stop() {
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (process_) SDL_KillProcess(static_cast<SDL_Process*>(process_), true);
+}
+
+void Job::stopAndWait() {
+  stop();
+  if (thread_.joinable()) thread_.join();
 }
 
 std::string Job::output() {

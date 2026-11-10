@@ -10,7 +10,9 @@
 #include <string>
 #include <vector>
 
+#include "assistant/engine.h"
 #include "assistant/grounding.h"
+#include "assistant/models.h"
 #include "assistant/prompt.h"
 #include "assistant/provider.h"
 #include "assistant/settings.h"
@@ -67,6 +69,11 @@ class AssistantPanel {
   std::string modelsError_, modelsFor_;
   bool detecting_ = false, fetchingModels_ = false;
   std::string detectNote_;
+  // the built-in model: the helper that ships with VCSIDE and the model files it runs
+  Engine engine_;
+  Download download_;
+  std::vector<CatalogModel> catalog_;
+  bool catalogLoaded_ = false, drawnThisFrame_ = false;
   // dialogs
   std::string applyCode_, applyWhere_;
   std::function<void(const std::string&)> applyFn_;
@@ -79,6 +86,10 @@ class AssistantPanel {
   void finishAnswer(const PanelContext& context, const std::string& note);
   void saveChat(const PanelContext& context);
   void refreshModels();
+  const CatalogModel* catalogModel(const std::string& id) const;
+  bool prepareBuiltin(Provider& provider);   // starts the helper when the model is there; true once it answers
+  void builtinCard(Provider& provider);      // download offer, progress, loading, errors
+  void modelCombo(Provider& provider, const char* label, float width);
   std::string systemPrompt() const;
   void firstStartDialog();
   void settingsDialog();

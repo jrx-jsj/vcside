@@ -35,8 +35,8 @@ Partly. Models in the 7–9B range and up, trained or fine-tuned for it, usually
 
 | Piece | Decision | Why |
 |---|---|---|
-| Inference engine | **Do not bundle, do not link.** Talk to a separate process over HTTP. | llama.cpp and Ollama are MIT, so bundling would be legal. But: builds differ per GPU backend (Metal, CUDA, Vulkan), the Windows build here is a static MinGW cross-build, the binary is large, and models and engines change monthly. A separate process also isolates crashes and out-of-memory, and uses the same code path for local and remote. It follows the rule already in `design.md`: tools are found, not redistributed. |
-| Models | **Never bundled, never downloaded without being asked.** | 2–20 GB each, with licences that differ per model (some permissive, some with use restrictions). The user picks and installs them. |
+| Inference engine | **Revised 2026-11-10: ship a helper, still a separate process.** VCSIDE builds llama.cpp's server from source with the IDE, installs it next to the executable, starts it on demand on a loopback port and stops it when the assistant is closed; the user never sets up a server. Ollama, LM Studio and any other server stay as advanced options. (Original decision, kept for the reasons: *do not bundle, do not link; talk to a separate process over HTTP.*) | llama.cpp and Ollama are MIT, so bundling would be legal. But: builds differ per GPU backend (Metal, CUDA, Vulkan), the Windows build here is a static MinGW cross-build, the binary is large, and models and engines change monthly. A separate process also isolates crashes and out-of-memory, and uses the same code path for local and remote. It follows the rule already in `design.md`: tools are found, not redistributed. |
+| Models | **Never bundled; downloaded only after the user confirms.** The settings window and the panel offer a catalogue (`data/assistant/models.json`) with each file's size, licence, source host and a pinned SHA-256, checked after every download. | 2–20 GB each, with licences that differ per model (some permissive, some with use restrictions). The user picks and installs them. |
 | Agent loop, tool layer, permissions, panel | **Build.** | It is the part that knows VCSIDE: project, editor buffers, build, emulator, knowledge base, `.vcsgfx` and `.vcsmusic`. No existing agent framework is C++17, small and embeddable, and a framework would bring its own interface and ideas into a tool that is meant to look and behave as one thing. The loop itself is simple (see ReAct in the credits). |
 | HTTP client | **Build a thin layer on a small library** (below). | |
 | MCP | **Server first, if ever; client much later.** | See above. |
@@ -365,7 +365,8 @@ Each idea or technique, with whoever devised or spread it. The assistant's help 
 
 | Idea or component | Credit | Status |
 |---|---|---|
-| Local inference with GGUF models, an OpenAI-compatible server, grammar-constrained output | Georgi Gerganov and the llama.cpp contributors, https://github.com/ggml-org/llama.cpp (MIT) | To verify: licence, `llama-server` options, tool-call template support |
+| Local inference with GGUF models, an OpenAI-compatible server, grammar-constrained output | Georgi Gerganov and the llama.cpp contributors, https://github.com/ggml-org/llama.cpp (MIT) | Licence checked 2026-11-10 (the MIT text ships with the source). The helper is built from it and run as a separate program. Still to verify: tool-call template support |
+| The default catalogue's models: Qwen3 4B, 8B and 14B (GGUF) | Alibaba Cloud, Qwen team, https://huggingface.co/Qwen (Apache-2.0 according to each model card, read 2026-11-10) | Downloaded by the user only; the licence is shown before the download |
 | Local model runner and server | Ollama, https://github.com/ollama/ollama (MIT) | To verify |
 | Local model app with an OpenAI-compatible server | LM Studio, https://lmstudio.ai (proprietary, free to use) | To verify: terms, default port |
 | The chat-completions request and streaming shape, and function calling | OpenAI, https://platform.openai.com/docs/api-reference | To verify |
@@ -380,3 +381,13 @@ Each idea or technique, with whoever devised or spread it. The assistant's help 
 | Model families in the catalogue | Alibaba Qwen, Google Gemma, Meta Llama, Mistral AI, Microsoft Phi, IBM Granite, OpenAI gpt-oss, DeepSeek, BigCode StarCoder2 | To verify: each licence and size before it is listed |
 | Server-sent events | WHATWG HTML Standard, "Server-sent events" | To verify |
 | Direct use of the knowledge base as the model's ground truth | VCSIDE's own `data/kb` and its sources, see `docs/sources.md` | — |
+
+## The bundled helper (decided 2026-11-10, implemented)
+
+The first version asked the user to run a model server. That was too much to ask, so VCSIDE now ships its own.
+
+- **What it is.** `llama-server` from llama.cpp (MIT, Georgi Gerganov and contributors), built from source by `cmake/llm_helper.cmake` in its own CMake run, so its options never touch the rest of the build, and copied next to the IDE (`Contents/Resources/llm` in the macOS bundle, `llm/` elsewhere). `-DVCSIDE_LLM_HELPER=OFF` leaves it out. The tag is pinned (`VCSIDE_LLAMA_TAG`).
+- **Lifecycle.** `assistant/engine.*` picks a free loopback port, starts the helper with one chat slot and no web page, waits for `/health`, and stops it when the panel closes or VCSIDE exits. The panel then talks to it with the same OpenAI-style client as for any other server. Chats ask the model not to "think" first (`enable_thinking: false`) so answers start quickly; the phase 6 evaluation will revisit it.
+- **GPU.** macOS: Metal, built in. Windows and Linux: one install with each backend as a library loaded at run time (`GGML_BACKEND_DL`), the best CPU variant chosen at start (`GGML_CPU_ALL_VARIANTS`) and Vulkan when the SDK was found at build time, which covers NVIDIA, AMD and Intel GPUs. CUDA and HIP are left out of the first version: they need each vendor's toolkit and Vulkan is close for models of this size. Only macOS has been built and run so far; the Windows and Linux paths are written but **not yet tested**.
+- **Models.** `assistant/models.*`: the catalogue, the models folder (inside the settings folder), and the download. It uses the system `curl` (https only, resumable), then checks the SHA-256 (`assistant/sha256.*`) and deletes a file that does not match. Entries without a pinned hash, without https or with a path in the file name are ignored. The first catalogue is the Qwen3 4B, 8B and 14B files (Apache-2.0) from the publisher's Hugging Face repository; sizes and hashes were read from its file listing on 2026-11-10. The model that fits the machine's memory (needing at most 60% of it) is preselected.
+- **Known limits.** If VCSIDE crashes the helper can be left running (and holding the model's memory) until it is closed by hand. There is no download resume across a changed file on the server, and no mirror.

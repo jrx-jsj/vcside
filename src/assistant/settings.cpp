@@ -21,14 +21,15 @@ json Settings::toJson() const {
                                   {"dialect", provider.dialect},
                                   {"base_url", provider.baseUrl},
                                   {"model", provider.model},
+                                  {"builtin", provider.builtin},
                                   {"key_env", provider.keyEnv},
                                   {"context_tokens", provider.contextTokens}});
   return value;
 }
 
-Settings Settings::fromJson(const json& value) {
+Settings Settings::fromJson(const json& input) {
   Settings settings;
-  if (!value.is_object()) return settings;
+  json value = input.is_object() ? input : json::object();
   settings.asked = value.value("asked", false);
   settings.chat = value.value("chat", false);
   settings.agent = value.value("agent", false);
@@ -43,10 +44,21 @@ Settings Settings::fromJson(const json& value) {
       provider.dialect = item.value("dialect", std::string("openai"));
       provider.baseUrl = item.value("base_url", std::string());
       provider.model = item.value("model", std::string());
+      provider.builtin = item.value("builtin", false);
       provider.keyEnv = item.value("key_env", std::string());
       provider.contextTokens = std::clamp(item.value("context_tokens", 8192), 1024, 1 << 20);
       settings.providers.push_back(provider);
     }
+  // The model that ships with VCSIDE is always there, first, unless the user moved on from it.
+  bool hasBuiltin = false;
+  for (auto& provider : settings.providers) hasBuiltin = hasBuiltin || provider.builtin;
+  if (!hasBuiltin) {
+    Provider builtin;
+    builtin.name = "Built-in";
+    builtin.builtin = true;
+    settings.providers.insert(settings.providers.begin(), builtin);
+    if (settings.providers.size() > 1) settings.active++;  // keep pointing at the same server
+  }
   if (settings.active < 0 || settings.active >= (int)settings.providers.size()) settings.active = 0;
   return settings;
 }
