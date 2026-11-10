@@ -138,7 +138,8 @@ struct Song {
   int loopTo = 0;                // order entry to go back to at the end (-1: stop)
   std::vector<SoundEffect> effects;
   // Where the song is exported on every save: "" (nowhere), "dasm" or "bb" (batari
-  // Basic), and for batari Basic the variable the player's RAM starts at.
+  // Basic) for the TIA; "c" (ELF), "dpc" (DPC+, for DASM) or "cdfj" (C) for samples;
+  // and for batari Basic the variable the player's RAM starts at.
   std::string exportTo;
   std::string exportRam = "h";
   SongTuningSettings tuning;

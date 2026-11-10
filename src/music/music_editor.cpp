@@ -62,19 +62,25 @@ bool MusicEditor::save(const std::string& path, std::string* error) {
   return true;
 }
 
-static std::string exportPath(const std::string& songPath, bool forC) {
+ExportTarget MusicEditor::exportTarget() const {
+  ExportTarget target = song_.samples() ? ExportTarget::C : ExportTarget::Dasm;
+  exportTargetOf(song_.exportTo, &target);
+  return target;
+}
+
+static std::string exportPath(const std::string& songPath, ExportTarget target) {
   fs::path path(songPath);
-  return (path.parent_path() / (path.stem().string() + (forC ? ".music.h" : ".music.asm"))).string();
+  return (path.parent_path() / (path.stem().string() + exportExtension(target))).string();
 }
 
 bool MusicEditor::exportSongFile(bool quiet) {
   ExportOptions options;
-  options.target = song_.exportTo == "bb" ? ExportTarget::BatariBasic : song_.exportTo == "c" ? ExportTarget::C : ExportTarget::Dasm;
+  options.target = exportTarget();
   options.ramStart = options.target == ExportTarget::BatariBasic ? song_.exportRam : "";
   options.tv = tv_;
   ExportResult result = exportSong(song_, audioClockHz(tv_), options);
   exportProblems_ = result.problems;
-  std::string path = exportPath(path_, options.target == ExportTarget::C);
+  std::string path = exportPath(path_, options.target);
   if (!result.ok) {
     message_ = F("Not exported: {0}", {result.problems.empty() ? std::string() : result.problems[0]});
     return false;
@@ -279,7 +285,7 @@ void MusicEditor::toolbar() {
   ImGui::SameLine();
   if (ImGui::Button(T("Export..."))) ImGui::OpenPopup("##export");
   if (ImGui::IsItemHovered())
-    ImGui::SetTooltip("%s", F("{0}: the song and VCSIDE's player for the console, kept up to date on every save.", {fs::path(exportPath(path_, song_.samples())).filename().string()}).c_str());
+    ImGui::SetTooltip("%s", F("{0}: the song and VCSIDE's player for the console, kept up to date on every save.", {fs::path(exportPath(path_, exportTarget())).filename().string()}).c_str());
   exportPopup();
   if (!message_.empty()) {
     ImGui::SameLine();
@@ -1136,12 +1142,30 @@ void MusicEditor::exportPopup() {
   ImGui::TextUnformatted(T("Export the song for the console"));
   ImGui::Separator();
   if (song_.samples()) {
-    ImGui::TextUnformatted(T("C for an ELF cartridge: <name>.music.h"));
-    ImGui::TextDisabled("%s", T("Calls: music_init() once; music_frame() once per frame, in the overblank; music_effect(n);"));
-    ImGui::TextDisabled("%s", T("then music_level[line] to AUDV0 on every line of the kernel, and music_nibbles to $E0-$FE for the 63 lines of the overblank."));
+    static std::string chosen;  // the target picked while the popup is open
+    if (ImGui::IsWindowAppearing()) chosen = song_.exportTo == "dpc" || song_.exportTo == "cdfj" ? song_.exportTo : "c";
+    if (ImGui::RadioButton(T("C for an ELF cartridge"), chosen == "c")) chosen = "c";
+    if (ImGui::RadioButton(T("C for a CDFJ cartridge"), chosen == "cdfj")) chosen = "cdfj";
+    if (ImGui::RadioButton(T("DASM for a DPC+ cartridge"), chosen == "dpc")) chosen = "dpc";
+    ImGui::Spacing();
+    if (chosen == "c") {
+      ImGui::TextDisabled("%s", T("Calls: music_init() once; music_frame() once per frame, in the overblank; music_effect(n);"));
+      ImGui::TextDisabled("%s", T("then music_level[line] to AUDV0 on every line of the kernel, and music_nibbles to $E0-$FE for the 63 lines of the overblank."));
+    } else if (chosen == "cdfj") {
+      ImGui::TextDisabled("%s", T("<name>.music.h for the ARM code. Define MUSIC_CDFJ_WAVE(voice, samples) and MUSIC_CDFJ_NOTE(voice, frequency, restart) first:"));
+      ImGui::TextDisabled("%s", T("copy the samples to the voice's wave in display RAM, and give the frequency to setNote. The kernel copies the amplitude to AUDV0 on every line."));
+    } else {
+      ImGui::TextDisabled("%s", T("<name>.music.asm, included three times: MUSIC_PART 1 with the code, 2 in the display data, 3 as the frequency table."));
+      ImGui::TextDisabled("%s", T("Calls: MusicInit once, MusicFrame once per frame; the kernel does lda AMPLITUDE / sta AUDV0 on every line, with AUDC0 = 0."));
+    }
+    if (chosen != "c") {
+      ImGui::TextDisabled("%s", T("Up to 3 voices; each voice's volume has 15 / voices steps, and noise repeats every 32 steps."));
+      ImGui::TextDisabled("%s", T("The cartridge's music is DPC+'s, by Darrell Spice Jr. and Fred Quimby (first in Stay Frosty 2); CDF and CDFJ reuse it."));
+      if (song_.voices > 3) ImGui::TextColored(theme::colv(theme::Role::MsgWarning), "%s", T("This song has more than 3 voices."));
+    }
     ImGui::Spacing();
     if (theme::primaryButton(T("Export"))) {
-      if (song_.exportTo != "c") song_.exportTo = "c", changed();
+      if (song_.exportTo != chosen) song_.exportTo = chosen, changed();
       exportSongFile(false);
       ImGui::CloseCurrentPopup();
     }
@@ -1352,9 +1376,9 @@ void MusicEditor::soundPanel() {
     changed();
   }
   if (ImGui::IsItemHovered())
-    ImGui::SetTooltip("%s", T("Voices with waveforms, mixed by the cartridge's ARM into one 4-bit sample per scanline in AUDV0, with exact pitch. ELF cartridges, from C."));
+    ImGui::SetTooltip("%s", T("Voices with waveforms, played as one 4-bit sample per scanline in AUDV0, with exact pitch: mixed by the ARM of an ELF cartridge (C), or played by a DPC+ or CDFJ cartridge (up to 3 voices)."));
   if (!song_.samples()) {
-    if (song_.exportTo == "c") song_.exportTo.clear();
+    if (song_.exportTo == "c" || song_.exportTo == "dpc" || song_.exportTo == "cdfj") song_.exportTo.clear();
     return;
   }
   ImGui::SetNextItemWidth(em(80));

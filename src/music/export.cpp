@@ -3,6 +3,8 @@
 #include "export.h"
 
 #include <algorithm>
+#include <array>
+#include <cmath>
 #include <cctype>
 #include <cstdio>
 #include <map>
@@ -28,7 +30,9 @@ static const char* kPlayer = R"PLAYER(
 ;   jsr MusicEffect     a sound effect: the song's notes on its channel wait
 ;                       until it has ended
 ;
-; RAM: MUSIC_RAM and the 18 bytes after it, in zero page.
+; RAM: MUSIC_RAM and the MUSIC_RAM_BYTES - 1 bytes after it, in zero page.
+; MUSIC_CHANNELS: 2 for the TIA; DPC+ (MUSIC_DPC = 1) has 1 to 3 voices, and the
+; player writes their WAVEFORMx and NOTEx instead of AUDCx, AUDFx and AUDVx.
 ; ---------------------------------------------------------------------------
 
 MusicOrder        = MUSIC_RAM       ; order entry of the next row ($FF: stopped)
@@ -45,9 +49,17 @@ MusicVolumeIndex1 = MUSIC_RAM+14
 MusicPitch1       = MUSIC_RAM+15
 MusicPitchIndex1  = MUSIC_RAM+17
 MusicState1       = MUSIC_RAM+18
+  IF MUSIC_CHANNELS > 2
+MusicVolume2      = MUSIC_RAM+19
+MusicVolumeIndex2 = MUSIC_RAM+21
+MusicPitch2       = MUSIC_RAM+22
+MusicPitchIndex2  = MUSIC_RAM+24
+MusicState2       = MUSIC_RAM+25
+  ENDIF
+MUSIC_RAM_BYTES   = 5 + 7 * MUSIC_CHANNELS
 
 MusicInit SUBROUTINE
-    ldx #18
+    ldx #MUSIC_RAM_BYTES-1
     lda #0
 .clear
     sta MUSIC_RAM,x
@@ -73,10 +85,18 @@ MusicFrame SUBROUTINE
     bmi .keep0
     jsr MusicNoteOff0
 .keep0
+  IF MUSIC_CHANNELS > 1
     bit MusicPitchIndex1
     bmi .keep1
     jsr MusicNoteOff1
 .keep1
+  ENDIF
+  IF MUSIC_CHANNELS > 2
+    bit MusicPitchIndex2
+    bmi .keep2
+    jsr MusicNoteOff2
+.keep2
+  ENDIF
     lda #$FF
     sta MusicOrder
     bne .voices
@@ -85,13 +105,23 @@ MusicFrame SUBROUTINE
 .wait
     dec MusicWait
 .voices
-    jsr MusicVoice0
-    jmp MusicVoice1
+  IF MUSIC_CHANNELS > 2
+    jsr MusicVoice2
+  ENDIF
+  IF MUSIC_CHANNELS > 1
+    jsr MusicVoice1
+  ENDIF
+    jmp MusicVoice0
 
 MusicPlayRow SUBROUTINE
     ldy #0
     jsr MusicEvent0
+  IF MUSIC_CHANNELS > 1
     jsr MusicEvent1
+  ENDIF
+  IF MUSIC_CHANNELS > 2
+    jsr MusicEvent2
+  ENDIF
     tya
     clc
     adc MusicPointer
@@ -151,10 +181,23 @@ MusicEffect SUBROUTINE
     sta MusicPitchIndex0
     rts
 .channel1
+  IF MUSIC_CHANNELS > 2
+    cmp #2
+    beq .channel2
+  ENDIF
+  IF MUSIC_CHANNELS > 1
     jsr MusicStart1
     lda #$80
     sta MusicPitchIndex1
+  ENDIF
     rts
+  IF MUSIC_CHANNELS > 2
+.channel2
+    jsr MusicStart2
+    lda #$80
+    sta MusicPitchIndex2
+    rts
+  ENDIF
 
 ; One channel's routines; {1} is the channel.
     MAC MUSIC_CHANNEL
@@ -264,15 +307,21 @@ MusicNoteOff{1} SUBROUTINE
 .done
     rts
 
-; This frame's AUDC, AUDF and AUDV for the channel.
+; This frame's AUDC, AUDF and AUDV for the channel (DPC+: its WAVEFORM and NOTE).
 MusicVoice{1} SUBROUTINE
     lda MusicState{1}
     bmi .sounding
 .silent
+  IF MUSIC_DPC
+    lda #MUSIC_WAVE_OFF
+    sta WAVEFORM{1}
+    lda #0
+  ELSE
     lda #0
     sta AUDV{1}
     sta AUDC{1}
     sta AUDF{1}
+  ENDIF
     sta MusicPitchIndex{1}  ; and the channel is the song's again
     rts
 .stop
@@ -330,6 +379,20 @@ MusicVoice{1} SUBROUTINE
     asl
     tay
     iny
+  IF MUSIC_DPC
+    pla                     ; the volume: one of the wave's copies (or none)
+    tax
+    lda MusicDpcLevel,x
+    clc
+    adc (MusicPitch{1}),y   ; the wave's first entry in MusicWaveSlots
+    tax
+    lda MusicWaveSlots,x
+    sta WAVEFORM{1}
+    iny
+    lda (MusicPitch{1}),y
+    sta NOTE{1}
+    rts
+  ELSE
     lda (MusicPitch{1}),y
     sta AUDC{1}
     iny
@@ -344,11 +407,17 @@ MusicVoice{1} SUBROUTINE
 .heard
     stx AUDV{1}
     rts
+  ENDIF
 
     ENDM
 
     MUSIC_CHANNEL 0
+  IF MUSIC_CHANNELS > 1
     MUSIC_CHANNEL 1
+  ENDIF
+  IF MUSIC_CHANNELS > 2
+    MUSIC_CHANNEL 2
+  ENDIF
 )PLAYER";
 
 // The C player, for songs played as samples on ELF cartridges. CC0 like the 6502 one; it
@@ -370,6 +439,15 @@ static const char* kCPlayer = R"PLAYER(
  * lines - 64), and the 31 bytes of music_nibbles to $E0-$FE of the RIOT's RAM:
  * the overblank program of the ELF loader plays them, one 4-bit level per line,
  * once its "sta $2d" is changed to "sta AUDV0" (see the template's start_6507).
+ *
+ * CDFJ (MUSIC_CDFJ 1): the cartridge plays the voices, so nothing is mixed. Define,
+ * before including this file, what gives a voice its waveform and its note:
+ *   MUSIC_CDFJ_WAVE(voice, samples)   the voice's 32 samples changed (its waveform at
+ *                                     its volume): copy them to its wave in display RAM
+ *   MUSIC_CDFJ_NOTE(voice, frequency, restart)   every frame for a voice that sounds:
+ *                                     the frequency for setNote (2^32 x Hz / 20000);
+ *                                     restart: a note started (resetWave, if wanted)
+ * and copy the amplitude stream to AUDV0 on every line, with AUDC0 = 0.
  * ------------------------------------------------------------------------- */
 
 #define MUSIC_OVERBLANK_LINES 63
@@ -383,14 +461,25 @@ typedef struct {
     uint8_t level;          /* this frame's volume, 0-15 */
     uint8_t wave, last_step;
     uint16_t noise;
-    uint32_t step, phase;
+    uint32_t step, phase;   /* CDFJ: step is the frequency at 20 kHz */
+#if MUSIC_CDFJ
+    uint16_t cdfj_wave;     /* the samples last given: waveform + 1 << 8 | level (0: silent) */
+    uint8_t restart;
+#endif
 } music_voice;
 
 static music_voice music_voices[MUSIC_VOICES];
 static uint8_t music_order, music_row, music_wait;   /* music_order 0xFF: stopped */
 static uint16_t music_pointer;                       /* the next row, in music_patterns */
+#if MUSIC_CDFJ
+#if !defined(MUSIC_CDFJ_WAVE) || !defined(MUSIC_CDFJ_NOTE)
+#error "define MUSIC_CDFJ_WAVE(voice, samples) and MUSIC_CDFJ_NOTE(voice, frequency, restart) before including the music"
+#endif
+static uint8_t music_cdfj_samples[MUSIC_VOICES][32];
+#else
 uint8_t music_level[312 - MUSIC_OVERBLANK_LINES];
 uint8_t music_nibbles[31];
+#endif
 
 static void music_start(music_voice *voice, int sound)
 {
@@ -402,6 +491,9 @@ static void music_start(music_voice *voice, int sound)
     voice->phase = 0;
     voice->noise = 1;
     voice->last_step = 0;
+#if MUSIC_CDFJ
+    voice->restart = 1;
+#endif
 }
 
 static void music_note_off(music_voice *voice)
@@ -417,6 +509,9 @@ void music_init(void)
     for (int i = 0; i < MUSIC_VOICES; i++) {
         music_voices[i].state = 0;
         music_voices[i].pitch_index = 0;
+#if MUSIC_CDFJ
+        music_voices[i].cdfj_wave = 0xFFFF;             /* the first frame gives every voice its samples */
+#endif
     }
     music_order = music_row = music_wait = 0;
     music_pointer = music_order_offset[0];
@@ -520,6 +615,25 @@ void music_frame(int lines)
     }
 voices:
     for (int i = 0; i < MUSIC_VOICES; i++) music_voice_frame(&music_voices[i]);
+#if MUSIC_CDFJ
+    /* each voice's waveform at one of the levels the cartridge's sum allows */
+    (void)lines;
+    for (int i = 0; i < MUSIC_VOICES; i++) {
+        music_voice *voice = &music_voices[i];
+        int level = (voice->state & 0x80) ? music_cdfj_level[voice->level] : 0;
+        uint16_t samples_key = (uint16_t)(level ? (voice->wave + 1) << 8 | level : 0);
+        if (samples_key != voice->cdfj_wave) {
+            voice->cdfj_wave = samples_key;
+            for (int j = 0; j < 32; j++)
+                music_cdfj_samples[i][j] = (uint8_t)(level ? (2 * music_waves[voice->wave][j] * level + 15) / 30 : 0);
+            MUSIC_CDFJ_WAVE(i, music_cdfj_samples[i]);
+        }
+        if (level) {
+            MUSIC_CDFJ_NOTE(i, voice->step, voice->restart);
+            voice->restart = 0;
+        }
+    }
+#else
     /* the samples: each voice adds its waveform's level times its volume; the sum, in
      * quarters of a level, goes through music_dac (the TIA's output is not proportional
      * to AUDV). The first lines - 63 are the kernel's, the last 63 the overblank's. */
@@ -554,8 +668,24 @@ voices:
      * so nibble 0 is the mean of the first two lines); even nibbles are the low ones. */
     music_nibbles[0] = (uint8_t)(((overblank[0] + overblank[1] + 1) >> 1) | overblank[2] << 4);
     for (int j = 1; j < 31; j++) music_nibbles[j] = (uint8_t)(overblank[2 * j + 1] | overblank[2 * j + 2] << 4);
+#endif
 }
 )PLAYER";
+
+bool exportTargetOf(const std::string& name, ExportTarget* target) {
+  static const std::pair<const char*, ExportTarget> names[] = {
+      {"dasm", ExportTarget::Dasm}, {"bb", ExportTarget::BatariBasic}, {"c", ExportTarget::C}, {"dpc", ExportTarget::DpcPlus}, {"cdfj", ExportTarget::Cdfj}};
+  for (auto& [text, value] : names)
+    if (name == text) {
+      if (target) *target = value;
+      return true;
+    }
+  return false;
+}
+
+const char* exportExtension(ExportTarget target) {
+  return target == ExportTarget::C || target == ExportTarget::Cdfj ? ".music.h" : ".music.asm";
+}
 
 std::string effectSymbol(const std::string& name) {
   std::string symbol = "MUSIC_EFFECT_";
@@ -565,6 +695,33 @@ std::string effectSymbol(const std::string& name) {
   }
   while (symbol.size() > 13 && symbol.back() == '_') symbol.pop_back();
   return symbol;
+}
+
+namespace {
+// Between the entries of a .byte list: 8 to a line (DASM's lines are short).
+std::string listSeparator(size_t index) { return index == 0 ? "    .byte " : index % 8 ? "," : "\n    .byte "; }
+}  // namespace
+
+int dpcMaxLevel(int voices) { return 15 / std::clamp(voices, 1, 3); }
+
+int dpcLevel(int volume, int voices, int gain) {
+  int most = dpcMaxLevel(voices);
+  return std::clamp((int)std::lround(std::clamp(volume, 0, 15) * most * gain / (15.0 * 16)), 0, most);
+}
+
+std::array<uint8_t, 32> dpcWave(const Instrument& instrument) {
+  if (instrument.wave != Waveform::Noise) return waveLevels(instrument);
+  std::array<uint8_t, 32> levels{};
+  int noise = 1, mask = noiseMask(instrument.noiseBits);
+  for (auto& level : levels) {
+    level = (noise & 1) ? 15 : 0;
+    noise = (noise >> 1) ^ ((noise & 1) ? mask : 0);
+  }
+  return levels;
+}
+
+uint32_t dpcFrequency(uint32_t stepPerLine, double audioClock) {
+  return (uint32_t)std::min(4294967295.0, std::round(stepPerLine * (audioClock / 2) / 20000.0));
 }
 
 namespace {
@@ -591,9 +748,11 @@ struct Event {
 };
 
 struct Builder {
-  Builder(const Song& songToExport, double audioClock) : song(songToExport), clock(audioClock) {}
+  Builder(const Song& songToExport, double audioClock, bool forDpc = false) : song(songToExport), clock(audioClock), dpc(forDpc) {}
   const Song& song;
   double clock;
+  bool dpc;  // DPC+: pitch pairs are (the wave's first slot entry, the frequency's index)
+  Pool<long long> frequencies;  // DPC+: index 1 and up (0 is silence)
   std::vector<std::string> problems;
   std::set<std::string> said;
   Pool<std::pair<std::vector<int>, int>> envelopes;  // values, loop
@@ -630,6 +789,14 @@ struct Builder {
       if (phaseSteps.size() > 120) {
         problem(F("{0}: only the first 120 frames of its pitch are exported", {source.name}));
         phaseSteps.resize(120);
+      }
+      if (dpc) {
+        auto levels = dpcWave(source);
+        int wave = waves.add(std::vector<int>(levels.begin(), levels.end()));
+        bytes.push_back((int)phaseSteps.size());
+        for (uint32_t step : phaseSteps)
+          bytes.push_back((wave * (dpcMaxLevel(song.channelCount()) + 1)) & 0xFF), bytes.push_back((1 + frequencies.add(dpcFrequency(step, clock))) & 0xFF);
+        return pitches.add(bytes);
       }
       std::vector<int> wave = {source.wave == Waveform::Noise ? noiseMask(source.noiseBits) : 0};
       auto levels = waveLevels(source);
@@ -692,11 +859,13 @@ static ExportResult writeC(const Song& song, Builder& builder, std::map<std::tup
   std::ostringstream out;
   int dataBytes = 0;
   int channels = song.channelCount();
+  const bool cdfj = options.target == ExportTarget::Cdfj;
   out << "/* " << song.name << " - music for an ELF cartridge of the Atari 2600, made with VCSIDE's music editor.\n";
   out << " * Generated from the .vcsmusic file: change that one, not this. Tuned for " << options.tv << ".\n";
   out << " * Include it once, in the C file that calls the player. */\n";
   out << "#ifndef MUSIC_H_INCLUDED\n#define MUSIC_H_INCLUDED\n#include <stdint.h>\n\n";
   out << "#define MUSIC_VOICES " << channels << "\n";
+  out << "#define MUSIC_CDFJ " << (cdfj ? 1 : 0) << "  /* the cartridge plays the voices (see the player below) */\n";
   out << "#define MUSIC_SPEED " << std::clamp(song.speed, 1, 255) << "\n";
   out << "#define MUSIC_SWING " << std::clamp(song.swing, 0, 255) << "\n";
   out << "#define MUSIC_PATTERN_SPEEDS " << (song.patternSpeeds() ? 1 : 0) << "  /* patterns with speeds of their own */\n";
@@ -766,7 +935,8 @@ static ExportResult writeC(const Song& song, Builder& builder, std::map<std::tup
   for (auto& entry : builder.pitches.entries) {
     pitchAt.push_back((long long)pitchData.size());
     pitchData.push_back((long long)entry[0] | (long long)entry[1] << 8);
-    for (size_t index = 2; index < entry.size(); index++) pitchData.push_back((long long)(uint32_t)entry[index]);
+    for (size_t index = 2; index < entry.size(); index++)
+      pitchData.push_back(cdfj ? (long long)dpcFrequency((uint32_t)entry[index], builder.clock) : (long long)(uint32_t)entry[index]);
   }
   if (pitchData.empty()) pitchData.push_back(1), pitchData.push_back(0), pitchAt.push_back(0);
   std::string pitchText;
@@ -796,18 +966,34 @@ static ExportResult writeC(const Song& song, Builder& builder, std::map<std::tup
   std::vector<long long> masks;
   out << "static const uint8_t music_waves[][32] = {\n";
   for (auto& wave : builder.waves.entries) {
-    masks.push_back(wave[0]);
+    std::vector<int> levels(wave.begin() + 1, wave.begin() + 33);
+    if (cdfj && wave[0]) {  // CDFJ: noise is 32 steps of the register, repeated
+      int noise = 1;
+      for (auto& level : levels) {
+        level = (noise & 1) ? 15 : 0;
+        noise = (noise >> 1) ^ ((noise & 1) ? (int)wave[0] : 0);
+      }
+    }
+    masks.push_back(cdfj ? 0 : wave[0]);
     out << "    {";
-    for (int step = 0; step < 32; step++) out << (step ? ", " : "") << wave[1 + step];
+    for (int step = 0; step < 32; step++) out << (step ? ", " : "") << levels[step];
     out << "},\n";
   }
   if (builder.waves.entries.empty()) out << "    {0},\n", masks.push_back(0);
   out << "};\nstatic const uint16_t music_wave_noise[] = {\n" << cList(masks) << "};\n";
   dataBytes += (int)builder.waves.entries.size() * 34;
-  std::vector<long long> dac(levelTable().begin(), levelTable().end());
-  out << "/* quarters of a level (0-63) to the AUDV whose output comes closest */\n";
-  out << "static const uint8_t music_dac[64] = {\n" << cList(dac) << "};\n";
-  dataBytes += 64;
+  if (cdfj) {
+    std::vector<long long> levels;
+    for (int volume = 0; volume < 16; volume++) levels.push_back(dpcLevel(volume, channels, song.gain));
+    out << "/* a voice's volume to its level: the cartridge adds the voices, AUDV0 takes 4 bits */\n";
+    out << "static const uint8_t music_cdfj_level[16] = {\n" << cList(levels) << "};\n";
+    dataBytes += 16;
+  } else {
+    std::vector<long long> dac(levelTable().begin(), levelTable().end());
+    out << "/* quarters of a level (0-63) to the AUDV whose output comes closest */\n";
+    out << "static const uint8_t music_dac[64] = {\n" << cList(dac) << "};\n";
+    dataBytes += 64;
+  }
   out << kCPlayer << "\n#endif\n";
   result.ok = true;
   result.text = out.str();
@@ -821,7 +1007,8 @@ static ExportResult writeC(const Song& song, Builder& builder, std::map<std::tup
 
 ExportResult exportSong(const Song& song, double audioClock, const ExportOptions& options) {
   ExportResult result;
-  Builder builder{song, audioClock};
+  const bool dpc = options.target == ExportTarget::DpcPlus;
+  Builder builder{song, audioClock, dpc};
   if (song.instruments.empty() || song.order.empty()) {
     result.problems.push_back(T("The song has no instruments or no order list."));
     return result;
@@ -901,11 +1088,27 @@ ExportResult exportSong(const Song& song, double audioClock, const ExportOptions
   if (song.order.size() > 254) builder.problem(T("The order list is longer than 254 entries."));
   result.problems = builder.problems;
   if (builder.sounds.entries.size() > 250 || builder.releases.entries.size() > 64 || builder.envelopes.entries.size() > 256 || song.order.size() > 254) return result;
-  if ((options.target == ExportTarget::C) != song.samples()) {
-    result.problems.push_back(song.samples() ? T("A song played as samples is exported as C, for ELF cartridges.") : T("C export is for songs played as samples (ELF); a TIA song is exported for DASM or batari Basic."));
+  const bool cdfj = options.target == ExportTarget::Cdfj;
+  if ((options.target == ExportTarget::C || dpc || cdfj) != song.samples()) {
+    result.problems.push_back(song.samples() ? T("A song played as samples is exported as C (ELF or CDFJ) or for DPC+.")
+                                             : T("C, CDFJ and DPC+ export are for songs played as samples; a TIA song is exported for DASM or batari Basic."));
     return result;
   }
-  if (options.target == ExportTarget::C) return writeC(song, builder, events, effects, options, result);
+  if (cdfj && channels > 3) {
+    result.problems.push_back(T("CDFJ has 3 voices: the song has more."));
+    return result;
+  }
+  if (dpc) {  // what DPC+ cannot hold stops the export
+    int most = dpcMaxLevel(channels), waves = (int)builder.waves.entries.size();
+    size_t before = result.problems.size();
+    if (channels > 3) result.problems.push_back(T("DPC+ has 3 voices: the song has more."));
+    if ((int)builder.frequencies.entries.size() > 255)
+      result.problems.push_back(F("{0} different pitches: DPC+'s frequency table takes 255", {std::to_string(builder.frequencies.entries.size())}));
+    if (waves * most + 1 > 128 || waves * (most + 1) > 256)
+      result.problems.push_back(F("{0} waveforms at {1} volumes do not fit in DPC+'s 128 waveform slots", {std::to_string(waves), std::to_string(most)}));
+    if (result.problems.size() > before) return result;
+  }
+  if (options.target == ExportTarget::C || cdfj) return writeC(song, builder, events, effects, options, result);
 
   // the text
   std::ostringstream out;
@@ -919,6 +1122,20 @@ ExportResult exportSong(const Song& song, double audioClock, const ExportOptions
     out << "; and, once per frame (before drawscreen):\n;     asm\n;     jsr MusicFrame\n;     end\n";
     out << "; and put 'inline <this file>' where the program never runs into it (after a goto).\n";
     out << "\nMUSIC_RAM = " << options.ramStart << "\n";
+  } else if (dpc) {
+    int ramBytes = 5 + 7 * channels;
+    out << ";\n; DPC+: include this file three times, with MUSIC_PART set before each:\n";
+    out << ";   MUSIC_PART SET 1   in a bank of 6507 code: the player and the song (after DPCplus.h)\n";
+    out << ";   MUSIC_PART SET 2   in the display data: the waveforms (" << (1 + (int)builder.waves.entries.size() * dpcMaxLevel(channels)) * 32 << " bytes)\n";
+    out << ";   MUSIC_PART SET 3   at the start of the frequency table, instead of DPC_frequencies.h\n";
+    out << "; Define MUSIC_RAM (" << ramBytes << " bytes of zero page) first. Call MusicInit once and MusicFrame once\n";
+    out << "; per frame; with AUDC0 = 0, the kernel copies the voices' sum to AUDV0 on every line:\n";
+    out << ";     lda AMPLITUDE\n;     sta AUDV0\n";
+    out << "; Each voice's volume is one of " << dpcMaxLevel(channels) + 1 << " levels (DPC+ adds the voices and AUDV0 takes 4 bits),\n";
+    out << "; and noise repeats every 32 steps of its register.\n";
+    out << "\n  IFNCONST MUSIC_PART\n    ERR ; set MUSIC_PART to 1, 2 or 3 before including this file\n  ENDIF\n";
+    out << "\n  IF MUSIC_PART = 1\n";
+    out << "\n  IFNCONST MUSIC_RAM\n    ERR ; MUSIC_RAM is not defined: " << ramBytes << " bytes of zero page for the music player\n  ENDIF\n";
   } else {
     out << ";\n; Define MUSIC_RAM (19 bytes of zero page) before including this file.\n";
     out << "\n  IFNCONST MUSIC_RAM\n    ERR ; MUSIC_RAM is not defined: 19 bytes of zero page for the music player\n  ENDIF\n";
@@ -931,6 +1148,8 @@ ExportResult exportSong(const Song& song, double audioClock, const ExportOptions
   out << "MUSIC_PATTERN_SPEEDS = " << (song.patternSpeeds() ? 1 : 0) << "  ; patterns with speeds of their own\n";
   out << "MUSIC_ORDER_LENGTH = " << song.order.size() << "\n";
   out << "MUSIC_LOOP_TO = " << (song.loopTo >= 0 ? std::to_string(song.loopTo) : "MUSIC_ORDER_LENGTH  ; stops at the end") << "\n";
+  out << "MUSIC_CHANNELS = " << channels << "\n";
+  out << "MUSIC_DPC = " << (dpc ? 1 : 0) << "\n";
   for (size_t index = 0; index < effects.size(); index++) out << effects[index].first << " = " << index << "\n";
   out << kPlayer;
   out << "\n; ---- the song ----\n";
@@ -938,8 +1157,8 @@ ExportResult exportSong(const Song& song, double audioClock, const ExportOptions
   out << "\nMusicOrderLo\n";
   std::string lows, highs;
   for (size_t entry = 0; entry < song.order.size(); entry++) {
-    lows += std::string(entry ? "," : "    .byte ") + "<MusicPattern" + std::to_string(song.order[entry]);
-    highs += std::string(entry ? "," : "    .byte ") + ">MusicPattern" + std::to_string(song.order[entry]);
+    lows += listSeparator(entry) + "<MusicPattern" + std::to_string(song.order[entry]);
+    highs += listSeparator(entry) + ">MusicPattern" + std::to_string(song.order[entry]);
   }
   out << lows << "\nMusicOrderHi\n" << highs << "\nMusicOrderRows\n" << byteList(orderRows);
   dataBytes += (int)song.order.size() * 3;
@@ -974,8 +1193,8 @@ ExportResult exportSong(const Song& song, double audioClock, const ExportOptions
   for (size_t index = 0; index < builder.sounds.entries.size(); index++) {
     auto& [envelopeIndex, pitchIndex, releaseIndex] = builder.sounds.entries[index];
     soundEnvelope.push_back(envelopeIndex), soundRelease.push_back(releaseIndex);
-    pitchLows += std::string(index ? "," : "    .byte ") + "<MusicPitchData" + std::to_string(pitchIndex);
-    pitchHighs += std::string(index ? "," : "    .byte ") + ">MusicPitchData" + std::to_string(pitchIndex);
+    pitchLows += listSeparator(index) + "<MusicPitchData" + std::to_string(pitchIndex);
+    pitchHighs += listSeparator(index) + ">MusicPitchData" + std::to_string(pitchIndex);
   }
   if (builder.sounds.entries.empty()) pitchLows = pitchHighs = "    .byte 0";
   out << "\nMusicSoundEnvelope\n" << (soundEnvelope.empty() ? "    .byte 0\n" : byteList(soundEnvelope));
@@ -992,8 +1211,8 @@ ExportResult exportSong(const Song& song, double audioClock, const ExportOptions
   auto pointerTables = [&](const char* name, const char* dataName, size_t count) {
     std::string low = std::string(name) + "Lo\n", high = std::string(name) + "Hi\n";
     for (size_t index = 0; index < count; index++) {
-      low += std::string(index ? "," : "    .byte ") + "<" + dataName + std::to_string(index);
-      high += std::string(index ? "," : "    .byte ") + ">" + dataName + std::to_string(index);
+      low += listSeparator(index) + "<" + dataName + std::to_string(index);
+      high += listSeparator(index) + ">" + dataName + std::to_string(index);
     }
     if (!count) low += "    .byte 0", high += "    .byte 0";
     out << low << "\n" << high << "\n";
@@ -1018,6 +1237,35 @@ ExportResult exportSong(const Song& song, double audioClock, const ExportOptions
   for (size_t index = 0; index < builder.pitches.entries.size(); index++) {
     out << "MusicPitchData" << index << "\n" << byteList(builder.pitches.entries[index]);
     dataBytes += (int)builder.pitches.entries[index].size();
+  }
+  if (dpc) {
+    // a voice's volume to one of the wave's copies, and each wave's copies as DPC+ slots
+    int most = dpcMaxLevel(channels);
+    std::vector<int> levels;
+    for (int volume = 0; volume < 16; volume++) levels.push_back(dpcLevel(volume, channels, song.gain));
+    out << "MusicDpcLevel\n" << byteList(levels);
+    out << "MUSIC_WAVE_OFF = [MusicWaveOff & $1FFF] / 32 & $7F\n";
+    out << "MusicWaveSlots\n";
+    for (size_t wave = 0; wave < builder.waves.entries.size(); wave++) {
+      out << "    .byte MUSIC_WAVE_OFF\n";
+      for (int level = 1; level <= most; level++) out << "    .byte [MusicWave" << wave << "_" << level << " & $1FFF] / 32 & $7F\n";
+    }
+    dataBytes += 16 + (int)builder.waves.entries.size() * (most + 1);
+    out << "\n  ENDIF  ; MUSIC_PART = 1\n";
+    // the waveforms, at each level, in the display data
+    out << "\n  IF MUSIC_PART = 2\n    ALIGN 32\nMusicWaveOff\n";
+    out << byteList(std::vector<int>(32, 0));
+    for (size_t wave = 0; wave < builder.waves.entries.size(); wave++)
+      for (int level = 1; level <= most; level++) {
+        std::vector<int> samples;
+        for (int sample : builder.waves.entries[wave]) samples.push_back((int)std::lround(sample * level / 15.0));
+        out << "MusicWave" << wave << "_" << level << "\n" << byteList(samples);
+      }
+    out << "\n  ENDIF  ; MUSIC_PART = 2\n";
+    // the frequency table: 2^32 x Hz / 20000, entry 0 silent
+    out << "\n  IF MUSIC_PART = 3\nMusicFrequencies\n    .long 0\n";
+    for (long long frequency : builder.frequencies.entries) out << "    .long " << frequency << "\n";
+    out << "  ENDIF  ; MUSIC_PART = 3\n";
   }
   result.ok = true;
   result.text = out.str();

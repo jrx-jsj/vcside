@@ -387,7 +387,8 @@ bool fromJson(const std::string& text, Song* song, std::string* error) {
     parsed.loopTo = std::clamp(document.value("loop_to", 0), -1, (int)parsed.order.size() - 1);
     if (document.contains("export") && document["export"].is_object()) {
       parsed.exportTo = document["export"].value("to", "");
-      if (parsed.exportTo != "dasm" && parsed.exportTo != "bb" && parsed.exportTo != "c") parsed.exportTo.clear();
+      static const char* targets[] = {"dasm", "bb", "c", "dpc", "cdfj"};
+      if (std::find(std::begin(targets), std::end(targets), parsed.exportTo) == std::end(targets)) parsed.exportTo.clear();
       parsed.exportRam = document["export"].value("ram", "h");
     }
     for (auto& item : document.value("effects", json::array())) {

@@ -2151,14 +2151,21 @@ struct AssembledSong {
   int bytes = 0;
 };
 
-static void assembleSong(const std::string& dasm, const std::string& exportText, AssembledSong& out) {
+// dpc: the DPC+ export, its three parts at $1000 (player), $4000 (waveforms) and $6000
+// (frequencies), with WAVEFORM0-2 at $E0-$E2 and NOTE0-2 at $E3-$E5 standing in for DPC+.
+static void assembleSong(const std::string& dasm, const std::string& exportText, AssembledSong& out, bool dpc = false) {
   namespace fs = std::filesystem;
   fs::path folder = fs::temp_directory_path() / "vcside-test-music";
   fs::create_directories(folder);
   {
     std::ofstream source(folder / "song.asm");
-    source << "    processor 6502\nAUDC0 = $15\nAUDC1 = $16\nAUDF0 = $17\nAUDF1 = $18\nAUDV0 = $19\nAUDV1 = $1A\nMUSIC_RAM = $80\n    ORG $1000\n"
-           << exportText;
+    source << "    processor 6502\nAUDC0 = $15\nAUDC1 = $16\nAUDF0 = $17\nAUDF1 = $18\nAUDV0 = $19\nAUDV1 = $1A\nMUSIC_RAM = $80\n";
+    if (!dpc)
+      source << "    ORG $1000\n" << exportText;
+    else
+      source << "WAVEFORM0 = $E0\nWAVEFORM1 = $E1\nWAVEFORM2 = $E2\nNOTE0 = $E3\nNOTE1 = $E4\nNOTE2 = $E5\n"
+             << "    ORG $1000\nMUSIC_PART SET 1\n" << exportText << "    ORG $4000\nMUSIC_PART SET 2\n" << exportText
+             << "    ORG $6000\nMUSIC_PART SET 3\n" << exportText;
   }
   std::string command = "cd \"" + folder.string() + "\" && \"" + dasm + "\" song.asm -f3 -osong.bin -ssong.sym -lsong.lst > song.log 2>&1";
   if (std::system(command.c_str()) != 0) {
@@ -2343,6 +2350,207 @@ static void testMusicExport() {
   CHECK(mostInstructions < 260);  // MusicFrame stays well inside a vertical blank
   std::printf("  exported player: %d songs the same as the editor's (%d skipped as ambiguous; %d frames with sound, %d effects), at most %ld instructions a frame\n",
               compared, skipped, heardFrames, effectsPlayed, mostInstructions);
+}
+
+// The DPC+ export: songs played as samples, assembled and run on a 6502 frame by frame;
+// each voice's WAVEFORM must point at its waveform scaled to its volume, and its NOTE at
+// its frequency (the phase step at DPC+'s 20 kHz). Skipped without DASM.
+static vcs::music::Song randomSampleSong(unsigned seed);
+static void testDpcExport() {
+  using namespace vcs::music;
+  // VCSIDE_DPC_SONG=<.vcsmusic> VCSIDE_DPC_OUT=<.asm>: that song exported for DPC+ (for a test ROM)
+  if (const char* songPath = std::getenv("VCSIDE_DPC_SONG")) {
+    std::ifstream file(songPath);
+    std::string text((std::istreambuf_iterator<char>(file)), {}), error;
+    Song song;
+    CHECK(fromJson(text, &song, &error));
+    ExportResult result = exportSong(song, audioClockHz("NTSC"), {ExportTarget::DpcPlus, "", "NTSC"});
+    for (auto& problem : result.problems) std::printf("  DPC+ export: %s\n", problem.c_str());
+    if (result.ok && std::getenv("VCSIDE_DPC_OUT")) std::ofstream(std::getenv("VCSIDE_DPC_OUT")) << result.text;
+  }
+  std::string dasm = findDasm();
+  if (dasm.empty()) {
+    std::printf("  (no DASM: the DPC+ player is not run)\n");
+    return;
+  }
+  Song four = randomSampleSong(3);
+  four.voices = 4;
+  CHECK(!exportSong(four, audioClockHz("NTSC"), {ExportTarget::DpcPlus, "", "NTSC"}).ok);
+  CHECK(!exportSong(blankSong(), audioClockHz("NTSC"), {ExportTarget::DpcPlus, "", "NTSC"}).ok);  // a TIA song
+  int compared = 0, skipped = 0, soundingFrames = 0, effectsPlayed = 0;
+  for (unsigned seed = 1; seed <= 40; seed++) {
+    Song random = randomSampleSong(seed);
+    random.voices = std::min(random.voices, 3);
+    std::string tv = seed % 3 == 0 ? "PAL" : "NTSC";
+    double clock = audioClockHz(tv);
+    ExportResult result = exportSong(random, clock, {ExportTarget::DpcPlus, "", tv});
+    bool ambiguousSong = false;
+    for (auto& problem : result.problems) ambiguousSong = ambiguousSong || problem.find("depending on what came before") != std::string::npos;
+    if (ambiguousSong) {
+      skipped++;
+      continue;
+    }
+    if (!result.ok) std::printf("  seed %u: %s\n", seed, result.problems.empty() ? "?" : result.problems[0].c_str());
+    CHECK(result.ok);
+    if (!result.ok) continue;
+    AssembledSong assembled;
+    assembleSong(dasm, result.text, assembled, true);
+    if (!assembled.ok) {
+      std::printf("  seed %u: %s\n", seed, assembled.error.c_str());
+      CHECK(assembled.ok);
+      break;
+    }
+    Cpu6502& cpu = assembled.cpu;
+    CHECK(cpu.call(assembled.init));
+    Player player;
+    player.start(random, clock);
+    int voices = random.channelCount();
+    std::mt19937 effects(seed);
+    int validEffects = 0;
+    for (auto& effect : random.effects) validEffects += effect.instrument < (int)random.instruments.size();
+    bool same = true;
+    for (int frame = 0; frame < 1000 && same; frame++) {
+      if (validEffects && std::uniform_int_distribution<int>(0, 60)(effects) == 0) {
+        int effect = std::uniform_int_distribution<int>(0, validEffects - 1)(effects);
+        player.playEffect(random, clock, effect);
+        effectsPlayed++;
+        cpu.a = (uint8_t)effect;
+        same = cpu.call(assembled.effect);
+      }
+      FrameRegisters expected = player.nextFrame();
+      same = same && cpu.call(assembled.frame);
+      for (int voice = 0; voice < voices && same; voice++) {
+        // the 32 samples the voice's WAVEFORM points at
+        const uint8_t* wave = &cpu.memory[0x4000 + 32 * (cpu.memory[0xE0 + voice] & 0x7F)];
+        int level = expected.sounding[voice] ? dpcLevel(expected.volume[voice], voices, random.gain) : 0;
+        std::array<uint8_t, 32> shape{};
+        if (level) shape = dpcWave(random.instruments[expected.instrument[voice]]);
+        for (int sample = 0; sample < 32 && same; sample++) same = wave[sample] == (int)std::lround(shape[sample] * level / 15.0);
+        if (level) {
+          int note = cpu.memory[0xE3 + voice];
+          uint32_t frequency = cpu.memory[0x6000 + 4 * note] | cpu.memory[0x6001 + 4 * note] << 8 | cpu.memory[0x6002 + 4 * note] << 16 |
+                               (uint32_t)cpu.memory[0x6003 + 4 * note] << 24;
+          same = same && note > 0 && frequency == dpcFrequency(expected.phaseStep[voice], clock);
+          soundingFrames++;
+        }
+        if (!same)
+          std::printf("  seed %u, frame %d, voice %d: level %d, instrument %d, step %u; 6502 slot %d note %d\n", seed, frame, voice, level,
+                      expected.instrument[voice], expected.phaseStep[voice], cpu.memory[0xE0 + voice], cpu.memory[0xE3 + voice]);
+      }
+    }
+    CHECK(same);
+    compared++;
+    if (!same) break;
+  }
+  CHECK(compared >= 25 && soundingFrames > 10000 && effectsPlayed > 50);
+  std::printf("  exported DPC+ player: %d songs the same as the editor's (%d skipped as ambiguous; %d voice frames with sound, %d effects)\n", compared, skipped,
+              soundingFrames, effectsPlayed);
+}
+
+// The CDFJ export: the C player compiled with the computer's C compiler, its two hooks
+// writing down what a CDFJ cartridge would be told; each voice's samples and frequency
+// compared, frame by frame, with the editor's player. Skipped without a C compiler.
+static std::string findCompiler();
+static void testCdfjExport() {
+  using namespace vcs::music;
+  namespace fs = std::filesystem;
+  CHECK(!exportSong(blankSong(), audioClockHz("NTSC"), {ExportTarget::Cdfj, "", "NTSC"}).ok);  // a TIA song
+  std::string compiler = findCompiler();
+  if (compiler.empty()) {
+    std::printf("  (no C compiler: the CDFJ player is not run)\n");
+    return;
+  }
+  fs::path folder = fs::temp_directory_path() / "vcside-test-cdfj";
+  fs::create_directories(folder);
+  {
+    std::ofstream driver(folder / "driver.c");
+    driver << "#include <stdio.h>\n#include <stdint.h>\n"
+              "static uint8_t given_wave[4][32];\nstatic uint32_t given_note[4];\nstatic int given_restart[4], given_sounding[4];\n"
+              "#define MUSIC_CDFJ_WAVE(v, s) do { for (int k = 0; k < 32; k++) given_wave[v][k] = (s)[k]; } while (0)\n"
+              "#define MUSIC_CDFJ_NOTE(v, f, r) (given_note[v] = (f), given_restart[v] = (r), given_sounding[v] = 1)\n"
+              "#include \"song.music.h\"\n"
+              "int main(void) {\n  int frames;\n  if (scanf(\"%d\", &frames) != 1) return 1;\n  music_init();\n"
+              "  for (int f = 0; f < frames; f++) {\n    int effect;\n    if (scanf(\"%d\", &effect) != 1) return 1;\n"
+              "    if (effect >= 0) music_effect(effect);\n    for (int v = 0; v < 4; v++) given_sounding[v] = 0;\n    music_frame(262);\n"
+              "    for (int v = 0; v < MUSIC_VOICES; v++) {\n      for (int k = 0; k < 32; k++) printf(\"%d \", given_wave[v][k]);\n"
+              "      printf(\"%d %u %d \", given_sounding[v], (unsigned)given_note[v], given_restart[v]);\n    }\n    printf(\"\\n\");\n  }\n  return 0;\n}\n";
+  }
+  int compared = 0, skipped = 0, soundingFrames = 0, restarts = 0;
+  for (unsigned seed = 1; seed <= 24; seed++) {
+    Song random = randomSampleSong(seed);
+    random.voices = std::min(random.voices, 3);
+    std::string tv = seed % 3 == 0 ? "PAL" : "NTSC";
+    double clock = audioClockHz(tv);
+    ExportResult result = exportSong(random, clock, {ExportTarget::Cdfj, "", tv});
+    bool ambiguousSong = false;
+    for (auto& problem : result.problems) ambiguousSong = ambiguousSong || problem.find("depending on what came before") != std::string::npos;
+    if (ambiguousSong) {
+      skipped++;
+      continue;
+    }
+    CHECK(result.ok);
+    if (!result.ok) continue;
+    std::ofstream(folder / "song.music.h") << result.text;
+    std::string build = "cd \"" + folder.string() + "\" && \"" + compiler + "\" -std=c11 -O1 -Wall -Wextra -o driver driver.c > build.log 2>&1";
+    bool built = std::system(build.c_str()) == 0;
+    std::ifstream buildLog(folder / "build.log");
+    std::string warnings((std::istreambuf_iterator<char>(buildLog)), {});
+    if (!built || !warnings.empty()) std::printf("  seed %u: %s\n", seed, warnings.c_str());
+    CHECK(built && warnings.empty());
+    if (!built) break;
+    const int frames = 600;
+    std::mt19937 effects(seed);
+    int validEffects = 0;
+    for (auto& effect : random.effects) validEffects += effect.instrument < (int)random.instruments.size();
+    std::vector<int> schedule;
+    for (int frame = 0; frame < frames; frame++)
+      schedule.push_back(validEffects && std::uniform_int_distribution<int>(0, 40)(effects) == 0 ? std::uniform_int_distribution<int>(0, validEffects - 1)(effects) : -1);
+    {
+      std::ofstream input(folder / "input.txt");
+      input << frames << "\n";
+      for (int effect : schedule) input << effect << "\n";
+    }
+    std::string run = "cd \"" + folder.string() + "\" && ./driver < input.txt > output.txt";
+    CHECK(std::system(run.c_str()) == 0);
+    std::ifstream output(folder / "output.txt");
+    Player player;
+    player.start(random, clock);
+    int voices = random.channelCount();
+    bool same = true;
+    std::vector<bool> pendingRestart(voices, false);
+    for (int frame = 0; frame < frames && same; frame++) {
+      if (schedule[frame] >= 0) player.playEffect(random, clock, schedule[frame]);
+      FrameRegisters expected = player.nextFrame();
+      for (int voice = 0; voice < voices && same; voice++) {
+        int wave[32], sounding = 0, restart = 0;
+        unsigned frequency = 0;
+        for (int& sample : wave) output >> sample;
+        output >> sounding >> frequency >> restart;
+        int level = expected.sounding[voice] ? dpcLevel(expected.volume[voice], voices, random.gain) : 0;
+        std::array<uint8_t, 32> shape{};
+        if (level) shape = dpcWave(random.instruments[expected.instrument[voice]]);
+        for (int sample = 0; sample < 32 && same; sample++) same = wave[sample] == (int)std::lround(shape[sample] * level / 15.0);
+        // a note that starts silent is restarted when it is first heard
+        pendingRestart[voice] = pendingRestart[voice] || (expected.sounding[voice] && expected.restart[voice]);
+        same = same && (sounding != 0) == (level != 0);
+        if (level) {
+          same = same && frequency == dpcFrequency(expected.phaseStep[voice], clock) && (restart != 0) == pendingRestart[voice];
+          pendingRestart[voice] = false;
+          soundingFrames++;
+          restarts += restart != 0;
+        }
+        if (!same)
+          std::printf("  seed %u, frame %d, voice %d: level %d, step %u, restart %d; C sounding %d frequency %u restart %d\n", seed, frame, voice, level,
+                      expected.phaseStep[voice], (int)expected.restart[voice], sounding, frequency, restart);
+      }
+    }
+    CHECK(same);
+    compared++;
+    if (!same) break;
+  }
+  CHECK(compared >= 15 && soundingFrames > 5000 && restarts > 100);
+  std::printf("  exported CDFJ player: %d songs the same as the editor's (%d skipped as ambiguous; %d voice frames with sound, %d notes started)\n", compared,
+              skipped, soundingFrames, restarts);
 }
 
 // The exported C player against the editor's: songs played as samples, compiled with the
@@ -2973,6 +3181,8 @@ int main() {
   testSong();
   testMusicExport();
   testSampleExport();
+  testDpcExport();
+  testCdfjExport();
   testTiaTrackerImport();
   testBasic();
   testBasicSyntax(kb);

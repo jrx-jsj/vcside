@@ -45,6 +45,7 @@ class MusicEditor {
   void exportPopup();
   // Writes <name>.music.asm (or .music.h for C) as the song says (Song::exportTo); quiet: only problems are said.
   bool exportSongFile(bool quiet);
+  ExportTarget exportTarget() const;  // Song::exportTo, or what the song's sound is exported as by default
   void keyboard();
   void gridKeys();
   bool envelope(const char* id, std::vector<int>& values, int low, int high, int* loopStart, int minLength);

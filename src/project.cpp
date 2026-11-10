@@ -492,14 +492,13 @@ static void writeMusicIncludes(const fs::path& dir, const std::string& tvStandar
     if (entry.path().extension() != ".vcsmusic") continue;
     music::Song song;
     std::string error;
-    if (!music::fromJson(readFile(entry.path().string()), &song, &error) || (song.exportTo != "dasm" && song.exportTo != "bb" && song.exportTo != "c")) continue;
-    std::string tv = tvStandard == "AUTO" ? "NTSC" : tvStandard;
     music::ExportOptions options;
+    if (!music::fromJson(readFile(entry.path().string()), &song, &error) || !music::exportTargetOf(song.exportTo, &options.target)) continue;
+    std::string tv = tvStandard == "AUTO" ? "NTSC" : tvStandard;
     options.tv = tv;
-    if (song.exportTo == "bb") options.target = music::ExportTarget::BatariBasic, options.ramStart = song.exportRam;
-    if (song.exportTo == "c") options.target = music::ExportTarget::C;
+    if (options.target == music::ExportTarget::BatariBasic) options.ramStart = song.exportRam;
     music::ExportResult result = music::exportSong(song, music::audioClockHz(tv), options);
-    std::string extension = song.exportTo == "c" ? ".music.h" : ".music.asm";
+    std::string extension = music::exportExtension(options.target);
     if (result.ok) std::ofstream(dir / (entry.path().stem().string() + extension), std::ios::binary) << result.text;
   }
 }
