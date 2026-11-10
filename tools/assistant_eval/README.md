@@ -11,7 +11,7 @@ The pass check is a set of regular expressions per question, not a judge: it cou
 
 ## The agent loop
 
-`agent_run.py` plays the panel for the agent (tools and edits, docs/design-assistant.md, phases 3 and 4): it uses the real tools through `vcside_tool`, feeds each result back to the model and accepts every proposed edit as a click on *Apply* would. Seven small tasks on a throw-away DASM project (find a value, read a file and count, look up a register, change a colour, describe a sprite and a song, refuse to read `.env`).
+`agent_run.py` plays the panel for the agent (tools and edits, docs/design-assistant.md, phases 3 and 4): it uses the real tools through `vcside_tool`, feeds each result back to the model and accepts every proposed edit as a click on *Apply* would. Eight small tasks on a throw-away DASM project (find a value, read a file and count, look up a register, change a colour, describe a sprite and a song, refuse to read `.env`).
 
 ```sh
 cmake --build build --target vcside_tool

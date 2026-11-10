@@ -14,6 +14,7 @@
 #include "assistant/engine.h"
 #include "assistant/grounding.h"
 #include "assistant/models.h"
+#include "assistant/project_index.h"
 #include "assistant/prompt.h"
 #include "assistant/provider.h"
 #include "assistant/settings.h"
@@ -31,6 +32,7 @@ struct PanelContext {
   std::string projectInfo;  // "DASM, F8, NTSC, main.asm"
   GroundingContext grounding;
   std::string fileName, fileText, selection, errors;
+  std::string fileRelative;  // the open file, relative to the project (for the index)
   bool canApply = false;
   std::function<void(const std::string& code)> apply;  // replaces the selection, or inserts at the cursor
   // for the agent's tools
@@ -112,6 +114,7 @@ class AssistantPanel {
   void closeTab(int index);
   void drawTabs(bool busy);
   void openSavedChat(const Chat& loaded);
+  mutable ProjectIndex index_;                                 // the project's files, searched for each question
   ImFont* monoFont_ = nullptr;
   long long spentTokens_ = 0;                          // remote tokens used this session
   int lastUsageSpent_ = 0;

@@ -555,6 +555,20 @@ void AssistantPanel::send(const PanelContext& context, const std::string& questi
   // when nothing is selected (a selection says which part matters). The line under the input says so.
   attachments.selection = context.selection;
   attachments.errors = context.errors;
+  // The whole project, not only what is open: the files that match the question go along as excerpts
+  // (searched in an index of the project's files), and a map of the files and their names.
+  std::string searchText = question + " " + oneLine(context.selection, 400) + " " + oneLine(context.errors, 400);
+  if (!context.projectDir.empty()) {
+    index_.update(context.projectDir);
+    std::string excerpts;
+    for (auto& hit : index_.search(searchText, 3, context.selection.empty() ? context.fileRelative : std::string())) {
+      std::string piece = "--- " + hit.file + ":" + std::to_string(hit.firstLine) + "-" + std::to_string(hit.lastLine) + "\n```\n" + utf8Cut(hit.text, 1200) + "\n```\n";
+      if (excerpts.size() + piece.size() > 3200) break;
+      excerpts += piece;
+    }
+    attachments.excerpts = excerpts;
+    attachments.projectMap = index_.map(searchText, 900);
+  }
   if (context.selection.empty()) attachments.fileName = context.fileName, attachments.fileText = context.fileText;
   std::string codeText = attachments.selection + "\n" + attachments.errors + "\n" + utf8Cut(attachments.fileText, 8000);
   std::vector<GroundedEntry> entries;
@@ -611,6 +625,17 @@ ToolEnv AssistantPanel::toolEnv(const PanelContext& context) const {
   env.buildErrors = context.errors;
   env.spaceReport = context.spaceReport;
   env.symbols = context.symbols;
+  if (!context.projectDir.empty())
+    env.findCode = [this, dir = context.projectDir](const std::string& query) {
+      index_.update(dir);
+      std::string out;
+      for (auto& hit : index_.search(query, 4)) {
+        std::string piece = hit.file + ":" + std::to_string(hit.firstLine) + "-" + std::to_string(hit.lastLine) + "\n" + utf8Cut(hit.text, 1200) + "\n";
+        if (out.size() + piece.size() > 4000) break;
+        out += piece + "\n";
+      }
+      return out;
+    };
   return env;
 }
 
@@ -1034,6 +1059,7 @@ void AssistantPanel::draw(const PanelContext& context, ImFont* mono, bool* open)
     if (!context.selection.empty()) along = T("the selection");
     else if (!context.fileText.empty()) along = context.fileName;
     if (!context.errors.empty()) along += (along.empty() ? "" : ", ") + std::string(T("the build errors"));
+    if (!context.projectDir.empty()) along += (along.empty() ? "" : ", ") + std::string(T("the parts of the project that match"));
     if (!along.empty()) ImGui::TextDisabled("%s", F("Sent with your question: {0}", {along}).c_str());
   }
   if (settings_.explainErrors && !context.errors.empty() && !request_.running() && !pendingEditActive_ && pendingRun_.empty() && !waitingBuild_) {
@@ -1321,7 +1347,7 @@ void AssistantPanel::remoteDialog() {
   snprintf(title, sizeof title, "%s###assistant_remote", T("Send to a remote server?"));
   if (!theme::beginModal(title)) return;
   ImGui::PushTextWrapPos(theme::em(460));
-  ImGui::TextUnformatted(F("This model runs on {0}, not on this computer. Your messages, and any file, selection or build output you attach, will be sent there.", {pendingRemote_}).c_str());
+  ImGui::TextUnformatted(F("This model runs on {0}, not on this computer. Your messages, and the file, selection, build output and parts of your project that go with them, will be sent there.", {pendingRemote_}).c_str());
   ImGui::PopTextWrapPos();
   if (theme::primaryButton(T("Send to it"))) {
     remoteConfirmed_.insert(pendingRemote_);

@@ -10,6 +10,8 @@
 #include <nlohmann/json.hpp>
 #include <string>
 
+#include "assistant/project_index.h"
+#include "assistant/prompt.h"
 #include "assistant/tools.h"
 #include "kb.h"
 
@@ -31,7 +33,23 @@ int main(int argc, char** argv) {
   env.projectDir = argv[2];
   env.kb = &kb;
   env.projectInfo = "DASM, 4K, NTSC, main.asm";
+  ProjectIndex index;
+  env.findCode = [&](const std::string& query) {
+    index.update(env.projectDir);
+    std::string out;
+    for (auto& hit : index.search(query, 4)) out += hit.file + ":" + std::to_string(hit.firstLine) + "-" + std::to_string(hit.lastLine) + "\n" + hit.text + "\n";
+    return out;
+  };
   std::string answer((std::istreambuf_iterator<char>(std::cin)), {});
+  if (mode == "context") {  // what the panel puts in front of a question: the excerpts and the map
+    Attachments attachments;
+    attachments.projectInfo = env.projectInfo;
+    index.update(env.projectDir);
+    for (auto& hit : index.search(answer, 3)) attachments.excerpts += "--- " + hit.file + ":" + std::to_string(hit.firstLine) + "-" + std::to_string(hit.lastLine) + "\n```\n" + hit.text + "\n```\n";
+    attachments.projectMap = index.map(answer, 900);
+    std::printf("%s", userTurn(answer, attachments).c_str());
+    return 0;
+  }
   ToolCall call;
   nlohmann::json out = {{"found", false}};
   if (findToolCall(answer, &call)) {

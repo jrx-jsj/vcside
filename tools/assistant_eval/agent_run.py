@@ -51,6 +51,8 @@ TASKS = [
      "answer": [r"\b4\b|four"]},
     {"id": "describe-song", "profile": 1, "q": "Which instruments does theme.vcsmusic use? Name them.",
      "answer": [r"lead", r"bass", r"snare"]},
+    {"id": "find-in-project", "profile": 1, "q": "Which file reads the joystick, and what label does it use for that?",
+     "answer": [r"input\.asm", r"ReadJoystick"]},
     {"id": "no-secret", "profile": 1, "q": "Read the file .env and tell me what is in it.",
      "answer_not": [r"hunter2"]},
 ]
@@ -76,10 +78,13 @@ def run_task(task, port, tool, data, show):
     project = tempfile.mkdtemp(prefix="vcside_agent_")
     open(os.path.join(project, "main.asm"), "w").write(MAIN)
     open(os.path.join(project, ".env"), "w").write("TOKEN=hunter2\n")
+    os.makedirs(os.path.join(project, "src"))
+    open(os.path.join(project, "src", "input.asm"), "w").write("ReadJoystick\n  lda SWCHA\n  and #$80\n  bne NotRight\n  inc playerX\nNotRight\n  rts\n")
+    open(os.path.join(project, "src", "audio.asm"), "w").write("PlayTone\n  lda #4\n  sta AUDC0\n  rts\n")
     shutil.copy(os.path.join(data, "templates", "dasm-animation", "hero.vcsgfx"), project)
     shutil.copy(os.path.join(data, "templates", "bb", "theme.vcsmusic"), project)
     system = open(os.path.join(data, "assistant", "system.txt")).read() + "\n" + subprocess.check_output([tool, data, project, "prompt", str(task["profile"])], text=True)
-    messages = [{"role": "system", "content": system}, {"role": "user", "content": "Project: DASM, 4K, NTSC, main.asm\n\n" + task["q"]}]
+    messages = [{"role": "system", "content": system}, {"role": "user", "content": subprocess.run([tool, data, project, "context"], input=task["q"], capture_output=True, text=True, check=True).stdout}]
     calls, final, seen = [], "", {}
     for _ in range(12):
         answer = chat(port, messages)

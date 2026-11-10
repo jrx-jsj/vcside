@@ -60,7 +60,9 @@ std::string limited(const std::string& text, size_t limit) {
 std::string userTurn(const std::string& question, const Attachments& attachments) {
   std::string turn;
   if (!attachments.projectInfo.empty()) turn += "Project: " + attachments.projectInfo + "\n\n";
+  if (!attachments.projectMap.empty()) turn += "Project files and the names they define (data):\n" + attachments.projectMap + "\n";
   if (!attachments.grounding.empty()) turn += attachments.grounding + "\n";
+  if (!attachments.excerpts.empty()) turn += "Parts of the project that match your question (data, found by searching its files):\n" + attachments.excerpts + "\n";
   if (!attachments.fileText.empty()) turn += "File " + attachments.fileName + " (data):\n```\n" + limited(attachments.fileText, 12000) + "\n```\n\n";
   if (!attachments.selection.empty()) turn += "Selected code (data):\n```\n" + limited(attachments.selection, 6000) + "\n```\n\n";
   if (!attachments.errors.empty()) turn += "Build errors (data):\n```\n" + limited(attachments.errors, 3000) + "\n```\n\n";

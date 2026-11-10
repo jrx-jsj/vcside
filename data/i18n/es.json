@@ -873,6 +873,7 @@
     "The multisprite kernel's playfield is mirrored (the right half is the left one reversed); these rows are not: {0}.": "El playfield del kernel multisprite va reflejado (la mitad derecha es la izquierda invertida); estas filas no lo están: {0}.",
     "The order list is longer than 254 entries.": "La lista de orden tiene más de 254 entradas.",
     "The palette of the Solarized themes. MIT licence. Ethan Schoonover.": "La paleta de los temas Solarized. Licencia MIT. Ethan Schoonover.",
+    "the parts of the project that match": "las partes del proyecto que coinciden",
     "The player takes {0} variables from there: h takes h to z.": "El reproductor ocupa {0} variables desde ahí: h ocupa de h a z.",
     "The program runs on more than one system and handles it in its code: the DASM template chooses with -DPAL=1, batari Basic with set tv, C detects it when it starts. The emulator is not told one: it detects it from the frame.": "El programa funciona en más de un sistema y lo resuelve en su código: la plantilla de DASM elige con -DPAL=1, batari Basic con set tv, y C lo detecta al arrancar. Al emulador no se le indica ninguno: lo detecta por el cuadro.",
     "the project is not a JSON object": "el proyecto no es un objeto JSON",
@@ -927,7 +928,7 @@
     "This kernel gives the playfield one colour: only the first row's is kept.": "Este kernel da un solo color al playfield: solo se conserva el de la primera fila.",
     "This kernel shows columns {0} to {1} only: what is outside them is lost (rows {2}).": "Este kernel solo muestra las columnas {0} a {1}: lo que queda fuera se pierde (filas {2}).",
     "This line: {0}, {1} bytes, {2} cycles": "Esta línea: {0}, {1} bytes, {2} ciclos",
-    "This model runs on {0}, not on this computer. Your messages, and any file, selection or build output you attach, will be sent there.": "Este modelo funciona en {0}, no en este ordenador. Tus mensajes, y cualquier fichero, selección o salida de compilación que adjuntes, se enviarán allí.",
+    "This model runs on {0}, not on this computer. Your messages, and the file, selection, build output and parts of your project that go with them, will be sent there.": "Este modelo funciona en {0}, no en este ordenador. Tus mensajes, y el archivo, la selección, la salida de compilación y las partes de tu proyecto que los acompañan, se enviarán allí.",
     "This song has more than 3 voices.": "Esta canción tiene más de 3 voces.",
     "TIA": "TIA",
     "TIA channel 1": "Canal 1 del TIA",
@@ -1110,5 +1111,5 @@
     "{0}:{1}: no listing to place the breakpoint: build first.": "{0}:{1}: no hay listado para situar el punto de ruptura: compila antes.",
     "±{0}": "±{0}"
   },
-  "total": 1107
+  "total": 1108
 }

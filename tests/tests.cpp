@@ -39,6 +39,7 @@
 #include "assistant/markdown.h"
 #include "assistant/tools.h"
 #include "assistant/chat_tabs.h"
+#include "assistant/project_index.h"
 #include <imgui.h>
 #include "assistant/secrets.h"
 #include "assistant/models.h"
@@ -3327,7 +3328,7 @@ static void testAgentTools(const KnowledgeBase& kb) {
   CHECK(!findToolCall("Use ```asm\nlda #0\n``` here", &parsed));
   CHECK(!findToolCall("```tool\n{\"tool\": \"rm_rf\"}\n```", &parsed));
   CHECK(!findToolCall("The JSON {\"tool\":\"read_file\"} is an example", &parsed));  // not at the start
-  CHECK(toolNames(0).size() == 11 && toolNames(1).size() == 12 && toolNames(2).size() == 14);
+  CHECK(toolNames(0).size() == 12 && toolNames(1).size() == 13 && toolNames(2).size() == 15);
   CHECK(toolPrompt(0).find("edit_file") == std::string::npos && toolPrompt(2).find("run_emulator") != std::string::npos);
   CHECK(estimateTokens(toolPrompt(2)) < 1100);  // the design budget for the tool descriptions
 
@@ -3514,6 +3515,59 @@ static void testInvalidUtf8() {
   bool bodyThrew = false;
   try { chatRequestBody(provider, {{"user", "caf\xC3"}}); provider.dialect = "anthropic"; chatRequestBody(provider, {{"user", "a\xFF"}}); } catch (...) { bodyThrew = true; }
   CHECK(!bodyThrew);
+  fs::remove_all(root);
+}
+
+static void testProjectIndex() {
+  namespace fs = std::filesystem;
+  using vcs::assistant::ProjectIndex;
+  // words are split like identifiers, and kept whole too
+  auto has = [](const std::vector<std::string>& list, const char* word) { return std::find(list.begin(), list.end(), word) != list.end(); };
+  auto split = ProjectIndex::words("playerX kernel_loop WSYNC HMOVE2");
+  CHECK(has(split, "playerx") && has(split, "player") && has(split, "kernel_loop") && has(split, "kernel") && has(split, "loop") && has(split, "wsync") && has(split, "hmove"));
+
+  fs::path root = fs::temp_directory_path() / "vcside_index_test";
+  fs::remove_all(root);
+  fs::create_directories(root / "src");
+  fs::create_directories(root / "build");
+  auto write = [](const fs::path& path, const std::string& text) { std::ofstream(path, std::ios::binary) << text; };
+  std::string joystick = "ReadJoystick\n  lda SWCHA\n  and #$80\n  bne NotRight\n  inc playerX\nNotRight\n  lda SWCHA\n  and #$40\n  bne NotLeft\n  dec playerX\nNotLeft\n  rts\n";
+  std::string sound = "PlayTone\n  lda #4\n  sta AUDC0\n  lda #31\n  sta AUDF0\n  lda #8\n  sta AUDV0\n  rts\nStopTone\n  lda #0\n  sta AUDV0\n  rts\n";
+  std::string kernel = "DrawKernel\n  sta WSYNC\n  lda #$0E\n  sta COLUBK\n  ldx #192\nKernelLoop\n  sta WSYNC\n  dex\n  bne KernelLoop\n  rts\n";
+  write(root / "src" / "input.asm", joystick);
+  write(root / "src" / "audio.asm", sound);
+  write(root / "kernel.asm", kernel);
+  write(root / ".env", "SECRET=1\n");
+  write(root / "build" / "main.lst", "ReadJoystick junk\n");
+  write(root / "game.bin", std::string("\0\1ReadJoystick", 13));
+  ProjectIndex index;
+  CHECK(index.update(root.string()) == 3 && index.files() == 3 && index.chunks() >= 3);
+  CHECK(index.update(root.string()) == 0);  // nothing changed: nothing read
+  auto hits = index.search("how does the joystick move the player left and right", 3);
+  CHECK(!hits.empty() && hits[0].file == "src/input.asm" && hits[0].firstLine == 1 && hits[0].text.find("SWCHA") != std::string::npos);
+  hits = index.search("where is the tone played, AUDV0 volume", 3);
+  CHECK(!hits.empty() && hits[0].file == "src/audio.asm");
+  hits = index.search("KernelLoop", 3);
+  CHECK(!hits.empty() && hits[0].file == "kernel.asm");
+  hits = index.search("what is the weather like in Madrid", 3);  // nothing in the project: no noise
+  CHECK(hits.empty());
+  CHECK(index.search("SWCHA", 3, "src/input.asm").empty());     // the attached file is left out
+  for (auto& hit : index.search("SWCHA playerX AUDV0 WSYNC", 8)) CHECK(hit.file != ".env" && hit.file.find("build") != 0 && hit.file != "game.bin");
+  std::string map = index.map("joystick", 400);
+  CHECK(map.find("src/input.asm: ReadJoystick NotRight NotLeft") != std::string::npos && map.find("kernel.asm") != std::string::npos);
+  CHECK(map.find("src/input.asm") < map.find("kernel.asm"));  // what the question mentions comes first
+  // a changed file is read again and a deleted one forgotten
+  write(root / "src" / "input.asm", joystick + "FireButton\n  lda INPT4\n  bmi NoFire\nNoFire\n  rts\n");
+  fs::last_write_time(root / "src" / "input.asm", fs::file_time_type::clock::now() + std::chrono::seconds(5));
+  CHECK(index.update(root.string()) == 1);
+  hits = index.search("fire button INPT4", 3);
+  CHECK(!hits.empty() && hits[0].file == "src/input.asm");
+  fs::remove(root / "src" / "audio.asm");
+  CHECK(index.update(root.string()) == 0 && index.files() == 2 && index.search("AUDV0 tone", 3).empty());
+  // a file that is not UTF-8 is indexed without trouble
+  write(root / "latin1.asm", "Caf\xE9\n  lda #1\n  rts\n");
+  CHECK(index.update(root.string()) == 1);
+  for (auto& hit : index.search("caf lda", 3)) CHECK(vcs::assistant::sanitizeUtf8(hit.text) == hit.text);
   fs::remove_all(root);
 }
 
@@ -3832,6 +3886,7 @@ int main() {
   testRemote();
   testChatTabs();
   testInvalidUtf8();
+  testProjectIndex();
   std::printf("%d checks, %d failures\n", checks, failures);
   return failures ? 1 : 0;
 }

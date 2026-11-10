@@ -28,6 +28,8 @@ struct Attachments {
   std::string selection;
   std::string errors;
   std::string grounding;     // groundingBlock()
+  std::string projectMap;    // the files and the names they define
+  std::string excerpts;      // chunks of the project that match the question (already formatted)
 };
 
 // The text of the user's turn with the attachments in front of it, each labelled as data.

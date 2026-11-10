@@ -2407,6 +2407,7 @@ void App::assistantPanel() {
       !files_[activeFile_]->music && !files_[activeFile_]->image && !files_[activeFile_]->form) {
     OpenFile* active = files_[activeFile_].get();
     context.fileName = fs::path(active->path).filename().string();
+    if (project_) context.fileRelative = fs::relative(active->path, project_->dir).generic_string();
     context.fileText = active->editor.text();
     context.selection = active->editor.selectedText();
     context.canApply = true;
