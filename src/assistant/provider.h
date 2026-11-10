@@ -45,6 +45,16 @@ struct Event {
 std::string openAiRequestBody(const Provider& provider, const std::vector<Message>& messages);
 // Reads one streamed data payload ("[DONE]" included) into events.
 void parseOpenAiStreamData(const std::string& data, std::vector<Event>& events);
+// The body for the provider's dialect (what the request inspector shows: never a key).
+std::string chatRequestBody(const Provider& provider, const std::vector<Message>& messages);
+// The Anthropic Messages API: the system prompt is its own field, not a message.
+std::string anthropicRequestBody(const Provider& provider, const std::vector<Message>& messages, int maxTokens = 4096);
+void parseAnthropicStreamData(const std::string& data, std::vector<Event>& events);
+// The request's address and headers for the provider's dialect, key included (looked up in
+// the secret store, then in the environment variable the provider names).
+std::string chatUrl(const Provider& provider);
+std::vector<std::pair<std::string, std::string>> chatHeaders(const Provider& provider);
+std::string keyOf(const Provider& provider);   // "" if there is none
 // "http://127.0.0.1:11434/v1" + "/chat/completions", without doubling slashes.
 std::string joinUrl(const std::string& base, const std::string& path);
 

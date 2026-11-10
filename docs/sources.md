@@ -109,3 +109,7 @@ All the documentary sources (Stella Programmer's Guide, Towers' notes, 6532 data
 ## How-to entries (`techniques.json`, 2026-11-10)
 
 `data/kb/techniques.json` holds short recipes (what a programmer wants to do, the registers and the steps). They contain no text from other documents: each step restates facts already in `tia.json`, `riot.json`, `formats.json` and `tv.json` and cites the same sources (`stella-guide`, `towers-tia`, `mos6532`, `horton`, `stella-src`, `gopher-bin`). The routines in the examples are the usual community forms written out for VCSIDE; the entries whose routine was not run say so with `verified: false`. The typical timer values (43 and 35 for the vertical blank and overscan) are starting points from the cycle counts in `tv.json`, not measurements.
+
+## Assistant: remote APIs (read 2026-11-10)
+
+- Anthropic Messages API streaming (`POST /v1/messages` with `"stream": true`; events `message_start`, `content_block_start`, `content_block_delta` with `text_delta`, `content_block_stop`, `message_delta`, `message_stop`, `ping`; headers `x-api-key` and `anthropic-version: 2023-06-01`), from Anthropic's documentation, https://docs.anthropic.com/en/api/messages-streaming. Still to verify there: where the token counts appear in the stream.

@@ -94,6 +94,9 @@ class AssistantPanel {
   Recommendation recommendation_;                      // the model that fits it best
   // the agent: a call is answered by running a tool, then the model is asked again
   ImFont* monoFont_ = nullptr;
+  long long spentTokens_ = 0;                          // remote tokens used this session
+  int lastUsageSpent_ = 0;
+  std::string keyInput_;                               // an API key being typed; never saved to a file
   std::string pendingQuestion_;
   int agentSteps_ = 0;
   std::map<std::string, int> callCounts_;
@@ -117,6 +120,8 @@ class AssistantPanel {
   void poll(const PanelContext& context);
   void finishAnswer(const PanelContext& context, const std::string& note);
   void saveChat(const PanelContext& context);
+  bool overBudget(const Provider& provider);
+  void keyControls(Provider& provider);
   ToolEnv toolEnv(const PanelContext& context) const;
   void continueAgent(const PanelContext& context);
   void handleToolCall(const PanelContext& context, const ToolCall& call);

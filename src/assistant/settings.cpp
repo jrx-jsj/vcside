@@ -14,7 +14,7 @@ namespace fs = std::filesystem;
 using json = nlohmann::json;
 
 json Settings::toJson() const {
-  json value = {{"asked", asked}, {"chat", chat}, {"agent", agent}, {"completion", completion}, {"explain_errors", explainErrors}, {"active", active}, {"tool_profile", toolProfile}};
+  json value = {{"asked", asked}, {"chat", chat}, {"agent", agent}, {"completion", completion}, {"explain_errors", explainErrors}, {"active", active}, {"tool_profile", toolProfile}, {"budget_tokens", budgetTokens}};
   value["providers"] = json::array();
   for (auto& provider : providers)
     value["providers"].push_back({{"name", provider.name},
@@ -36,6 +36,7 @@ Settings Settings::fromJson(const json& input) {
   settings.completion = value.value("completion", false);
   settings.explainErrors = value.value("explain_errors", false);
   settings.active = value.value("active", 0);
+  settings.budgetTokens = std::max(0, value.value("budget_tokens", 0));
   settings.toolProfile = std::clamp(value.value("tool_profile", 2), 0, 2);
   if (value.contains("providers") && value["providers"].is_array())
     for (auto& item : value["providers"]) {

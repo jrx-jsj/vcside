@@ -38,6 +38,7 @@
 #include "assistant/http.h"
 #include "assistant/markdown.h"
 #include "assistant/tools.h"
+#include "assistant/secrets.h"
 #include "assistant/models.h"
 #include "assistant/prompt.h"
 #include "assistant/provider.h"
@@ -3350,6 +3351,62 @@ static void testAgentTools(const KnowledgeBase& kb) {
   fs::remove_all(root.parent_path() / "vcside_agent_outside");
 }
 
+static void testRemote() {
+  using namespace vcs::assistant;
+  // the Anthropic dialect: the system prompt is its own field
+  Provider provider;
+  provider.dialect = "anthropic", provider.model = "m", provider.baseUrl = "https://api.anthropic.com/v1";
+  auto body = nlohmann::json::parse(anthropicRequestBody(provider, {{"system", "be brief"}, {"user", "hi"}, {"assistant", "hello"}, {"user", "more"}}));
+  CHECK(body["system"] == "be brief" && body["messages"].size() == 3 && body["messages"][0]["role"] == "user" && body["stream"] == true && body["max_tokens"] > 0);
+  CHECK(chatUrl(provider) == "https://api.anthropic.com/v1/messages");
+  std::vector<Event> events;
+  parseAnthropicStreamData(R"({"type":"message_start","message":{"usage":{"input_tokens":25,"output_tokens":1}}})", events);
+  parseAnthropicStreamData(R"({"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hel"}})", events);
+  parseAnthropicStreamData(R"({"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"hm"}})", events);
+  parseAnthropicStreamData(R"({"type":"ping"})", events);
+  parseAnthropicStreamData(R"({"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":15}})", events);
+  parseAnthropicStreamData(R"({"type":"message_stop"})", events);
+  parseAnthropicStreamData(R"({"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}})", events);
+  CHECK(events.size() == 5);
+  CHECK(events[0].kind == Event::Usage && events[0].promptTokens == 25);
+  CHECK(events[1].kind == Event::Text && events[1].text == "Hel");
+  CHECK(events[2].kind == Event::Usage && events[2].completionTokens == 15);
+  CHECK(events[3].kind == Event::Done && events[4].kind == Event::Error && events[4].text == "Overloaded");
+
+  // keys: headers per dialect, from the secret store, never in the body
+  CHECK(saveSecret("TestProvider", "sk-test-1234567890abcd") && !secretsPersistent());
+  provider.name = "TestProvider";
+  bool hasKey = false, hasVersion = false;
+  for (auto& header : chatHeaders(provider)) {
+    if (header.first == "x-api-key" && header.second == "sk-test-1234567890abcd") hasKey = true;
+    if (header.first == "anthropic-version") hasVersion = true;
+  }
+  CHECK(hasKey && hasVersion);
+  Provider openai;
+  openai.name = "TestProvider";
+  bool bearer = false;
+  for (auto& header : chatHeaders(openai)) bearer = bearer || (header.first == "Authorization" && header.second == "Bearer sk-test-1234567890abcd");
+  CHECK(bearer);
+  CHECK(chatRequestBody(provider, {{"user", "hi"}}).find("sk-test") == std::string::npos);
+  CHECK(maskKey("sk-test-1234567890abcd") == "...abcd" && maskKey("short") == "...");
+  CHECK(redactKey("error for sk-test-1234567890abcd twice sk-test-1234567890abcd", "sk-test-1234567890abcd") == "error for [key] twice [key]");
+  CHECK(removeSecret("TestProvider"));
+  std::string none;
+  CHECK(!loadSecret("TestProvider", &none));
+  // an https address with no TLS backend is refused clearly, not tried in the clear
+  HttpRequest request;
+  request.url = "https://example.invalid/v1";
+  std::atomic<bool> never{false};
+  if (!httpsAvailable()) {
+    HttpResult refused = httpRequest(request, [](const char*, size_t) { return true; }, never);
+    CHECK(refused.status == 0 && refused.error.find("https") != std::string::npos);
+  }
+  // the budget survives a save
+  Settings settings;
+  settings.budgetTokens = 50000;
+  CHECK(Settings::fromJson(settings.toJson()).budgetTokens == 50000);
+}
+
 static void testAssistant(const KnowledgeBase& kb) {
   using namespace vcs::assistant;
   // SSE, fed one byte at a time, with CRLF, comments and a data line split over two
@@ -3662,6 +3719,7 @@ int main() {
   testBundledModel();
   testMarkdown();
   testAgentTools(kb);
+  testRemote();
   std::printf("%d checks, %d failures\n", checks, failures);
   return failures ? 1 : 0;
 }

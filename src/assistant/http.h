@@ -41,6 +41,12 @@ struct HttpResult {
 HttpResult httpRequest(const HttpRequest& request, const std::function<bool(const char*, size_t)>& onBody,
                        const std::atomic<bool>& cancel);
 
+// https:// goes through the operating system's own TLS (docs/design-assistant.md): a backend a
+// platform file registers at start. Without one an https URL is refused with a clear message.
+using HttpsBackend = HttpResult (*)(const HttpRequest&, const std::function<bool(const char*, size_t)>&, const std::atomic<bool>&);
+void setHttpsBackend(HttpsBackend backend);
+bool httpsAvailable();
+
 // A TCP port on 127.0.0.1 that is free right now (0 if none could be found).
 int freeLoopbackPort();
 

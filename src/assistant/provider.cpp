@@ -3,6 +3,8 @@
 #include "assistant/provider.h"
 
 #include <cstdlib>
+
+#include "assistant/secrets.h"
 #include <nlohmann/json.hpp>
 
 namespace vcs::assistant {
@@ -32,6 +34,75 @@ std::string openAiRequestBody(const Provider& provider, const std::vector<Messag
   body["messages"] = json::array();
   for (auto& message : messages) body["messages"].push_back({{"role", message.role}, {"content", message.content}});
   return body.dump();
+}
+
+std::string anthropicRequestBody(const Provider& provider, const std::vector<Message>& messages, int maxTokens) {
+  json body;
+  body["model"] = provider.model;
+  body["max_tokens"] = maxTokens;
+  body["stream"] = true;
+  std::string system;
+  body["messages"] = json::array();
+  for (auto& message : messages) {
+    if (message.role == "system") system += (system.empty() ? "" : "\n\n") + message.content;
+    else body["messages"].push_back({{"role", message.role}, {"content", message.content}});
+  }
+  if (!system.empty()) body["system"] = system;
+  return body.dump();
+}
+
+std::string chatRequestBody(const Provider& provider, const std::vector<Message>& messages) {
+  return provider.dialect == "anthropic" ? anthropicRequestBody(provider, messages) : openAiRequestBody(provider, messages);
+}
+
+void parseAnthropicStreamData(const std::string& data, std::vector<Event>& events) {
+  json value = json::parse(data, nullptr, false);
+  if (!value.is_object()) return;
+  std::string type = value.value("type", std::string());
+  if (type == "content_block_delta" && value.contains("delta") && value["delta"].is_object()) {
+    const json& delta = value["delta"];
+    if (delta.value("type", std::string()) == "text_delta" && delta.contains("text") && delta["text"].is_string() && !delta["text"].get<std::string>().empty())
+      events.push_back({Event::Text, delta["text"].get<std::string>(), 0, 0});
+  } else if (type == "message_start" && value.contains("message") && value["message"].is_object() && value["message"].contains("usage")) {
+    Event usage;
+    usage.kind = Event::Usage;
+    usage.promptTokens = value["message"]["usage"].value("input_tokens", 0);
+    usage.completionTokens = value["message"]["usage"].value("output_tokens", 0);
+    events.push_back(usage);
+  } else if (type == "message_delta" && value.contains("usage") && value["usage"].is_object()) {
+    Event usage;
+    usage.kind = Event::Usage;
+    usage.promptTokens = value["usage"].value("input_tokens", 0);
+    usage.completionTokens = value["usage"].value("output_tokens", 0);
+    events.push_back(usage);
+  } else if (type == "message_stop") {
+    events.push_back({Event::Done, "", 0, 0});
+  } else if (type == "error") {
+    std::string message = value.contains("error") && value["error"].is_object() ? value["error"].value("message", std::string("error")) : "error";
+    events.push_back({Event::Error, message, 0, 0});
+  }
+}
+
+std::string keyOf(const Provider& provider) {
+  std::string key;
+  if (loadSecret(provider.name, &key) && !key.empty()) return key;
+  if (!provider.keyEnv.empty())
+    if (const char* fromEnvironment = std::getenv(provider.keyEnv.c_str())) return fromEnvironment;
+  return "";
+}
+
+std::string chatUrl(const Provider& provider) { return joinUrl(provider.baseUrl, provider.dialect == "anthropic" ? "messages" : "chat/completions"); }
+
+std::vector<std::pair<std::string, std::string>> chatHeaders(const Provider& provider) {
+  std::vector<std::pair<std::string, std::string>> headers = {{"Content-Type", "application/json"}};
+  std::string key = keyOf(provider);
+  if (provider.dialect == "anthropic") {
+    headers.push_back({"anthropic-version", "2023-06-01"});
+    if (!key.empty()) headers.push_back({"x-api-key", key});
+  } else if (!key.empty()) {
+    headers.push_back({"Authorization", "Bearer " + key});
+  }
+  return headers;
 }
 
 void parseOpenAiStreamData(const std::string& data, std::vector<Event>& events) {
@@ -65,10 +136,8 @@ void parseOpenAiStreamData(const std::string& data, std::vector<Event>& events) 
 
 namespace {
 std::vector<std::pair<std::string, std::string>> headersFor(const Provider& provider, bool json) {
-  std::vector<std::pair<std::string, std::string>> headers;
-  if (json) headers.push_back({"Content-Type", "application/json"});
-  if (!provider.keyEnv.empty())
-    if (const char* key = std::getenv(provider.keyEnv.c_str())) headers.push_back({"Authorization", std::string("Bearer ") + key});
+  auto headers = chatHeaders(provider);
+  if (!json) headers.erase(headers.begin());  // no body: no content type
   return headers;
 }
 
@@ -118,9 +187,10 @@ void ChatRequest::start(const Provider& provider, std::vector<Message> messages)
 void ChatRequest::run(Provider provider, std::vector<Message> messages) {
   HttpRequest request;
   request.method = "POST";
-  request.url = joinUrl(provider.baseUrl, "chat/completions");
+  request.url = chatUrl(provider);
   request.headers = headersFor(provider, true);
-  request.body = openAiRequestBody(provider, messages);
+  bool anthropic = provider.dialect == "anthropic";
+  request.body = chatRequestBody(provider, messages);
   SseParser parser;
   bool done = false;
   HttpResult result = httpRequest(
@@ -128,7 +198,8 @@ void ChatRequest::run(Provider provider, std::vector<Message> messages) {
       [&](const char* bytes, size_t size) {
         for (auto& data : parser.feed(bytes, size)) {
           std::vector<Event> events;
-          parseOpenAiStreamData(data, events);
+          if (anthropic) parseAnthropicStreamData(data, events);
+          else parseOpenAiStreamData(data, events);
           for (auto& event : events) {
             if (event.kind == Event::Done) done = true;
             push(std::move(event));

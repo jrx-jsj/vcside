@@ -13,6 +13,10 @@
 
 #include "assistant/http.h"
 #include "assistant/markdown.h"
+#include "assistant/secrets.h"
+#ifdef __APPLE__
+#include "platform/apple_backends.h"
+#endif
 #include "i18n.h"
 #include "paths.h"
 #include "theme_ui.h"
@@ -156,7 +160,11 @@ void drawMarkdown(const std::string& text, ImFont* mono) {
 
 }  // namespace
 
-AssistantPanel::AssistantPanel() : settings_(Settings::fromJson(nlohmann::json::object())) {}
+AssistantPanel::AssistantPanel() : settings_(Settings::fromJson(nlohmann::json::object())) {
+#ifdef __APPLE__
+  registerAppleBackends();  // HTTPS and the Keychain
+#endif
+}
 AssistantPanel::~AssistantPanel() {
   request_.cancel();
   engine_.stop();
@@ -314,9 +322,17 @@ void AssistantPanel::saveChat(const PanelContext& context) {
   ChatStore(context.projectDir).save(chat_);
 }
 
+bool AssistantPanel::overBudget(const Provider& provider) {
+  bool remote = !provider.builtin && !provider.isLocal();
+  if (!remote || settings_.budgetTokens <= 0 || spentTokens_ < settings_.budgetTokens) return false;
+  error_ = F("The token budget for remote models ({0}) is used up. Raise it in the Assistant settings to go on.", {std::to_string(settings_.budgetTokens)});
+  return true;
+}
+
 void AssistantPanel::send(const PanelContext& context, const std::string& question) {
   Provider* provider = settings_.provider();
   if (!provider || question.empty()) return;
+  if (overBudget(*provider)) return;
   if (chat_.id.empty()) chat_.id = ChatStore::newId();
   if (chat_.title.empty()) chat_.title = oneLine(question, 48);
   chat_.provider = provider->name, chat_.model = provider->model;
@@ -336,7 +352,7 @@ void AssistantPanel::send(const PanelContext& context, const std::string& questi
   chat_.messages.push_back({"user", question, {}});
   turnText_ = turn;
   agentSteps_ = 0, callCounts_.clear(), pendingEditActive_ = false, pendingRun_.clear(), waitingBuild_ = false;
-  lastRequest_ = openAiRequestBody(*provider, messages);
+  lastRequest_ = chatRequestBody(*provider, messages);
   streaming_.clear(), error_.clear();
   request_.start(*provider, messages);
   scrollDown_ = true;
@@ -347,6 +363,8 @@ void AssistantPanel::finishAnswer(const PanelContext& context, const std::string
     ChatMessage answer{"assistant", streaming_ + (note.empty() ? "" : "\n\n[" + note + "]"), streamingReference_};
     chat_.messages.push_back(answer);
   }
+  spentTokens_ += lastUsageSpent_;  // this request's tokens, as the server counted them
+  lastUsageSpent_ = 0;
   std::string answer = streaming_;
   streaming_.clear();
   ToolCall call;
@@ -394,6 +412,7 @@ void AssistantPanel::addToolResult(const PanelContext& context, const std::strin
 void AssistantPanel::continueAgent(const PanelContext& context) {
   Provider* provider = settings_.provider();
   if (!provider || chat_.messages.empty()) return;
+  if (overBudget(*provider)) return;
   std::vector<ChatMessage> history(chat_.messages.begin(), chat_.messages.end() - 1);
   // the first request of this turn carried the attachments and the reference entries: keep them
   for (size_t i = history.size(); i-- > 0;)
@@ -402,7 +421,7 @@ void AssistantPanel::continueAgent(const PanelContext& context) {
       break;
     }
   std::vector<Message> messages = buildMessages(systemPrompt(), history, chat_.messages.back().content, provider->contextTokens, 1024, &droppedTurns_);
-  lastRequest_ = openAiRequestBody(*provider, messages);
+  lastRequest_ = chatRequestBody(*provider, messages);
   streaming_.clear();
   request_.start(*provider, messages);
   scrollDown_ = true;
@@ -582,7 +601,12 @@ void AssistantPanel::poll(const PanelContext& context) {
   for (auto& event : request_.poll()) {
     switch (event.kind) {
       case Event::Text: streaming_ += event.text, scrollDown_ = true; break;
-      case Event::Usage: promptTokens_ = event.promptTokens, completionTokens_ = event.completionTokens; break;
+      case Event::Usage:
+        // Anthropic reports the input tokens first and the output ones at the end: keep what is known
+        if (event.promptTokens) promptTokens_ = event.promptTokens;
+        if (event.completionTokens) completionTokens_ = event.completionTokens;
+        lastUsageSpent_ = promptTokens_ + completionTokens_;
+        break;
       case Event::Error: error_ = event.text, finishAnswer(context, ""); break;
       case Event::Done: finishAnswer(context, event.text == "cancelled" ? "stopped" : ""); break;
     }
@@ -889,6 +913,28 @@ void AssistantPanel::firstStartDialog() {
   ImGui::EndPopup();
 }
 
+// The key goes to the system's secret store; the window shows only its last four characters.
+void AssistantPanel::keyControls(Provider& provider) {
+  std::string stored;
+  bool has = loadSecret(provider.name, &stored);
+  if (has) ImGui::TextDisabled("%s", F("Key saved in {0}: {1}", {T(secretStoreName()), maskKey(stored)}).c_str());
+  else ImGui::TextDisabled("%s", secretsPersistent() ? T("No key saved.") : T("No key saved (it will be kept for this session only)."));
+  ImGui::SetNextItemWidth(theme::em(260));
+  ImGui::InputText(T("API key"), &keyInput_, ImGuiInputTextFlags_Password);
+  ImGui::SameLine();
+  ImGui::BeginDisabled(keyInput_.empty());
+  if (theme::dialogButton(T("Save key"), ImVec2(0, 0), true)) {
+    saveSecret(provider.name, keyInput_);
+    std::fill(keyInput_.begin(), keyInput_.end(), '\0');
+    keyInput_.clear();
+  }
+  ImGui::EndDisabled();
+  if (has) {
+    ImGui::SameLine();
+    if (theme::dialogButton(T("Remove key"), ImVec2(0, 0), true)) removeSecret(provider.name);
+  }
+}
+
 void AssistantPanel::settingsDialog() {
   static bool opened = false;
   if (wantSettings_) ImGui::OpenPopup("###assistant_settings"), wantSettings_ = false, opened = true;
@@ -916,6 +962,9 @@ void AssistantPanel::settingsDialog() {
   if (ImGui::Checkbox(T("Chat panel"), &settings_.chat)) changed_ = true, settings_.asked = true;
   if (ImGui::Checkbox(T("Agent (reads project files, proposes edits, builds when you allow it)"), &settings_.agent)) changed_ = true;
   if (ImGui::Checkbox(T("Explain errors (a button in Problems and in the assistant)"), &settings_.explainErrors)) changed_ = true;
+  ImGui::SetNextItemWidth(theme::em(140));
+  if (ImGui::InputInt(T("Token budget for remote models (0 = none)"), &settings_.budgetTokens, 10000, 100000)) settings_.budgetTokens = std::max(0, settings_.budgetTokens), changed_ = true;
+  if (settings_.budgetTokens > 0) ImGui::TextDisabled("%s", F("Used in this session: {0}", {std::to_string(spentTokens_)}).c_str());
   if (settings_.agent) {
     const char* profiles[] = {T("Read only"), T("Read and propose edits"), T("Also build and run (each time you are asked)")};
     ImGui::SetNextItemWidth(theme::em(320));
@@ -971,6 +1020,16 @@ void AssistantPanel::settingsDialog() {
     changed_ |= ImGui::InputText(T("Address"), &provider.baseUrl);
     ImGui::SetNextItemWidth(theme::em(260));
     changed_ |= ImGui::InputText(T("Model"), &provider.model);
+    ImGui::SetNextItemWidth(theme::em(160));
+    if (ImGui::BeginCombo(T("Protocol"), provider.dialect == "anthropic" ? "Anthropic Messages" : "OpenAI chat completions")) {
+      if (ImGui::Selectable("OpenAI chat completions", provider.dialect != "anthropic")) provider.dialect = "openai", changed_ = true;
+      if (ImGui::Selectable("Anthropic Messages", provider.dialect == "anthropic")) {
+        provider.dialect = "anthropic", changed_ = true;
+        if (provider.baseUrl.find("11434") != std::string::npos || provider.baseUrl.empty()) provider.baseUrl = "https://api.anthropic.com/v1";
+      }
+      ImGui::EndCombo();
+    }
+    if (!provider.isLocal()) keyControls(provider);
     ImGui::SetNextItemWidth(theme::em(200));
     changed_ |= ImGui::InputText(T("Key variable"), &provider.keyEnv);
     ImGui::SetNextItemWidth(theme::em(120));

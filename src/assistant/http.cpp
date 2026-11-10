@@ -197,6 +197,10 @@ SocketHandle connectTo(const Url& url, int seconds, std::string* error) {
 
 }  // namespace
 
+static HttpsBackend httpsBackend_ = nullptr;
+void setHttpsBackend(HttpsBackend backend) { httpsBackend_ = backend; }
+bool httpsAvailable() { return httpsBackend_ != nullptr; }
+
 HttpResult httpRequest(const HttpRequest& request, const std::function<bool(const char*, size_t)>& onBody,
                        const std::atomic<bool>& cancel) {
   HttpResult result;
@@ -209,7 +213,8 @@ HttpResult httpRequest(const HttpRequest& request, const std::function<bool(cons
     return result;
   }
   if (url.scheme == "https") {
-    result.error = "https is not available yet: use a local model, or an http:// endpoint";
+    if (httpsBackend_) return httpsBackend_(request, onBody, cancel);
+    result.error = "https is not available on this system yet: use a local model, or an http:// endpoint";
     return result;
   }
   Socket socket_;

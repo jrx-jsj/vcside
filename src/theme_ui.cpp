@@ -43,9 +43,11 @@ bool beginModal(const char* name, bool* open, ImGuiWindowFlags flags) {
 }
 
 bool beginPanel(const char* name, bool* open, ImGuiWindowFlags flags) {
-  // docked on the last frame: the dock's tabs show the name, there is no title band
+  // docked on the last frame: the dock's tabs show the name, there is no title band.
+  // (DockIsActive is false for a window alone in its dock node, so the node is what says
+  // "docked": pushing the title colours then would paint the node's tab bar with them.)
   ImGuiWindow* previous = ImGui::FindWindowByName(name);
-  bool floating = !previous || !previous->DockIsActive;
+  bool floating = !previous || !previous->DockNode;
   int colours = 0, styles = 0;
   if (floating) {
     ImU32 title = col(Role::DlgTitle);
@@ -71,7 +73,7 @@ void endPanel() {
     ImRect bar = window->TitleBarRect();
     float left = 0, right = bar.Max.x - window->WindowBorderSize - em(10);
     bool place = true;
-    if (window->DockIsActive) {
+    if (window->DockNode) {
       ImGuiTabBar* tabs = window->DockNode ? window->DockNode->TabBar : nullptr;
       if (tabs) bar = tabs->BarRect, left = tabs->BarRect.Min.x + std::min(tabs->WidthAllTabs, tabs->BarRect.GetWidth());
       else place = false;  // a dock without tabs: no title to go beside
@@ -184,7 +186,10 @@ void applyImGui(const Resolved& resolved) {
   colours[ImGuiCol_TabDimmed] = themeColour(Role::UiTab);
   colours[ImGuiCol_TabDimmedSelected] = themeColour(Role::UiTabSelected);
   colours[ImGuiCol_TabDimmedSelectedOverline] = alpha(themeColour(Role::UiAccent), 0.0f);
+  // ImGui draws the drop markers at 40-100% of this colour: kept faint so the layout stays readable
+  // while a panel is dragged, with the box under the mouse still the clearest
   colours[ImGuiCol_DockingPreview] = themeColour(Role::UiDockPreview);
+  colours[ImGuiCol_DockingPreview].w *= 0.5f;
   colours[ImGuiCol_DockingEmptyBg] = themeColour(Role::UiPanel);
   colours[ImGuiCol_PlotLines] = themeColour(Role::UiTextDim);
   colours[ImGuiCol_PlotLinesHovered] = themeColour(Role::UiAccent);
