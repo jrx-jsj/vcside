@@ -484,21 +484,23 @@ static void writeGfxIncludes(const fs::path& dir, bool isC) {
   }
 }
 
-// A .vcsmusic of an example comes with its export (<name>.music.asm), written as the music
-// editor writes it on save, tuned for the project's TV standard.
+// A .vcsmusic of an example comes with its export (<name>.music.asm, or <name>.music.h for
+// C), written as the music editor writes it on save, tuned for the project's TV standard.
 static void writeMusicIncludes(const fs::path& dir, const std::string& tvStandard) {
   std::error_code errorCode;
   for (auto& entry : fs::directory_iterator(dir, errorCode)) {
     if (entry.path().extension() != ".vcsmusic") continue;
     music::Song song;
     std::string error;
-    if (!music::fromJson(readFile(entry.path().string()), &song, &error) || (song.exportTo != "dasm" && song.exportTo != "bb")) continue;
+    if (!music::fromJson(readFile(entry.path().string()), &song, &error) || (song.exportTo != "dasm" && song.exportTo != "bb" && song.exportTo != "c")) continue;
     std::string tv = tvStandard == "AUTO" ? "NTSC" : tvStandard;
     music::ExportOptions options;
     options.tv = tv;
     if (song.exportTo == "bb") options.target = music::ExportTarget::BatariBasic, options.ramStart = song.exportRam;
+    if (song.exportTo == "c") options.target = music::ExportTarget::C;
     music::ExportResult result = music::exportSong(song, music::audioClockHz(tv), options);
-    if (result.ok) std::ofstream(dir / (entry.path().stem().string() + ".music.asm"), std::ios::binary) << result.text;
+    std::string extension = song.exportTo == "c" ? ".music.h" : ".music.asm";
+    if (result.ok) std::ofstream(dir / (entry.path().stem().string() + extension), std::ios::binary) << result.text;
   }
 }
 
@@ -599,6 +601,7 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
         std::ofstream(destination, std::ios::binary) << text;
       }
     writeGfxIncludes(fs::path(newProject.dir) / "src", true);
+    writeMusicIncludes(fs::path(newProject.dir) / "src", tvStandard);
     newProject.main = "src/main.c";
     newProject.buildCommand = "make";
     newProject.format = "ELF";

@@ -6,6 +6,11 @@
 //
 // What the game calls: MusicInit once, MusicFrame once per frame, MusicEffect with a
 // sound effect's number in A. It needs MUSIC_RAM: 19 bytes of zero page.
+//
+// A song played as samples (Song::target "samples") is exported as C instead, for ELF
+// cartridges: <name>.music.h with VCSIDE's C player (CC0), which works out the frame as
+// the editor's Player does and mixes the voices into one AUDV0 level per scanline as
+// SampleMixer does (tests compile it and compare both, level by level).
 #pragma once
 #include <string>
 #include <vector>
@@ -14,7 +19,7 @@
 
 namespace vcs::music {
 
-enum class ExportTarget { Dasm, BatariBasic };
+enum class ExportTarget { Dasm, BatariBasic, C };  // C: a song played as samples, for ELF
 
 struct ExportOptions {
   ExportTarget target = ExportTarget::Dasm;
@@ -26,7 +31,7 @@ struct ExportOptions {
 
 struct ExportResult {
   bool ok = false;
-  std::string text;                   // the .music.asm
+  std::string text;                   // the .music.asm (or .music.h)
   std::vector<std::string> problems;  // what could not be exported as it plays in the editor
   int dataBytes = 0;                  // the song's tables (the player is about 400 bytes more)
   int sounds = 0, envelopes = 0, releases = 0, pitches = 0;

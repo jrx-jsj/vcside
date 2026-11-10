@@ -109,7 +109,7 @@ With AUDC = 0 the TIA outputs AUDV as a level, so a program that writes AUDV0 on
 - **Import:**
   - TIATracker `.ttt`: its instruments, percussion and patterns.
   - MIDI files (later): notes per channel, then tuned.
-- **Example projects:** the DASM example and the batari Basic template play a short song, with a sound effect on the fire button and another when the hero (or the square) reaches an edge or a wall. The C (ELF) examples get theirs with the samples (phase 4).
+- **Example projects:** the DASM example and the batari Basic template play a short song, with a sound effect on the fire button and another when the hero (or the square) reaches an edge or a wall. The C (ELF) template and its example play a 3-voice song as samples, with the same two effects.
 
 ## Credits
 
@@ -132,6 +132,7 @@ Each technique, with whoever devised or spread it. The editor's help shows the s
 | 4-bit samples by writing AUDV with AUDC = 0 | Still to be found |
 | More than 4 bits by sampling the volume between audio clocks | Discussed in AtariAge's "8-bit digital audio from 2600" thread; authors still to be credited |
 | Direct digital synthesis (phase accumulator) | A general technique with no single author |
+| Samples on the overblank's lines of an ELF game | The ELF loader's own overblank program (United Carts of Atari firmware, Stella, Gopher2600) plays a nibble per line from RIOT RAM to $2D; VCSIDE's templates change that write to AUDV0. Who designed the program's sample slot is still to be found |
 | Sound effects that take a music channel while they sound | Common in 2600 games; who did it first is still to be found |
 
 ## Phases for 0.2.0
@@ -159,7 +160,11 @@ Each technique, with whoever devised or spread it. The editor's help shows the s
    - **Rules added for the console:** a cell's instrument becomes the channel's for later notes; the volume index goes on frame by frame and the `V` effect switches envelope keeping it; the release is chosen at the note off; a voice that stops writes AUDC, AUDF and AUDV = 0; the pitch stays on its last step.
    - **Sound effects:** an effect starts its sound on its channel and locks it: the song's events there are skipped, and the song's end does not release it. The lock ends when the effect's voice stops (an envelope that ends on 0, or its release).
    - **Cost:** at most 190 instructions a frame in the tests, about 800 cycles. In the DASM example the vertical blank keeps more than 1700 cycles free (INTIM, measured in Stella); in the batari Basic template about 1900 cycles of the overscan are left. Both keep their line count (Stella and Gopher2600).
-4. Samples for ELF: waveforms, voices, mixing, the C player and the C example. Checked in Stella; on the PlusCart and the Chameleon if possible.
+4. Samples for ELF: waveforms, voices, mixing, the C player and the C example. **Done** (2026-11-10), checked in Stella and Gopher2600; not yet on a PlusCart or a Chameleon Cart.
+   - **The song:** *Sound* chooses *TIA* or *Samples (ELF)*, 1 to 4 voices and the loudness (`gain`, in sixteenths: 16 means every voice at full volume together reaches AUDV 15; more is louder and clips). An instrument has a waveform (square with a duty of 1 to 31 of 32, triangle, sawtooth, sine, noise from a 4-, 5-, 9- or 15-bit register, or 32 levels drawn by hand), the same volume envelopes and releases, and a pitch envelope in cents. Pitch is exact, so there is no tuning, only the transposition and A4.
+   - **The mix, line by line (`SampleMixer`):** each voice adds a 32-bit phase step per scanline (`Song::phaseSteps`: the note's frequency over half the audio clock, which is the line rate); the top 5 bits pick one of the wave's 32 levels. Noise moves its Galois register each time those 5 bits change, so the note sets how bright it is. The voices' levels times their volumes are added, scaled by `gain` and the voice count into quarters of an AUDV level, and a 64-entry table turns that into the AUDV whose output (through the TIA's non-linear mix) is closest. A new note restarts its voice's phase.
+   - **The C player** (`<name>.music.h`, CC0, the same rules as the 6502 player): `music_init()`, `music_effect(n)` and `music_frame(lines)`, which plays the frame's row and fills `music_level[]` (one AUDV0 value per line of the kernel) and `music_nibbles[31]` (the 63 lines of the overblank, two per byte). The tests compile it with the system's C compiler (`-Wall -Wextra`, warnings fail) and compare it line by line with the editor's mixer: 24 random songs of 400 frames, at 262 and 312 lines, effects included.
+   - **The ELF templates:** `start_6507` changes the overblank program's `sta $2d` (at $86-$87) into `sta AUDV0`, only if those bytes are there; AUDC0 is already 0. The kernel writes `music_level[line]` to AUDV0 right after each WSYNC and spreads the 31 bytes of `music_nibbles` over its first lines ($E0-$FE); the overblank then plays them. In Stella every one of the 262 lines gets exactly one write (the overblank's at colour clock 9); the hero example's first line, which positions the sprite, gets its sample at the end of the line before. The tuning is the project's TV standard at export; a game that switches to PAL at run time keeps the NTSC pitches.
 5. TIATracker import; DPC+ and CDFJ export.
 6. Finer pitch: switching AUDF values within a frame (TIA) or per scanline (ELF).
 

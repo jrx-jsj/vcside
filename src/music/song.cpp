@@ -24,7 +24,7 @@ std::vector<SongNote> Song::notes() const {
   for (int orderIndex : order) {
     if (orderIndex < 0 || orderIndex >= (int)patterns.size()) continue;
     const Pattern& pattern = patterns[orderIndex];
-    for (int channel = 0; channel < kChannels; channel++) {
+    for (int channel = 0; channel < channelCount(); channel++) {
       int instrumentIndex = 0;
       for (const Cell& cell : pattern.cells[channel]) {
         if (cell.instrument >= 0) instrumentIndex = cell.instrument;
@@ -40,7 +40,7 @@ std::vector<int> Song::notesOf(int instrument) const {
   std::vector<int> heard;
   for (int orderIndex : order) {
     if (orderIndex < 0 || orderIndex >= (int)patterns.size()) continue;
-    for (int channel = 0; channel < kChannels; channel++) {
+    for (int channel = 0; channel < channelCount(); channel++) {
       int instrumentIndex = 0;
       for (const Cell& cell : patterns[orderIndex].cells[channel]) {
         if (cell.instrument >= 0) instrumentIndex = cell.instrument;
@@ -53,6 +53,45 @@ std::vector<int> Song::notesOf(int instrument) const {
   return heard;
 }
 
+std::array<uint8_t, 32> waveLevels(const Instrument& instrument) {
+  std::array<uint8_t, 32> levels{};
+  for (int step = 0; step < 32; step++) {
+    int level = 0;
+    switch (instrument.wave) {
+      case Waveform::Square: level = step < std::clamp(instrument.duty, 1, 31) ? 15 : 0; break;
+      case Waveform::Triangle: level = step < 16 ? step : 31 - step; break;
+      case Waveform::Saw: level = step / 2; break;
+      case Waveform::Sine: level = (int)std::lround(7.5 + 7.5 * std::sin(2 * 3.14159265358979323846 * step / 32)); break;
+      case Waveform::Noise: level = 0; break;
+      case Waveform::Drawn: level = step < (int)instrument.drawn.size() ? instrument.drawn[step] : 0; break;
+    }
+    levels[step] = (uint8_t)std::clamp(level, 0, 15);
+  }
+  return levels;
+}
+
+int noiseMask(int bits) {
+  switch (bits) {
+    case 4: return 0x9;      // x^4 + x^3 + 1
+    case 5: return 0x12;     // x^5 + x^3 + 1
+    case 9: return 0x110;    // x^9 + x^5 + 1
+    default: return 0x6000;  // x^15 + x^14 + 1
+  }
+}
+
+std::vector<uint32_t> Song::phaseSteps(int note, const Instrument& instrument, double audioClock) const {
+  double lineRate = audioClock / 2;  // two audio clocks per scanline
+  auto stepFor = [&](int cents) {
+    double semitones = note + tuning.transpose - 69 + (tuning.referenceCents + cents) / 100.0;
+    double hz = 440.0 * std::pow(2.0, semitones / 12.0);
+    return (uint32_t)std::clamp(std::llround(hz / lineRate * 4294967296.0), 0LL, 0x7fffffffLL);
+  };
+  std::vector<uint32_t> steps;
+  for (int cents : instrument.pitch) steps.push_back(stepFor(cents));
+  if (steps.empty()) steps.push_back(stepFor(0));
+  return steps;
+}
+
 // How many cents a register pair is from a (fractional) note.
 static double centsFrom(double audioClock, int control, int frequency, double note, int referenceCents) {
   const Distortion* distortion = distortionOf(control);
@@ -62,6 +101,12 @@ static double centsFrom(double audioClock, int control, int frequency, double no
 
 NotePitch Song::pitchOf(int note, const Instrument& instrument, double audioClock) const {
   int heard = note + tuning.transpose;
+  if (samples()) {  // the ARM plays any pitch: every note is exact
+    NotePitch exact;
+    exact.note = note, exact.playable = true;
+    exact.hz = 440.0 * std::pow(2.0, (heard - 69 + tuning.referenceCents / 100.0) / 12.0);
+    return exact;
+  }
   auto byHand = instrument.byHand.find(heard);
   if (byHand != instrument.byHand.end() && distortionOf(byHand->second.control)) {
     NotePitch pitch;
@@ -184,6 +229,13 @@ std::string toJson(const Song& song) {
       volumes.push_back(entry);
     }
     json item = {{"name", instrument.name}, {"volumes", volumes}, {"releases", instrument.releases}};
+    if (song.samples()) {
+      static const char* waves[] = {"square", "triangle", "saw", "sine", "noise", "drawn"};
+      item["wave"] = waves[(int)instrument.wave];
+      if (instrument.wave == Waveform::Square) item["duty"] = instrument.duty;
+      if (instrument.wave == Waveform::Noise) item["noise_bits"] = instrument.noiseBits;
+      if (instrument.wave == Waveform::Drawn) item["drawn"] = instrument.drawn;
+    }
     if (instrument.drum) {
       item["drum"] = true;
       item["audc"] = instrument.drumControl;
@@ -206,9 +258,9 @@ std::string toJson(const Song& song) {
   for (auto& pattern : song.patterns) {
     json item = {{"name", pattern.name}, {"rows", pattern.rows}};
     json channels = json::array();
-    for (auto& channel : pattern.cells) {
+    for (int channel = 0; channel < song.channelCount(); channel++) {
       json rows = json::array();
-      for (auto& cell : channel) rows.push_back(cellText(cell));
+      for (auto& cell : pattern.cells[channel]) rows.push_back(cellText(cell));
       channels.push_back(rows);
     }
     item["channels"] = channels;
@@ -220,9 +272,10 @@ std::string toJson(const Song& song) {
   json effects = json::array();
   for (auto& effect : song.effects)
     effects.push_back({{"name", effect.name}, {"instrument", effect.instrument}, {"note", effect.note}, {"channel", effect.channel}});
-  json document = {{"format", "vcsmusic"}, {"version", 2},       {"name", song.name},       {"target", "tia"},
+  json document = {{"format", "vcsmusic"}, {"version", 2},       {"name", song.name},       {"target", song.samples() ? "samples" : "tia"},
                    {"speed", song.speed},  {"swing", song.swing}, {"tuning", tuning},       {"instruments", instruments},
                    {"order", song.order},  {"loop_to", song.loopTo}, {"patterns", patterns}};
+  if (song.samples()) document["voices"] = song.channelCount(), document["gain"] = song.gain;
   if (!song.effects.empty()) document["effects"] = effects;
   if (!song.exportTo.empty()) document["export"] = {{"to", song.exportTo}, {"ram", song.exportRam}};
   return document.dump(1) + "\n";
@@ -237,6 +290,9 @@ bool fromJson(const std::string& text, Song* song, std::string* error) {
     parsed.name = document.value("name", parsed.name);
     parsed.speed = std::clamp(document.value("speed", 6), 1, 255);
     parsed.swing = std::clamp(document.value("swing", 0), 0, 255);
+    parsed.target = document.value("target", "tia") == "samples" ? "samples" : "tia";
+    parsed.voices = std::clamp(document.value("voices", 3), 1, kMaxChannels);
+    parsed.gain = std::clamp(document.value("gain", 16), 4, 64);
     if (document.contains("tuning")) {
       auto& tuning = document["tuning"];
       parsed.tuning.transpose = std::clamp(tuning.value("transpose", 0), -24, 24);
@@ -288,6 +344,15 @@ bool fromJson(const std::string& text, Song* song, std::string* error) {
           instrument.byHand[std::clamp(entry["note"].get<int>(), 0, 127)] = tuned;
         }
       }
+      static const char* waves[] = {"square", "triangle", "saw", "sine", "noise", "drawn"};
+      std::string wave = item.value("wave", "square");
+      for (int index = 0; index < 6; index++)
+        if (wave == waves[index]) instrument.wave = (Waveform)index;
+      instrument.duty = std::clamp(item.value("duty", 16), 1, 31);
+      int bits = item.value("noise_bits", 15);
+      instrument.noiseBits = bits == 4 || bits == 5 || bits == 9 ? bits : 15;
+      instrument.drawn = clampedList(item.value("drawn", json::array()), 0, 15);
+      instrument.drawn.resize(32, 0);
       parsed.instruments.push_back(instrument);
     }
     for (auto& item : document.value("patterns", json::array())) {
@@ -295,7 +360,7 @@ bool fromJson(const std::string& text, Song* song, std::string* error) {
       pattern.name = item.value("name", "");
       pattern.resize(item.value("rows", 32));
       auto channels = item.value("channels", json::array());
-      for (int channel = 0; channel < kChannels && channel < (int)channels.size(); channel++)
+      for (int channel = 0; channel < kMaxChannels && channel < (int)channels.size(); channel++)
         for (int row = 0; row < pattern.rows && row < (int)channels[channel].size(); row++) {
           if (!channels[channel][row].is_string() || !parseCell(channels[channel][row].get<std::string>(), &pattern.cells[channel][row]))
             throw std::runtime_error(F("pattern \"{0}\", channel {1}, row {2}: not a cell", {pattern.name, std::to_string(channel), std::to_string(row)}));
@@ -313,7 +378,7 @@ bool fromJson(const std::string& text, Song* song, std::string* error) {
     parsed.loopTo = std::clamp(document.value("loop_to", 0), -1, (int)parsed.order.size() - 1);
     if (document.contains("export") && document["export"].is_object()) {
       parsed.exportTo = document["export"].value("to", "");
-      if (parsed.exportTo != "dasm" && parsed.exportTo != "bb") parsed.exportTo.clear();
+      if (parsed.exportTo != "dasm" && parsed.exportTo != "bb" && parsed.exportTo != "c") parsed.exportTo.clear();
       parsed.exportRam = document["export"].value("ram", "h");
     }
     for (auto& item : document.value("effects", json::array())) {
@@ -322,7 +387,7 @@ bool fromJson(const std::string& text, Song* song, std::string* error) {
       effect.name = item.value("name", effect.name);
       effect.instrument = std::max(0, item.value("instrument", 0));
       effect.note = std::clamp(item.value("note", 60), 0, 127);
-      effect.channel = std::clamp(item.value("channel", 1), 0, kChannels - 1);
+      effect.channel = std::clamp(item.value("channel", 1), 0, parsed.channelCount() - 1);
       parsed.effects.push_back(effect);
     }
     *song = std::move(parsed);

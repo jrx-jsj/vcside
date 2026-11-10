@@ -14,7 +14,14 @@
 namespace vcs::music {
 
 struct FrameRegisters {
-  uint8_t control[kChannels] = {}, frequency[kChannels] = {}, volume[kChannels] = {};
+  // TIA: what each channel writes. Samples: volume is the voice's (0..15) for the frame.
+  uint8_t control[kMaxChannels] = {}, frequency[kMaxChannels] = {}, volume[kMaxChannels] = {};
+  // Samples: whether the voice sounds (its phase moves), the phase step per scanline, its
+  // instrument (the waveform), and whether a note started since the last frame (the
+  // phase and the noise register start again).
+  bool sounding[kMaxChannels] = {}, restart[kMaxChannels] = {};
+  uint32_t phaseStep[kMaxChannels] = {};
+  int instrument[kMaxChannels] = {};
 };
 
 // Where the song is: the order entry and the row.
@@ -51,6 +58,7 @@ class Player {
   bool sounding() const;  // the song plays or a voice still sounds
   SongPosition position() const { return shown_; }  // the row being heard
   const VoiceTrace& trace(int channel) const { return traces_[channel]; }  // of the last frame
+  const Song& song() const { return song_; }
 
  private:
   struct Voice {
@@ -59,6 +67,8 @@ class Player {
     int frame = 0, volumeIndex = 0, releaseFrame = 0;
     int volumeVariant = 0, releaseVariant = 0, releaseUsed = 0;  // releaseUsed: set at the note off
     std::vector<PitchStep> pitch;  // melodic: frame by frame, the last one stays
+    std::vector<uint32_t> steps;   // samples: the phase step frame by frame, the last one stays
+    bool restart = false;          // samples: a note started since the last frame
   };
   void playRow();
   void end();
@@ -67,9 +77,9 @@ class Player {
 
   Song song_;
   double audioClock_ = 0;
-  Voice voices_[kChannels];
-  int channelInstruments_[kChannels] = {0, 0};  // for the channel's next notes
-  VoiceTrace traces_[kChannels];
+  Voice voices_[kMaxChannels];
+  int channelInstruments_[kMaxChannels] = {};  // for the channel's next notes
+  VoiceTrace traces_[kMaxChannels];
   bool playing_ = false;
   SongPosition next_, shown_;
   int framesLeft_ = 0;  // in the current row
@@ -78,18 +88,42 @@ class Player {
 // Lines per video frame for a TV standard (262 or 312).
 int linesPerFrame(const std::string& tv);
 
+// Samples: the voices mixed into one AUDV0 level per scanline, as the exported C player
+// does it, with the same integer arithmetic (tests compare them value by value). Each
+// voice adds its waveform's level (0..15) times its volume (0..15); the sum, scaled by
+// the song's gain, is in quarters of a level (0..63) and goes through a table to the AUDV
+// whose output comes closest, since the TIA's output is not proportional to AUDV.
+class SampleMixer {
+ public:
+  void reset();
+  // One frame: `lines` levels appended to out. muted: voices left out (may be null).
+  void render(const Song& song, const FrameRegisters& registers, int lines, std::vector<uint8_t>& out, const bool* muted = nullptr);
+
+ private:
+  uint32_t phase_[kMaxChannels] = {};
+  uint16_t noise_[kMaxChannels] = {1, 1, 1, 1};
+  uint8_t lastStep_[kMaxChannels] = {};
+};
+// The scale from the sum of voices to quarters of a level, in 1/65536.
+uint32_t mixFactor(int gain, int voices);
+// For quarters of a level 0..63, the AUDV (0..15) whose output comes closest.
+const std::array<uint8_t, 64>& levelTable();
+
 // The song turned into sound: the player, the TIA and the resampler together.
 class Renderer {
  public:
   void setup(const std::string& tv, double outputRate);
   Player player;
-  bool muted[kChannels] = {false, false};
+  bool muted[kMaxChannels] = {};
   // Plays one video frame and appends its samples (from -1 to 1).
   void renderFrame(std::vector<float>& output);
   const FrameRegisters& lastRegisters() const { return registers_; }
 
  private:
   TiaAudio tia_;
+  SampleMixer mixer_;
+  std::vector<uint8_t> lineLevels_;
+  int linesPerFrame_ = 262;
   Resampler resampler_{31400, 48000};
   int clocksPerFrame_ = 524;
   float dcLevel_ = 0;  // the output's average, taken away so it centres on 0

@@ -46,7 +46,7 @@ void Player::playEffect(const Song& song, double audioClock, int effect) {
   if (!playing_) song_ = song, audioClock_ = audioClock;
   if (effect < 0 || effect >= (int)song_.effects.size()) return;
   const SoundEffect& sound = song_.effects[effect];
-  Voice& voice = voices_[std::clamp(sound.channel, 0, kChannels - 1)];
+  Voice& voice = voices_[std::clamp(sound.channel, 0, song_.channelCount() - 1)];
   voice.instrument = sound.instrument;
   trigger(voice, sound.note);
   voice.locked = voice.active;  // the music leaves the channel alone until it ends
@@ -71,8 +71,14 @@ void Player::trigger(Voice& voice, int note) {
   voice.frame = voice.volumeIndex = voice.releaseFrame = 0;
   voice.volumeVariant = voice.releaseVariant = 0;
   voice.pitch.clear();
+  voice.steps.clear();
+  voice.restart = true;
   if (!voice.active) return;
   const Instrument& instrument = song_.instruments[voice.instrument];
+  if (song_.samples()) {  // exact pitch: every note is heard
+    voice.steps = song_.phaseSteps(note, instrument, audioClock_);
+    return;
+  }
   // a note no allowed AUDC reaches has an unplayable step: it is not heard
   if (!instrument.drum) voice.pitch = song_.pitchSequence(note, instrument, audioClock_);
 }
@@ -80,7 +86,7 @@ void Player::trigger(Voice& voice, int note) {
 // The song is over: what still sounds goes into its release.
 void Player::end() {
   playing_ = false;
-  for (int channel = 0; channel < kChannels; channel++)
+  for (int channel = 0; channel < song_.channelCount(); channel++)
     if (!voices_[channel].locked) noteOff(channel);
 }
 
@@ -96,7 +102,7 @@ void Player::playRow() {
   }
   const Pattern& pattern = song_.patterns[patternIndex];
   shown_ = next_;
-  for (int channel = 0; channel < kChannels; channel++) {
+  for (int channel = 0; channel < song_.channelCount(); channel++) {
     if (next_.row >= (int)pattern.cells[channel].size()) continue;
     const Cell& cell = pattern.cells[channel][next_.row];
     Voice& voice = voices_[channel];
@@ -130,6 +136,8 @@ static const typename List::value_type& variant(const List& list, int index) {
 
 void Player::output(Voice& voice, int channel, FrameRegisters& registers) {
   registers.control[channel] = registers.frequency[channel] = registers.volume[channel] = 0;
+  registers.restart[channel] = voice.restart;
+  voice.restart = false;
   VoiceTrace& trace = traces_[channel];
   trace = VoiceTrace();
   if (!voice.active) return;
@@ -165,7 +173,11 @@ void Player::output(Voice& voice, int channel, FrameRegisters& registers) {
     volume = release[voice.releaseFrame++];
   }
   bool heard = true;
-  if (instrument.drum) {
+  if (song_.samples()) {
+    registers.sounding[channel] = true;
+    registers.instrument[channel] = voice.instrument;
+    registers.phaseStep[channel] = voice.steps.empty() ? 0 : voice.steps[std::min(voice.frame, (int)voice.steps.size() - 1)];
+  } else if (instrument.drum) {
     registers.control[channel] = (uint8_t)heldValue(instrument.drumControl, voice.frame, 8);
     registers.frequency[channel] = (uint8_t)heldValue(instrument.drumFrequency, voice.frame, 0);
   } else if (!voice.pitch.empty()) {
@@ -183,13 +195,75 @@ FrameRegisters Player::nextFrame() {
   if (playing_ && framesLeft_ <= 0) playRow();
   if (framesLeft_ > 0) framesLeft_--;
   FrameRegisters registers;
-  for (int channel = 0; channel < kChannels; channel++) output(voices_[channel], channel, registers);
+  for (int channel = 0; channel < song_.channelCount(); channel++) output(voices_[channel], channel, registers);
   return registers;
 }
 
 int linesPerFrame(const std::string& tv) { return (tv == "PAL" || tv == "SECAM" || tv == "NTSC50") ? 312 : 262; }
 
+uint32_t mixFactor(int gain, int voices) {
+  return (uint32_t)std::lround(4.0 * gain * 65536.0 / (15.0 * 16.0 * std::max(1, voices)));
+}
+
+const std::array<uint8_t, 64>& levelTable() {
+  static const std::array<uint8_t, 64> table = [] {
+    std::array<uint8_t, 64> levels{};
+    for (int quarter = 0; quarter < 64; quarter++) {
+      double wanted = std::min(quarter / 60.0, 1.0) * mixLevels(15);
+      int best = 0;
+      for (int level = 1; level < 16; level++)
+        if (std::fabs(mixLevels(level) - wanted) < std::fabs(mixLevels(best) - wanted)) best = level;
+      levels[quarter] = (uint8_t)best;
+    }
+    return levels;
+  }();
+  return table;
+}
+
+void SampleMixer::reset() { *this = SampleMixer(); }
+
+void SampleMixer::render(const Song& song, const FrameRegisters& registers, int lines, std::vector<uint8_t>& out, const bool* muted) {
+  int voices = song.channelCount();
+  uint32_t factor = mixFactor(song.gain, voices);
+  std::array<uint8_t, 32> levels[kMaxChannels];
+  int mask[kMaxChannels] = {};  // noise: the register's feedback; 0: a waveform
+  bool sounding[kMaxChannels] = {};
+  for (int voice = 0; voice < voices; voice++) {
+    if (registers.restart[voice]) phase_[voice] = 0, noise_[voice] = 1, lastStep_[voice] = 0;
+    int instrumentIndex = registers.instrument[voice];
+    sounding[voice] = registers.sounding[voice] && instrumentIndex >= 0 && instrumentIndex < (int)song.instruments.size();
+    if (!sounding[voice]) continue;
+    const Instrument& instrument = song.instruments[instrumentIndex];
+    levels[voice] = waveLevels(instrument);
+    if (instrument.wave == Waveform::Noise) mask[voice] = noiseMask(instrument.noiseBits);
+  }
+  const auto& table = levelTable();
+  for (int line = 0; line < lines; line++) {
+    uint32_t sum = 0;
+    for (int voice = 0; voice < voices; voice++) {
+      if (!sounding[voice]) continue;
+      phase_[voice] += registers.phaseStep[voice];
+      int step = (int)(phase_[voice] >> 27);
+      int level;
+      if (mask[voice]) {
+        if (step != lastStep_[voice]) {  // a 32nd of a cycle further: the register moves
+          lastStep_[voice] = (uint8_t)step;
+          noise_[voice] = (uint16_t)((noise_[voice] >> 1) ^ ((noise_[voice] & 1) ? mask[voice] : 0));
+        }
+        level = (noise_[voice] & 1) ? 15 : 0;
+      } else {
+        level = levels[voice][step];
+      }
+      if (!(muted && muted[voice])) sum += (uint32_t)(level * registers.volume[voice]);
+    }
+    uint32_t quarters = (sum * factor + 32768) >> 16;
+    out.push_back(table[std::min<uint32_t>(quarters, 63)]);
+  }
+}
+
 void Renderer::setup(const std::string& tv, double outputRate) {
+  linesPerFrame_ = linesPerFrame(tv);
+  mixer_.reset();
   clocksPerFrame_ = linesPerFrame(tv) * 2;
   resampler_ = Resampler(audioClockHz(tv), outputRate);
   tia_.reset();
@@ -197,14 +271,25 @@ void Renderer::setup(const std::string& tv, double outputRate) {
 
 void Renderer::renderFrame(std::vector<float>& output) {
   registers_ = player.nextFrame();
-  for (int channel = 0; channel < kChannels; channel++) {
-    TiaAudioChannel& voice = tia_.channels[channel];
-    voice.control = registers_.control[channel];
-    voice.frequency = registers_.frequency[channel];
-    voice.volume = muted[channel] ? 0 : registers_.volume[channel];
-  }
   raw_.clear();
-  for (int clockIndex = 0; clockIndex < clocksPerFrame_; clockIndex++) resampler_.push(tia_.clock(), raw_);
+  if (player.song().samples()) {  // one level per scanline in AUDV0, AUDC0 = 0
+    lineLevels_.clear();
+    mixer_.render(player.song(), registers_, linesPerFrame_, lineLevels_, muted);
+    tia_.channels[0].control = tia_.channels[1].control = tia_.channels[1].volume = 0;
+    for (uint8_t level : lineLevels_) {
+      tia_.channels[0].volume = level;
+      resampler_.push(tia_.clock(), raw_);
+      resampler_.push(tia_.clock(), raw_);
+    }
+  } else {
+    for (int channel = 0; channel < kChannels; channel++) {
+      TiaAudioChannel& voice = tia_.channels[channel];
+      voice.control = registers_.control[channel];
+      voice.frequency = registers_.frequency[channel];
+      voice.volume = muted[channel] ? 0 : registers_.volume[channel];
+    }
+    for (int clockIndex = 0; clockIndex < clocksPerFrame_; clockIndex++) resampler_.push(tia_.clock(), raw_);
+  }
   for (float value : raw_) {
     // the TIA's output never goes below 0; a slow average taken away keeps it centred
     dcLevel_ += (value - dcLevel_) * 0.0005f;

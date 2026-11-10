@@ -39,8 +39,11 @@ class MusicEditor {
   void instrumentEditor();
   void tuningPanel();
   void effectsPanel();
+  void soundPanel();
+  void waveEditor(Instrument& instrument);
+  bool drum(const Instrument& instrument) const { return !song_.samples() && instrument.drum; }
   void exportPopup();
-  // Writes <name>.music.asm as the song says (Song::exportTo); quiet: only problems are said.
+  // Writes <name>.music.asm (or .music.h for C) as the song says (Song::exportTo); quiet: only problems are said.
   bool exportSongFile(bool quiet);
   void keyboard();
   void gridKeys();
@@ -71,15 +74,16 @@ class MusicEditor {
   struct TracedFrame {
     SongPosition position;
     FrameRegisters registers;
-    VoiceTrace voices[kChannels];
+    VoiceTrace voices[kMaxChannels];
   };
   std::vector<TracedFrame> traced_;
   FrameRegisters tracedBefore_;  // the frame before the first one, to see what changes
   int tracedRevision_ = -1, tracedOrder_ = -1;
   double tracedClock_ = 0;
   int volumeVariant_ = 0, releaseVariant_ = 0;  // shown in the instrument editor
+  int pitchRange_ = 100;  // samples: the pitch envelope's bars go from -this to +this cents
   int handNote_ = -1;                           // the note open in the tuning by hand
-  bool muted_[kChannels] = {false, false};
+  bool muted_[kMaxChannels] = {};
   int previewKey_ = -1;    // ImGuiKey held for the note being previewed
   bool previewMouse_ = false;
   bool scrollToCursor_ = false;

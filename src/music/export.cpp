@@ -10,6 +10,7 @@
 #include <sstream>
 
 #include "../i18n.h"
+#include "player.h"
 
 namespace vcs::music {
 
@@ -339,6 +340,208 @@ MusicVoice{1} SUBROUTINE
     MUSIC_CHANNEL 1
 )PLAYER";
 
+// The C player, for songs played as samples on ELF cartridges. CC0 like the 6502 one; it
+// follows Player rule by rule and mixes as SampleMixer (player.cpp) does.
+static const char* kCPlayer = R"PLAYER(
+/* ---------------------------------------------------------------------------
+ * VCSIDE music player for ELF cartridges: voices with waveforms, mixed by the ARM
+ * into one 4-bit sample per scanline, played by writing AUDV0 with AUDC0 = 0.
+ * Dedicated to the public domain under CC0 1.0: use it in any game, with no
+ * licence or credit needed.
+ *
+ *   music_init();         once, to start the song from the beginning
+ *   music_effect(n);      a sound effect (MUSIC_EFFECT_x): the song's notes on
+ *                         its voice wait until it has ended
+ *   music_frame(lines);   once per frame, in the overblank: the frame's song and
+ *                         its samples, for a frame of `lines` lines (262 or 312)
+ *
+ * Then, in the kernel, music_level[n] goes to AUDV0 on its line n (n from 0 to
+ * lines - 64), and the 31 bytes of music_nibbles to $E0-$FE of the RIOT's RAM:
+ * the overblank program of the ELF loader plays them, one 4-bit level per line,
+ * once its "sta $2d" is changed to "sta AUDV0" (see the template's start_6507).
+ * ------------------------------------------------------------------------- */
+
+#define MUSIC_OVERBLANK_LINES 63
+
+typedef struct {
+    uint16_t volume;        /* the envelope or the release, in music_volume_data */
+    uint8_t volume_index;
+    uint8_t pitch_index;    /* bit 7: a sound effect has the voice */
+    uint16_t pitch;         /* the sound's phase steps, in music_pitch_data */
+    uint8_t state;          /* bit 7 sounding, bit 6 released, bits 0-5 the release */
+    uint8_t level;          /* this frame's volume, 0-15 */
+    uint8_t wave, last_step;
+    uint16_t noise;
+    uint32_t step, phase;
+} music_voice;
+
+static music_voice music_voices[MUSIC_VOICES];
+static uint8_t music_order, music_row, music_wait;   /* music_order 0xFF: stopped */
+static uint16_t music_pointer;                       /* the next row, in music_patterns */
+uint8_t music_level[312 - MUSIC_OVERBLANK_LINES];
+uint8_t music_nibbles[31];
+
+static void music_start(music_voice *voice, int sound)
+{
+    voice->pitch = music_sound_pitch[sound];
+    voice->state = (uint8_t)(music_sound_release[sound] | 0x80);
+    voice->volume = music_envelope_offset[music_sound_envelope[sound]];
+    voice->volume_index = 0;
+    voice->pitch_index = 0;
+    voice->phase = 0;
+    voice->noise = 1;
+    voice->last_step = 0;
+}
+
+static void music_note_off(music_voice *voice)
+{
+    if (!(voice->state & 0x80) || (voice->state & 0x40)) return;
+    voice->state |= 0x40;
+    voice->volume = music_release_offset[voice->state & 0x3F];
+    voice->volume_index = 0;
+}
+
+void music_init(void)
+{
+    for (int i = 0; i < MUSIC_VOICES; i++) {
+        music_voices[i].state = 0;
+        music_voices[i].pitch_index = 0;
+    }
+    music_order = music_row = music_wait = 0;
+    music_pointer = music_order_offset[0];
+}
+
+void music_effect(int effect)
+{
+    music_voice *voice = &music_voices[music_effect_voice[effect]];
+    music_start(voice, music_effect_sound[effect]);
+    voice->pitch_index = 0x80;
+}
+
+/* A row's event for a voice, from music_patterns[at]; returns where the next one is. */
+static int music_event(music_voice *voice, int at)
+{
+    int code = music_patterns[at++], argument = 0;
+    if (code >= 2 && code <= 4) argument = music_patterns[at++];
+    if (voice->pitch_index & 0x80) return at;          /* a sound effect has the voice */
+    if (code >= 6) {
+        music_start(voice, code - 6);
+    } else if (code == 1) {
+        music_note_off(voice);
+    } else if (code == 2) {
+        if (!(voice->state & 0x40)) voice->volume = music_envelope_offset[argument];
+    } else if (code == 3 || code == 4) {
+        voice->state = (uint8_t)((voice->state & 0xC0) | argument);
+        if (code == 4) music_note_off(voice);
+    } else if (code == 5) {
+        voice->state = 0;
+    }
+    return at;
+}
+
+static void music_play_row(void)
+{
+    int at = music_pointer;
+    for (int i = 0; i < MUSIC_VOICES; i++) at = music_event(&music_voices[i], at);
+    music_pointer = (uint16_t)at;
+    music_wait = (MUSIC_SWING > 0 && (music_row & 1)) ? MUSIC_SWING : MUSIC_SPEED;
+    if (++music_row >= music_order_rows[music_order]) {
+        music_row = 0;
+        if (++music_order >= MUSIC_ORDER_LENGTH) music_order = MUSIC_LOOP_TO;
+        if (music_order < MUSIC_ORDER_LENGTH) music_pointer = music_order_offset[music_order];
+    }
+}
+
+/* This frame's volume and phase step for a voice. */
+static void music_voice_frame(music_voice *voice)
+{
+    if (!(voice->state & 0x80)) {
+        voice->level = 0;
+        voice->pitch_index = 0;                         /* the voice is the song's again */
+        return;
+    }
+    const uint8_t *volume = music_volume_data + voice->volume;
+    int index = voice->volume_index, value;
+    if (index >= volume[0]) {
+        if (voice->state & 0x40) goto stop;             /* the release is over */
+        if (volume[1] != 0xFF) {
+            index = volume[1];                          /* the loop */
+        } else {
+            if (volume[0] == 0) goto stop;
+            index = volume[0] - 1;                      /* the last value stays... */
+            if (volume[2 + index] == 0) goto stop;      /* ...unless it is 0: the note is over */
+        }
+    }
+    value = volume[2 + index];
+    voice->volume_index = (uint8_t)(index + 1);
+    {
+        const uint32_t *pitch = music_pitch_data + voice->pitch;
+        int length = (int)(pitch[0] & 0xFF), step = voice->pitch_index & 0x7F;
+        if (step != length - 1) voice->pitch_index++;
+        voice->step = pitch[1 + step];
+        voice->wave = (uint8_t)(pitch[0] >> 8);
+    }
+    voice->level = (uint8_t)value;
+    return;
+stop:
+    voice->state = 0;
+    voice->level = 0;
+    voice->pitch_index = 0;
+}
+
+void music_frame(int lines)
+{
+    if (music_order != 0xFF) {
+        if (music_wait == 0) {
+            if (music_order >= MUSIC_ORDER_LENGTH) {    /* the song is over: what sounds is released */
+                for (int i = 0; i < MUSIC_VOICES; i++)
+                    if (!(music_voices[i].pitch_index & 0x80)) music_note_off(&music_voices[i]);
+                music_order = 0xFF;
+                goto voices;
+            }
+            music_play_row();
+        }
+        music_wait--;
+    }
+voices:
+    for (int i = 0; i < MUSIC_VOICES; i++) music_voice_frame(&music_voices[i]);
+    /* the samples: each voice adds its waveform's level times its volume; the sum, in
+     * quarters of a level, goes through music_dac (the TIA's output is not proportional
+     * to AUDV). The first lines - 63 are the kernel's, the last 63 the overblank's. */
+    static uint8_t overblank[MUSIC_OVERBLANK_LINES];
+    int kernel = lines - MUSIC_OVERBLANK_LINES;
+    if (kernel > (int)sizeof music_level) kernel = (int)sizeof music_level;
+    for (int line = 0; line < kernel + MUSIC_OVERBLANK_LINES; line++) {
+        uint32_t sum = 0;
+        for (int i = 0; i < MUSIC_VOICES; i++) {
+            music_voice *voice = &music_voices[i];
+            if (!(voice->state & 0x80)) continue;
+            voice->phase += voice->step;
+            int step = (int)(voice->phase >> 27), level;
+            uint16_t mask = music_wave_noise[voice->wave];
+            if (mask) {                                 /* noise: the register moves each 32nd of a cycle */
+                if (step != voice->last_step) {
+                    voice->last_step = (uint8_t)step;
+                    voice->noise = (uint16_t)((voice->noise >> 1) ^ ((voice->noise & 1) ? mask : 0));
+                }
+                level = (voice->noise & 1) ? 15 : 0;
+            } else {
+                level = music_waves[voice->wave][step];
+            }
+            sum += (uint32_t)(level * voice->level);
+        }
+        uint32_t quarters = (sum * MUSIC_MIX + 32768) >> 16;
+        uint8_t out = music_dac[quarters > 63 ? 63 : quarters];
+        if (line < kernel) music_level[line] = out;
+        else overblank[line - kernel] = out;
+    }
+    /* The overblank program writes nibble k - 1 on its line k (line 0 repeats nibble 0,
+     * so nibble 0 is the mean of the first two lines); even nibbles are the low ones. */
+    music_nibbles[0] = (uint8_t)(((overblank[0] + overblank[1] + 1) >> 1) | overblank[2] << 4);
+    for (int j = 1; j < 31; j++) music_nibbles[j] = (uint8_t)(overblank[2 * j + 1] | overblank[2 * j + 2] << 4);
+}
+)PLAYER";
+
 std::string effectSymbol(const std::string& name) {
   std::string symbol = "MUSIC_EFFECT_";
   for (char letter : name) {
@@ -381,6 +584,8 @@ struct Builder {
   Pool<std::pair<std::vector<int>, int>> envelopes;  // values, loop
   Pool<std::vector<int>> releases;
   Pool<std::vector<int>> pitches;                     // length (+$80 muted), then AUDC and AUDF pairs
+                                                      // samples: length, waveform, then phase steps
+  Pool<std::vector<int>> waves;                       // samples: noise mask (0: none), 32 levels
   Pool<std::tuple<int, int, int>> sounds;             // envelope, pitch, release
 
   void problem(const std::string& text) {
@@ -405,6 +610,19 @@ struct Builder {
     std::vector<int> bytes;
     bool muted = false;
     std::vector<std::pair<int, int>> steps;
+    if (song.samples()) {
+      std::vector<uint32_t> phaseSteps = song.phaseSteps(note, source, clock);
+      if (phaseSteps.size() > 120) {
+        problem(F("{0}: only the first 120 frames of its pitch are exported", {source.name}));
+        phaseSteps.resize(120);
+      }
+      std::vector<int> wave = {source.wave == Waveform::Noise ? noiseMask(source.noiseBits) : 0};
+      auto levels = waveLevels(source);
+      wave.insert(wave.end(), levels.begin(), levels.end());
+      bytes = {(int)phaseSteps.size(), waves.add(wave)};
+      for (uint32_t step : phaseSteps) bytes.push_back((int)step);
+      return pitches.add(bytes);
+    }
     if (source.drum) {
       size_t length = std::max<size_t>({source.drumControl.size(), source.drumFrequency.size(), 1});
       for (size_t index = 0; index < length; index++) {
@@ -443,6 +661,137 @@ std::string byteList(const std::vector<int>& values) {
 
 }  // namespace
 
+static std::string cList(const std::vector<long long>& values, const char* indent = "    ") {
+  std::string text;
+  for (size_t index = 0; index < values.size(); index++) {
+    if (index % 12 == 0) text += index ? ",\n" + std::string(indent) : std::string(indent);
+    else text += ", ";
+    text += std::to_string(values[index]);
+  }
+  return text + "\n";
+}
+
+// The song as C data (no pointers: the tables stay in flash), then the C player.
+static ExportResult writeC(const Song& song, Builder& builder, std::map<std::tuple<int, int, int>, Event>& events,
+                           const std::vector<std::pair<std::string, std::pair<int, int>>>& effects, const ExportOptions& options, ExportResult& result) {
+  std::ostringstream out;
+  int dataBytes = 0;
+  int channels = song.channelCount();
+  out << "/* " << song.name << " - music for an ELF cartridge of the Atari 2600, made with VCSIDE's music editor.\n";
+  out << " * Generated from the .vcsmusic file: change that one, not this. Tuned for " << options.tv << ".\n";
+  out << " * Include it once, in the C file that calls the player. */\n";
+  out << "#ifndef MUSIC_H_INCLUDED\n#define MUSIC_H_INCLUDED\n#include <stdint.h>\n\n";
+  out << "#define MUSIC_VOICES " << channels << "\n";
+  out << "#define MUSIC_SPEED " << std::clamp(song.speed, 1, 255) << "\n";
+  out << "#define MUSIC_SWING " << std::clamp(song.swing, 0, 255) << "\n";
+  out << "#define MUSIC_ORDER_LENGTH " << song.order.size() << "\n";
+  out << "#define MUSIC_LOOP_TO " << (song.loopTo >= 0 ? std::to_string(song.loopTo) : "MUSIC_ORDER_LENGTH  /* stops at the end */") << "\n";
+  out << "#define MUSIC_MIX " << mixFactor(song.gain, channels) << "u  /* the sum of the voices to quarters of a level, in 1/65536 */\n";
+  for (size_t index = 0; index < effects.size(); index++) out << "#define " << effects[index].first << " " << index << "\n";
+  // patterns, one after another, and where each order entry starts
+  std::vector<long long> patternBytes, orderOffset, orderRows;
+  std::map<int, int> patternAt;
+  for (int patternIndex : song.order) {
+    if (patternIndex < 0 || patternIndex >= (int)song.patterns.size() || patternAt.count(patternIndex)) continue;
+    patternAt[patternIndex] = (int)patternBytes.size();
+    const Pattern& pattern = song.patterns[patternIndex];
+    for (int row = 0; row < pattern.rows; row++)
+      for (int channel = 0; channel < channels; channel++) {
+        Event event = events[std::make_tuple(patternIndex, channel, row)];
+        patternBytes.push_back(event.code);
+        if (event.argument >= 0) patternBytes.push_back(event.argument);
+      }
+  }
+  for (int patternIndex : song.order) {
+    bool valid = patternAt.count(patternIndex) > 0;
+    orderOffset.push_back(valid ? patternAt[patternIndex] : 0);
+    orderRows.push_back(valid ? song.patterns[patternIndex].rows : 1);
+  }
+  if (patternBytes.size() > 65535) {
+    result.problems.push_back(T("The song is too long for the C player (more than 64 KB of patterns)."));
+    return result;
+  }
+  if (patternBytes.empty()) patternBytes.push_back(0);
+  out << "\nstatic const uint8_t music_patterns[] = {\n" << cList(patternBytes) << "};\n";
+  out << "static const uint16_t music_order_offset[] = {\n" << cList(orderOffset) << "};\n";
+  out << "static const uint8_t music_order_rows[] = {\n" << cList(orderRows) << "};\n";
+  dataBytes += (int)patternBytes.size() + (int)song.order.size() * 3;
+  // envelopes and releases in one table: length, loop (0xFF none), values
+  std::vector<long long> volumeData, envelopeOffset, releaseOffset;
+  for (auto& [values, loop] : builder.envelopes.entries) {
+    envelopeOffset.push_back((long long)volumeData.size());
+    volumeData.push_back((long long)values.size()), volumeData.push_back(loop >= 0 ? loop : 0xff);
+    volumeData.insert(volumeData.end(), values.begin(), values.end());
+  }
+  for (auto& values : builder.releases.entries) {
+    releaseOffset.push_back((long long)volumeData.size());
+    volumeData.push_back((long long)values.size()), volumeData.push_back(0xff);
+    volumeData.insert(volumeData.end(), values.begin(), values.end());
+  }
+  for (auto* list : {&volumeData, &envelopeOffset, &releaseOffset})
+    if (list->empty()) list->push_back(0);
+  out << "static const uint8_t music_volume_data[] = {\n" << cList(volumeData) << "};\n";
+  out << "static const uint16_t music_envelope_offset[] = {\n" << cList(envelopeOffset) << "};\n";
+  out << "static const uint16_t music_release_offset[] = {\n" << cList(releaseOffset) << "};\n";
+  dataBytes += (int)volumeData.size() + (int)(envelopeOffset.size() + releaseOffset.size()) * 2;
+  // phase steps: a word with the length and the waveform (<< 8), then a step per frame
+  std::vector<long long> pitchData, pitchAt;
+  for (auto& entry : builder.pitches.entries) {
+    pitchAt.push_back((long long)pitchData.size());
+    pitchData.push_back((long long)entry[0] | (long long)entry[1] << 8);
+    for (size_t index = 2; index < entry.size(); index++) pitchData.push_back((long long)(uint32_t)entry[index]);
+  }
+  if (pitchData.empty()) pitchData.push_back(1), pitchData.push_back(0), pitchAt.push_back(0);
+  std::string pitchText;
+  for (size_t index = 0; index < pitchData.size(); index++) {
+    if (index % 6 == 0) pitchText += index ? ",\n    " : "    ";
+    else pitchText += ", ";
+    char word[16];
+    snprintf(word, sizeof word, "0x%08llXu", pitchData[index]);
+    pitchText += word;
+  }
+  out << "static const uint32_t music_pitch_data[] = {\n" << pitchText << "\n};\n";
+  dataBytes += (int)pitchData.size() * 4;
+  // sounds and effects
+  std::vector<long long> soundEnvelope, soundRelease, soundPitch, effectSound, effectVoice;
+  for (auto& [envelopeIndex, pitchIndex, releaseIndex] : builder.sounds.entries)
+    soundEnvelope.push_back(envelopeIndex), soundRelease.push_back(releaseIndex), soundPitch.push_back(pitchAt[pitchIndex]);
+  for (auto& effect : effects) effectSound.push_back(effect.second.first), effectVoice.push_back(effect.second.second);
+  for (auto* list : {&soundEnvelope, &soundRelease, &soundPitch, &effectSound, &effectVoice})
+    if (list->empty()) list->push_back(0);
+  out << "static const uint8_t music_sound_envelope[] = {\n" << cList(soundEnvelope) << "};\n";
+  out << "static const uint8_t music_sound_release[] = {\n" << cList(soundRelease) << "};\n";
+  out << "static const uint16_t music_sound_pitch[] = {\n" << cList(soundPitch) << "};\n";
+  out << "static const uint8_t music_effect_sound[] = {\n" << cList(effectSound) << "};\n";
+  out << "static const uint8_t music_effect_voice[] = {\n" << cList(effectVoice) << "};\n";
+  dataBytes += (int)builder.sounds.entries.size() * 4 + (int)effects.size() * 2;
+  // waveforms: 32 levels each; noise ones have the register's feedback mask instead
+  std::vector<long long> masks;
+  out << "static const uint8_t music_waves[][32] = {\n";
+  for (auto& wave : builder.waves.entries) {
+    masks.push_back(wave[0]);
+    out << "    {";
+    for (int step = 0; step < 32; step++) out << (step ? ", " : "") << wave[1 + step];
+    out << "},\n";
+  }
+  if (builder.waves.entries.empty()) out << "    {0},\n", masks.push_back(0);
+  out << "};\nstatic const uint16_t music_wave_noise[] = {\n" << cList(masks) << "};\n";
+  dataBytes += (int)builder.waves.entries.size() * 34;
+  std::vector<long long> dac(levelTable().begin(), levelTable().end());
+  out << "/* quarters of a level (0-63) to the AUDV whose output comes closest */\n";
+  out << "static const uint8_t music_dac[64] = {\n" << cList(dac) << "};\n";
+  dataBytes += 64;
+  out << kCPlayer << "\n#endif\n";
+  result.ok = true;
+  result.text = out.str();
+  result.dataBytes = dataBytes;
+  result.sounds = (int)builder.sounds.entries.size();
+  result.envelopes = (int)builder.envelopes.entries.size();
+  result.releases = (int)builder.releases.entries.size();
+  result.pitches = (int)builder.pitches.entries.size();
+  return result;
+}
+
 ExportResult exportSong(const Song& song, double audioClock, const ExportOptions& options) {
   ExportResult result;
   Builder builder{song, audioClock};
@@ -454,7 +803,8 @@ ExportResult exportSong(const Song& song, double audioClock, const ExportOptions
   // channel's instrument, the instrument of the note that sounds), so the song is walked
   // as it plays: from the start, then again from the loop, until nothing changes.
   std::map<std::tuple<int, int, int>, Event> events;  // pattern, channel, row
-  int channelInstrument[kChannels] = {0, 0}, soundingInstrument[kChannels] = {-1, -1};
+  const int channels = song.channelCount();
+  int channelInstrument[kMaxChannels] = {}, soundingInstrument[kMaxChannels] = {-1, -1, -1, -1};
   auto walk = [&](int from) {
     bool changed = false;
     for (int entry = from; entry < (int)song.order.size(); entry++) {
@@ -462,7 +812,7 @@ ExportResult exportSong(const Song& song, double audioClock, const ExportOptions
       if (patternIndex < 0 || patternIndex >= (int)song.patterns.size()) continue;
       const Pattern& pattern = song.patterns[patternIndex];
       for (int row = 0; row < pattern.rows; row++)
-        for (int channel = 0; channel < kChannels; channel++) {
+        for (int channel = 0; channel < channels; channel++) {
           const Cell& cell = pattern.cells[channel][row];
           if (cell.instrument >= 0) channelInstrument[channel] = cell.instrument;
           int sounding = soundingInstrument[channel];
@@ -516,7 +866,7 @@ ExportResult exportSong(const Song& song, double audioClock, const ExportOptions
       builder.problem(F("Sound effect {0}: another one has the same name", {effect.name}));
       continue;
     }
-    effects.push_back({symbol, {builder.sound(effect.instrument, effect.note, 0, 0), std::clamp(effect.channel, 0, 1)}});
+    effects.push_back({symbol, {builder.sound(effect.instrument, effect.note, 0, 0), std::clamp(effect.channel, 0, channels - 1)}});
   }
   if (builder.sounds.entries.size() > 250) builder.problem(F("{0} different sounds: the player takes 250", {std::to_string(builder.sounds.entries.size())}));
   if (builder.releases.entries.size() > 64) builder.problem(F("{0} different releases: the player takes 64", {std::to_string(builder.releases.entries.size())}));
@@ -524,6 +874,11 @@ ExportResult exportSong(const Song& song, double audioClock, const ExportOptions
   if (song.order.size() > 254) builder.problem(T("The order list is longer than 254 entries."));
   result.problems = builder.problems;
   if (builder.sounds.entries.size() > 250 || builder.releases.entries.size() > 64 || builder.envelopes.entries.size() > 256 || song.order.size() > 254) return result;
+  if ((options.target == ExportTarget::C) != song.samples()) {
+    result.problems.push_back(song.samples() ? T("A song played as samples is exported as C, for ELF cartridges.") : T("C export is for songs played as samples (ELF); a TIA song is exported for DASM or batari Basic."));
+    return result;
+  }
+  if (options.target == ExportTarget::C) return writeC(song, builder, events, effects, options, result);
 
   // the text
   std::ostringstream out;
@@ -567,7 +922,7 @@ ExportResult exportSong(const Song& song, double audioClock, const ExportOptions
     const Pattern& pattern = song.patterns[patternIndex];
     std::vector<int> bytes;
     for (int row = 0; row < pattern.rows; row++)
-      for (int channel = 0; channel < kChannels; channel++) {
+      for (int channel = 0; channel < channels; channel++) {
         Event event = events[std::make_tuple(patternIndex, channel, row)];
         bytes.push_back(event.code);
         if (event.argument >= 0) bytes.push_back(event.argument);

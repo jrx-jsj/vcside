@@ -62,19 +62,19 @@ bool MusicEditor::save(const std::string& path, std::string* error) {
   return true;
 }
 
-static std::string exportPath(const std::string& songPath) {
+static std::string exportPath(const std::string& songPath, bool forC) {
   fs::path path(songPath);
-  return (path.parent_path() / (path.stem().string() + ".music.asm")).string();
+  return (path.parent_path() / (path.stem().string() + (forC ? ".music.h" : ".music.asm"))).string();
 }
 
 bool MusicEditor::exportSongFile(bool quiet) {
   ExportOptions options;
-  options.target = song_.exportTo == "bb" ? ExportTarget::BatariBasic : ExportTarget::Dasm;
+  options.target = song_.exportTo == "bb" ? ExportTarget::BatariBasic : song_.exportTo == "c" ? ExportTarget::C : ExportTarget::Dasm;
   options.ramStart = options.target == ExportTarget::BatariBasic ? song_.exportRam : "";
   options.tv = tv_;
   ExportResult result = exportSong(song_, audioClockHz(tv_), options);
   exportProblems_ = result.problems;
-  std::string path = exportPath(path_);
+  std::string path = exportPath(path_, options.target == ExportTarget::C);
   if (!result.ok) {
     message_ = F("Not exported: {0}", {result.problems.empty() ? std::string() : result.problems[0]});
     return false;
@@ -189,6 +189,7 @@ void MusicEditor::render(const std::string& tv) {
   float side = em(190), right = em(330);
   float height = ImGui::GetContentRegionAvail().y;
   ImGui::BeginChild("##left", ImVec2(side, height), ImGuiChildFlags_Borders);
+  soundPanel();
   orderPanel();
   ImGui::Spacing();
   instrumentPanel();
@@ -238,7 +239,7 @@ void MusicEditor::toolbar() {
   if (ImGui::Button(T("From the cursor"))) play(true);
   ImGui::SameLine();
   ImGui::Checkbox(T("Follow"), &follow_);
-  for (int channel = 0; channel < kChannels; channel++) {
+  for (int channel = 0; channel < song_.channelCount(); channel++) {
     ImGui::SameLine();
     bool heard = !muted_[channel];
     std::string label = F("Channel {0}", {std::to_string(channel)});
@@ -278,7 +279,7 @@ void MusicEditor::toolbar() {
   ImGui::SameLine();
   if (ImGui::Button(T("Export..."))) ImGui::OpenPopup("##export");
   if (ImGui::IsItemHovered())
-    ImGui::SetTooltip("%s", F("{0}: the song and VCSIDE's player for the console, kept up to date on every save.", {fs::path(exportPath(path_)).filename().string()}).c_str());
+    ImGui::SetTooltip("%s", F("{0}: the song and VCSIDE's player for the console, kept up to date on every save.", {fs::path(exportPath(path_, song_.samples())).filename().string()}).c_str());
   exportPopup();
   if (!message_.empty()) {
     ImGui::SameLine();
@@ -356,7 +357,7 @@ void MusicEditor::instrumentPanel() {
     char label[96];
     snprintf(label, sizeof label, "%02X  %s##i%d", index, song_.instruments[index].name.c_str(), index);
     if (ImGui::Selectable(label, index == instrument_)) instrument_ = index;
-    if (song_.instruments[index].drum) {
+    if (drum(song_.instruments[index])) {
       ImGui::SameLine();
       ImGui::TextDisabled("%s", T("drum"));
     }
@@ -429,9 +430,9 @@ void MusicEditor::gridKeys() {
   }
   if (ImGui::IsKeyPressed(ImGuiKey_RightArrow)) {
     if (field_ < 2) field_++;
-    else if (channel_ + 1 < kChannels) channel_++, field_ = 0;
+    else if (channel_ + 1 < song_.channelCount()) channel_++, field_ = 0;
   }
-  if (ImGui::IsKeyPressed(ImGuiKey_Tab, false)) channel_ = (channel_ + 1) % kChannels;
+  if (ImGui::IsKeyPressed(ImGuiKey_Tab, false)) channel_ = (channel_ + 1) % song_.channelCount();
   if (ImGui::IsKeyPressed(ImGuiKey_Space, false)) musicAudio().playing() ? musicAudio().stop() : play(true);
   Cell& cell = pattern().cells[channel_][row_];
   if (ImGui::IsKeyPressed(ImGuiKey_Delete) || ImGui::IsKeyPressed(ImGuiKey_Backspace)) {
@@ -492,6 +493,7 @@ void MusicEditor::patternGrid() {
   if (previewKey_ >= 0 && !ImGui::IsKeyDown((ImGuiKey)previewKey_)) previewKey_ = -1, stopPreview();
   gridKeys();
   Pattern& current = pattern();
+  const int kChannels = song_.channelCount();  // this song's
   ImDrawList* draw = ImGui::GetWindowDrawList();
   float lineHeight = ImGui::GetTextLineHeightWithSpacing();
   float pad = em(8);
@@ -549,7 +551,7 @@ void MusicEditor::patternGrid() {
         ImU32 noteColour = theme::col(theme::Role::UiTextDim);
         if (cell.note >= 0 && lastInstrument < (int)song_.instruments.size()) {
           const Instrument& instrument = song_.instruments[lastInstrument];
-          noteColour = instrument.drum ? theme::col(theme::Role::UiText) : tuningColour(song_.pitchOf(cell.note, instrument, clock_));
+          noteColour = drum(instrument) ? theme::col(theme::Role::UiText) : tuningColour(song_.pitchOf(cell.note, instrument, clock_));
         } else if (cell.note == kNoteOff) {
           noteColour = theme::col(theme::Role::UiText);
         }
@@ -568,10 +570,12 @@ void MusicEditor::patternGrid() {
           if (cell.effect == kEffectVolume) ImGui::SetTooltip("%s", F("V{0}: volume envelope {0} of the instrument", {std::to_string(cell.effectValue)}).c_str());
           else if (cell.effect == kEffectRelease) ImGui::SetTooltip("%s", F("R{0}: the note is released with release {0}", {std::to_string(cell.effectValue)}).c_str());
           else ImGui::SetTooltip("%s", T("Effect: V and a digit, the volume envelope; R and a digit, the release."));
-        } else if (hoveredHere && cell.note >= 0 && lastInstrument < (int)song_.instruments.size() && !song_.instruments[lastInstrument].drum) {
+        } else if (hoveredHere && cell.note >= 0 && lastInstrument < (int)song_.instruments.size() && !drum(song_.instruments[lastInstrument])) {
           {
             NotePitch pitch = song_.pitchOf(cell.note, song_.instruments[lastInstrument], clock_);
-            if (pitch.playable)
+            if (song_.samples())
+              ImGui::SetTooltip("%s", F("{0}: {1} Hz, exact", {noteName(cell.note + song_.tuning.transpose), std::to_string((int)std::lround(pitch.hz))}).c_str());
+            else if (pitch.playable)
               ImGui::SetTooltip("%s", F("{0}: AUDC {1}, AUDF {2}, {3} Hz, {4} cents", {noteName(cell.note + song_.tuning.transpose), std::to_string(pitch.control),
                                                                                     std::to_string(pitch.frequency), std::to_string((int)std::lround(pitch.hz)),
                                                                                     (pitch.cents >= 0 ? "+" : "") + std::to_string((int)std::lround(pitch.cents))})
@@ -606,13 +610,16 @@ std::string MusicEditor::explain(const VoiceTrace& trace) const {
   std::string text = F("{0} with instrument {1} ({2})", {noteName(trace.note + song_.tuning.transpose), number, name}) + "\n";
   if (trace.released) text += F("Release {0}, frame {1}", {std::to_string(trace.releaseVariant), std::to_string(trace.frame)});
   else text += F("Volume envelope {0}, frame {1}", {std::to_string(trace.volumeVariant), std::to_string(trace.frame)});
-  bool drum = trace.instrument < (int)song_.instruments.size() && song_.instruments[trace.instrument].drum;
-  if (drum) return text + "\n" + T("Drum: its AUDC and AUDF lists.");
+  if (song_.samples()) return text;
+  bool isDrum = trace.instrument < (int)song_.instruments.size() && song_.instruments[trace.instrument].drum;
+  if (isDrum) return text + "\n" + T("Drum: its AUDC and AUDF lists.");
   if (!trace.pitch.playable) return text + "\n" + T("No allowed AUDC reaches this note: silent.");
   return text + "\n" + F("{0} cents from what is meant", {(trace.pitch.cents >= 0 ? "+" : "") + std::to_string((int)std::lround(trace.pitch.cents))});
 }
 
 void MusicEditor::registerView() {
+  const int kChannels = song_.channelCount();
+  bool samples = song_.samples();
   if (tracedRevision_ != revision_ || tracedOrder_ != order_ || tracedClock_ != clock_) {
     tracedRevision_ = revision_, tracedOrder_ = order_, tracedClock_ = clock_;
     traced_.clear();
@@ -629,7 +636,7 @@ void MusicEditor::registerView() {
         tracedBefore_ = registers;
         continue;
       }
-      TracedFrame entry{position, registers, {player.trace(0), player.trace(1)}};
+      TracedFrame entry{position, registers, {player.trace(0), player.trace(1), player.trace(2), player.trace(3)}};
       traced_.push_back(entry);
     }
   }
@@ -638,22 +645,33 @@ void MusicEditor::registerView() {
   for (size_t index = 0; index < traced_.size(); index++) {
     const FrameRegisters& before = index ? traced_[index - 1].registers : tracedBefore_;
     for (int channel = 0; channel < kChannels; channel++)
-      writes += (traced_[index].registers.control[channel] != before.control[channel]) + (traced_[index].registers.frequency[channel] != before.frequency[channel]) +
+      writes += samples ? 0 : (traced_[index].registers.control[channel] != before.control[channel]) + (traced_[index].registers.frequency[channel] != before.frequency[channel]) +
                 (traced_[index].registers.volume[channel] != before.volume[channel]);
   }
-  ImGui::TextDisabled("%s", F("{0} frames, {1} register changes", {std::to_string(traced_.size()), std::to_string(writes)}).c_str());
-  ImGui::SameLine();
-  ImGui::TextDisabled("%s", T("(C, F, V: AUDC, AUDF, AUDV)"));
+  if (samples) {
+    ImGui::TextDisabled("%s", F("{0} frames", {std::to_string(traced_.size())}).c_str());
+    ImGui::SameLine();
+    ImGui::TextDisabled("%s", T("(V: the voice's volume, Hz: its pitch; the ARM mixes them into AUDV0 on every line)"));
+  } else {
+    ImGui::TextDisabled("%s", F("{0} frames, {1} register changes", {std::to_string(traced_.size()), std::to_string(writes)}).c_str());
+    ImGui::SameLine();
+    ImGui::TextDisabled("%s", T("(C, F, V: AUDC, AUDF, AUDV)"));
+  }
+  int fields = samples ? 2 : 3;
   bool playing = musicAudio().playing();
   SongPosition heard = musicAudio().position();
   ImGuiTableFlags flags = ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_SizingFixedFit;
-  if (!ImGui::BeginTable("##registers", 2 + 3 * kChannels, flags)) return;
+  if (!ImGui::BeginTable("##registers", 2 + fields * kChannels, flags)) return;
   ImGui::TableSetupScrollFreeze(0, 1);
   ImGui::TableSetupColumn(T("Frame"));
   ImGui::TableSetupColumn(T("Row"));
   // C0 F0 V0 C1 F1 V1: AUDC, AUDF and AUDV of each channel
-  for (int channel = 0; channel < kChannels; channel++)
-    for (const char* name : {"C", "F", "V"}) ImGui::TableSetupColumn((name + std::to_string(channel)).c_str());
+  for (int channel = 0; channel < kChannels; channel++) {
+    if (samples)
+      for (const char* name : {"V", "Hz"}) ImGui::TableSetupColumn((name + std::to_string(channel)).c_str());
+    else
+      for (const char* name : {"C", "F", "V"}) ImGui::TableSetupColumn((name + std::to_string(channel)).c_str());
+  }
   ImGui::TableHeadersRow();
   ImGuiListClipper clipper;
   clipper.Begin((int)traced_.size());
@@ -673,7 +691,16 @@ void MusicEditor::registerView() {
         snprintf(label, sizeof label, "%02d##r%d", frame.position.row, index);
         if (ImGui::Selectable(label, false, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap)) row_ = frame.position.row;
       }
-      for (int channel = 0; channel < kChannels; channel++) {
+      for (int channel = 0; channel < kChannels && samples; channel++) {
+        double hz = frame.registers.sounding[channel] ? frame.registers.phaseStep[channel] * (clock_ / 2) / 4294967296.0 : 0;
+        ImGui::TableNextColumn();
+        ImGui::TextColored(theme::colv(frame.registers.sounding[channel] ? theme::Role::SynNumber : theme::Role::UiTextDim), "%2d", frame.registers.volume[channel]);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", explain(frame.voices[channel]).c_str());
+        ImGui::TableNextColumn();
+        if (hz > 0) ImGui::Text("%.1f", hz);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", explain(frame.voices[channel]).c_str());
+      }
+      for (int channel = 0; channel < kChannels && !samples; channel++) {
         int values[3] = {frame.registers.control[channel], frame.registers.frequency[channel], frame.registers.volume[channel]};
         int previous[3] = {before.control[channel], before.frequency[channel], before.volume[channel]};
         for (int field = 0; field < 3; field++) {
@@ -694,6 +721,7 @@ void MusicEditor::registerView() {
 
 void MusicEditor::pianoRoll() {
   Pattern& current = pattern();
+  const int kChannels = song_.channelCount();
   ImDrawList* draw = ImGui::GetWindowDrawList();
   float laneHeight = em(11), rowWidth = em(18), labelWidth = em(40);
   int lowest = 24, highest = 96;  // C1 to C7
@@ -720,9 +748,9 @@ void MusicEditor::pianoRoll() {
   SongPosition heard = musicAudio().position();
   if (musicAudio().playing() && heard.order == order_)
     draw->AddLine(ImVec2(rowX(heard.row), origin.y), ImVec2(rowX(heard.row), origin.y + size.y), theme::col(theme::Role::UiAccent), 2);
-  // the notes: the current channel filled, the other one outlined
+  // the notes: the current channel filled, the others outlined (drawn first)
   for (int pass = 0; pass < kChannels; pass++) {
-    int channel = pass == 0 ? (channel_ + 1) % kChannels : channel_;
+    int channel = (channel_ + 1 + pass) % kChannels;
     int instrumentIndex = 0;
     for (int row = 0; row < current.rows; row++) {
       const Cell& cell = current.cells[channel][row];
@@ -731,13 +759,13 @@ void MusicEditor::pianoRoll() {
       int end = row + 1;
       while (end < current.rows && current.cells[channel][end].note == kNoNote) end++;
       ImU32 colour = theme::col(theme::Role::UiText);
-      if (instrumentIndex < (int)song_.instruments.size() && !song_.instruments[instrumentIndex].drum)
+      if (instrumentIndex < (int)song_.instruments.size() && !drum(song_.instruments[instrumentIndex]))
         colour = tuningColour(song_.pitchOf(cell.note, song_.instruments[instrumentIndex], clock_));
       ImVec2 from(rowX(row) + 1, laneY(cell.note) + 1), to(rowX(end) - 1, laneY(cell.note) + laneHeight - 1);
       if (channel == channel_) draw->AddRectFilled(from, to, colour, em(2));
       else draw->AddRect(from, to, colour, em(2));
       if (hovered && mouse.x >= from.x && mouse.x < to.x && mouse.y >= from.y && mouse.y < to.y && instrumentIndex < (int)song_.instruments.size() &&
-          !song_.instruments[instrumentIndex].drum) {
+          !drum(song_.instruments[instrumentIndex])) {
         NotePitch pitch = song_.pitchOf(cell.note, song_.instruments[instrumentIndex], clock_);
         ImGui::SetTooltip("%s", F("Channel {0}, {1}: {2} cents", {std::to_string(channel), noteName(cell.note), (pitch.cents >= 0 ? "+" : "") + std::to_string((int)std::lround(pitch.cents))}).c_str());
       }
@@ -774,7 +802,7 @@ void MusicEditor::keyboard() {
   ImGui::InvisibleButton("##piano", ImVec2(width, height));
   bool hovered = ImGui::IsItemHovered();
   const Instrument* instrument = instrument_ < (int)song_.instruments.size() ? &song_.instruments[instrument_] : nullptr;
-  bool melodic = instrument && !instrument->drum;
+  bool melodic = instrument && !drum(*instrument);
   static const int whiteSteps[] = {0, 2, 4, 5, 7, 9, 11};
   int hoveredNote = -1;
   auto keyColour = [&](int note, bool black) {
@@ -808,7 +836,9 @@ void MusicEditor::keyboard() {
     if (!melodic) ImGui::SetTooltip("%s", F("{0}: click to write it at the cursor", {noteName(hoveredNote)}).c_str());
     if (melodic) {
       NotePitch pitch = song_.pitchOf(hoveredNote, *instrument, clock_);
-      if (pitch.playable)
+      if (song_.samples())
+        ImGui::SetTooltip("%s\n%s", F("{0}: {1} Hz, exact", {noteName(hoveredNote), std::to_string((int)std::lround(pitch.hz))}).c_str(), T("Click: writes it at the cursor."));
+      else if (pitch.playable)
         ImGui::SetTooltip("%s\n%s", F("{0}: AUDC {1}, AUDF {2}, {3} cents", {noteName(hoveredNote), std::to_string(pitch.control), std::to_string(pitch.frequency),
                                                                             (pitch.cents >= 0 ? "+" : "") + std::to_string((int)std::lround(pitch.cents))})
                                         .c_str(),
@@ -903,11 +933,15 @@ void MusicEditor::instrumentEditor() {
   Instrument& instrument = song_.instruments[instrument_];
   ImGui::SetNextItemWidth(-FLT_MIN);
   if (ImGui::InputText("##iname", &instrument.name)) changed();
-  if (ImGui::RadioButton(T("Melodic"), !instrument.drum)) instrument.drum = false, changed();
-  ImGui::SameLine();
-  if (ImGui::RadioButton(T("Drum"), instrument.drum)) instrument.drum = true, changed();
-  if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", T("Fixed AUDC and AUDF frame by frame, whatever the note."));
-  if (!instrument.drum) {
+  if (song_.samples()) {
+    waveEditor(instrument);
+  } else {
+    if (ImGui::RadioButton(T("Melodic"), !instrument.drum)) instrument.drum = false, changed();
+    ImGui::SameLine();
+    if (ImGui::RadioButton(T("Drum"), instrument.drum)) instrument.drum = true, changed();
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", T("Fixed AUDC and AUDF frame by frame, whatever the note."));
+  }
+  if (!drum(instrument) && !song_.samples()) {
     ImGui::SeparatorText(T("Sounds it may use"));
     ImGui::TextWrapped("%s", T("For each note the tuning picks the closest pitch among these."));
     for (auto& distortion : distortions()) {
@@ -943,7 +977,20 @@ void MusicEditor::instrumentEditor() {
   ImGui::TextDisabled("%s", releaseVariant_ == 0 ? T("After a note off (===). Empty: silent at once.")
                                                  : F("After a note off when the note has the effect R{0}. Empty: silent at once.", {std::to_string(releaseVariant_)}).c_str());
   if (envelope("release", instrument.releases[releaseVariant_], 0, 15, nullptr, 0)) changed();
-  if (instrument.drum) {
+  if (song_.samples()) {
+    ImGui::SeparatorText(T("Pitch"));
+    ImGui::TextDisabled("%s", T("Added to the note frame by frame, in cents (positive is higher); the last value stays."));
+    // a semitone for vibrato, one or two octaves for slides and drums
+    int widest = 0;
+    for (int value : instrument.pitch) widest = std::max(widest, std::abs(value));
+    while (pitchRange_ < widest && pitchRange_ < 2400) pitchRange_ = pitchRange_ == 100 ? 1200 : 2400;
+    static const int ranges[] = {100, 1200, 2400};
+    for (int range : ranges) {
+      ImGui::SameLine();
+      if (ImGui::RadioButton(F("±{0}", {std::to_string(range)}).c_str(), pitchRange_ == range) && range >= widest) pitchRange_ = range;
+    }
+    if (envelope("pitch", instrument.pitch, -pitchRange_, pitchRange_, nullptr, 0)) changed();
+  } else if (instrument.drum) {
     ImGui::SeparatorText("AUDC");
     if (envelope("audc", instrument.drumControl, 0, 15, nullptr, 1)) changed();
     ImGui::SeparatorText("AUDF");
@@ -1077,6 +1124,27 @@ void MusicEditor::exportPopup() {
   if (!ImGui::BeginPopup("##export")) return;
   ImGui::TextUnformatted(T("Export the song for the console"));
   ImGui::Separator();
+  if (song_.samples()) {
+    ImGui::TextUnformatted(T("C for an ELF cartridge: <name>.music.h"));
+    ImGui::TextDisabled("%s", T("Calls: music_init() once; music_frame() once per frame, in the overblank; music_effect(n);"));
+    ImGui::TextDisabled("%s", T("then music_level[line] to AUDV0 on every line of the kernel, and music_nibbles to $E0-$FE for the 63 lines of the overblank."));
+    ImGui::Spacing();
+    if (theme::primaryButton(T("Export"))) {
+      if (song_.exportTo != "c") song_.exportTo = "c", changed();
+      exportSongFile(false);
+      ImGui::CloseCurrentPopup();
+    }
+    if (!song_.exportTo.empty()) {
+      ImGui::SameLine();
+      if (ImGui::Button(T("Stop exporting"))) song_.exportTo.clear(), changed(), ImGui::CloseCurrentPopup();
+    }
+    if (!exportProblems_.empty()) {
+      ImGui::SeparatorText(T("Last export"));
+      for (auto& problem : exportProblems_) ImGui::BulletText("%s", problem.c_str());
+    }
+    ImGui::EndPopup();
+    return;
+  }
   bool basic = song_.exportTo == "bb";
   if (ImGui::RadioButton(T("DASM (assembly)"), !basic)) basic = false;
   if (ImGui::RadioButton("batari Basic", basic)) basic = true;
@@ -1151,22 +1219,37 @@ void MusicEditor::effectsPanel() {
   ImGui::AlignTextToFramePadding();
   ImGui::TextUnformatted(T("Channel"));
   ImGui::SameLine();
-  if (ImGui::RadioButton("0", channel == 0)) effect.channel = 0, changed();
-  ImGui::SameLine();
-  if (ImGui::RadioButton("1", channel == 1)) effect.channel = 1, changed();
+  for (int index = 0; index < song_.channelCount(); index++) {
+    ImGui::SameLine();
+    if (ImGui::RadioButton(std::to_string(index).c_str(), channel == index)) effect.channel = index, changed();
+  }
   if (ImGui::Button(T("Play it"))) {
     std::string error;
     if (!musicAudio().ready(&error)) message_ = F("No sound output: {0}", {error});
     else musicAudio().playEffect(song_, tv_, effect_);
   }
   if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", T("Also while the song plays, to hear how the two share the channel."));
-  ImGui::TextDisabled("%s", F("In the game: lda #{0} / jsr MusicEffect", {effectSymbol(effect.name)}).c_str());
+  if (song_.samples()) ImGui::TextDisabled("%s", F("In the game: music_effect({0});", {effectSymbol(effect.name)}).c_str());
+  else ImGui::TextDisabled("%s", F("In the game: lda #{0} / jsr MusicEffect", {effectSymbol(effect.name)}).c_str());
 }
 
 // ---------------------------------------------------------------------------
 // Tuning: how far off each note of the song is, and the search for a better tuning.
 
 void MusicEditor::tuningPanel() {
+  if (song_.samples()) {
+    ImGui::TextWrapped("%s", T("Played as samples, every note is exact: the ARM keeps a 32-bit phase for each voice (direct digital synthesis), so nothing needs tuning."));
+    ImGui::PushStyleColor(ImGuiCol_Text, theme::col(theme::Role::UiTextDim));
+    ImGui::TextWrapped("%s", T("Playing 4-bit samples by writing AUDV with AUDC = 0 is an old 2600 technique; who did it first is still to be found. The mix goes through Chris Brenner's formula of the TIA's output, in Thomas Jentzsch's form. On the overblank's lines the samples are played by the ELF loader's own overblank program (United Carts of Atari firmware, Stella, Gopher2600), whose write to $2D becomes a write to AUDV0."));
+    ImGui::PopStyleColor();
+    ImGui::SetNextItemWidth(em(110));
+    int transpose = song_.tuning.transpose;
+    if (ImGui::InputInt(T("Transpose"), &transpose)) song_.tuning.transpose = std::clamp(transpose, -24, 24), changed();
+    ImGui::SetNextItemWidth(em(110));
+    int reference = song_.tuning.referenceCents;
+    if (ImGui::SliderInt(T("A4 (cents)"), &reference, -50, 50, "%+d")) song_.tuning.referenceCents = reference, changed();
+    return;
+  }
   ImGui::TextWrapped("%s", F("{0}: the TIA's audio clock is {1} Hz.", {tv_, std::to_string((int)std::lround(clock_))}).c_str());
   ImGui::PushStyleColor(ImGuiCol_Text, theme::col(theme::Role::UiTextDim));
   ImGui::TextWrapped("%s", T("What you hear is the TIA counter by counter, as Chris Brenner described it (\"TIA Sounding Off in the Digital Domain\"), with the two channels mixed by his formula as Thomas Jentzsch simplified it. The pitches are those of Ron Fries' TIASOUND and of the tables by Eckhard Stolberg and Paul Slocum."));
@@ -1240,6 +1323,81 @@ void MusicEditor::tuningPanel() {
       ImGui::Text("%d", entry.second);
     }
     ImGui::EndTable();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// What plays the song: the TIA's two channels, or voices mixed into samples (ELF).
+
+void MusicEditor::soundPanel() {
+  ImGui::SeparatorText(T("Sound"));
+  bool samples = song_.samples();
+  if (ImGui::RadioButton(T("TIA"), !samples) && samples) song_.target = "tia", channel_ = std::min(channel_, kChannels - 1), changed();
+  if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", T("The TIA's two channels: AUDC, AUDF and AUDV once per frame. Any cartridge."));
+  ImGui::SameLine();
+  if (ImGui::RadioButton(T("Samples (ELF)"), samples) && !samples) {
+    song_.target = "samples";
+    if (song_.exportTo == "dasm" || song_.exportTo == "bb") song_.exportTo = "c";
+    changed();
+  }
+  if (ImGui::IsItemHovered())
+    ImGui::SetTooltip("%s", T("Voices with waveforms, mixed by the cartridge's ARM into one 4-bit sample per scanline in AUDV0, with exact pitch. ELF cartridges, from C."));
+  if (!song_.samples()) {
+    if (song_.exportTo == "c") song_.exportTo.clear();
+    return;
+  }
+  ImGui::SetNextItemWidth(em(80));
+  int voices = song_.voices;
+  if (ImGui::InputInt(T("Voices"), &voices)) song_.voices = std::clamp(voices, 1, kMaxChannels), channel_ = std::min(channel_, song_.channelCount() - 1), changed();
+  ImGui::SetNextItemWidth(em(80));
+  int gain = song_.gain;
+  if (ImGui::InputInt(T("Loudness"), &gain, 1, 4)) song_.gain = std::clamp(gain, 4, 64), changed();
+  if (ImGui::IsItemHovered())
+    ImGui::SetTooltip("%s", T("16: every voice at full volume together reaches AUDV 15. More is louder, and a mix that goes past 15 is clipped."));
+}
+
+void MusicEditor::waveEditor(Instrument& instrument) {
+  ImGui::SeparatorText(T("Waveform"));
+  static const char* names[] = {N_("Square"), N_("Triangle"), N_("Sawtooth"), N_("Sine"), N_("Noise"), N_("Drawn")};
+  ImGui::SetNextItemWidth(em(140));
+  if (ImGui::BeginCombo("##wave", T(names[(int)instrument.wave]))) {
+    for (int index = 0; index < 6; index++)
+      if (ImGui::Selectable(T(names[index]), index == (int)instrument.wave)) {
+        if ((Waveform)index == Waveform::Drawn && instrument.wave != Waveform::Drawn) {  // starts from what it had
+          auto levels = waveLevels(instrument);
+          instrument.drawn.assign(levels.begin(), levels.end());
+        }
+        instrument.wave = (Waveform)index, changed();
+      }
+    ImGui::EndCombo();
+  }
+  if (instrument.wave == Waveform::Square) {
+    ImGui::SetNextItemWidth(em(140));
+    if (ImGui::SliderInt(T("Duty (of 32)"), &instrument.duty, 1, 31)) changed();
+  } else if (instrument.wave == Waveform::Noise) {
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted(T("Register"));
+    for (int bits : {4, 5, 9, 15}) {
+      ImGui::SameLine();
+      if (ImGui::RadioButton(F("{0} bits", {std::to_string(bits)}).c_str(), instrument.noiseBits == bits)) instrument.noiseBits = bits, changed();
+    }
+    ImGui::TextDisabled("%s", T("The register moves 32 times per cycle of the note: the note sets how bright the noise is. 4, 5 and 9 bits repeat like the TIA's."));
+  } else if (instrument.wave == Waveform::Drawn) {
+    instrument.drawn.resize(32, 0);
+    ImGui::TextDisabled("%s", T("One cycle, 32 steps of 0 to 15."));
+    if (envelope("drawn", instrument.drawn, 0, 15, nullptr, 32)) changed();
+  }
+  if (instrument.wave != Waveform::Drawn && instrument.wave != Waveform::Noise) {
+    // the cycle as it is played
+    auto levels = waveLevels(instrument);
+    ImDrawList* draw = ImGui::GetWindowDrawList();
+    ImVec2 origin = ImGui::GetCursorScreenPos();
+    float step = em(4), height = em(30);
+    ImGui::Dummy(ImVec2(step * 32, height));
+    draw->AddRectFilled(origin, ImVec2(origin.x + step * 32, origin.y + height), theme::col(theme::Role::UiFrame));
+    for (int index = 0; index < 32; index++)
+      draw->AddRectFilled(ImVec2(origin.x + index * step, origin.y + height * (15 - levels[index]) / 15.0f), ImVec2(origin.x + (index + 1) * step - 1, origin.y + height),
+                          theme::col(theme::Role::UiAccent));
   }
 }
 

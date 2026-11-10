@@ -11,6 +11,8 @@
 // column per cell is how trackers have worked since Karsten Obarski's Ultimate
 // Soundtracker (1987).
 #pragma once
+#include <array>
+#include <cstdint>
 #include <map>
 #include <string>
 #include <vector>
@@ -19,7 +21,8 @@
 
 namespace vcs::music {
 
-constexpr int kChannels = 2;
+constexpr int kChannels = 2;     // the TIA's
+constexpr int kMaxChannels = 4;  // voices of a song played as samples (ELF)
 constexpr int kNoNote = -1;   // an empty cell: the channel goes on as it was
 constexpr int kNoteOff = -2;  // the note is released
 
@@ -31,6 +34,10 @@ struct Envelope {
 };
 
 enum class PitchUnit { Cents, Audf };
+
+// The waveform of an instrument played as samples (ELF): 32 steps of 0..15 per cycle,
+// or noise from a shift register that moves one step each 32nd of a cycle.
+enum class Waveform { Square, Triangle, Saw, Sine, Noise, Drawn };
 
 // A note's pitch set by hand for one instrument: its AUDC and its AUDF frame by frame
 // (the last one stays). It replaces both the tuning's choice and the pitch envelope.
@@ -57,7 +64,19 @@ struct Instrument {
   std::map<int, NoteTuning> byHand;
   // Drum: AUDC and AUDF frame by frame (the last ones stay).
   std::vector<int> drumControl = {8}, drumFrequency = {4};
+  // Samples (the song's target): the waveform, the square's duty (1..31 of 32), the
+  // noise register's length (4, 5, 9 or 15 bits) and a drawn wave (32 values 0..15).
+  // The pitch is exact; the pitch envelope is in cents.
+  Waveform wave = Waveform::Square;
+  int duty = 16;
+  int noiseBits = 15;
+  std::vector<int> drawn;
 };
+
+// The 32 levels (0..15) of one cycle of a waveform (noise: all 0, it has none).
+std::array<uint8_t, 32> waveLevels(const Instrument& instrument);
+// The noise register's feedback mask for its length (Galois, maximal length).
+int noiseMask(int bits);
 
 // The effect column: a letter and a value.
 //   Vn  the note uses volume envelope n (with no note: the held note changes to it)
@@ -74,7 +93,7 @@ struct Cell {
 struct Pattern {
   std::string name;
   int rows = 32;
-  std::vector<Cell> cells[kChannels];  // rows cells per channel
+  std::vector<Cell> cells[kMaxChannels];  // rows cells per channel (all four kept)
   void resize(int rowCount);
 };
 
@@ -103,6 +122,11 @@ struct PitchStep {
 
 struct Song {
   std::string name = "song";
+  // "tia": the TIA's two channels, AUDC, AUDF and AUDV once per frame. "samples": voices
+  // mixed by the cartridge's ARM into one 4-bit sample per scanline in AUDV0 (ELF).
+  std::string target = "tia";
+  int voices = 3;   // samples: 1..4
+  int gain = 16;    // samples: the mix's loudness in sixteenths (16: all voices at full fit)
   int speed = 6;   // video frames per row
   int swing = 0;   // frames of the odd rows (0: the same as speed)
   std::vector<Instrument> instruments;
@@ -116,6 +140,8 @@ struct Song {
   std::string exportRam = "h";
   SongTuningSettings tuning;
 
+  bool samples() const { return target == "samples"; }
+  int channelCount() const { return samples() ? (voices < 1 ? 1 : voices > kMaxChannels ? kMaxChannels : voices) : kChannels; }
   int rowFrames(int row) const { return (row % 2 == 1 && swing > 0) ? swing : speed; }
   // The notes the song plays, with the AUDC values each one's instrument allows (melodic only).
   std::vector<SongNote> notes() const;
@@ -125,6 +151,9 @@ struct Song {
   NotePitch pitchOf(int note, const Instrument& instrument, double audioClock) const;
   // Frame by frame, what a note writes to AUDC and AUDF (at least one step; the last stays).
   std::vector<PitchStep> pitchSequence(int note, const Instrument& instrument, double audioClock) const;
+  // Samples: frame by frame, the phase step per scanline (2^32 = one cycle) of a note, with
+  // the pitch envelope in cents (at least one step; the last stays). Exact pitch.
+  std::vector<uint32_t> phaseSteps(int note, const Instrument& instrument, double audioClock) const;
 };
 
 Song blankSong();  // one pattern, a lead and a drum

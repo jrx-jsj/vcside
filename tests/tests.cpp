@@ -716,7 +716,13 @@ static void testElfSpace() {
     CHECK(reread.fromJson(project.toJson(), project.file, &error));
     CHECK(reread.elfCartridge == "pluscart" && reread.elfFlashKb == 0 && reread.elfRamKb == 64 && reread.otherKeys.empty());
   }
-  for (auto fileName : {"Makefile", "include/vcsLib.h", "src/main.c", "src/memcpy_long.S", "chameleon/support.c"}) CHECK(fs::exists(dir / fileName));
+  for (auto fileName : {"Makefile", "include/vcsLib.h", "src/main.c", "src/memcpy_long.S", "chameleon/support.c", "src/theme.vcsmusic"}) CHECK(fs::exists(dir / fileName));
+  {  // its music, exported as the C player (the editor writes it on every save)
+    std::ifstream musicHeader(dir / "src" / "theme.music.h");
+    std::string musicText((std::istreambuf_iterator<char>(musicHeader)), {});
+    CHECK(musicText.find("#define MUSIC_EFFECT_FIRE 0") != std::string::npos && musicText.find("void music_frame(int lines)") != std::string::npos);
+    CHECK(musicText.find("Tuned for NTSC") != std::string::npos);
+  }
   CHECK(!fs::exists(dir / "LICENSE.md"));
   std::ifstream makefile(dir / "Makefile");
   std::string makefileText((std::istreambuf_iterator<char>(makefile)), {});
@@ -840,16 +846,19 @@ static void testElfSpace() {
   CHECK(Project::examples(Language::ElfC).size() == 1);
   fs::path elfDir = dir / "anim-elf";
   CHECK(Project::create(elfDir.string(), "walker", Language::ElfC, "NTSC", &project, &error, "animation"));
-  for (auto fileName : {"Makefile", "include/vcsLib.h", "src/main.c", "src/memcpy_long.S", "src/hero.vcsgfx", "src/hero.gfx.h"})
+  for (auto fileName : {"Makefile", "include/vcsLib.h", "src/main.c", "src/memcpy_long.S", "src/hero.vcsgfx", "src/hero.gfx.h", "src/theme.vcsmusic", "src/theme.music.h"})
     CHECK(fs::exists(elfDir / fileName));
   std::ifstream mainFile(elfDir / "src" / "main.c"), headerFile(elfDir / "src" / "hero.gfx.h");
   std::string mainText((std::istreambuf_iterator<char>(mainFile)), {}), headerText((std::istreambuf_iterator<char>(headerFile)), {});
   CHECK(mainText.find("walker - made with VCSIDE") != std::string::npos && mainText.find("hero.gfx.h") != std::string::npos);
+  CHECK(mainText.find("music_frame(lines + MUSIC_OVERBLANK_LINES);") != std::string::npos);
   CHECK(headerText.find("static const vcsgfx_animation hero_walk = {hero_walk_steps, 4, 1};") != std::string::npos);
   std::string gcc = findInPath("arm-none-eabi-gcc"), make = findInPath("make");
   if (!gcc.empty() && !make.empty()) {
     std::string command = "cd \"" + elfDir.string() + "\" && \"" + make + "\" > make.log 2>&1";
     CHECK(std::system(command.c_str()) == 0 && fs::exists(elfDir / "build" / "walker.bin"));
+    command = "cd \"" + dir.string() + "\" && \"" + make + "\" > make.log 2>&1";  // the template without an example
+    CHECK(std::system(command.c_str()) == 0 && fs::exists(dir / "build" / "rainbow.bin"));
   }
   CHECK(!Project::create((dir / "none-elf").string(), "x", Language::ElfC, "NTSC", &project, &error, "nope") && !error.empty());
   if (!std::getenv("VCSIDE_TEST_KEEP")) fs::remove_all(dir, errorCode);
@@ -2312,6 +2321,156 @@ static void testMusicExport() {
               compared, skipped, heardFrames, effectsPlayed, mostInstructions);
 }
 
+// The exported C player against the editor's: songs played as samples, compiled with the
+// computer's C compiler and run frame by frame; every line's level compared with
+// SampleMixer's. Skipped without a C compiler.
+static std::string findCompiler() {
+  if (const char* given = std::getenv("VCSIDE_CC")) return given;
+#ifndef _WIN32
+  if (std::system("command -v cc >/dev/null 2>&1") == 0) return "cc";
+#endif
+  return "";
+}
+
+static vcs::music::Song randomSampleSong(unsigned seed) {
+  using namespace vcs::music;
+  std::mt19937 random(seed * 7919);
+  auto pick = [&](int low, int high) { return std::uniform_int_distribution<int>(low, high)(random); };
+  Song song = randomSong(seed);
+  song.target = "samples";
+  song.voices = pick(1, 4);
+  song.gain = pick(8, 40);
+  for (auto& instrument : song.instruments) {
+    instrument.wave = (Waveform)pick(0, 5);
+    instrument.duty = pick(1, 31);
+    static const int lengths[] = {4, 5, 9, 15};
+    instrument.noiseBits = lengths[pick(0, 3)];
+    instrument.drawn.clear();
+    for (int step = 0; step < 32; step++) instrument.drawn.push_back(pick(0, 15));
+  }
+  for (auto& effect : song.effects) effect.channel = pick(0, song.voices - 1);
+  return song;
+}
+
+static void testSampleExport() {
+  using namespace vcs::music;
+  namespace fs = std::filesystem;
+  double ntsc = audioClockHz("NTSC");
+  // the waveforms and the mix
+  Instrument square;
+  square.duty = 8;
+  auto levels = waveLevels(square);
+  CHECK(levels[0] == 15 && levels[7] == 15 && levels[8] == 0 && levels[31] == 0);
+  square.wave = Waveform::Triangle;
+  CHECK(waveLevels(square)[15] == 15 && waveLevels(square)[16] == 15 && waveLevels(square)[0] == 0);
+  CHECK(levelTable()[0] == 0 && levelTable()[60] == 15 && levelTable()[63] == 15);
+  for (int quarter = 1; quarter < 64; quarter++) CHECK(levelTable()[quarter] >= levelTable()[quarter - 1]);
+  // exact pitch: A4 is 440 Hz whatever the TV
+  Song song = blankSong();
+  song.target = "samples";
+  uint32_t step = song.phaseSteps(69, song.instruments[0], ntsc)[0];
+  CHECK(std::fabs(step * (ntsc / 2) / 4294967296.0 - 440.0) < 0.01);
+  CHECK(song.pitchOf(61, song.instruments[0], ntsc).playable && song.pitchOf(61, song.instruments[0], ntsc).cents == 0);
+  // a samples song in JSON
+  song.voices = 3, song.gain = 20;
+  song.instruments[1].wave = Waveform::Noise, song.instruments[1].noiseBits = 9;
+  song.instruments[0].wave = Waveform::Drawn, song.instruments[0].drawn = std::vector<int>(32, 7);
+  song.patterns[0].cells[2][3] = {64, 0};
+  Song read;
+  std::string error;
+  CHECK(fromJson(toJson(song), &read, &error) && read.samples() && read.channelCount() == 3 && read.gain == 20);
+  CHECK(read.instruments[1].wave == Waveform::Noise && read.instruments[1].noiseBits == 9 && read.instruments[0].drawn[5] == 7 && read.patterns[0].cells[2][3].note == 64);
+  // TIA songs go to DASM or batari Basic, samples to C
+  CHECK(!exportSong(song, ntsc, {}).ok && !exportSong(blankSong(), ntsc, {ExportTarget::C, "", "NTSC"}).ok);
+  ExportResult c = exportSong(song, ntsc, {ExportTarget::C, "", "NTSC"});
+  CHECK(c.ok && c.text.find("#define MUSIC_VOICES 3") != std::string::npos && c.text.find("CC0") != std::string::npos);
+
+  std::string compiler = findCompiler();
+  if (compiler.empty()) {
+    std::printf("  (no C compiler: the exported C player is not run)\n");
+    return;
+  }
+  fs::path folder = fs::temp_directory_path() / "vcside-test-cmusic";
+  fs::create_directories(folder);
+  {
+    std::ofstream driver(folder / "driver.c");
+    driver << "#include <stdio.h>\n#include \"song.music.h\"\n"
+              "int main(void) {\n  int frames, lines;\n  if (scanf(\"%d %d\", &frames, &lines) != 2) return 1;\n  music_init();\n"
+              "  for (int f = 0; f < frames; f++) {\n    int effect;\n    if (scanf(\"%d\", &effect) != 1) return 1;\n"
+              "    if (effect >= 0) music_effect(effect);\n    music_frame(lines);\n"
+              "    for (int i = 0; i < lines - MUSIC_OVERBLANK_LINES; i++) printf(\"%d \", music_level[i]);\n"
+              "    for (int j = 0; j < 31; j++) printf(\"%d \", music_nibbles[j]);\n    printf(\"\\n\");\n  }\n  return 0;\n}\n";
+  }
+  int compared = 0, skipped = 0, effectsPlayed = 0;
+  long loudLines = 0;
+  for (unsigned seed = 1; seed <= 24; seed++) {
+    Song random = randomSampleSong(seed);
+    int lines = seed % 3 == 0 ? 312 : 262;
+    std::string tv = lines == 312 ? "PAL" : "NTSC";
+    double clock = audioClockHz(tv);
+    ExportResult result = exportSong(random, clock, {ExportTarget::C, "", tv});
+    bool ambiguousSong = false;
+    for (auto& problem : result.problems) ambiguousSong = ambiguousSong || problem.find("depending on what came before") != std::string::npos;
+    if (ambiguousSong) {
+      skipped++;
+      continue;
+    }
+    CHECK(result.ok);
+    if (!result.ok) continue;
+    std::ofstream(folder / "song.music.h") << result.text;
+    std::string build = "cd \"" + folder.string() + "\" && \"" + compiler + "\" -std=c11 -O1 -Wall -Wextra -o driver driver.c > build.log 2>&1";
+    bool built = std::system(build.c_str()) == 0;
+    std::ifstream buildLog(folder / "build.log");
+    std::string warnings((std::istreambuf_iterator<char>(buildLog)), {});
+    if (!built || !warnings.empty()) std::printf("  seed %u: %s\n", seed, warnings.c_str());
+    CHECK(built && warnings.empty());
+    if (!built) break;
+    // the same frames on both sides, with the same effects
+    const int frames = 400;
+    std::mt19937 effects(seed);
+    int validEffects = 0;
+    for (auto& effect : random.effects) validEffects += effect.instrument < (int)random.instruments.size();
+    std::vector<int> schedule;
+    for (int frame = 0; frame < frames; frame++)
+      schedule.push_back(validEffects && std::uniform_int_distribution<int>(0, 40)(effects) == 0 ? std::uniform_int_distribution<int>(0, validEffects - 1)(effects) : -1);
+    {
+      std::ofstream input(folder / "input.txt");
+      input << frames << " " << lines << "\n";
+      for (int effect : schedule) input << effect << "\n";
+    }
+    std::string run = "cd \"" + folder.string() + "\" && ./driver < input.txt > output.txt";
+    CHECK(std::system(run.c_str()) == 0);
+    std::ifstream output(folder / "output.txt");
+    Player player;
+    player.start(random, clock);
+    SampleMixer mixer;
+    bool same = true;
+    for (int frame = 0; frame < frames && same; frame++) {
+      if (schedule[frame] >= 0) player.playEffect(random, clock, schedule[frame]), effectsPlayed++;
+      std::vector<uint8_t> expected;
+      mixer.render(random, player.nextFrame(), lines, expected);
+      int kernel = lines - 63;
+      const uint8_t* overblank = expected.data() + kernel;
+      std::vector<int> wanted(expected.begin(), expected.begin() + kernel);
+      wanted.push_back(((overblank[0] + overblank[1] + 1) >> 1) | overblank[2] << 4);
+      for (int j = 1; j < 31; j++) wanted.push_back(overblank[2 * j + 1] | overblank[2 * j + 2] << 4);
+      for (size_t index = 0; index < wanted.size() && same; index++) {
+        int got = -1;
+        output >> got;
+        same = got == wanted[index];
+        if (!same) std::printf("  seed %u, frame %d, value %zu: C %d, editor %d\n", seed, frame, index, got, wanted[index]);
+      }
+      for (uint8_t level : expected) loudLines += level > 0;
+    }
+    CHECK(same);
+    compared++;
+    if (!same) break;
+  }
+  CHECK(compared >= 15 && loudLines > 100000 && effectsPlayed > 50);
+  std::printf("  exported C player: %d songs the same as the editor's, line by line (%d skipped as ambiguous; %ld lines with sound, %d effects)\n", compared,
+              skipped, loudLines, effectsPlayed);
+}
+
 int main() {
   KnowledgeBase kb;
   std::string error;
@@ -2335,6 +2494,7 @@ int main() {
   testMusic();
   testSong();
   testMusicExport();
+  testSampleExport();
   testBasic();
   testBasicSyntax(kb);
   testFormatOrder(kb);
