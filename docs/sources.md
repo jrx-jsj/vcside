@@ -113,3 +113,12 @@ All the documentary sources (Stella Programmer's Guide, Towers' notes, 6532 data
 ## Assistant: remote APIs (read 2026-11-10)
 
 - Anthropic Messages API streaming (`POST /v1/messages` with `"stream": true`; events `message_start`, `content_block_start`, `content_block_delta` with `text_delta`, `content_block_stop`, `message_delta`, `message_stop`, `ping`; headers `x-api-key` and `anthropic-version: 2023-06-01`), from Anthropic's documentation, https://docs.anthropic.com/en/api/messages-streaming. Still to verify there: where the token counts appear in the stream.
+
+## ACE cartridges (read 2026-11-10)
+
+Read for the proposal in [design-ace.md](design-ace.md), which lists every source with its author; only facts were taken (header fields, offsets, register addresses, the argument block), in our own words, and no code. The proof of concept in `tools/ace_poc` (CC0) was written from those facts.
+
+- **ACE itself**: ZackAttack (Zack Scolaro), UnoCart firmware, 2018 (`ace2600.h` in Strong-ARM-for-VCS: the header struct); the UF00/PC00/UC00 variants and the argument block at `0x20000000`: Marco Johannes, United Carts of Atari firmware, 2021.
+- **Gopher2600's ACE mapper** (JetSetIlly, v0.20.0 and later; local copy `07d8de5`): how it emulates the bus, the PlusCart register addresses, the ELF and DPC+ wrapped in ACE, the debugging ELF names. Our own measurements: the proof of concept runs (342 frames in 3 s), Wolf3D does not produce frames (cause not found yet).
+- **Stella 7.0**: no ACE support (none in its source, none in the binary's strings).
+- **Still to be found**: the author of the ELF-in-ACE wrapper, the author of the Wolf3D port, the free RAM a program may use, how UCA presents the UnoCart's data bus (bits 8-15) to a UF00 program. AtariAge threads returned HTTP 403 and were not used.

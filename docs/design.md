@@ -204,6 +204,7 @@ After every build with DASM, the IDE measures how much space is left (`src/space
 - **Tutor mode** for the assistant (idea from the user, 2026-11-10): a guided path for someone who wants to make a game, adapted to their level, recommending readings for what they want to achieve. Notes in [design-assistant.md](design-assistant.md#tutor-mode-idea-for-later).
 - **Cancel a build in progress** (a button and a menu command), and retry if a save coincides with it.
 - **Send the ROM to the PlusCart** from the IDE. We need to see with the PlusCart authors what route they offer (network or USB) and how it is authorised.
+- **ACE cartridges** (UnoCart, PlusCart): proposal and proof of concept in [design-ace.md](design-ace.md).
 - **Image for the Chameleon Cart**: generate the file that is written to the cartridge from the ROM, choosing the firmware to use.
 - **Find references** of a symbol (every place where it is used) and **view its definition in a floating window** without leaving the file.
 - **File outline**: the list of labels, subroutines, macros and constants, to jump to any of them.
