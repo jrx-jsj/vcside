@@ -19,6 +19,7 @@ class Job {
   bool start(const std::vector<std::string>& args, const std::string& workDir,
              const std::vector<std::pair<std::string, std::string>>& environment = {});
   bool running() const { return running_; }
+  long pid() const { return pid_; }  // the process's id while it runs (0 when unknown)
   bool finished() const { return started_ && !running_; }
   int exitCode() const { return exitCode_; }
   std::string output();  // thread-safe copy
@@ -38,6 +39,7 @@ class Job {
   void* process_ = nullptr;  // SDL_Process*, guarded by mutex_ while the thread runs
   size_t outputLimit_ = 0;
   std::atomic<int> exitCode_{-1};
+  std::atomic<long> pid_{0};
 };
 
 // Starts a program and forgets it (emulators). Returns false and an error if it fails.

@@ -15,6 +15,7 @@
 #include <nlohmann/json.hpp>
 
 #include "app.h"
+#include "assistant/engine.h"
 #include "menu.h"
 #include "i18n.h"
 #include "imgui.h"
@@ -428,6 +429,7 @@ int main(int argc, char** argv) {
   if (!makeGl(firstSdlWindow)) return 1;
   IMGUI_CHECKVERSION();
   for (int i = 1; i < argc; i++) gImguiMenu |= std::string(argv[i]) == "--imgui-menu";
+  vcs::assistant::endOrphanHelpers();  // language-model helpers left by a VCSIDE that crashed
 
   std::vector<std::unique_ptr<IdeWindow>> windows;
   {

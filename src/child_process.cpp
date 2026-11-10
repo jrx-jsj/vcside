@@ -92,6 +92,7 @@ bool Job::start(const std::vector<std::string>& args, const std::string& workDir
     std::lock_guard<std::mutex> lock(mutex_);
     process_ = process;
   }
+  pid_ = (long)SDL_GetNumberProperty(SDL_GetProcessProperties(process), SDL_PROP_PROCESS_PID_NUMBER, 0);
   running_ = true;
   thread_ = std::thread([this, process]() {
     SDL_IOStream* stream = SDL_GetProcessOutput(process);
@@ -116,6 +117,7 @@ bool Job::start(const std::vector<std::string>& args, const std::string& workDir
       SDL_DestroyProcess(process);
     }
     exitCode_ = code;
+    pid_ = 0;
     running_ = false;
   });
   return true;

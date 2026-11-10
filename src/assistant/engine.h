@@ -20,6 +20,13 @@ std::string helperPath();
 // The helper's command line for a model (exposed for tests).
 std::vector<std::string> helperArguments(const std::string& modelPath, int port, int contextTokens, const std::vector<std::string>& extra = {});
 
+// A helper outlives VCSIDE when VCSIDE ends without stopping it (a crash, a forced quit):
+// it keeps the model in memory. Each running helper is recorded in configDir()/llm-helpers
+// (a file named after its process id, holding VCSIDE's), and on macOS and Linux a small
+// shell watchdog ends it as soon as its VCSIDE is gone. At start-up VCSIDE ends the helpers
+// still recorded whose VCSIDE no longer runs (only if they really are the helper program).
+void endOrphanHelpers();
+
 class Engine {
  public:
   enum class State { Stopped, Starting, Ready, Failed };
@@ -41,6 +48,7 @@ class Engine {
 
  private:
   Job job_;
+  long recordedPid_ = 0;  // the helper's id, as recorded in llm-helpers
   State state_ = State::Stopped;
   std::string error_, modelPath_;
   int port_ = 0;

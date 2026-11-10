@@ -6,19 +6,131 @@
 
 #include <atomic>
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
+
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#else
+#include <signal.h>
+#include <unistd.h>
+#endif
 
 #include "assistant/http.h"
+#include "paths.h"
+
+namespace fs = std::filesystem;
 
 namespace vcs::assistant {
+
+namespace {
+
+const char* kHelperName =
+#ifdef _WIN32
+    "llama-server.exe";
+#else
+    "llama-server";
+#endif
+
+fs::path helperRecords() { return fs::path(configDir()) / "llm-helpers"; }
+
+long ownProcessId() {
+#ifdef _WIN32
+  return (long)GetCurrentProcessId();
+#else
+  return (long)getpid();
+#endif
+}
+
+bool processAlive(long pid) {
+  if (pid <= 0) return false;
+#ifdef _WIN32
+  HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, (DWORD)pid);
+  if (!process) return false;
+  DWORD code = 0;
+  bool alive = GetExitCodeProcess(process, &code) && code == STILL_ACTIVE;
+  CloseHandle(process);
+  return alive;
+#else
+  return kill((pid_t)pid, 0) == 0;
+#endif
+}
+
+// Whether the process is the helper program (a process id can be reused by another program).
+bool isHelperProcess(long pid) {
+#ifdef _WIN32
+  HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, (DWORD)pid);
+  if (!process) return false;
+  char path[MAX_PATH * 2];
+  DWORD size = sizeof path;
+  bool helper = QueryFullProcessImageNameA(process, 0, path, &size) && fs::path(path).filename().string() == kHelperName;
+  CloseHandle(process);
+  return helper;
+#else
+  std::string command = "ps -p " + std::to_string(pid) + " -o comm= 2>/dev/null";
+  FILE* pipe = popen(command.c_str(), "r");
+  if (!pipe) return false;
+  char line[1024] = {};
+  bool read = fgets(line, sizeof line, pipe) != nullptr;
+  pclose(pipe);
+  std::string name = read ? std::string(line) : "";
+  while (!name.empty() && (name.back() == '\n' || name.back() == ' ')) name.pop_back();
+  return !name.empty() && fs::path(name).filename().string() == kHelperName;
+#endif
+}
+
+void endProcess(long pid) {
+#ifdef _WIN32
+  if (HANDLE process = OpenProcess(PROCESS_TERMINATE, FALSE, (DWORD)pid)) {
+    TerminateProcess(process, 1);
+    CloseHandle(process);
+  }
+#else
+  kill((pid_t)pid, SIGTERM);
+#endif
+}
+
+void recordHelper(long helperPid) {
+  if (helperPid <= 0) return;
+  std::error_code error;
+  fs::create_directories(helperRecords(), error);
+  std::ofstream(helperRecords() / std::to_string(helperPid)) << ownProcessId() << "\n";
+#ifndef _WIN32
+  // the watchdog: while VCSIDE runs and the helper is still the helper program, wait; then
+  // end the helper. It ends by itself once the helper has stopped.
+  std::string script =
+      "while kill -0 \"$1\" 2>/dev/null && ps -p \"$2\" -o comm= 2>/dev/null | grep -q llama-server; do sleep 2; done; "
+      "if ps -p \"$2\" -o comm= 2>/dev/null | grep -q llama-server; then kill \"$2\"; fi";
+  launchDetached({"/bin/sh", "-c", script, "vcside-helper-watchdog", std::to_string(ownProcessId()), std::to_string(helperPid)}, "", nullptr);
+#endif
+}
+
+void forgetHelper(long helperPid) {
+  if (helperPid <= 0) return;
+  std::error_code error;
+  fs::remove(helperRecords() / std::to_string(helperPid), error);
+}
+
+}  // namespace
+
+void endOrphanHelpers() {
+  std::error_code error;
+  for (auto& entry : fs::directory_iterator(helperRecords(), error)) {
+    long helperPid = std::atol(entry.path().filename().string().c_str());
+    long ownerPid = 0;
+    std::ifstream(entry.path()) >> ownerPid;
+    if (ownerPid == ownProcessId() || processAlive(ownerPid)) continue;  // its VCSIDE still runs
+    if (processAlive(helperPid) && isHelperProcess(helperPid)) endProcess(helperPid);
+    std::error_code removeError;
+    fs::remove(entry.path(), removeError);
+  }
+}
 
 std::string helperPath() {
   if (const char* override = std::getenv("VCSIDE_LLM_HELPER_PATH"))
     return fileExists(override) ? override : "";
-#ifdef _WIN32
-  const char* name = "llama-server.exe";
-#else
-  const char* name = "llama-server";
-#endif
+  const char* name = kHelperName;
   const char* base = SDL_GetBasePath();
   if (!base) return "";
   // Inside the macOS bundle the executable is in Contents/MacOS and the helper in Contents/Resources.
@@ -70,6 +182,8 @@ void Engine::start(const std::string& modelPath, int contextTokens, const std::v
     error_ = "The helper could not be started.";
     return;
   }
+  recordedPid_ = job_.pid();
+  recordHelper(recordedPid_);
   state_ = State::Starting;
   startedAt_ = lastCheck_ = std::chrono::steady_clock::now();
 }
@@ -77,6 +191,8 @@ void Engine::start(const std::string& modelPath, int contextTokens, const std::v
 void Engine::stop() {
   if (state_ == State::Stopped) return;
   job_.stopAndWait();
+  forgetHelper(recordedPid_);
+  recordedPid_ = 0;
   if (health_.valid()) health_.wait();
   state_ = State::Stopped;
 }
