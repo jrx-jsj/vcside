@@ -93,6 +93,25 @@ class AssistantPanel {
   std::future<std::vector<Device>> probe_;
   Recommendation recommendation_;                      // the model that fits it best
   // the agent: a call is answered by running a tool, then the model is asked again
+  // open conversations, one tab each; chat_ and the agent state below are the active tab's live copy
+  struct ChatTabState {
+    Chat chat;
+    std::map<std::string, std::pair<bool, std::string>> originals;
+    std::set<std::string> allowedRun, allowedEdit;
+    bool privilegedTouched = false;
+    unsigned uid = 0;
+  };
+  std::vector<ChatTabState> tabs_;
+  int activeTab_ = 0, wantTab_ = -1;
+  unsigned nextTabUid_ = 1;
+  void ensureTabs();
+  void storeActiveTab();
+  void loadTab(int index);
+  void switchTab(int index);
+  void addTab();
+  void closeTab(int index);
+  void drawTabs(bool busy);
+  void openSavedChat(const Chat& loaded);
   ImFont* monoFont_ = nullptr;
   long long spentTokens_ = 0;                          // remote tokens used this session
   int lastUsageSpent_ = 0;
