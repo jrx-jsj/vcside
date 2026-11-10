@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "about.h"
+#include "assistant/panel.h"
 #include "basic_syntax.h"
 #include "builder_parse.h"
 #include "debugmap.h"
@@ -285,6 +286,11 @@ class App {
   std::string docQuery_;
   std::string docTopic_;  // instruction / register / format id currently shown
   bool focusDocs_ = false;
+
+  // the optional AI assistant (docs/design-assistant.md)
+  assistant::AssistantPanel assistant_;
+  bool showAssistant_ = true;
+  void assistantPanel();
 
   // dialogs
   bool showNewProject_ = false, showTools_ = false, showAbout_ = false;

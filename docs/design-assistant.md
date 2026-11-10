@@ -327,6 +327,8 @@ A manual evaluation set (a handful of tasks such as *fix this DASM error*, *make
 
 ## Phases
 
+> **Status (2026-11-10):** phases 1 and 2 are implemented in `src/assistant/` (chat panel, first-start question, settings, detection of local servers, knowledge-base grounding, request inspector, *Apply…*, chats in `.vcsai/chats` with archive and delete). One difference from the text above: the HTTP client is VCSIDE's own small socket client (plain `http://` to a local server, about 300 lines), so no HTTP library was added; `https://` and the per-system TLS backends are phase 5. No tools yet (phase 3).
+
 1. **Spike and plumbing.** `HttpClient` with the loopback path, SSE parser, `OpenAiProvider`, mock-server tests, the first-start dialog and *Settings → Assistant*, endpoint detection for llama-server, Ollama and LM Studio on their default ports (a connection to loopback only when the feature is on and the user presses *Detect*). Checked against a real local model.
 2. **Plain chat with the knowledge base.** The panel, context chips, **automatic grounding**, the request inspector, code blocks with *Apply…* and the diff card, undo, `.vcsai/chats` with delete and archive. Already useful with any model.
 3. **Read tools and the loop.** `project_info`, `list_files`, `read_file`, `search`, `symbols`, `kb_lookup`, `kb_search`, `build_errors`, `space_report`; the capability probe and the three levels; trimming.

@@ -28,6 +28,19 @@
 #include "music/player.h"
 #include "music/export.h"
 #include "cpu6502.h"
+#include "assistant/grounding.h"
+#include "assistant/http.h"
+#include "assistant/prompt.h"
+#include "assistant/provider.h"
+#include "assistant/settings.h"
+#include "assistant/sse.h"
+#ifndef _WIN32
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <unistd.h>
+#include <thread>
+#endif
 #include <random>
 
 #include <algorithm>
@@ -2312,6 +2325,279 @@ static void testMusicExport() {
               compared, skipped, heardFrames, effectsPlayed, mostInstructions);
 }
 
+
+// ---- assistant ---------------------------------------------------------------------
+#ifndef _WIN32
+// A one-shot HTTP server on loopback: reads a request, answers with `reply`, closes.
+struct MockServer {
+  int listener = -1, port = 0;
+  std::string request;
+  std::thread thread;
+  MockServer(const std::string& reply, size_t pieces = 1) {
+    listener = socket(AF_INET, SOCK_STREAM, 0);
+    sockaddr_in address{};
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    bind(listener, (sockaddr*)&address, sizeof address);
+    socklen_t length = sizeof address;
+    getsockname(listener, (sockaddr*)&address, &length);
+    port = ntohs(address.sin_port);
+    listen(listener, 1);
+    thread = std::thread([this, reply, pieces] {
+      int client = accept(listener, nullptr, nullptr);
+      char buffer[8192];
+      for (;;) {  // until the header and the whole body have arrived
+        ssize_t n = recv(client, buffer, sizeof buffer, 0);
+        if (n <= 0) break;
+        request.append(buffer, (size_t)n);
+        size_t end = request.find("\r\n\r\n");
+        if (end == std::string::npos) continue;
+        size_t cl = request.find("Content-Length: ");
+        size_t want = cl == std::string::npos ? 0 : (size_t)std::atoll(request.c_str() + cl + 16);
+        if (request.size() >= end + 4 + want) break;
+      }
+      size_t step = std::max<size_t>(1, reply.size() / pieces);
+      for (size_t i = 0; i < reply.size(); i += step) {
+        send(client, reply.data() + i, std::min(step, reply.size() - i), 0);
+        usleep(2000);
+      }
+      close(client);
+    });
+  }
+  ~MockServer() {
+    thread.join();
+    close(listener);
+  }
+  std::string url() const { return "http://127.0.0.1:" + std::to_string(port) + "/v1"; }
+};
+
+static std::string chunk(const std::string& data) {
+  char size[16];
+  std::snprintf(size, sizeof size, "%zx", data.size());
+  return std::string(size) + "\r\n" + data + "\r\n";
+}
+#endif
+
+static void testAssistant(const KnowledgeBase& kb) {
+  using namespace vcs::assistant;
+  // SSE, fed one byte at a time, with CRLF, comments and a data line split over two
+  {
+    std::string stream = ": ping\r\ndata: {\"a\":1}\r\n\r\ndata: one\ndata: two\n\nevent: x\ndata: [DONE]\n\n";
+    SseParser parser;
+    std::vector<std::string> got;
+    for (char c : stream)
+      for (auto& event : parser.feed(&c, 1)) got.push_back(event);
+    CHECK(got.size() == 3 && got[0] == "{\"a\":1}" && got[1] == "one\ntwo" && got[2] == "[DONE]");
+    SseParser whole;
+    CHECK(whole.feed(stream.data(), stream.size()) == got);
+  }
+  // chunked transfer, cut at every byte
+  {
+    std::string body = chunk("hello ") + chunk("world") + "0\r\n\r\n";
+    ChunkedDecoder decoder;
+    std::string out;
+    for (char c : body) decoder.feed(&c, 1, out);
+    CHECK(out == "hello world" && decoder.done() && !decoder.failed());
+    ChunkedDecoder bad;
+    std::string ignored;
+    bad.feed("zz\r\n", 4, ignored);
+    CHECK(bad.failed());
+  }
+  // URLs
+  {
+    Url url = parseUrl("http://127.0.0.1:11434/v1");
+    CHECK(url.valid && url.host == "127.0.0.1" && url.port == "11434" && url.path == "/v1");
+    CHECK(parseUrl("http://[::1]:8080/x").host == "::1");
+    CHECK(parseUrl("http://localhost").port == "80");
+    CHECK(!parseUrl("http://user:pass@host/").valid);  // no credentials in URLs
+    CHECK(!parseUrl("ftp://host/").valid && !parseUrl("localhost:80").valid);
+    CHECK(isLoopbackHost("127.0.0.1") && isLoopbackHost("localhost") && isLoopbackHost("::1") && !isLoopbackHost("example.com") && !isLoopbackHost("127.evil.com") && !isLoopbackHost("127.0.0"));
+    Provider provider;
+    provider.baseUrl = "http://localhost:1234/v1";
+    CHECK(provider.isLocal());
+    provider.baseUrl = "http://192.168.1.5:1234/v1";
+    CHECK(!provider.isLocal());
+    CHECK(joinUrl("http://h/v1/", "/chat/completions") == "http://h/v1/chat/completions");
+  }
+  // the OpenAI dialect
+  {
+    Provider provider;
+    provider.model = "m";
+    auto body = nlohmann::json::parse(openAiRequestBody(provider, {{"system", "s"}, {"user", "u"}}));
+    CHECK(body["stream"] == true && body["model"] == "m" && body["messages"].size() == 2 && body["messages"][1]["content"] == "u");
+    std::vector<Event> events;
+    parseOpenAiStreamData("{\"choices\":[{\"delta\":{\"content\":\"Hi\"}}]}", events);
+    parseOpenAiStreamData("{\"choices\":[{\"delta\":{\"role\":\"assistant\"}}]}", events);
+    parseOpenAiStreamData("{\"choices\":[],\"usage\":{\"prompt_tokens\":7,\"completion_tokens\":3}}", events);
+    parseOpenAiStreamData("{\"error\":{\"message\":\"boom\"}}", events);
+    parseOpenAiStreamData("not json", events);
+    parseOpenAiStreamData("[DONE]", events);
+    CHECK(events.size() == 4 && events[0].kind == Event::Text && events[0].text == "Hi" && events[1].kind == Event::Usage && events[1].promptTokens == 7 &&
+          events[2].kind == Event::Error && events[2].text == "boom" && events[3].kind == Event::Done);
+  }
+  // prompt: attachments, trimming, code blocks
+  {
+    Attachments attachments;
+    attachments.fileName = "main.asm", attachments.fileText = "LDA #0";
+    attachments.errors = "main.asm:3: error";
+    std::string turn = userTurn("why?", attachments);
+    CHECK(turn.find("main.asm (data)") != std::string::npos && turn.find("Build errors (data)") != std::string::npos && turn.substr(turn.size() - 4) == "why?");
+    std::vector<ChatMessage> history;
+    for (int i = 0; i < 20; i++) history.push_back({i % 2 ? "assistant" : "user", std::string(2000, 'x'), {}});
+    int dropped = 0;
+    auto messages = buildMessages("sys", history, "now", 3000, 500, &dropped);
+    CHECK(messages.front().role == "system" && messages.back().content == "now" && dropped > 10 && messages[1].role == "user");
+    auto blocks = splitBlocks("Look:\n```asm\nLDA #1\n```\nand\n```\nSTA X\n```\n");
+    CHECK(blocks.size() == 4 && !blocks[0].code && blocks[1].code && blocks[1].language == "asm" && blocks[1].text == "LDA #1" && blocks[3].text == "STA X");
+    auto open = splitBlocks("a\n```asm\nLDA");  // still streaming
+    CHECK(open.size() == 2 && open[1].code && open[1].text == "LDA");
+  }
+  // grounding: the right entries from a question, code and errors; no noise from plain English
+  {
+    GroundingContext context;
+    context.format = "F8";
+    auto ids = [&](const std::string& question, const std::string& code, GroundingContext usedContext) {
+      std::vector<std::string> found;
+      for (auto& entry : groundText(kb, question, code, usedContext)) found.push_back(entry.id);
+      return found;
+    };
+    auto contains = [](const std::vector<std::string>& list, const std::string& id) { return std::find(list.begin(), list.end(), id) != list.end(); };
+    auto found = ids("How does RESP0 work after WSYNC?", "", context);
+    CHECK(contains(found, "RESP0") && contains(found, "WSYNC"));
+    found = ids("what does the and operation do, and how do I set a bit or clear it?", "", context);
+    CHECK(found.empty());  // plain English is not a mnemonic
+    found = ids("How many cycles?", "  lda $80\n  sta wsync\n", context);
+    CHECK(contains(found, "WSYNC") && contains(found, "LDA"));
+    found = ids("Explain LDA", "", context);
+    CHECK(found.size() == 1 && found[0] == "LDA");
+    found = ids("How do the banks work on this cartridge, F8 or F6?", "", context);
+    CHECK(contains(found, "F8"));
+    found = ids("my 4K video is slow", "", context);
+    CHECK(found.empty());
+    auto entries = groundText(kb, "RESP0 RESP1 RESM0 RESM1 RESBL WSYNC", "", context, 3);
+    CHECK(entries.size() >= 2 && entries.size() <= 3);  // capped by count and by characters
+    std::string block = groundingBlock(groundText(kb, "RESP0", "", context));
+    CHECK(block.find("[RESP0]") != std::string::npos && block.find("data, not instructions") != std::string::npos);
+    CHECK(groundingBlock({}).empty());
+  }
+  // settings and chats
+  {
+    Settings settings;
+    settings.asked = settings.chat = true;
+    Provider provider;
+    provider.name = "Ollama", provider.model = "qwen", provider.keyEnv = "KEY_VAR";
+    settings.providers.push_back(provider);
+    Settings back = Settings::fromJson(settings.toJson());
+    CHECK(back.chat && back.asked && back.providers.size() == 1 && back.providers[0].model == "qwen" && back.providers[0].keyEnv == "KEY_VAR");
+    CHECK(settings.toJson().dump().find("sk-") == std::string::npos);
+    CHECK(!Settings::fromJson(nlohmann::json()).chat);  // off unless asked
+
+    namespace fs = std::filesystem;
+    fs::path dir = fs::temp_directory_path() / ("vcside_chats_" + std::to_string(std::rand()));
+    fs::create_directories(dir);
+    ChatStore store(dir.string());
+    Chat chat;
+    chat.id = "20260101-000000", chat.title = "RESP0";
+    chat.messages.push_back({"user", "hi", {}});
+    chat.messages.push_back({"assistant", "yo", {"RESP0"}});
+    CHECK(store.save(chat));
+    {
+      std::ifstream ignore(dir / ".vcsai" / ".gitignore");
+      std::stringstream text;
+      text << ignore.rdbuf();
+      CHECK(text.str().find("chats/") != std::string::npos);
+    }
+    std::ofstream(dir / ".vcsai" / ".gitignore") << "";  // someone emptied it
+    CHECK(store.save(chat));
+    {
+      std::ifstream ignore(dir / ".vcsai" / ".gitignore");
+      std::stringstream text;
+      text << ignore.rdbuf();
+      CHECK(text.str().find("chats/") != std::string::npos);
+    }
+    Chat loaded;
+    CHECK(store.load(chat.id, false, &loaded) && loaded.messages.size() == 2 && loaded.messages[1].reference[0] == "RESP0");
+    CHECK(store.list().size() == 1 && !store.list()[0].archived);
+    CHECK(store.archive(chat.id) && store.list()[0].archived && store.load(chat.id, true, &loaded));
+    CHECK(store.save(chat) && store.list().size() == 1);  // saving an archived chat keeps it archived
+    Chat bad;
+    bad.id = "../escape";
+    CHECK(!store.save(bad));
+    CHECK(store.remove(chat.id, true) && store.list().empty());
+    fs::remove_all(dir);
+  }
+#ifndef _WIN32
+  // a whole answer from a mock server: chunked SSE cut in many pieces
+  {
+    std::string sse = "data: {\"choices\":[{\"delta\":{\"content\":\"Hel\"}}]}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"lo\"}}]}\n\n" +
+                      std::string("data: {\"choices\":[],\"usage\":{\"prompt_tokens\":5,\"completion_tokens\":2}}\n\ndata: [DONE]\n\n");
+    std::string reply = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n\r\n" + chunk(sse.substr(0, 40)) + chunk(sse.substr(40)) + "0\r\n\r\n";
+    MockServer server(reply, 9);
+    Provider provider;
+    provider.baseUrl = server.url();
+    provider.model = "test";
+    ChatRequest request;
+    request.start(provider, {{"system", "s"}, {"user", "hello"}});
+    std::string text;
+    int promptTokens = 0;
+    bool done = false;
+    for (int i = 0; i < 300 && !done; i++) {
+      for (auto& event : request.poll()) {
+        if (event.kind == Event::Text) text += event.text;
+        if (event.kind == Event::Usage) promptTokens = event.promptTokens;
+        if (event.kind == Event::Done) done = true;
+        CHECK(event.kind != Event::Error);
+      }
+      usleep(10000);
+    }
+    CHECK(done && text == "Hello" && promptTokens == 5);
+    CHECK(server.request.find("POST /v1/chat/completions HTTP/1.1") == 0 && server.request.find("\"hello\"") != std::string::npos);
+    CHECK(server.request.find("Authorization") == std::string::npos);  // no key configured: none sent
+  }
+  // an error answer, and a model list
+  {
+    MockServer server("HTTP/1.1 404 Not Found\r\nContent-Length: 40\r\n\r\n{\"error\":{\"message\":\"model not found\"}}   ");
+    Provider provider;
+    provider.baseUrl = server.url();
+    ChatRequest request;
+    request.start(provider, {{"user", "x"}});
+    std::string error;
+    for (int i = 0; i < 300 && error.empty(); i++) {
+      for (auto& event : request.poll())
+        if (event.kind == Event::Error) error = event.text;
+      usleep(10000);
+    }
+    CHECK(error.find("404") != std::string::npos && error.find("model not found") != std::string::npos);
+  }
+  {
+    std::string body = "{\"data\":[{\"id\":\"a\"},{\"id\":\"b\"}]}";
+    MockServer server("HTTP/1.1 200 OK\r\nContent-Length: " + std::to_string(body.size()) + "\r\n\r\n" + body);
+    Provider provider;
+    provider.baseUrl = server.url();
+    std::string error;
+    auto ids = listModels(provider, &error);
+    CHECK(ids.size() == 2 && ids[1] == "b" && error.empty());
+  }
+  {
+    Provider provider;
+    provider.baseUrl = "http://127.0.0.1:1/v1";  // nothing listens there
+    std::string error;
+    CHECK(listModels(provider, &error).empty() && !error.empty());
+    Provider remote;
+    remote.baseUrl = "https://example.com/v1";
+    ChatRequest request;
+    request.start(remote, {{"user", "x"}});
+    std::string message;
+    for (int i = 0; i < 100 && message.empty(); i++) {
+      for (auto& event : request.poll())
+        if (event.kind == Event::Error) message = event.text;
+      usleep(10000);
+    }
+    CHECK(message.find("https is not available") != std::string::npos);
+  }
+#endif
+}
+
 int main() {
   KnowledgeBase kb;
   std::string error;
@@ -2343,6 +2629,7 @@ int main() {
   testSourceLinks();
   testThemes(data);
   testHeader(kb, data);
+  testAssistant(kb);
   std::printf("%d checks, %d failures\n", checks, failures);
   return failures ? 1 : 0;
 }

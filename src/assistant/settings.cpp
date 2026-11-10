@@ -1,0 +1,150 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Juan Sánchez Jurado
+#include "assistant/settings.h"
+
+#include <algorithm>
+#include <chrono>
+#include <ctime>
+#include <filesystem>
+#include <fstream>
+
+namespace vcs::assistant {
+
+namespace fs = std::filesystem;
+using json = nlohmann::json;
+
+json Settings::toJson() const {
+  json value = {{"asked", asked}, {"chat", chat}, {"agent", agent}, {"completion", completion}, {"explain_errors", explainErrors}, {"active", active}};
+  value["providers"] = json::array();
+  for (auto& provider : providers)
+    value["providers"].push_back({{"name", provider.name},
+                                  {"dialect", provider.dialect},
+                                  {"base_url", provider.baseUrl},
+                                  {"model", provider.model},
+                                  {"key_env", provider.keyEnv},
+                                  {"context_tokens", provider.contextTokens}});
+  return value;
+}
+
+Settings Settings::fromJson(const json& value) {
+  Settings settings;
+  if (!value.is_object()) return settings;
+  settings.asked = value.value("asked", false);
+  settings.chat = value.value("chat", false);
+  settings.agent = value.value("agent", false);
+  settings.completion = value.value("completion", false);
+  settings.explainErrors = value.value("explain_errors", false);
+  settings.active = value.value("active", 0);
+  if (value.contains("providers") && value["providers"].is_array())
+    for (auto& item : value["providers"]) {
+      if (!item.is_object()) continue;
+      Provider provider;
+      provider.name = item.value("name", std::string("Local"));
+      provider.dialect = item.value("dialect", std::string("openai"));
+      provider.baseUrl = item.value("base_url", std::string());
+      provider.model = item.value("model", std::string());
+      provider.keyEnv = item.value("key_env", std::string());
+      provider.contextTokens = std::clamp(item.value("context_tokens", 8192), 1024, 1 << 20);
+      settings.providers.push_back(provider);
+    }
+  if (settings.active < 0 || settings.active >= (int)settings.providers.size()) settings.active = 0;
+  return settings;
+}
+
+std::string ChatStore::chatsDir() const { return (fs::path(projectDir_) / ".vcsai" / "chats").string(); }
+
+bool ChatStore::ensureFolders() const {
+  std::error_code error;
+  fs::create_directories(fs::path(projectDir_) / ".vcsai" / "chats" / "archive", error);
+  if (error) return false;
+  // Conversations hold code and tool results: they must not reach git by accident, so the
+  // entry is put back if someone removed it.
+  fs::path ignore = fs::path(projectDir_) / ".vcsai" / ".gitignore";
+  std::string text;
+  if (std::ifstream in{ignore}) text.assign(std::istreambuf_iterator<char>(in), {});
+  if (text.find("chats/") == std::string::npos) std::ofstream(ignore, std::ios::app) << (text.empty() || text.back() == '\n' ? "" : "\n") << "chats/\n";
+  return true;
+}
+
+std::string ChatStore::newId() {
+  auto now = std::chrono::system_clock::now();
+  std::time_t seconds = std::chrono::system_clock::to_time_t(now);
+  char buffer[32];
+  std::strftime(buffer, sizeof buffer, "%Y%m%d-%H%M%S", std::localtime(&seconds));
+  return buffer;
+}
+
+std::vector<ChatStore::Item> ChatStore::list() const {
+  std::vector<Item> items;
+  for (bool archived : {false, true}) {
+    fs::path dir = archived ? fs::path(chatsDir()) / "archive" : fs::path(chatsDir());
+    std::error_code error;
+    for (auto& entry : fs::directory_iterator(dir, error)) {
+      if (!entry.is_regular_file() || entry.path().extension() != ".json") continue;
+      Item item;
+      item.id = entry.path().stem().string();
+      item.archived = archived;
+      json value = json::parse(std::ifstream(entry.path()), nullptr, false);
+      item.title = value.is_object() ? value.value("title", std::string()) : std::string();
+      items.push_back(item);
+    }
+  }
+  std::sort(items.begin(), items.end(), [](const Item& a, const Item& b) { return a.archived != b.archived ? !a.archived : a.id > b.id; });
+  return items;
+}
+
+bool ChatStore::load(const std::string& id, bool archived, Chat* chat) const {
+  fs::path path = (archived ? fs::path(chatsDir()) / "archive" : fs::path(chatsDir())) / (id + ".json");
+  json value = json::parse(std::ifstream(path), nullptr, false);
+  if (!value.is_object()) return false;
+  chat->id = id;
+  chat->title = value.value("title", std::string());
+  chat->model = value.value("model", std::string());
+  chat->provider = value.value("provider", std::string());
+  chat->messages.clear();
+  if (value.contains("messages") && value["messages"].is_array())
+    for (auto& item : value["messages"]) {
+      if (!item.is_object()) continue;
+      ChatMessage message;
+      message.role = item.value("role", std::string());
+      message.content = item.value("content", std::string());
+      if (item.contains("reference") && item["reference"].is_array())
+        for (auto& id : item["reference"])
+          if (id.is_string()) message.reference.push_back(id.get<std::string>());
+      chat->messages.push_back(message);
+    }
+  return true;
+}
+
+bool ChatStore::save(const Chat& chat) {
+  if (!ensureFolders() || chat.id.empty() || chat.id.find_first_of("/\\") != std::string::npos) return false;
+  json value = {{"title", chat.title}, {"model", chat.model}, {"provider", chat.provider}};
+  value["messages"] = json::array();
+  for (auto& message : chat.messages) {
+    json item = {{"role", message.role}, {"content", message.content}};
+    if (!message.reference.empty()) item["reference"] = message.reference;
+    value["messages"].push_back(item);
+  }
+  // a chat that was archived stays in the archive
+  fs::path path = fs::path(chatsDir()) / (chat.id + ".json");
+  fs::path archived = fs::path(chatsDir()) / "archive" / (chat.id + ".json");
+  std::error_code error;
+  if (fs::exists(archived, error)) path = archived;
+  std::ofstream(path) << value.dump(2) << "\n";
+  return true;
+}
+
+bool ChatStore::archive(const std::string& id) {
+  if (!ensureFolders()) return false;
+  std::error_code error;
+  fs::rename(fs::path(chatsDir()) / (id + ".json"), fs::path(chatsDir()) / "archive" / (id + ".json"), error);
+  return !error;
+}
+
+bool ChatStore::remove(const std::string& id, bool archived) {
+  std::error_code error;
+  fs::path path = (archived ? fs::path(chatsDir()) / "archive" : fs::path(chatsDir())) / (id + ".json");
+  return fs::remove(path, error);
+}
+
+}  // namespace vcs::assistant
