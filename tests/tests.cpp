@@ -3193,6 +3193,10 @@ static void testMarkdown() {
   CHECK(open.size() == 1 && open[0].text == "half **bold" && !open[0].bold);
   auto snake = parseInline("the my__name__x identifier");
   CHECK(snake.size() == 1 && !snake[0].bold);
+  {  // a closing * followed by a space still closes: "*Dirección:* el índice"
+    auto closed = parseInline("*Direction:* the index");
+    CHECK(closed.size() == 2 && closed[0].italic && closed[0].text == "Direction:" && !closed[1].italic && closed[1].text == " the index");
+  }
   CHECK(parseInline("a\\*b").size() == 1 && parseInline("a\\*b")[0].text == "a*b");  // escaped
 
   auto blocks = parseMarkdown("### Title\n\nFirst line\nsecond line.\n\n- one\n- two **b**\n  - nested\n1. first\n2. second\n> quoted\n---\n| a | b |\n|---|---|\n| 1 | 2 |\n");

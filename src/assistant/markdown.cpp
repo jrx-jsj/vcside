@@ -134,8 +134,10 @@ std::vector<MdRun> parseInline(const std::string& text) {
         continue;
       }
     }
-    if (c == '*' && i + 1 < text.size() && text[i + 1] != ' ' && text[i + 1] != '*') {  // *italic*, not "2 * 3"
-      if (italic || text.find('*', i + 1) != std::string::npos) {
+    if (c == '*') {  // *italic*, not "2 * 3": an opening mark has a letter after it, a closing one before it
+      bool closes = italic && i > 0 && text[i - 1] != ' ';
+      bool opens = !italic && i + 1 < text.size() && text[i + 1] != ' ' && text[i + 1] != '*' && text.find('*', i + 1) != std::string::npos;
+      if (closes || opens) {
         flush();
         italic = !italic;
         continue;

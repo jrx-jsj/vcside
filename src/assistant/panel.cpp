@@ -152,8 +152,13 @@ std::vector<Word> wordsOf(const std::vector<MdRun>& runs) {
 void drawRuns(const std::vector<MdRun>& runs, ImFont* mono, float scale, bool strong, float indent, bool accent = false) {
   ImDrawList* drawList = ImGui::GetWindowDrawList();
   ImFont* plainFont = ImGui::GetFont();
-  float plainSize = ImGui::GetFontSize() * scale, codeSize = (mono ? mono->FontSize : ImGui::GetFontSize()) * scale;
-  float lineHeight = std::max(plainSize, codeSize) + 4.0f;  // a little air between lines
+  // inline code at the prose's size (not the editor's, which follows its own zoom), a little
+  // smaller as monospaced letters are wider, and on the same baseline as the words around it
+  float plainSize = ImGui::GetFontSize() * scale, codeSize = plainSize * 0.92f;
+  ImFont* codeFont = mono ? mono : plainFont;
+  float plainAscent = plainFont->Ascent * plainSize / plainFont->FontSize;
+  float codeDrop = plainAscent - codeFont->Ascent * codeSize / codeFont->FontSize;
+  float lineHeight = std::round(plainSize * 1.45f);  // a little air between lines
   ImVec2 origin = ImGui::GetCursorScreenPos();
   float width = std::max(ImGui::GetContentRegionAvail().x, 40.0f);
   ImU32 textColor = ImGui::GetColorU32(accent ? theme::colv(theme::Role::UiAccent) : ImGui::GetStyleColorVec4(ImGuiCol_Text));
@@ -164,29 +169,58 @@ void drawRuns(const std::vector<MdRun>& runs, ImFont* mono, float scale, bool st
   ImU32 codeBackground = ImGui::GetColorU32(codeTint);
   float x = indent, y = 0;
   bool lineEmpty = true;
-  for (auto& word : wordsOf(runs)) {
+  const float codePad = 3.0f;  // the code box's margin, kept clear of the words beside it
+  std::vector<Word> words = wordsOf(runs);
+  // code boxes go under the text (channel 0), one per span and line: started at the span's
+  // first word, drawn when it ends or the line wraps inside it
+  drawList->ChannelsSplit(2);
+  drawList->ChannelsSetCurrent(1);
+  float boxLeft = 0, boxTop = 0;
+  bool boxOpen = false;
+  auto closeBox = [&](float right) {
+    drawList->ChannelsSetCurrent(0);
+    drawList->AddRectFilled(ImVec2(boxLeft, boxTop - 1), ImVec2(right, boxTop + codeSize + 1), codeBackground, 3.0f);
+    drawList->ChannelsSetCurrent(1);
+    boxOpen = false;
+  };
+  for (size_t index = 0; index < words.size(); index++) {
+    const Word& word = words[index];
+    bool codeContinues = word.code && index + 1 < words.size() && words[index + 1].code && word.text.back() == ' ';
+    bool codeStarts = word.code && (index == 0 || !words[index - 1].code || words[index - 1].text.back() != ' ');
     ImFont* font = word.code && mono ? mono : plainFont;
     float size = word.code ? codeSize : plainSize;
     float wordWidth = font->CalcTextSizeA(size, FLT_MAX, 0.0f, word.text.c_str()).x;
     float visibleWidth = font->CalcTextSizeA(size, FLT_MAX, 0.0f, word.text.c_str(), word.text.c_str() + word.text.find_last_not_of(' ') + 1).x;
+    if (codeStarts && !lineEmpty) x += codePad;
     if (!lineEmpty && x + visibleWidth > width) {
+      if (boxOpen) closeBox(origin.x + x);  // the span wraps: its box ends with the line
       x = indent, y += lineHeight, lineEmpty = true;
     }
     ImVec2 position(origin.x + x, origin.y + y);
-    if (word.code) drawList->AddRectFilled(ImVec2(position.x - 2, position.y), ImVec2(position.x + visibleWidth + 2, position.y + lineHeight - 2), codeBackground, 3.0f);
+    if (word.code) {
+      position.y += codeDrop;
+      if (!boxOpen) boxLeft = position.x - codePad, boxTop = position.y, boxOpen = true;
+      if (!codeContinues) closeBox(position.x + visibleWidth + codePad);
+    }
     ImU32 color = word.italic && !accent ? dimColor : textColor;
     drawList->AddText(font, size, position, color, word.text.c_str());
     if (word.bold || strong) drawList->AddText(font, size, ImVec2(position.x + 0.8f, position.y), color, word.text.c_str());
     x += wordWidth;
+    if (word.code && !codeContinues) x += codePad;
     lineEmpty = false;
   }
+  if (boxOpen) closeBox(origin.x + x);
+  drawList->ChannelsMerge();
   ImGui::Dummy(ImVec2(width, y + lineHeight));
 }
 
 void drawMarkdown(const std::string& text, ImFont* mono) {
   float gap = ImGui::GetTextLineHeight() * 0.35f;
   int tableIndex = 0;
-  for (auto& block : parseMarkdown(text)) {
+  std::vector<MdBlock> blocks = parseMarkdown(text);
+  auto isListItem = [](const MdBlock& block) { return block.kind == MdBlock::Bullet || block.kind == MdBlock::Number; };
+  for (size_t blockIndex = 0; blockIndex < blocks.size(); blockIndex++) {
+    const MdBlock& block = blocks[blockIndex];
     switch (block.kind) {
       case MdBlock::Heading: {
         static const float scales[] = {1.0f, 1.55f, 1.32f, 1.15f, 1.05f, 1.0f, 1.0f};
@@ -246,7 +280,9 @@ void drawMarkdown(const std::string& text, ImFont* mono) {
       }
       default: drawRuns(block.runs, mono, 1.0f, false, 0); break;
     }
-    ImGui::Dummy(ImVec2(0, gap));
+    // the items of a list stay together; a paragraph gap after anything else
+    bool listGoesOn = isListItem(block) && blockIndex + 1 < blocks.size() && isListItem(blocks[blockIndex + 1]);
+    if (!listGoesOn) ImGui::Dummy(ImVec2(0, gap));
   }
 }
 
