@@ -2110,7 +2110,8 @@ void App::projectPanel() {
       float gx = std::round(rowOrigin.x + (level - 1) * indentW + indentW * 0.5f) + 0.5f;
       drawList->AddLine(ImVec2(gx, rowOrigin.y), ImVec2(gx, rowOrigin.y + rowH), theme::col(theme::Role::FilesGuide));
     }
-    ImU32 text = theme::col(dimmed ? theme::Role::UiTextDim : theme::Role::UiText);
+    ImU32 text = theme::col(theme::Role::UiText);
+    int firstVertex = drawList->VtxBuffer.Size;  // what follows (chevron, icon, name) fades when dimmed
     if (dir) {  // chevron: > closed, v open
       float chevronSize = fontH * 0.22f, cx = x + indentW * 0.5f, thickness = std::max(1.0f, fontH * 0.09f);
       ImU32 chevronColour = theme::col(theme::Role::UiTextDim);
@@ -2123,6 +2124,13 @@ void App::projectPanel() {
       x += iconSize + fontH * 0.4f;
     }
     drawList->AddText(ImVec2(x, std::round(cy - fontH * 0.5f)), text, name.c_str());
+    if (dimmed) {  // build output and what Git ignores: the whole row at reduced opacity, in any theme
+      for (int vertex = firstVertex; vertex < drawList->VtxBuffer.Size; vertex++) {
+        ImU32& colour = drawList->VtxBuffer[vertex].col;
+        ImU32 alpha = (colour >> IM_COL32_A_SHIFT) & 0xFF;
+        colour = (colour & ~IM_COL32_A_MASK) | ((ImU32)(alpha * 0.45f) << IM_COL32_A_SHIFT);
+      }
+    }
     if (hover && ImGui::CalcTextSize(name.c_str()).x > right - x) ImGui::SetTooltip("%s", name.c_str());
     return clicked;
   };
