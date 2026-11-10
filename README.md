@@ -1,6 +1,42 @@
-# VCSIDE
+<p align="center">
+  <img src="assets/icon/vcside-256.png" alt="VCSIDE" width="160" height="160">
+</p>
 
-A small native IDE for making Atari 2600 games, on macOS, Windows and Linux. It is a single executable built with C++17, Dear ImGui and SDL3, and is not based on VS Code.
+<h1 align="center">VCSIDE</h1>
+
+<p align="center">
+  <strong>A small native IDE for making Atari 2600 games.</strong><br>
+  DASM, batari Basic and C for ELF cartridges, with graphics and music editors, a built-in reference and optional local AI.<br>
+  macOS, Windows and Linux. One executable. Not based on VS Code.
+</p>
+
+<p align="center">
+  <a href="#highlights">Highlights</a> ·
+  <a href="#what-it-does-today">Everything it does</a> ·
+  <a href="#building">Building</a> ·
+  <a href="docs/design.md">Design</a> ·
+  <a href="#licences">Licences</a> ·
+  <a href="#acknowledgements">Acknowledgements</a>
+</p>
+
+<p align="center">
+  <img alt="License: GPL-3.0-or-later" src="https://img.shields.io/badge/code-GPL--3.0--or--later-blue">
+  <img alt="Knowledge base: CC BY-SA 4.0" src="https://img.shields.io/badge/knowledge%20base-CC%20BY--SA%204.0-lightgrey">
+  <img alt="Templates: CC0" src="https://img.shields.io/badge/templates-CC0-brightgreen">
+  <img alt="Platforms" src="https://img.shields.io/badge/platforms-macOS%20%C2%B7%20Windows%20%C2%B7%20Linux-orange">
+  <img alt="Status: 0.1" src="https://img.shields.io/badge/status-first%20version%20(0.1)-yellow">
+</p>
+
+---
+
+## Highlights
+
+- **Write, build and run in one place.** DASM (F7), batari Basic 1.9 and C for ELF cartridges (ARM, with your own `make`); run in Gopher2600 or Stella (F5) or debug with your breakpoints (F6).
+- **An editor that knows the 2600.** Cycle counts on every instruction, 6502 page separators, hover help for every opcode and TIA/RIOT register, completion, and a space report per ROM bank.
+- **Draw and compose without leaving the IDE.** A graphics editor for sprites and playfields (TIA objects as layers, flicker, kernel-aware warnings) and a tracker for TIA music and for sampled music on ELF cartridges, both generating the code your game includes.
+- **A reference built in.** The Documentation panel (F1) holds all 256 opcodes, the TIA and RIOT registers with their known issues, cartridge formats and TV standards; every fact cites its source.
+- **Optional AI that stays on your computer.** An assistant with a language model that runs locally through a helper that ships with VCSIDE (or any server you already run). It looks things up in the reference, can read your project, proposes edits you accept or reject, and explains build errors. Off until you turn it on; nothing leaves your machine unless you set up a remote model.
+- **Yours to theme and translate.** Every colour is a named role in a theme file; the interface is available in English and Spanish, with a catalogue format for more.
 
 > Status: first version (0.1). Design and phases in [`docs/design.md`](docs/design.md).
 
@@ -69,7 +105,7 @@ A small native IDE for making Atari 2600 games, on macOS, Windows and Linux. It 
   - *Samples (ELF)*: 1 to 4 voices with waveforms (square with any duty, triangle, sawtooth, sine, noise, or drawn by hand) and exact pitch, mixed by the cartridge's ARM into one AUDV0 sample per scanline, overblank included. Exported as `<name>.music.h`, a C player (CC0) that plays exactly what the editor plays; the ELF template and its example play a 3-voice song with two effects, one of them on the TIA's channel 1. Songs of up to 3 voices also export for DPC+ (`<name>.music.asm` for DASM, included three times: the player, the waveforms in the display data and the frequency table; checked in Stella) and for CDFJ (`<name>.music.h` for the ARM code, which gives each voice its waveform and note through two hooks; checked in Stella with the CDFJ example).
 - **Illegal-opcode policy** per project: allow, stable only, warn or forbid.
 - **Menus** in the system menu bar on macOS (application menu with About, Tools and Language; Window menu), and in the window on Windows and Linux. Ctrl shortcuts are Cmd on macOS; Replace is Cmd+Shift+F there, since Cmd+H hides the app, and completion is Control+Space, since Cmd+Space is Spotlight.
-- **Assistant** (optional, off until you turn it on at the first-start question or in *Settings → Assistant*): a chat panel that runs a language model on your computer with a helper (llama.cpp) that ships with VCSIDE: pick a model, confirm the download once, and ask. Ollama, LM Studio, llama-server or any OpenAI-compatible address also work as advanced options. Names it knows in your question, the selection and the build errors are looked up in the knowledge base and shown to the model, and any code block in an answer can be applied to the editor as one undoable step. Nothing is sent anywhere unless you set up a model; keys are never saved. Chats are kept in `.vcsai/chats` (never committed: VCSIDE ignores that folder). Design in [`docs/design-assistant.md`](docs/design-assistant.md).
+- **Assistant** (optional, off until you turn it on at the first-start question or in *Settings → Assistant*): a chat panel that runs a language model on your computer with a helper (llama.cpp) that ships with VCSIDE: pick a model (or one you already have as a `.gguf` file), confirm the download once, and ask. Ollama, LM Studio, a llama.cpp server you already run (ports 8080 and 9931 are looked for) or any OpenAI-compatible address work as advanced options; on macOS an HTTPS endpoint (including Anthropic's API, with the key kept in the Keychain and an optional token budget) can be used too. Names it knows in your question, the selection and the build errors are looked up in the knowledge base and shown to the model; answers are formatted, and any code block can be applied to the editor as one undoable step. With *Agent* on, the assistant can also read the project's files, look things up, describe a graphics or music file, propose edits (each one waits for your click, and everything it changed can be undone) and, if you allow it each time, build and run. *Explain errors* adds a button to the panel and to *Problems*. Nothing is sent anywhere unless you set up a model; files that may hold secrets are never read. Chats are kept in `.vcsai/chats` (never committed: VCSIDE ignores that folder). Design in [`docs/design-assistant.md`](docs/design-assistant.md).
 - **About** (*VCSIDE → About* on macOS, *Help → About* elsewhere): the system's About panel on macOS, a window of its own on Windows and Linux. Both show the icon, the version, VCSIDE's licences, the libraries built in, the tools it works with by group (compilers and assemblers, emulators, build helpers) with the versions it was tested with and their licences, the sources of the knowledge base, the Solarized palette and the fonts.
 - **Themes** (*View → Theme*): Dark, Light, Solarized Light and Solarized Dark, plus your own. Every colour of the IDE is a named role (interface, dialogs, code editor, syntax, messages, space report, graphics editor), and the code editor can shade each indentation level. *Edit themes...* changes them live: a theme can build on another one and keep only its differences, use a palette of named colours, refer to other roles and set alpha. Themes are `.vcstheme` files (JSON) that can be exported, imported, copied as text and pasted.
 - **Several windows**, one project each: *File → New window* (Ctrl+Shift+N, Cmd on macOS) opens one on the welcome page; *Close project* takes a window back to it; closing a window (Ctrl+Shift+W) removes it, and the last one goes back to the welcome page before the program quits. A project already open in another window brings that window forward. Settings (theme, zoom, recent projects) are shared.
@@ -134,3 +170,9 @@ UI strings go through `T("...")`, or `F("... {0} ...", {...})` when they have va
 - Themes (`data/themes/`): **CC0**, except the Solarized palette (MIT, Ethan Schoonover).
 
 Third-party licences are in [`licenses/`](licenses/README.md). External tools (DASM, Stella, Gopher2600…) are not bundled.
+
+## Acknowledgements
+
+VCSIDE stands on the work of the Atari 2600 community: the authors of DASM, batari Basic, Stella and Gopher2600, whose tools it drives, and everyone credited in [`docs/sources.md`](docs/sources.md) and in the editors' own help.
+
+Thanks to Stephen Illingworth, author of [Gopher2600](https://github.com/JetSetIlly/Gopher2600), for his support and his feedback on VCSIDE.
