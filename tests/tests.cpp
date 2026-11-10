@@ -93,6 +93,8 @@ static void testKb(const KnowledgeBase& kb) {
     for (auto& id : reg.sources) CHECK(kb.source(id) != nullptr);
   for (auto& format : kb.formats())
     for (auto& id : format.sources) CHECK(kb.source(id) != nullptr);
+  const CartFormat* ace = kb.format("ACE");
+  CHECK(ace && ace->category == "arm" && ace->stella == "none" && !ace->sources.empty());
   for (auto& [mnemonic, instruction] : kb.instructions())
     for (auto& id : instruction.sources) CHECK(kb.source(id) != nullptr);
   auto completions = kb.complete("ST");
@@ -804,6 +806,30 @@ static void testElfSpace() {
     fs::create_directories(cDir, errorCode);
     std::ofstream(cDir / "main.c") << "int main(void) { return 0; }\n";
     CHECK(!Project::detect(cDir.string(), &detected));
+    // an ACE game: its Makefile names a .ace, so the format is ACE and the emulator Gopher2600;
+    // the format is told from the header (ACE-UF00 and the rest) and Stella refuses it
+    fs::path aceDir = dir / "ace-made";
+    fs::create_directories(aceDir / "build", errorCode);
+    std::ofstream(aceDir / "Makefile") << "all: build/game.ace\nbuild/game.ace: main.c\n\tarm-none-eabi-gcc main.c\n";
+    std::ofstream(aceDir / "main.c") << "void ace_entry(void) {}\n";
+    CHECK(Project::detect(aceDir.string(), &detected) && detected.output == "build/game.ace" && detected.format == "ACE" && detected.emulator == "gopher2600");
+    std::ofstream(aceDir / "build" / "game.ace", std::ios::binary) << "ACE-UF00VCSIDE test" << std::string(21, '\0');
+    std::ofstream(aceDir / "build" / "old.ace", std::ios::binary) << "ACE-2600" << std::string(32, '\0');
+    std::ofstream(aceDir / "build" / "plain.bin", std::ios::binary) << std::string(4096, '\xEA');
+    CHECK(romFormat((aceDir / "build" / "game.ace").string()) == "ACE" && romFormat((aceDir / "build" / "old.ace").string()) == "ACE");
+    CHECK(romFormat((aceDir / "build" / "plain.bin").string()).empty() && romFormat((aceDir / "missing.ace").string()).empty());
+    CHECK(!formatSupported("stella", "ACE") && formatSupported("gopher2600", "ACE") && formatSupported("stella", "ELF"));
+    {
+      Toolchain emulators;
+      emulators.get("gopher2600")->path = "/usr/bin/gopher2600";
+      emulators.get("stella")->path = "/usr/bin/stella";
+      std::string runError;
+      detected.dir = aceDir.string();
+      auto gopherRun = detected.runArgs(emulators, false, &runError);
+      CHECK(gopherRun.size() >= 4 && gopherRun[1] == "RUN" && gopherRun[2] == "-mapping" && gopherRun[3] == "ACE");
+      detected.emulator = "stella";
+      CHECK(detected.runArgs(emulators, false, &runError).empty() && runError.find("Gopher2600") != std::string::npos);
+    }
     std::ofstream(basicDir / "game.vcsproj") << "{}\n";
     CHECK(!Project::detect(basicDir.string(), &detected));
 

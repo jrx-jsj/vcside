@@ -99,6 +99,11 @@ bool tvSupported(const std::string& emulator, const std::string& tv);
 bool tvIs50Hz(const std::string& tv);
 std::vector<std::string> splitCommand(const std::string& command);  // "a \"b c\"" -> a, b c
 std::string stellaFormat(const std::string& formatId);  // value for Stella's -bs
+// Whether an emulator runs a cartridge format: Stella has no ACE (Gopher2600 runs them all).
+bool formatSupported(const std::string& emulator, const std::string& formatId);
+// The format a ROM file shows by itself, from its first bytes: "ACE" for an ACE header
+// (ACE-2600, ACE-UF00, ACE-PC00, ACE-UC00), else "" (the emulator detects it).
+std::string romFormat(const std::string& path);
 const char* languageId(Language language);
 Language languageFromId(const std::string& id);
 const char* illegalId(IllegalOpcodes policy);

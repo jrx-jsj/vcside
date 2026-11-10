@@ -751,9 +751,37 @@ void App::run(bool debug) {
     auto extra = debugArgs(project_->emulator);
     args.insert(args.end() - 1, extra.begin(), extra.end());  // before the ROM
   }
+  launchEmulator(*project_, args, error);
+}
+
+// Runs a ROM chosen in the project tree with the project's emulator and options; its format
+// is the one its header names (ACE), the project's for the project's own ROM, else AUTO.
+void App::runRom(const std::string& rom) {
+  if (!project_) return;
+  Project romProject = *project_;
+  std::error_code errorCode;
+  bool ownRom = fs::weakly_canonical(rom, errorCode) == fs::weakly_canonical(project_->outputPath(), errorCode);
+  romProject.output = rom;
+  std::string detected = romFormat(rom);
+  romProject.format = !detected.empty() ? detected : ownRom ? project_->format : "AUTO";
+  if (!formatSupported(romProject.emulator, romProject.format)) {
+    Tool* tool = tools_.get(romProject.emulator);
+    output_ += F("{0} cannot run {1} cartridges: it runs in Gopher2600.", {tool ? tool->name : romProject.emulator, romProject.format}) + "\n";
+    romProject.emulator = "gopher2600";
+  }
+  if (Tool* tool = tools_.get(romProject.emulator); tool && !tool->found()) {
+    askForTool(tool->id, T("run the game"), [this, rom] { runRom(rom); });
+    return;
+  }
+  std::string error;
+  auto args = romProject.runArgs(tools_, false, &error);
+  launchEmulator(romProject, args, error);
+}
+
+void App::launchEmulator(const Project& project, std::vector<std::string> args, std::string error) {
   EmulatorLaunch launch;
   launch.args = args;
-  if (!args.empty() && !prepareEmulatorLaunch(*project_, kb_, (fs::path(configDir()) / "emulators").string(), launch, &error))
+  if (!args.empty() && !prepareEmulatorLaunch(project, kb_, (fs::path(configDir()) / "emulators").string(), launch, &error))
     args.clear();
   for (auto& note : launch.notes) output_ += note + "\n";
   if (args.empty() || !launchDetached(launch.args, launch.workDir, &error, launch.env)) {
@@ -1821,7 +1849,10 @@ MenuBar App::buildMenuBar(bool native) {
       std::vector<MenuItem> items;
       bool current = false;
       for (auto* cartFormat : categoryFormats) {
-        MenuItem formatItem = item(cartFormat->id, "", set([id = cartFormat->id](Project& project) { project.format = id; }), true, project_->format == cartFormat->id);
+        MenuItem formatItem = item(cartFormat->id, "", set([id = cartFormat->id](Project& project) {
+          project.format = id;
+          if (!formatSupported(project.emulator, id)) project.emulator = "gopher2600";  // ACE: only Gopher2600 runs it
+        }), true, project_->format == cartFormat->id);
         if (!native) formatItem.hint = cartFormat->name;  // on the right
         else formatItem.label = cartFormat->name.find(cartFormat->id) != std::string::npos ? cartFormat->name : cartFormat->id + " — " + cartFormat->name;
         current = current || formatItem.checked;
@@ -1846,7 +1877,7 @@ MenuBar App::buildMenuBar(bool native) {
     for (auto emulatorId : {"gopher2600", "stella"}) {
       Tool* tool = tools_.get(emulatorId);
       MenuItem emulatorItem = item(tool->name, "", set([emulatorId](Project& project) { project.emulator = emulatorId; }), true, project_->emulator == emulatorId);
-      emulatorItem.hint = tool->found() ? T("found") : T("not found");
+      emulatorItem.hint = !formatSupported(emulatorId, project_->format) ? F("no {0}", {project_->format}) : tool->found() ? T("found") : T("not found");
       emulatorItems.push_back(emulatorItem);
     }
     const IllegalOpcodes policies[] = {IllegalOpcodes::Allow, IllegalOpcodes::StableOnly, IllegalOpcodes::Warn, IllegalOpcodes::Forbid};
@@ -2121,6 +2152,11 @@ void App::projectPanel() {
           if (entry.path().extension() == ".vcsproj" && !(project_ && fs::weakly_canonical(project_->file) == fs::weakly_canonical(entryPath))) openProject(entryPath);
           else if (entry.path().extension() == ".vcsproj") projectSettings();
           else if (files::kindOf(name, false) != files::Kind::Rom) openFile(entryPath);
+        }
+        // a ROM runs on a double click (the row's button, still the last item, reports clicks on release)
+        if (files::kindOf(name, false) == files::Kind::Rom && ImGui::IsItemHovered()) {
+          if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) runRom(entryPath);
+          else ImGui::SetTooltip("%s\n%s", name.c_str(), T("Double click to run it."));
         }
       }
     }
@@ -3010,7 +3046,8 @@ void App::docsPanel() {
         ImGui::TextWrapped("%s", cartFormat->detection.c_str());
       }
       ImGui::SeparatorText(T("Emulator"));
-      ImGui::Text("Stella  -bs %s", cartFormat->stella.empty() ? "?" : cartFormat->stella.c_str());
+      if (cartFormat->stella == "none") ImGui::Text("Stella  %s", T("does not run it"));
+      else ImGui::Text("Stella  -bs %s", cartFormat->stella.empty() ? "?" : cartFormat->stella.c_str());
       ImGui::Text("Gopher2600 -mapping %s", cartFormat->gopher2600.empty() ? "?" : cartFormat->gopher2600.c_str());
       if (!cartFormat->issues.empty()) {
         ImGui::SeparatorText(T("Known issues"));

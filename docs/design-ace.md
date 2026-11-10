@@ -1,6 +1,6 @@
 # ACE cartridges — design proposal
 
-Status: proposal (2026-11-10). Only a proof of concept exists (`tools/ace_poc`). Sources are at the end and in [sources.md](sources.md#ace-cartridges-read-2026-11-10).
+Status: proposal (2026-11-10). Phase 1 (knowledge and running ACE files) is done; there is a proof of concept (`tools/ace_poc`). Sources are at the end and in [sources.md](sources.md#ace-cartridges-read-2026-11-10).
 
 ## What ACE is
 
@@ -141,7 +141,11 @@ data/templates/ace/          (CC0, written for VCSIDE)
 
 ## Phased plan
 
-1. **Knowledge (small).** Add `ACE` to `formats.json`. Run menu: Stella off with a note, Gopher2600 with `-mapping ACE`. Show `.ace` files with the cartridge icon and let them be run from the tree.
+1. **Knowledge (small) — done 2026-11-10.**
+   - `ACE` entry in `formats.json` (category `arm`, Stella `none`), with the header, the argument block and the differences between the carts.
+   - Stella cannot run ACE (`formatSupported`). Choosing the ACE format switches the project to Gopher2600, the *Emulator* menu marks Stella "no ACE", and running with Stella anyway gives an error that says what to choose. Gopher2600 gets `-mapping ACE`.
+   - `.ace` files are ROMs: cartridge icon, a Makefile that names one is detected as an ACE project (format ACE, Gopher2600), and the assistant treats them as binary.
+   - A double click on any ROM in the project tree runs it with the project's emulator and options. The format comes from its header (`romFormat`: ACE), from the project for its own ROM, or AUTO for the rest. An ACE ROM goes to Gopher2600 even in a Stella project, with a note.
 2. **Finish the proof of concept.** Look at the picture in Gopher2600. Try the debugger with `ACE_debugging.elf`. Find out why Wolf3D gives 0 frames. Run it on a real PlusCart (and UnoCart, with the shifted data).
 3. **Template.** Build `data/templates/ace` as above, choosing how to handle position independence. Port the animated sprite example and the music export's C player to it.
 4. **Space report** for ACE, and the cart choice (UnoCart / PlusCart) in project settings.

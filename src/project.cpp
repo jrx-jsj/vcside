@@ -386,9 +386,9 @@ bool Project::detect(const std::string& dirIn, Project* result) {
     *result = found;
     return true;
   }
-  // the ROM: the first word of the build file that names a .bin, .a26 or .elf
+  // the ROM: the first word of the build file that names a .bin, .a26, .elf or .ace
   std::string text = readAll(directory / script);
-  static const std::regex rom(R"(([A-Za-z0-9_./\-]+)\.(bin|a26|elf)\b)");
+  static const std::regex rom(R"(([A-Za-z0-9_./\-]+)\.(bin|a26|elf|ace)\b)");
   for (std::sregex_iterator match(text.begin(), text.end(), rom), matchEnd; match != matchEnd; ++match) {
     std::string romName = (*match)[0];
     size_t position = (size_t)match->position(0);
@@ -398,6 +398,7 @@ bool Project::detect(const std::string& dirIn, Project* result) {
     found.output = romName;
     break;
   }
+  if (fs::path(found.output).extension() == ".ace") found.format = "ACE", found.emulator = "gopher2600";  // only Gopher2600 runs ACE
   if (found.output == Project().output) found.output = fs::path(found.main).stem().string() + ".bin";
   *result = found;
   return true;
@@ -438,6 +439,10 @@ std::vector<std::string> Project::runArgs(Toolchain& toolchain, bool debug, std:
   Tool* tool = toolchain.get(emulator);
   if (!tool || !tool->found()) {
     if (error) *error = F("{0} not found. Install it or set its path in Settings > Tools.", {tool ? tool->name : emulator});
+    return {};
+  }
+  if (!formatSupported(emulator, format)) {
+    if (error) *error = F("{0} cannot run {1} cartridges: choose Gopher2600 in Build > Emulator.", {tool->name, format});
     return {};
   }
   std::vector<std::string> arguments = {tool->path};
@@ -653,6 +658,20 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
   if (!newProject.save(error)) return false;
   if (result) *result = newProject;
   return true;
+}
+
+bool formatSupported(const std::string& emulator, const std::string& formatId) {
+  return !(emulator == "stella" && formatId == "ACE");
+}
+
+std::string romFormat(const std::string& path) {
+  std::ifstream file(path, std::ios::binary);
+  char magic[8] = {};
+  if (!file.read(magic, sizeof magic)) return "";
+  std::string text(magic, sizeof magic);
+  for (const char* aceMagic : {"ACE-2600", "ACE-UF00", "ACE-PC00", "ACE-UC00"})
+    if (text == aceMagic) return "ACE";
+  return "";
 }
 
 std::string stellaFormat(const std::string& id) {

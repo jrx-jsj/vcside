@@ -26,7 +26,7 @@ Kind kindOf(const std::string& filename, bool directory) {
   if (ext == ".h" || ext == ".inc" || ext == ".equ") return Kind::Header;
   if (ext == ".bas" || ext == ".bb") return Kind::Basic;
   if (ext == ".vcsgfx") return Kind::Graphics;
-  if (ext == ".bin" || ext == ".a26" || ext == ".rom" || ext == ".elf") return Kind::Rom;
+  if (ext == ".bin" || ext == ".a26" || ext == ".rom" || ext == ".elf" || ext == ".ace") return Kind::Rom;
   if (ext == ".png" || ext == ".bmp" || ext == ".gif" || ext == ".jpg" || ext == ".jpeg") return Kind::Image;
   if (ext == ".lst" || ext == ".sym" || ext == ".map" || ext == ".lbl") return Kind::Listing;
   return Kind::Text;

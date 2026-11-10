@@ -72,7 +72,7 @@ bool looksBinary(const std::string& text) {
 
 // Source or data the agent may read or write: not ROMs, images or archives.
 bool isTextFileName(const std::string& fileName) {
-  static const char* binary[] = {".bin", ".a26", ".elf", ".o", ".a", ".png", ".jpg", ".gif", ".zip", ".wav", ".ogg", ".rom", ".pro"};
+  static const char* binary[] = {".bin", ".a26", ".elf", ".ace", ".o", ".a", ".png", ".jpg", ".gif", ".zip", ".wav", ".ogg", ".rom", ".pro"};
   std::string name = lower(fileName);
   for (auto* extension : binary)
     if (endsWith(name, extension)) return false;

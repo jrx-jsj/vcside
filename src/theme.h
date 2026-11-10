@@ -139,7 +139,7 @@ namespace vcs::theme {
   X(FilesHeader, "files.header", N_("Project files"), N_("Headers and includes (.h, .inc)")) \
   X(FilesBasic, "files.basic", N_("Project files"), N_("batari Basic (.bas)")) \
   X(FilesGraphics, "files.graphics", N_("Project files"), N_("Graphics (.vcsgfx)")) \
-  X(FilesRom, "files.rom", N_("Project files"), N_("ROMs (.bin, .a26, .elf)")) \
+  X(FilesRom, "files.rom", N_("Project files"), N_("ROMs (.bin, .a26, .elf, .ace)")) \
   X(FilesImage, "files.image", N_("Project files"), N_("Images (.png, .bmp)")) \
   X(FilesListing, "files.listing", N_("Project files"), N_("Listings and symbols (.lst, .sym)")) \
   X(FilesText, "files.text", N_("Project files"), N_("Text and other files"))

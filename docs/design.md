@@ -61,7 +61,7 @@ The Tools window and About list them in three groups (`Toolchain::groups()`): co
 
 - **6502**: the 151 official opcodes and the stable illegal ones, with modes, bytes, cycles, +1 on page crossing / branch taken, flags and description.
 - **TIA and RIOT**: each register with address, read/write, bits, usage, timing (e.g. `RESP0` in the colour cycle) and known issues (HMOVE at cycle 73, `RESBL` in HBLANK, collisions, differences between TIAs).
-- **Formats**: 2K, 4K, F8, F6, F4, FE, E0, E7, 3F, 3E, FA, DPC, DPC+, CDFJ/CDFJ+, ELF; with *hotspots*, extra RAM, detection and the name Stella and Gopher2600 expect.
+- **Formats**: 2K, 4K, F8, F6, F4, FE, E0, E7, 3F, 3E, FA, DPC, DPC+, CDFJ/CDFJ+, ELF, ACE; with *hotspots*, extra RAM, detection and the name Stella and Gopher2600 expect.
 - **TV**: NTSC, PAL, PAL60, SECAM: lines, frame rate, palettes and tips.
 
 Autocompletion, hover help and the documentation panel are generated from these JSON files.
@@ -90,6 +90,8 @@ Checked with Stella 7.0 and Gopher2600 v0.56.1, by reading their source code and
 - **Go to address** (Ctrl+Shift+G): from an address (or label) and, optionally, a bank, to its line. It takes the 6507 mirrors into account ($F000 = $1000).
 - **Pending:** receiving from the emulator the address where it stopped (they have no channel to notify another application).
 - **batari Basic:** the listing is that of the generated `.asm`; each line is mapped to the one in the `.bas` by the last `;;line N;;` mark that precedes it (what comes before the first one and after the program belongs to no line).
+- **ACE:** only Gopher2600 runs ACE files (`-mapping ACE`); choosing the ACE format switches the project to it, and Stella is marked "no ACE" in the *Emulator* menu. See [design-ace.md](design-ace.md).
+- **ROMs in the tree:** a double click on a ROM in the *Project* panel runs it with the project's emulator and options; the format comes from its header (ACE), from the project for its own ROM, or AUTO.
 - **ELF:** breakpoints are not passed on (neither Stella nor Gopher2600 can stop at a C line); `-bs ELF` and `-mapping ELF`.
 
 ## ELF projects
@@ -158,7 +160,7 @@ The editor shows rows instead of lines: a folded region leaves its first line wi
 
 ## Project tree
 
-The *Project* panel draws the tree row by row: arrow, icon and name, with vertical guides per level and the whole row highlighted on mouse-over or if it is the file being edited. Folders come first; `build` and what it contains appear dimmed. The icons are own vector shapes (`src/file_icons.cpp`) that take the theme's colour: a sheet with a letter for code (A assembly, C, H headers and includes, B batari Basic, L listings and symbols), a sprite for `.vcsgfx`, a cartridge for ROMs (`.bin`, `.a26`, `.elf`), a joystick for the `.vcsproj`, a frame for images and a ruled sheet for the rest.
+The *Project* panel draws the tree row by row: arrow, icon and name, with vertical guides per level and the whole row highlighted on mouse-over or if it is the file being edited. Folders come first; `build` and what it contains appear dimmed. The icons are own vector shapes (`src/file_icons.cpp`) that take the theme's colour: a sheet with a letter for code (A assembly, C, H headers and includes, B batari Basic, L listings and symbols), a sprite for `.vcsgfx`, a cartridge for ROMs (`.bin`, `.a26`, `.elf`, `.ace`), a joystick for the `.vcsproj`, a frame for images and a ruled sheet for the rest.
 
 ## Themes
 

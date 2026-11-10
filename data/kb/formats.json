@@ -1,7 +1,7 @@
 {
  "notes": [
   "category groups the formats in the menus: atari (Atari's own boards), classic (other makers of the time), homebrew (modern bank switching) and arm (cartridges with an ARM co-processor).",
-  "Stella's option for the cartridge type is '-bs <type>' (also '-type'); '-format' selects the TV display format, not the cartridge. The 'stella' field is the name Stella lists for that type (names are case-insensitive; AUTO detects).",
+  "Stella's option for the cartridge type is '-bs <type>' (also '-type'); '-format' selects the TV display format, not the cartridge. The 'stella' field is the name Stella lists for that type (names are case-insensitive; AUTO detects), or 'none' when Stella does not run the format.",
   "Gopher2600 takes '-mapping <id>' (default AUTO). The 'gopher2600' field lists the ids its cartridge loader accepts, or 'none' when it has no mapper for the format.",
   "The 6507 sees 13 address bits, so the cartridge window is $1000-$1FFF and the same bytes appear at $3000, $5000, ... ($F000-$FFFF in the usual assembler notation). Hotspots fire on any read or write unless stated otherwise, and the access still happens on the bus.",
   "Power-up bank is not specified by the schemes: keep the reset and interrupt vectors in every bank (or in the fixed bank for 3F, E0 and E7).",
@@ -908,6 +908,33 @@
    ]
   },
   {
+   "id": "ACE",
+   "category": "arm",
+   "name": "ACE (ARM Custom Executable: UnoCart, PlusCart)",
+   "size": "up to 896 KB (448 KB on the original UnoCart firmware)",
+   "banks": 0,
+   "bank_size": "n/a",
+   "hotspots": [],
+   "ram": "the STM32F407's SRAM (128 KB, from 0x20000000, the first 48 bytes hold the firmware's arguments) and CCM (64 KB, 0x10000000), shared with the firmware",
+   "detection": "Gopher2600: 'ACE-2600', 'ACE-UF00' or 'ACE-PC00' in the first 144 bytes. Stella does not run ACE. VCSIDE: one of 'ACE-2600', 'ACE-UF00', 'ACE-PC00', 'ACE-UC00' at offset 0.",
+   "stella": "none",
+   "gopher2600": "ACE (ELF_in_ACE and DPCP for wrapped ELF and DPC+ games)",
+   "description": "A flat Cortex-M4F program for the cartridge's STM32F407, after a 40-byte little-endian header: magic (8 bytes), driver name (16, padded with spaces), driver version, ROM size, checksum (not checked by the firmware) and entry point, 32 bits each. The game's ARM code is the cartridge: it reads the 6507's address bus from a GPIO input register and, for cartridge addresses (A12 set), drives the data bus through an output register, with no clock line, banks or driver. ACE-UF00 runs on both carts and its entry point is an offset from the start of the file, which the firmware may place anywhere, so its code must be position-independent; ACE-PC00 (PlusCart) has an absolute entry point for a file at 0x08020200; ACE-2600 is the original UnoCart one, linked as a whole firmware at 0x08010000. The entry point must have bit 0 set (Thumb): the firmware calls it as it is. At 0x20000000 the firmware leaves twelve words: the file's address, the CCM, two firmware functions (reboot, back to the menu), the system clock, the ACE and firmware versions, the addresses of the address input, data input, data output and data mode registers, and the end mark 0xACE42600.",
+   "issues": [
+    "Stella 7.0 does not run ACE: VCSIDE runs ACE files in Gopher2600 only.",
+    "Gopher2600 emulates the PlusCart's map (flash at 0x08020000) and rejects ACE-2600; its ARM clock is the hardware.arm7.clock preference (70 MHz by default; the carts run at 168 MHz).",
+    "The PlusCart and the UnoCart have the data bus on different pins (PlusCart: the low byte of GPIOC; UnoCart: bits 8-15 of GPIOE): a program for both takes the registers from the argument block.",
+    "Unverified: which SRAM and CCM a program may use besides the argument block; no source lists it."
+   ],
+   "dasm_template": "",
+   "verified": false,
+   "sources": [
+    "ace-strongarm",
+    "uca-firmware",
+    "gopher-src"
+   ]
+  },
+  {
    "id": "AR",
    "category": "classic",
    "name": "Supercharger (AR)",
@@ -1143,6 +1170,20 @@
    "author": "Darrell Spice Jr, Chris Walton, Fred Quimby, John Champeau, Stephen Anthony and others",
    "url": "https://github.com/stella-emu/stella/tree/master/src/emucore",
    "used_for": "Description, bank layout and hotspots of the ARM-assisted formats; the original authors' own pages on AtariAge were not reachable in this pass"
+  },
+  {
+   "id": "ace-strongarm",
+   "title": "Strong-ARM-for-VCS (ace2600.h, vcsLib.c, stm32f4_flash.ld) and the UnoCart-2600 fork with ACE (2018)",
+   "author": "ZackAttack (Zack Scolaro)",
+   "url": "https://github.com/ZacharyScolaro/Strong-ARM-for-VCS",
+   "used_for": "ACE header fields, the original ACE-2600 load address and size limit; facts only, nothing copied"
+  },
+  {
+   "id": "uca-firmware",
+   "title": "United Carts of Atari firmware (cartridge_emulation_ACE.c)",
+   "author": "Marco Johannes, Al_Nafuur, ZackAttack",
+   "url": "https://github.com/Al-Nafuur/United-Carts-of-Atari",
+   "used_for": "ACE-UF00/PC00/UC00 variants, entry point rules, size limit, the argument block at 0x20000000; facts only, nothing copied"
   }
  ]
 }
