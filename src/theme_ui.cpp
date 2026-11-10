@@ -58,6 +58,11 @@ bool beginPanel(const char* name, bool* open, ImGuiWindowFlags flags) {
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(em(12), em(8)));  // a taller title band
     colours = 4, styles = 1;
   }
+  // docked, each closable tab has its own ×: the dock's extra × at the end of the row would
+  // close the tab in front, a second button for the same thing
+  ImGuiWindowClass panelClass;
+  panelClass.DockNodeFlagsOverrideSet = ImGuiDockNodeFlags_NoCloseButton;
+  ImGui::SetNextWindowClass(&panelClass);
   bool shown = ImGui::Begin(name, open, flags);
   ImGui::PopStyleVar(styles);
   ImGui::PopStyleColor(colours);
@@ -77,6 +82,8 @@ void endPanel() {
       ImGuiTabBar* tabs = window->DockNode ? window->DockNode->TabBar : nullptr;
       if (tabs) bar = tabs->BarRect, left = tabs->BarRect.Min.x + std::min(tabs->WidthAllTabs, tabs->BarRect.GetWidth());
       else place = false;  // a dock without tabs: no title to go beside
+      // the dock's own close button, at the right end of the tab row
+      if (window->DockNode->HasCloseButton) right -= ImGui::GetFontSize() + style.FramePadding.x * 2;
     } else {
       const char* titleEnd = ImGui::FindRenderedTextEnd(window->Name);
       left = bar.Min.x + style.FramePadding.x + ImGui::CalcTextSize(window->Name, titleEnd).x;

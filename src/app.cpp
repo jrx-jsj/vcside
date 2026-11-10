@@ -1894,6 +1894,7 @@ MenuBar App::buildMenuBar(bool native) {
            zoom_ != 1.0f),
       MenuItem::sep(),
       sub(T("Theme"), themeMenu),
+      item(T("Documentation"), "", [this] { showDocs_ = !showDocs_; }, true, showDocs_),
       item(T("Assistant"), "", [this] { showAssistant_ = !showAssistant_; }, assistant_.enabled(), showAssistant_ && assistant_.enabled()),
       item(T("Reset layout"), "", [this] { resetLayout_ = true; }),
   }));
@@ -2832,8 +2833,9 @@ static void bullet(const std::string& text) {
 void App::docsPanel() {
   char title[64];
   snprintf(title, sizeof title, "%s###docs", T("Documentation"));
-  if (focusDocs_) ImGui::SetNextWindowFocus();
-  if (!theme::beginPanel(title)) {
+  if (focusDocs_) showDocs_ = true, ImGui::SetNextWindowFocus();
+  if (!showDocs_) return;
+  if (!theme::beginPanel(title, &showDocs_)) {
     theme::endPanel();
     return;
   }
