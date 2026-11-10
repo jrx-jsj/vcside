@@ -14,6 +14,8 @@ set(VCSIDE_LLM_ARGS
   -DLLAMA_BUILD_EXAMPLES=OFF
   -DLLAMA_BUILD_SERVER=ON
   -DLLAMA_CURL=OFF
+  -DLLAMA_BUILD_UI=OFF
+  -DLLAMA_USE_PREBUILT_UI=OFF  # the server would otherwise download its web page at build time; we run it without one
   -DLLAMA_OPENSSL=OFF
   -DGGML_CCACHE=OFF)
 
