@@ -22,6 +22,7 @@
 #include "imgui_impl_sdl3.h"
 #include "paths.h"
 #include "window_icon.h"
+#include "music/music_editor.h"
 
 namespace fs = std::filesystem;
 
@@ -671,6 +672,7 @@ int main(int argc, char** argv) {
     windows.pop_back();
   }
   SDL_GL_DestroyContext(gGl);
+  vcs::music::musicAudio().close();  // before SDL_Quit, which frees its stream
   SDL_Quit();
   return 0;
 }

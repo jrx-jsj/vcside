@@ -15,6 +15,8 @@ namespace vcs::music {
 class MusicAudio {
  public:
   ~MusicAudio();
+  // Closes the output; call before SDL_Quit (afterwards SDL has already freed it).
+  void close();
   // Opens the default output the first time; false (and why) if there is none.
   bool ready(std::string* error);
 

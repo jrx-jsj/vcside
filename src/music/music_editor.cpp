@@ -26,6 +26,8 @@ MusicAudio& musicAudio() {
 }
 
 MusicEditor::~MusicEditor() {
+  // the song this editor plays stops with it
+  musicAudio().stop();
   if (previewKey_ >= 0 || previewMouse_) musicAudio().noteOff(channel_);
 }
 

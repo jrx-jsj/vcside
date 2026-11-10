@@ -8,8 +8,14 @@ namespace vcs::music {
 
 static constexpr int kRate = 48000;
 
-MusicAudio::~MusicAudio() {
-  if (stream_) SDL_DestroyAudioStream(stream_);  // stops the device and its thread first
+MusicAudio::~MusicAudio() { close(); }
+
+void MusicAudio::close() {
+  // destroying the stream stops the device and its thread first; after SDL_Quit
+  // there is nothing left to destroy
+  if (stream_ && SDL_WasInit(SDL_INIT_AUDIO)) SDL_DestroyAudioStream(stream_);
+  stream_ = nullptr;
+  failed_ = true;  // no reopening while the app closes
 }
 
 bool MusicAudio::ready(std::string* error) {
