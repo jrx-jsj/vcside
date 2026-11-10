@@ -73,7 +73,7 @@ class AssistantPanel {
   std::vector<std::string> streamingReference_;
   int promptTokens_ = 0, completionTokens_ = 0, droppedTurns_ = 0;
   std::string input_;
-  bool attachFile_ = false, attachSelection_ = true, attachErrors_ = true, focusInput_ = false, scrollDown_ = false;
+  bool focusInput_ = false, scrollDown_ = false;
   std::string chatProject_;
   // models and detection run on worker threads
   std::future<std::pair<std::vector<std::string>, std::string>> modelsFuture_;

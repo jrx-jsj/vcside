@@ -119,7 +119,7 @@ A dockable *Assistant* panel beside *Output* and *Problems*, in VCSIDE's usual l
 - **Conversation:** user and assistant messages, with fenced code blocks drawn in the editor font with *Copy* and *Apply…* buttons (no full Markdown renderer: headings, lists, code blocks and inline code are enough).
 - **Tool calls** appear as one-line rows ("read `main.asm` lines 1–120", "build → 2 errors"), expandable to the exact arguments and result. Nothing the agent does is hidden.
 - **Approval cards** for anything that changes something (see [Permissions](#permissions-sandbox-and-undo)).
-- **Context chips** above the input: *this file*, *selection*, *last build errors*, *this register or opcode*; each can be removed before sending. In plain-chat mode these are how context reaches the model.
+- **Context without switches.** The selection and the last build errors go along with every question when there are any, and the open file when nothing is selected (a selection says which part matters); a line under the input names what will be sent, and *View the request* shows all of it. (The first version had chips to toggle each one; they were removed as clutter.) With the agent on, the model can also read any other file itself. In plain-chat mode this is how context reaches the model.
 - **A badge that is always visible:** `local` (loopback) or `remote: <provider>`, because whether the code leaves the machine is the first thing to know.
 - **Request inspector:** a button that shows the exact JSON about to be sent (system prompt, tool schemas, messages, attached text), so nobody has to trust a description of what is sent.
 - **Stop**, a token counter (estimated, or the server's if it reports usage) and *New conversation*.
@@ -231,7 +231,7 @@ The first time a model is used, VCSIDE sends a tiny test ("call `ping` with `x=1
 
 1. **Native tools:** the dialect's `tools` field. Used when the probe passes.
 2. **Prompted tools:** the tools are described in the prompt and the model answers with one fenced JSON block, which VCSIDE parses. Where the runtime supports it (llama.cpp's grammar or JSON-schema constraint), the answer is constrained so it is always valid. Used when native calls fail the probe but the model follows instructions.
-3. **Plain chat:** no agent at all. The context chips attach text, and any code block in the answer has *Apply…*, which opens the same diff card. Always available, and already useful.
+3. **Plain chat:** no agent at all. The attached context (selection, errors, open file) is the text, and any code block in the answer has *Apply…*, which opens the same diff card. Always available, and already useful.
 
 The user can force a level per provider.
 
@@ -330,7 +330,7 @@ A manual evaluation set (a handful of tasks such as *fix this DASM error*, *make
 > **Status (2026-11-10):** phases 1 and 2 are implemented in `src/assistant/` (chat panel, first-start question, settings, detection of local servers, knowledge-base grounding, request inspector, *Apply…*, chats in `.vcsai/chats` with archive and delete). One difference from the text above: the HTTP client is VCSIDE's own small socket client (plain `http://` to a local server, about 300 lines), so no HTTP library was added; `https://` and the per-system TLS backends are phase 5. Phases 3 and 4 were added afterwards (see [The agent loop](#the-agent-loop-phases-3-and-4-2026-11-10)).
 
 1. **Spike and plumbing.** `HttpClient` with the loopback path, SSE parser, `OpenAiProvider`, mock-server tests, the first-start dialog and *Settings → Assistant*, endpoint detection for llama-server, Ollama and LM Studio on their default ports (a connection to loopback only when the feature is on and the user presses *Detect*). Checked against a real local model.
-2. **Plain chat with the knowledge base.** The panel, context chips, **automatic grounding**, the request inspector, code blocks with *Apply…* and the diff card, undo, `.vcsai/chats` with delete and archive. Already useful with any model.
+2. **Plain chat with the knowledge base.** The panel, attached context, **automatic grounding**, the request inspector, code blocks with *Apply…* and the diff card, undo, `.vcsai/chats` with delete and archive. Already useful with any model.
 3. **Read tools and the loop.** `project_info`, `list_files`, `read_file`, `search`, `symbols`, `kb_lookup`, `kb_search`, `build_errors`, `space_report`; the capability probe and the three levels; trimming.
 4. **Edit and run tools.** `edit_file` with *once / this session* approvals, the privileged-file rule, `build`, `run_emulator`, per-turn limits, `.vcsai/STATE.md`.
 5. **Remote.** The macOS, Windows and Linux TLS backends, `AnthropicProvider`, the secret stores, the first-use dialog and the `remote` badge, optional budget.

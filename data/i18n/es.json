@@ -156,7 +156,6 @@
     "Build and debug": "Compilar y depurar",
     "Build and run": "Compilar y ejecutar",
     "Build command": "Orden de compilación",
-    "Build errors": "Errores de compilación",
     "Build failed (exit {0})": "Error al compilar (código {0})",
     "Build helpers": "Ayudantes de la compilación",
     "Build keeps these settings until the folder is closed, and writes nothing. A project file ({0}) keeps them for good, and Build > Project settings... changes them.": "Compilar usa estos ajustes hasta que se cierra la carpeta, y no escribe nada. Un archivo de proyecto ({0}) los guarda para siempre, y Compilar > Ajustes del proyecto... los cambia.",
@@ -768,6 +767,7 @@
     "Send": "Enviar",
     "Send to a remote server?": "¿Enviar a un servidor remoto?",
     "Send to it": "Enviar ahí",
+    "Sent with your question: {0}": "Se envía con tu pregunta: {0}",
     "Services": "Servicios",
     "Settings": "Ajustes",
     "Settings > Tools: {0}": "Ajustes > Herramientas: {0}",
@@ -849,6 +849,7 @@
     "The ball's colour is the playfield's (COLUPF).": "El color de la bola es el del playfield (COLUPF).",
     "The ball's colour is the playfield's (COLUPF): changing it per row recolours the playfield on those lines.": "El color de la bola es el del playfield (COLUPF): cambiarlo por fila cambia también el del playfield en esas líneas.",
     "The blocks between `rem vcsgfx` lines. Saving this file rewrites them in the project's programs (one region per animation frame).": "Los bloques entre líneas `rem vcsgfx`. Al guardar este archivo se reescriben en los programas del proyecto (una zona por fotograma de la animación).",
+    "the build errors": "los errores de compilación",
     "The built-in model could not start.": "El modelo incluido no pudo arrancar.",
     "The cartridge's music is DPC+'s, by Darrell Spice Jr. and Fred Quimby (first in Stay Frosty 2); CDF and CDFJ reuse it.": "La música del cartucho es la de DPC+, de Darrell Spice Jr. y Fred Quimby (estrenada en Stay Frosty 2); CDF y CDFJ la reutilizan.",
     "The CDFJ example builds with make, which does not take spaces in file names: choose a name without spaces.": "El ejemplo CDFJ se compila con make, que no admite espacios en los nombres de archivo: elige un nombre sin espacios.",
@@ -885,6 +886,7 @@
     "The rows have their own colours, and the program does not set `set kernel_options pfcolors`: only the first row's is kept.": "Las filas tienen sus propios colores, y el programa no pone `set kernel_options pfcolors`: solo se conserva el de la primera.",
     "The rows the program shows": "Las filas que muestra el programa",
     "The same interval on every note: each frame gets the AUDF that comes closest, note by note.": "El mismo intervalo en todas las notas: cada cuadro usa el AUDF que más se acerca, nota a nota.",
+    "the selection": "la selección",
     "The server lists no models.": "El servidor no lista ningún modelo.",
     "The song has more than 254 patterns in its order list: it cannot be exported until it is shorter.": "La canción tiene más de 254 patrones en su orden: no se puede exportar hasta que sea más corta.",
     "The song has no instruments or no order list.": "La canción no tiene instrumentos o no tiene lista de orden.",
@@ -915,7 +917,6 @@
     "This build has no model list.": "Esta versión no tiene lista de modelos.",
     "This changes what Build runs, so it is asked each time.": "Esto cambia lo que ejecuta Compilar, así que se pregunta cada vez.",
     "This computer has little memory for these models: the smallest is preselected and may be slow.": "Este ordenador tiene poca memoria para estos modelos: se preselecciona el más pequeño y puede ir lento.",
-    "This file": "Este fichero",
     "This folder builds with \"{0}\".": "Esta carpeta se compila con «{0}».",
     "This folder has a program in {0}: {1}.": "Esta carpeta tiene un programa en {0}: {1}.",
     "This format's RAM cannot be measured from the DASM output.": "La RAM de este formato no se puede medir con la salida de DASM.",
@@ -1109,5 +1110,5 @@
     "{0}:{1}: no listing to place the breakpoint: build first.": "{0}:{1}: no hay listado para situar el punto de ruptura: compila antes.",
     "±{0}": "±{0}"
   },
-  "total": 1106
+  "total": 1107
 }

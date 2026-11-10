@@ -107,40 +107,6 @@ bool iconButton(const char* id, Icon icon, const char* tooltip) {
   return pressed;
 }
 
-// A toggle that shows its state at a glance: filled and ticked when on, outlined when off,
-// always in the full text colour (a disabled one is dimmed).
-bool chip(const char* label, bool* value, bool enabled = true) {
-  const ImGuiStyle& style = ImGui::GetStyle();
-  float height = ImGui::GetFrameHeight(), box = height * 0.5f;
-  float width = style.FramePadding.x * 2 + box + style.ItemInnerSpacing.x + ImGui::CalcTextSize(label).x;
-  ImVec2 at = ImGui::GetCursorScreenPos();
-  ImGui::BeginDisabled(!enabled);
-  bool pressed = ImGui::InvisibleButton(label, ImVec2(width, height));
-  ImGui::EndDisabled();
-  if (pressed && enabled) *value = !*value;
-  bool on = *value && enabled, hovered = ImGui::IsItemHovered() && enabled;
-  ImVec4 accent = theme::colv(theme::Role::UiAccent);
-  ImVec4 fill = on ? ImVec4(accent.x, accent.y, accent.z, 0.22f) : ImGui::GetStyleColorVec4(hovered ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg);
-  ImVec4 border = on ? accent : ImGui::GetStyleColorVec4(ImGuiCol_Border);
-  ImVec4 text = theme::colv(theme::Role::UiText);
-  if (!enabled) text.w *= 0.45f, border.w *= 0.5f;
-  ImDrawList* drawList = ImGui::GetWindowDrawList();
-  ImVec2 end(at.x + width, at.y + height);
-  drawList->AddRectFilled(at, end, ImGui::GetColorU32(fill), height * 0.5f);
-  drawList->AddRect(at, end, ImGui::GetColorU32(border), height * 0.5f, 0, on ? 1.6f : 1.0f);
-  ImVec2 boxMin(at.x + style.FramePadding.x, at.y + (height - box) * 0.5f);
-  ImU32 tick = ImGui::GetColorU32(on ? accent : text);
-  if (on) {
-    drawList->AddRectFilled(boxMin, ImVec2(boxMin.x + box, boxMin.y + box), ImGui::GetColorU32(accent), 3.0f);
-    ImVec2 points[3] = {{boxMin.x + box * 0.2f, boxMin.y + box * 0.55f}, {boxMin.x + box * 0.42f, boxMin.y + box * 0.78f}, {boxMin.x + box * 0.82f, boxMin.y + box * 0.25f}};
-    drawList->AddPolyline(points, 3, ImGui::GetColorU32(theme::colv(theme::Role::DlgPrimaryText)), 0, 1.8f);
-  } else {
-    drawList->AddRect(boxMin, ImVec2(boxMin.x + box, boxMin.y + box), tick, 3.0f, 0, 1.2f);
-  }
-  drawList->AddText(ImVec2(boxMin.x + box + style.ItemInnerSpacing.x, at.y + (height - ImGui::GetTextLineHeight()) * 0.5f), ImGui::GetColorU32(text), label);
-  return pressed;
-}
-
 std::string ellipsize(const std::string& text, float maxWidth) {
   if (ImGui::CalcTextSize(text.c_str()).x <= maxWidth) return text;
   std::string cut = text;
@@ -596,10 +562,12 @@ void AssistantPanel::send(const PanelContext& context, const std::string& questi
   chat_.provider = provider->name, chat_.model = provider->model;
   Attachments attachments;
   attachments.projectInfo = context.projectInfo;
-  if (attachFile_) attachments.fileName = context.fileName, attachments.fileText = context.fileText;
-  if (attachSelection_) attachments.selection = context.selection;
-  if (attachErrors_) attachments.errors = context.errors;
-  std::string codeText = attachments.selection + "\n" + attachments.errors + "\n" + (attachFile_ ? attachments.fileText.substr(0, 8000) : std::string());
+  // No switches: the selection and the build errors go along when there are any, and the open file
+  // when nothing is selected (a selection says which part matters). The line under the input says so.
+  attachments.selection = context.selection;
+  attachments.errors = context.errors;
+  if (context.selection.empty()) attachments.fileName = context.fileName, attachments.fileText = context.fileText;
+  std::string codeText = attachments.selection + "\n" + attachments.errors + "\n" + attachments.fileText.substr(0, 8000);
   std::vector<GroundedEntry> entries;
   if (context.kb) entries = groundText(*context.kb, question, codeText, context.grounding);
   attachments.grounding = groundingBlock(entries);
@@ -1070,12 +1038,14 @@ void AssistantPanel::draw(const PanelContext& context, ImFont* mono, bool* open)
   }
   ImGui::EndChild();
 
-  // what is attached: toggles that show their state
-  chip(T("This file"), &attachFile_);
-  ImGui::SameLine();
-  chip(T("Selection"), &attachSelection_, !context.selection.empty());
-  ImGui::SameLine();
-  chip(T("Build errors"), &attachErrors_, !context.errors.empty());
+  // what goes along with the question, said in words (there is nothing to switch)
+  {
+    std::string along;
+    if (!context.selection.empty()) along = T("the selection");
+    else if (!context.fileText.empty()) along = context.fileName;
+    if (!context.errors.empty()) along += (along.empty() ? "" : ", ") + std::string(T("the build errors"));
+    if (!along.empty()) ImGui::TextDisabled("%s", F("Sent with your question: {0}", {along}).c_str());
+  }
   if (settings_.explainErrors && !context.errors.empty() && !request_.running() && !pendingEditActive_ && pendingRun_.empty() && !waitingBuild_) {
     ImGui::SameLine();
     if (theme::dialogButton(T("Explain the errors"), ImVec2(0, 0), true)) pendingQuestion_ = "Explain these build errors and how to fix them.";
@@ -1110,7 +1080,6 @@ void AssistantPanel::draw(const PanelContext& context, ImFont* mono, bool* open)
   }
   if (!pendingQuestion_.empty()) {  // from "Explain this error" in Problems, or the button above
     if (!running && !waitingForUser && builtinReady && (provider->isLocal() || provider->builtin || remoteConfirmed_.count(provider->baseUrl))) {
-      attachErrors_ = true;
       send(context, pendingQuestion_);
     }
     pendingQuestion_.clear();
