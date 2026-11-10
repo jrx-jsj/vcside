@@ -25,10 +25,35 @@ std::vector<CatalogModel> loadCatalog(const std::string& jsonPath);
 std::string modelsDir();
 std::string modelPath(const CatalogModel& model);          // where the file goes
 bool isInstalled(const CatalogModel& model);               // present, complete and verified earlier
-// The model that fits a machine with this much memory (GB): the largest that needs at most 60% of it.
-const CatalogModel* recommendedFor(const std::vector<CatalogModel>& catalog, int machineMemoryGb);
-// Physical memory in GB (0 when unknown).
-int machineMemoryGb();
+// A device the helper can run a model on, as it reports them (`llama-server --list-devices`).
+struct Device {
+  std::string id, name;           // "MTL0", "Apple M1 Pro"
+  int64_t totalMiB = 0, freeMiB = 0;
+  bool gpu = false;               // false for the CPU-side libraries (BLAS, Accelerate)
+};
+// What the machine offers to run a model.
+struct Hardware {
+  int ramGb = 0, cpuThreads = 0;
+  std::vector<Device> devices;
+  bool probed = false;            // the helper has been asked
+  const Device* bestGpu() const;  // the GPU with the most free memory, or nullptr
+};
+// Reads the helper's device list. Lines that are not "<id>: <name> (<total> MiB, <free> MiB free)" are ignored.
+std::vector<Device> parseDeviceList(const std::string& helperOutput);
+// Physical memory (GB) and logical CPUs; devices stay empty until probeDevices.
+Hardware basicHardware();
+// Runs `<helper> --list-devices` (a second or two): call it off the UI thread.
+std::vector<Device> probeDevices(const std::string& helperPath);
+
+struct Recommendation {
+  const CatalogModel* model = nullptr;
+  bool onGpu = false;
+  std::string device;             // the GPU it runs on ("Apple M1 Pro"); empty on the CPU
+  double memoryGb = 0;            // the GPU's free memory, or the computer's memory
+};
+// The largest model that runs well here: entirely on the best GPU when one has room for it,
+// otherwise on the CPU within 60% of the RAM and never above 8 GB (larger ones are too slow without a GPU).
+Recommendation recommend(const std::vector<CatalogModel>& catalog, const Hardware& hardware);
 std::string formatBytes(int64_t bytes);  // "4.7 GB"
 
 // One download at a time, with curl (macOS, Windows 10+ and nearly every Linux have it).

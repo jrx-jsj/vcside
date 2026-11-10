@@ -411,3 +411,12 @@ What it showed:
 - **Remaining misses:** touching the playfield (collision registers not found), "my game is bigger than 4 KB" (no cartridge format found), and one positioning question. These stay in the set as the to-do list.
 
 Read these numbers with care: one model, one run; the questions were written by the author of the knowledge base; the word list was extended after the first run, so part of the improvement is tuning to this set. A held-out set from real users is the next measurement. Some topic hits are noise (a related note that does not answer the question); the minimum score keeps most of them out but not all.
+
+### Default provider and the recommended model (2026-11-10)
+
+- **The built-in model is the default.** It is always the first provider and the active one for a new install and for settings saved before it existed. Other servers (Ollama, LM Studio, remote APIs) are added by the user and chosen explicitly.
+- **The model is preselected from what the computer offers.** The first time the panel opens with no model chosen, VCSIDE reads the memory and CPU count at once and asks the helper for its devices (`llama-server --list-devices`, so the answer is what the helper will really use: Metal, Vulkan, CUDA...). Then `recommend()` picks:
+  1. if a GPU has room, the largest catalogue model whose `memory_gb` fits in that GPU's free memory (on Apple Silicon this is the unified memory the system lets the GPU use, about 75% of the RAM);
+  2. otherwise the largest that fits in 60% of the RAM and needs at most 8 GB, because larger models are too slow on a CPU;
+  3. if none fits, the smallest is preselected and the panel warns that it may be slow.
+  The choice is saved, shown as "recommended" in the model list and explained in the download card ("It fits in the 11.8 GB free on the GPU Apple M1 Pro"); the user can pick any other model. The thresholds are a first guess, to be replaced by measurements in the phase 6 evaluation.

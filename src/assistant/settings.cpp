@@ -49,7 +49,7 @@ Settings Settings::fromJson(const json& input) {
       provider.contextTokens = std::clamp(item.value("context_tokens", 8192), 1024, 1 << 20);
       settings.providers.push_back(provider);
     }
-  // The model that ships with VCSIDE is always there, first, unless the user moved on from it.
+  // The model that ships with VCSIDE is always there, first, and is the default.
   bool hasBuiltin = false;
   for (auto& provider : settings.providers) hasBuiltin = hasBuiltin || provider.builtin;
   if (!hasBuiltin) {
@@ -57,7 +57,7 @@ Settings Settings::fromJson(const json& input) {
     builtin.name = "Built-in";
     builtin.builtin = true;
     settings.providers.insert(settings.providers.begin(), builtin);
-    if (settings.providers.size() > 1) settings.active++;  // keep pointing at the same server
+    settings.active = 0;  // the built-in model is the default, also for settings saved before it existed
   }
   if (settings.active < 0 || settings.active >= (int)settings.providers.size()) settings.active = 0;
   return settings;

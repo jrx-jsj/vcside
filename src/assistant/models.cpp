@@ -4,10 +4,12 @@
 
 #include <SDL3/SDL.h>
 
+#include <cctype>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <nlohmann/json.hpp>
+#include <sstream>
 
 #include "assistant/sha256.h"
 #include "paths.h"
@@ -55,15 +57,74 @@ bool isInstalled(const CatalogModel& model) {
   return fs::is_regular_file(modelPath(model), code) && (int64_t)fs::file_size(modelPath(model), code) == model.bytes;
 }
 
-const CatalogModel* recommendedFor(const std::vector<CatalogModel>& catalog, int machineMemoryGb) {
-  const CatalogModel* best = nullptr;
-  for (auto& model : catalog)
-    if (model.memoryGb * 10 <= machineMemoryGb * 6 && (!best || model.memoryGb > best->memoryGb)) best = &model;
+const Device* Hardware::bestGpu() const {
+  const Device* best = nullptr;
+  for (auto& device : devices)
+    if (device.gpu && (!best || device.freeMiB > best->freeMiB)) best = &device;
   return best;
 }
 
-int machineMemoryGb() {
-  return SDL_GetSystemRAM() / 1024;  // SDL reports MiB
+std::vector<Device> parseDeviceList(const std::string& output) {
+  std::vector<Device> devices;
+  std::istringstream lines(output);
+  std::string line;
+  while (std::getline(lines, line)) {
+    // "  MTL0: Apple M1 Pro (12124 MiB, 12123 MiB free)"
+    size_t colon = line.find(": ");
+    size_t open = line.rfind(" (");
+    size_t close = line.rfind(" MiB free)");
+    if (colon == std::string::npos || open == std::string::npos || close == std::string::npos || open < colon) continue;
+    Device device;
+    size_t start = line.find_first_not_of(' ');
+    device.id = line.substr(start, colon - start);
+    device.name = line.substr(colon + 2, open - colon - 2);
+    long long total = 0, free = 0;
+    if (std::sscanf(line.c_str() + open, " (%lld MiB, %lld", &total, &free) != 2) continue;
+    device.totalMiB = total, device.freeMiB = free;
+    if (device.id.find(' ') != std::string::npos) continue;  // a sentence, not a device
+    std::string upperId;
+    for (char c : device.id) upperId += (char)std::toupper((unsigned char)c);
+    device.gpu = upperId.rfind("BLAS", 0) != 0 && upperId.rfind("CPU", 0) != 0 && total > 0;
+    devices.push_back(device);
+  }
+  return devices;
+}
+
+Hardware basicHardware() {
+  Hardware hardware;
+  hardware.ramGb = SDL_GetSystemRAM() / 1024;  // SDL reports MiB
+  hardware.cpuThreads = SDL_GetNumLogicalCPUCores();
+  return hardware;
+}
+
+std::vector<Device> probeDevices(const std::string& helperPath) {
+  if (helperPath.empty()) return {};
+  Job job;
+  if (!job.start({helperPath, "--list-devices"}, "")) return {};
+  for (int waited = 0; job.running() && waited < 15000; waited += 20) SDL_Delay(20);
+  if (job.running()) job.stopAndWait();
+  return parseDeviceList(job.output());
+}
+
+Recommendation recommend(const std::vector<CatalogModel>& catalog, const Hardware& hardware) {
+  Recommendation result;
+  auto largest = [&](auto fits) {
+    const CatalogModel* best = nullptr;
+    for (auto& model : catalog)
+      if (fits(model) && (!best || model.memoryGb > best->memoryGb)) best = &model;
+    return best;
+  };
+  if (const Device* gpu = hardware.bestGpu()) {
+    double freeGb = gpu->freeMiB / 1024.0;
+    if (const CatalogModel* model = largest([&](const CatalogModel& m) { return m.memoryGb <= freeGb; })) {
+      return {model, true, gpu->name, freeGb};
+    }
+  }
+  const CatalogModel* model = largest([&](const CatalogModel& m) { return m.memoryGb * 10 <= hardware.ramGb * 6 && m.memoryGb <= 8; });
+  if (model) {
+    return {model, false, "", (double)hardware.ramGb};
+  }
+  return result;
 }
 
 std::string formatBytes(int64_t bytes) {

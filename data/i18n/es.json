@@ -213,6 +213,7 @@
     "Chats of this project": "Chats de este proyecto",
     "Chats...": "Chats...",
     "Checking the file...": "Comprobando el archivo...",
+    "Checking this computer...": "Comprobando este ordenador...",
     "Choose the file...": "Elegir el archivo...",
     "Choose...": "Elegir...",
     "Clear all breakpoints": "Quitar todos los puntos de ruptura",
@@ -669,6 +670,9 @@
     "Reads the clipboard: assembly tables (VCSIDE, PlayerPal) or batari Basic blocks (player0:, playfield:...).": "Lee el portapapeles: tablas de ensamblador (VCSIDE, PlayerPal) o bloques de batari Basic (player0:, playfield:...).",
     "Recent": "Recientes",
     "Recent projects": "Proyectos recientes",
+    "recommended": "recomendado",
+    "Recommended for this computer: {0}. It fits in the {1} GB free on the GPU {2}.": "Recomendado para este ordenador: {0}. Cabe en los {1} GB libres de la GPU {2}.",
+    "Recommended for this computer: {0}. It fits in the {1} GB of memory and runs on the CPU.": "Recomendado para este ordenador: {0}. Cabe en sus {1} GB de memoria y se ejecuta en la CPU.",
     "Rectangle (R)": "Rectángulo (R)",
     "Redo": "Rehacer",
     "Reference": "Referencia",
@@ -879,6 +883,7 @@
     "There is no theme called {0}.": "No hay ningún tema llamado {0}.",
     "This build does not include the language-model helper.": "Esta versión no incluye el ayudante del modelo de lenguaje.",
     "This build has no model list.": "Esta versión no tiene lista de modelos.",
+    "This computer has little memory for these models: the smallest is preselected and may be slow.": "Este ordenador tiene poca memoria para estos modelos: se preselecciona el más pequeño y puede ir lento.",
     "This file": "Este fichero",
     "This folder builds with \"{0}\".": "Esta carpeta se compila con «{0}».",
     "This folder has a program in {0}: {1}.": "Esta carpeta tiene un programa en {0}: {1}.",
@@ -982,6 +987,7 @@
     "Written {0} ({1} s)": "Escrito {0} ({1} s)",
     "yes": "sí",
     "You": "Tú",
+    "You can choose another above.": "Puedes elegir otro arriba.",
     "Yours": "Tuyos",
     "Zeroed variables": "Variables a cero",
     "zlib licence. Sam Lantinga and contributors.": "Licencia zlib. Sam Lantinga y colaboradores.",
@@ -1068,5 +1074,5 @@
     "{0}:{1}: no listing to place the breakpoint: build first.": "{0}:{1}: no hay listado para situar el punto de ruptura: compila antes.",
     "±{0}": "±{0}"
   },
-  "total": 1065
+  "total": 1071
 }

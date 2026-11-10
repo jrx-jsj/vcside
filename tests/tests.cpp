@@ -3063,11 +3063,31 @@ static void testBundledModel() {
       CHECK(model.sha256.size() == 64 && model.url.rfind("https://", 0) == 0 && model.bytes > 0 && !model.license.empty());
       CHECK(model.url.size() > model.file.size() && model.url.compare(model.url.size() - model.file.size(), model.file.size(), model.file) == 0);
     }
-    // 16 GB gets the 8 B model (needs 8 <= 60% of 16 = 9.6), 8 GB the 4 B one, 2 GB nothing
-    const CatalogModel* sixteen = recommendedFor(catalog, 16);
-    const CatalogModel* eight = recommendedFor(catalog, 8);
-    CHECK(sixteen && eight && sixteen->memoryGb > eight->memoryGb && sixteen->memoryGb <= 9);
-    CHECK(recommendedFor(catalog, 2) == nullptr);
+    // the machine decides: GPU memory first, otherwise the CPU within 60% of the RAM and at most 8 GB
+    auto pick = [&](int ramGb, std::vector<Device> devices) {
+      Hardware hardware;
+      hardware.ramGb = ramGb, hardware.devices = std::move(devices), hardware.probed = true;
+      return recommend(catalog, hardware);
+    };
+    CHECK(pick(8, {}).model && pick(8, {}).model->memoryGb == 4 && !pick(8, {}).onGpu);
+    CHECK(pick(16, {}).model && pick(16, {}).model->memoryGb == 8);   // 8 <= 60% of 16
+    CHECK(pick(64, {}).model && pick(64, {}).model->memoryGb == 8);   // no GPU: never above 8 GB
+    CHECK(pick(2, {}).model == nullptr);
+    Device appleGpu{"MTL0", "Apple M1 Pro", 12124, 12123, true};
+    Recommendation apple = pick(16, {appleGpu, Device{"BLAS", "Accelerate", 0, 0, false}});
+    CHECK(apple.model && apple.model->memoryGb == 8 && apple.onGpu && apple.device == "Apple M1 Pro");  // 11.8 GB free: 8 fits, 12 does not
+    Recommendation big = pick(32, {Device{"CUDA0", "NVIDIA RTX", 24576, 23000, true}});
+    CHECK(big.model && big.model->memoryGb == 12 && big.onGpu);
+    Recommendation small = pick(16, {Device{"Vulkan0", "Intel UHD", 2048, 1800, true}});
+    CHECK(small.model && !small.onGpu && small.model->memoryGb == 8);   // the GPU is too small: the CPU path
+    CHECK(pick(16, {Device{"BLAS", "Accelerate", 0, 0, false}}).onGpu == false);
+    // the helper's device list
+    std::vector<Device> listed = parseDeviceList("Available devices:\n  MTL0: Apple M1 Pro (12124 MiB, 12123 MiB free)\n  BLAS: Accelerate (0 MiB, 0 MiB free)\nnoise\n  Vulkan0: AMD Radeon RX 6600 (8176 MiB, 8000 MiB free)\n");
+    CHECK(listed.size() == 3 && listed[0].gpu && listed[0].freeMiB == 12123 && !listed[1].gpu && listed[2].name == "AMD Radeon RX 6600");
+    Hardware two;
+    two.devices = listed;
+    CHECK(two.bestGpu() && two.bestGpu()->id == "MTL0");
+    CHECK(parseDeviceList("").empty() && parseDeviceList("garbage (1 MiB)").empty());
     CHECK(formatBytes(5027783488) == "4.7 GB" && formatBytes(500 * 1048576) == "500 MB");
   }
   // an entry without a hash, with a path in the file name or over plain http is never offered
@@ -3301,6 +3321,9 @@ static void testAssistant(const KnowledgeBase& kb) {
     // The built-in model is always first; the user's server comes after it and stays the active one.
     CHECK(back.chat && back.asked && back.providers.size() == 2 && back.providers[0].builtin && back.providers[1].model == "qwen" && back.providers[1].keyEnv == "KEY_VAR");
     CHECK(Settings::fromJson(nlohmann::json()).providers.size() == 1 && Settings::fromJson(nlohmann::json()).providers[0].builtin);
+    // the built-in model is the default, also for settings saved before it existed with another server active
+    CHECK(back.active == 0 && back.providers[0].builtin);
+    CHECK(Settings::fromJson(nlohmann::json()).active == 0);
     CHECK(Settings::fromJson(Settings::fromJson(settings.toJson()).toJson()).providers.size() == 2);  // not inserted twice
     {
       Provider builtin;

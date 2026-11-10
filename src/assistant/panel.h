@@ -74,6 +74,9 @@ class AssistantPanel {
   Download download_;
   std::vector<CatalogModel> catalog_;
   bool catalogLoaded_ = false, drawnThisFrame_ = false;
+  Hardware hardware_;                                  // what this computer offers, asked once
+  std::future<std::vector<Device>> probe_;
+  Recommendation recommendation_;                      // the model that fits it best
   // dialogs
   std::string applyCode_, applyWhere_;
   std::function<void(const std::string&)> applyFn_;

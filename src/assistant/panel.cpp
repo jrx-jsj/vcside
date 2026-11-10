@@ -77,10 +77,22 @@ bool AssistantPanel::prepareBuiltin(Provider& provider) {
     catalog_ = loadCatalog(dataDir() + "/assistant/models.json");
     catalogLoaded_ = true;
   }
-  if (!catalogModel(provider.model)) {  // none chosen yet: the one that fits this machine
-    const CatalogModel* pick = recommendedFor(catalog_, machineMemoryGb());
-    if (!pick && !catalog_.empty()) pick = &catalog_.front();
+  // What this computer can run: its memory and CPUs at once, its GPUs from the helper (a second or two).
+  if (!hardware_.probed && !probe_.valid()) {
+    hardware_ = basicHardware();
+    probe_ = std::async(std::launch::async, [path = helperPath()] { return probeDevices(path); });
+  }
+  if (probe_.valid() && probe_.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+    hardware_.devices = probe_.get();
+    hardware_.probed = true;
+    recommendation_ = recommend(catalog_, hardware_);
+  }
+  if (!catalogModel(provider.model)) {  // none chosen yet: the one that fits this computer best
+    if (!hardware_.probed) return false;  // the card says it is checking
+    const CatalogModel* pick = recommendation_.model;
+    if (!pick && !catalog_.empty()) pick = &catalog_.front();  // too little memory for any: the smallest, and the card says so
     provider.model = pick ? pick->id : "";
+    changed_ = true;
   }
   const CatalogModel* model = catalogModel(provider.model);
   if (!model || !isInstalled(*model)) {
@@ -101,7 +113,8 @@ void AssistantPanel::modelCombo(Provider& provider, const char* label, float wid
   ImGui::SetNextItemWidth(width);
   if (ImGui::BeginCombo(label, shown.c_str())) {
     for (auto& model : catalog_) {
-      std::string line = model.name + "  -  " + formatBytes(model.bytes) + (isInstalled(model) ? std::string("  (") + T("downloaded") + ")" : "");
+      std::string line = model.name + "  -  " + formatBytes(model.bytes) + (isInstalled(model) ? std::string("  (") + T("downloaded") + ")" : "") +
+                         (recommendation_.model == &model ? std::string("  (") + T("recommended") + ")" : "");
       if (ImGui::Selectable(line.c_str(), model.id == provider.model)) provider.model = model.id, changed_ = true;
     }
     ImGui::EndCombo();
@@ -125,6 +138,18 @@ void AssistantPanel::builtinCard(Provider& provider) {
       return;
     }
     Url url = parseUrl(model->url);
+    if (!hardware_.probed) {
+      ImGui::TextDisabled("%s", T("Checking this computer..."));
+    } else if (recommendation_.model) {
+      char memory[16];
+      std::snprintf(memory, sizeof memory, "%.1f", recommendation_.memoryGb);
+      std::string line = recommendation_.onGpu ? F("Recommended for this computer: {0}. It fits in the {1} GB free on the GPU {2}.", {recommendation_.model->name, memory, recommendation_.device})
+                                               : F("Recommended for this computer: {0}. It fits in the {1} GB of memory and runs on the CPU.", {recommendation_.model->name, std::to_string((int)recommendation_.memoryGb)});
+      if (recommendation_.model != model) line += " " + std::string(T("You can choose another above."));
+      ImGui::TextColored(theme::colv(theme::Role::MsgInfo), "%s", line.c_str());
+    } else {
+      ImGui::TextColored(theme::colv(theme::Role::MsgWarning), "%s", T("This computer has little memory for these models: the smallest is preselected and may be slow."));
+    }
     ImGui::PushTextWrapPos(0);
     ImGui::TextUnformatted(F("The assistant runs a language model on this computer. Download {0} ({1}, licence {2}) from {3}? The file is checked against a fixed checksum, and nothing from your project is sent.",
                              {model->name, formatBytes(model->bytes), model->license, url.host}).c_str());
