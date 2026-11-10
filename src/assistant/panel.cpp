@@ -693,7 +693,7 @@ void AssistantPanel::send(const PanelContext& context, const std::string& questi
   for (auto& entry : entries) streamingReference_.push_back(entry.id);
   std::string turn = userTurn(question, attachments);
   std::vector<Message> messages = buildMessages(systemPrompt(), chat_.messages, turn, provider->contextTokens, 1024, &droppedTurns_);
-  chat_.messages.push_back({"user", question, {}});
+  chat_.messages.push_back({"user", question, {}, ""});
   turnText_ = turn;
   agentSteps_ = 0, callCounts_.clear(), pendingEditActive_ = false, pendingRun_.clear(), waitingBuild_ = false;
   lastRequest_ = chatRequestBody(*provider, messages);
@@ -704,7 +704,7 @@ void AssistantPanel::send(const PanelContext& context, const std::string& questi
 
 void AssistantPanel::finishAnswer(const PanelContext& context, const std::string& note) {
   if (!streaming_.empty()) {
-    ChatMessage answer{"assistant", streaming_ + (note.empty() ? "" : "\n\n[" + note + "]"), streamingReference_};
+    ChatMessage answer{"assistant", streaming_ + (note.empty() ? "" : "\n\n[" + note + "]"), streamingReference_, ""};
     chat_.messages.push_back(answer);
   }
   spentTokens_ += lastUsageSpent_;  // this request's tokens, as the server counted them
@@ -767,7 +767,7 @@ void AssistantPanel::addToolResult(const PanelContext& context, const std::strin
   saveChat(context);
 }
 
-void AssistantPanel::continueAgent(const PanelContext& context) {
+void AssistantPanel::continueAgent(const PanelContext& /*context*/) {  // the history is in chat_; the context is not needed to ask again
   Provider* provider = settings_.provider();
   if (!provider || chat_.messages.empty()) return;
   if (overBudget(*provider)) return;
@@ -1159,7 +1159,7 @@ void AssistantPanel::draw(const PanelContext& context, ImFont* mono, bool* open)
     }
     for (size_t i = 0; i < chat_.messages.size(); i++) drawMessage(chat_.messages[i], chat_.messages[i].content, context, mono, (int)i);
     if (request_.running() || !streaming_.empty()) {
-      ChatMessage live{"assistant", streaming_, streamingReference_};
+      ChatMessage live{"assistant", streaming_, streamingReference_, ""};
       drawMessage(live, streaming_.empty() ? std::string("...") : streaming_, context, mono, 9999);
     }
     agentCards(context);
