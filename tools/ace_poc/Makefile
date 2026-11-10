@@ -5,10 +5,11 @@
 #   make        build/test.ace and build/ACE_debugging.elf (for Gopher2600's source view)
 #   make run    gopher2600 RUN -mapping ACE build/test.ace
 #
+# Gopher2600 reads DWARF 4 only (GCC writes 5 by default): hence -gdwarf-4.
 # Needs DASM and the Arm GNU toolchain (arm-none-eabi-gcc) in PATH.
 
 CC     = arm-none-eabi-gcc
-CFLAGS = -mcpu=cortex-m4 -mthumb -Os -g -std=c11 -Wall -Wextra -ffreestanding -nostdlib
+CFLAGS = -mcpu=cortex-m4 -mthumb -Os -gdwarf-4 -std=c11 -Wall -Wextra -ffreestanding -nostdlib
 
 all: build/test.ace
 

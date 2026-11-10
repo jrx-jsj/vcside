@@ -5,6 +5,6 @@
         .ascii  "ACE-UF00"
         .ascii  "VCSIDE ACE test "      @ 16 bytes
         .word   0                       @ driver version
-        .word   __ace_end               @ size of the file
+        .word   __ace_size              @ size of the file (from ace.ld)
         .word   0                       @ checksum (not checked by the firmware)
-        .word   ace_entry               @ Thumb function: the linker sets bit 0
+        .word   __ace_entry_offset      @ offset of the entry, bit 0 set: Thumb (ace.ld)

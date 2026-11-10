@@ -923,7 +923,8 @@
    "issues": [
     "Stella 7.0 does not run ACE: VCSIDE runs ACE files in Gopher2600 only.",
     "Gopher2600 emulates the PlusCart's map (flash at 0x08020000) and rejects ACE-2600; its ARM clock is the hardware.arm7.clock preference (70 MHz by default; the carts run at 168 MHz).",
-    "The PlusCart and the UnoCart have the data bus on different pins (PlusCart: the low byte of GPIOC; UnoCart: bits 8-15 of GPIOE): a program for both takes the registers from the argument block.",
+    "Gopher2600 gives less SRAM to big files (64,000 bytes from 448,000 bytes of file up) and does not map the STM32's other peripherals (FLASH->ACR): Wolf3D (512 KB) fails there. Its debugger reads ACE_debugging.elf next to the ROM only with DWARF 4 and at the addresses the code runs at (0x08020000).",
+    "The PlusCart and the UnoCart have the data bus on different pins (PlusCart: the low byte of GPIOC; UnoCart: bits 8-15 of GPIOE), but the firmware's register pointers hide it (on the UnoCart they point at the high byte): a program that uses them as they are runs on both.",
     "Unverified: which SRAM and CCM a program may use besides the argument block; no source lists it."
    ],
    "dasm_template": "",

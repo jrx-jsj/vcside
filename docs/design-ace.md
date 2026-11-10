@@ -1,6 +1,6 @@
 # ACE cartridges — design proposal
 
-Status: proposal (2026-11-10). Phase 1 (knowledge and running ACE files) is done; there is a proof of concept (`tools/ace_poc`). Sources are at the end and in [sources.md](sources.md#ace-cartridges-read-2026-11-10).
+Status: proposal (2026-11-10). Phase 1 (knowledge and running ACE files) is done, and phase 2 (the proof of concept, `tools/ace_poc`) except for real hardware. Sources are at the end and in [sources.md](sources.md#ace-cartridges-read-2026-11-10).
 
 ## What ACE is
 
@@ -40,7 +40,7 @@ The header is a packed struct of 40 bytes, little-endian. Its fields are those o
 
 - `ACE-2600`: an absolute address. The file is linked as a complete firmware at `0x08010000` and is called with no arguments.
 - `ACE-PC00`: an absolute address, assuming the file sits at `0x08020200`.
-- `ACE-UF00`: an offset from the start of the file, wherever the firmware put it. The PlusCart copies it to a flash area; the UnoCart runs it from its RAM buffer. **So UF00 code must be position-independent.**
+- `ACE-UF00`: an offset from the start of the file, wherever the firmware put it. Both carts copy it to a flash download area whose address depends on what else is stored (see below). **So UF00 code must be position-independent.**
 
 The firmware calls the entry with `((int (*)())entry)()` and does not set the Thumb bit itself, so the header's value must have bit 0 set (Wolf3D's code starts at `0x3040`).
 
@@ -70,12 +70,14 @@ The UCA firmware leaves twelve 32-bit words at the start of SRAM, `0x20000000`. 
 | 10 | data-bus mode register (`DATA_MODER`) |
 | 11 | end mark `0xACE42600` |
 
-The registers differ between the two carts:
+The registers differ between the two carts, but the firmware hides it (`cartridge_io.c` in UCA):
 
-- **PlusCart** (the values in Gopher2600): address on GPIOD, `0x40020C10`; data on GPIOC, `0x40020810`, `0x40020814` and `0x40020800`. A mode of `0x5555` in the low half sets the data pins as outputs.
-- **UnoCart:** address on GPIOD; data on bits 8-15 of GPIOE, with mode `0x55550000`.
+- **PlusCart:** address on GPIOD (`0x40020C10`); data on the low byte of GPIOC (`0x40020810`, `0x40020814`, mode `0x40020800`).
+- **UnoCart:** address on GPIOD; data on bits 8-15 of GPIOE. The pointers it passes already point at the high byte of `GPIOE->IDR` and `->ODR` and the high half of `->MODER`.
 
-A UF00 program that runs on both carts must therefore take the registers from this block, and on the UnoCart also shift the data byte by 8 bits. How UCA hides that difference is still to be checked in its source. There is no official map of the RAM a program may use: the CDFJ driver overwrites `0x20000000` from offset `0x1C` onwards and uses CCM.
+So a program that writes a byte through word 9 and `0x5555` (16 bits) through word 10, as the firmware's own macros do, runs on both carts unchanged. There is no official map of the RAM a program may use: the CDFJ driver overwrites `0x20000000` from offset `0x1C` onwards and uses CCM.
+
+**Where the file goes.** The PlusCart (from its online storage or offline flash) and the UnoCart (an `ACE-UF00` from the SD card) copy the file to a flash download area: `DOWNLOAD_AREA_START_ADDRESS` + 128 KB × (first free sector − 5), or the offline flash address + 512. Only `ACE-UC00` runs from the RAM buffer. `ACE-PC00` adjusts its absolute entry by `file address − 0x08020200`.
 
 ## How the program drives the bus
 
@@ -97,23 +99,39 @@ ZackAttack's Strong-ARM framework (`vcsLib.c`) is the origin of the vcsLib names
 
 ## Proof of concept (`tools/ace_poc`, CC0)
 
-`make` builds `build/test.ace` (4,184 bytes). It is an `ACE-UF00` file whose ARM loop (a dozen instructions) serves a 4 KB DASM ROM that draws colour bars. It is linked at 0, so every symbol is an offset into the file, and it adds word 0 of the argument block to reach its data. That makes it position-independent without `-fpic`. The entry has bit 0 set, as the firmware needs.
+`make` builds `build/test.ace` (4,192 bytes). It is an `ACE-UF00` file whose ARM loop (a dozen instructions) serves a 4 KB DASM ROM that draws colour bars.
 
-| Run in Gopher2600 `07d8de5`, `PERFORMANCE -duration 3s` | Frames |
+- **Linking.** It is linked at `0x08020000`, where Gopher2600 puts ACE files. The code reaches its data as an offset from `__ace_start` plus word 0 of the argument block, so it runs wherever the firmware copies it. The linker script computes the header's size and entry (with bit 0 set); the assembler cannot subtract symbols from other files.
+- **Both carts.** It uses the firmware's register pointers as they are: 8-bit data, 16-bit mode. That matches what UCA passes on both carts.
+
+Results in Gopher2600 `07d8de5`:
+
+| Run | Result |
 |---|---|
-| `bars.bin`, the 4 KB ROM on its own | 1,253 |
-| `test.ace` | 342 |
-| the same file with the entry's bit 0 cleared | 342 |
+| `bars.bin`, the 4 KB ROM on its own, `PERFORMANCE -duration 3s` | 1,253 frames |
+| `test.ace`, the same | 332-342 frames (about 3.7 times slower to emulate) |
+| the same file with the entry's bit 0 cleared | 342 frames: Gopher2600 accepts it either way (the firmware does not) |
+| `RUN -macro` with `SCREENSHOT` | the colour bars, as the DASM ROM draws them |
+| `HEADLESS`, `COPROC LIST SOURCEFILES` / `FUNCTIONS` | `main.c` and `ace_entry` at `0x08020028`-`0x0802005F`, from `build/ACE_debugging.elf` |
 
-So the 6507 runs the program that our ARM code serves. ACE is about 3.7 times slower to emulate than the plain ROM, and Gopher2600 accepts the entry with or without the Thumb bit.
+**Source-level debugging.** Gopher2600's developer tools look for an ELF with DWARF next to the ROM:
 
-Not checked yet:
+- the names `ACE_debugging.elf`, `armcode.elf`, `main.elf`, `custom2.elf` or `cdfj+.elf`;
+- in the ROM's folder or in `main/`, `main/bin/`, `custom/bin/` or `arm/` (`coprocessor/developer/dwarf/elf_shim.go`).
 
-- the picture itself (only the frame count);
-- a real cart: the loop takes the PlusCart's 8-bit data layout, not the UnoCart's;
-- why Wolf3D (`ACE-UF00`, 512 KB) produces 0 frames in the same mode. Its size is near Gopher2600's limits; this needs a look in its debugger.
+Two conditions found by trying:
 
-`build/ACE_debugging.elf` is the same program with `-g`. Gopher2600's developer tools look for that name next to the ROM, and also for `armcode.elf`, `main.elf`, `custom2.elf` and `cdfj+.elf`, in the ROM's folder or in `main/`, `main/bin/`, `custom/bin/` or `arm/` (`coprocessor/developer/dwarf/elf_shim.go`). Source view, breakpoints in C and profiling in the debugger are not tried yet.
+- **DWARF version 4 only.** GCC 16 writes version 5 unless given `-gdwarf-4`; with 5, the debugger silently finds no source files.
+- **No relocation.** The ELF's addresses are used as they are (`ExecutableOrigin` exists but nothing calls it). The debug ELF must therefore be linked at `0x08020000`.
+
+**Wolf3D** (`ACE-UF00`, 512,908 bytes) produces no frames in Gopher2600. Its debugger shows why: the emulator's limits, not the format.
+
+1. Wolf3D writes `FLASH->ACR` (`0x40023C00`, the STM32's flash wait states), which Gopher2600 does not map.
+2. Gopher2600 sizes the emulated SRAM by the file's size: 128,000 bytes below 64,000 bytes of file, 256,000 and 512,000 for bigger ones, and only 64,000 from 448,000 bytes up. The 2 KB stack sits right after it. Wolf3D clears memory past `0x20010200`, overwrites its stack and then runs off to illegal addresses.
+
+**Lessons for a template:** keep the program's SRAM use well inside what both Gopher2600 and the cart give, and don't touch other STM32 peripherals unless they are guarded.
+
+Still to do: a real PlusCart or UnoCart.
 
 ## What an ACE project would look like in VCSIDE
 
@@ -136,7 +154,7 @@ data/templates/ace/          (CC0, written for VCSIDE)
 - **Errors:** the ELF Makefile's errors are parsed already (gcc, ld, the checks). Add a check that the header is 40 bytes and the entry is odd.
 - **Space report:** like ELF's, from `ACE_debugging.elf`'s program headers against the cart's limits (896 KB of file; SRAM and CCM free amounts to be measured).
 - **Run:** Gopher2600 only, with `-mapping ACE` and `hardware.arm7.clock = 168` through its portable-mode preferences (already supported). Stella is disabled for ACE projects, with the reason given, like the TV standards an emulator lacks.
-- **Debug:** breakpoints in C are not passed on today (same as ELF), but `ACE_debugging.elf` gives Gopher2600's own source-level debugger.
+- **Debug:** breakpoints in C are not passed on today (same as ELF), but `ACE_debugging.elf` (linked at `0x08020000`, `-gdwarf-4`) gives Gopher2600's own source-level debugger.
 - **Knowledge base:** an `ACE` entry in `formats.json` (category `arm`, Gopher2600 `ACE`, no Stella id, detection by magic, the header and argument tables above), `.ace` recognised as a ROM in the project tree, and the credits in the editor help.
 
 ## Phased plan
@@ -146,7 +164,7 @@ data/templates/ace/          (CC0, written for VCSIDE)
    - Stella cannot run ACE (`formatSupported`). Choosing the ACE format switches the project to Gopher2600, the *Emulator* menu marks Stella "no ACE", and running with Stella anyway gives an error that says what to choose. Gopher2600 gets `-mapping ACE`.
    - `.ace` files are ROMs: cartridge icon, a Makefile that names one is detected as an ACE project (format ACE, Gopher2600), and the assistant treats them as binary.
    - A double click on any ROM in the project tree runs it with the project's emulator and options. The format comes from its header (`romFormat`: ACE), from the project for its own ROM, or AUTO for the rest. An ACE ROM goes to Gopher2600 even in a Stella project, with a note.
-2. **Finish the proof of concept.** Look at the picture in Gopher2600. Try the debugger with `ACE_debugging.elf`. Find out why Wolf3D gives 0 frames. Run it on a real PlusCart (and UnoCart, with the shifted data).
+2. **Finish the proof of concept — done 2026-11-10, except real hardware.** The picture checked with a Gopher2600 macro. The debugger reads `ACE_debugging.elf` (DWARF 4, linked at `0x08020000`). Wolf3D's failure explained (Gopher2600's SRAM for big files and an unmapped flash register). The UnoCart's data layout handled by the firmware's pointers. Missing: running it on a real PlusCart or UnoCart.
 3. **Template.** Build `data/templates/ace` as above, choosing how to handle position independence. Port the animated sprite example and the music export's C player to it.
 4. **Space report** for ACE, and the cart choice (UnoCart / PlusCart) in project settings.
 5. **Shared C.** Write vcsLib on ACE, so an ELF project can add an ACE target (`make ace`) without changing its game.
@@ -156,7 +174,8 @@ data/templates/ace/          (CC0, written for VCSIDE)
 
 - **Is ACE worth it next to ELF?** ELF runs on the same carts and also on the Chameleon and in Stella. ACE adds full control of the bus and the M4's speed, FPU and RAM, but works in one emulator only. No source says ACE is deprecated, but the newer community work (vcsLib, PXE, TinyELF) targets ELF.
 - **Real hardware:** does Juan have a PlusCart or UnoCart to try the PoC and Wolf3D on?
-- **Downloads:** to confirm the details above (UnoCart data shift, free RAM), the UCA firmware source has to be read closer. That means reading it on GitHub; nothing is downloaded or shipped.
+- **Free RAM:** no source says which SRAM and CCM a program may use besides the argument block; it would have to be asked of the UCA authors or measured on a cart.
+- **Gopher2600:** the SRAM sizing for big files and the unmapped `FLASH->ACR` could be reported to its author (JetSetIlly), with Wolf3D as the example. Only if Juan wants.
 
 ## Sources
 
