@@ -14,6 +14,7 @@
 #include "assistant/engine.h"
 #include "assistant/grounding.h"
 #include "assistant/models.h"
+#include "assistant/project_index.h"
 #include "assistant/prompt.h"
 #include "assistant/provider.h"
 #include "assistant/settings.h"
@@ -31,6 +32,7 @@ struct PanelContext {
   std::string projectInfo;  // "DASM, F8, NTSC, main.asm"
   GroundingContext grounding;
   std::string fileName, fileText, selection, errors;
+  std::string fileRelative;  // the open file, relative to the project (for the index)
   bool canApply = false;
   std::function<void(const std::string& code)> apply;  // replaces the selection, or inserts at the cursor
   // for the agent's tools
@@ -73,7 +75,7 @@ class AssistantPanel {
   std::vector<std::string> streamingReference_;
   int promptTokens_ = 0, completionTokens_ = 0, droppedTurns_ = 0;
   std::string input_;
-  bool attachFile_ = false, attachSelection_ = true, attachErrors_ = true, focusInput_ = false, scrollDown_ = false;
+  bool focusInput_ = false, scrollDown_ = false;
   std::string chatProject_;
   // models and detection run on worker threads
   std::future<std::pair<std::vector<std::string>, std::string>> modelsFuture_;
@@ -93,6 +95,26 @@ class AssistantPanel {
   std::future<std::vector<Device>> probe_;
   Recommendation recommendation_;                      // the model that fits it best
   // the agent: a call is answered by running a tool, then the model is asked again
+  // open conversations, one tab each; chat_ and the agent state below are the active tab's live copy
+  struct ChatTabState {
+    Chat chat;
+    std::map<std::string, std::pair<bool, std::string>> originals;
+    std::set<std::string> allowedRun, allowedEdit;
+    bool privilegedTouched = false;
+    unsigned uid = 0;
+  };
+  std::vector<ChatTabState> tabs_;
+  int activeTab_ = 0, wantTab_ = -1;
+  unsigned nextTabUid_ = 1;
+  void ensureTabs();
+  void storeActiveTab();
+  void loadTab(int index);
+  void switchTab(int index);
+  void addTab();
+  void closeTab(int index);
+  void drawTabs(bool busy);
+  void openSavedChat(const Chat& loaded);
+  mutable ProjectIndex index_;                                 // the project's files, searched for each question
   ImFont* monoFont_ = nullptr;
   long long spentTokens_ = 0;                          // remote tokens used this session
   int lastUsageSpent_ = 0;

@@ -293,6 +293,7 @@ class App {
   // the optional AI assistant (docs/design-assistant.md)
   assistant::AssistantPanel assistant_;
   bool showAssistant_ = true;
+  bool showDocs_ = true;  // the Documentation panel (F1 opens it again)
   void assistantPanel();
 
   // dialogs

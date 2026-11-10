@@ -5,6 +5,7 @@
 // call is written and found in a model's answer. Nothing here touches the UI, so every
 // rule is tested without a model.
 #pragma once
+#include <functional>
 #include <nlohmann/json.hpp>
 #include <string>
 #include <vector>
@@ -23,6 +24,7 @@ struct ToolEnv {
   std::string buildErrors;   // the last build's diagnostics, one per line
   std::string spaceReport;   // ROM and RAM left, as the Space panel shows them
   std::string symbols;       // "name file:line" per line
+  std::function<std::string(const std::string& query)> findCode;  // ranked search of the project index
 };
 
 enum class Tier { Read, Propose, Run };

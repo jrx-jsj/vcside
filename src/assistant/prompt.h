@@ -11,6 +11,14 @@
 
 namespace vcs::assistant {
 
+// Text that goes into JSON must be valid UTF-8 (nlohmann::json throws when it dumps anything else,
+// and an uncaught throw ends the program). sanitizeUtf8 replaces every invalid byte with U+FFFD;
+// utf8Cut is the longest start of the text of at most maxBytes that does not split a character;
+// utf8Tail the end, from a character boundary.
+std::string sanitizeUtf8(const std::string& text);
+std::string utf8Cut(const std::string& text, size_t maxBytes);
+std::string utf8Tail(const std::string& text, size_t maxBytes);
+
 // Rough token count (characters / 3.5): enough to trim; a server's own usage report wins when shown.
 int estimateTokens(const std::string& text);
 
@@ -20,6 +28,8 @@ struct Attachments {
   std::string selection;
   std::string errors;
   std::string grounding;     // groundingBlock()
+  std::string projectMap;    // the files and the names they define
+  std::string excerpts;      // chunks of the project that match the question (already formatted)
 };
 
 // The text of the user's turn with the attachments in front of it, each labelled as data.

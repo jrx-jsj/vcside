@@ -30,6 +30,7 @@ const ToolInfo kTools[] = {
     {"read_file", Tier::Read, "read_file {\"path\": \"<file>\", \"from\": 1, \"to\": 120} : numbered lines of a project file (at most 200 per call)."},
     {"search", Tier::Read, "search {\"text\": \"<text>\"} : lines of the project's own files that contain the text."},
     {"symbols", Tier::Read, "symbols {\"name\": \"<part of a name>\"} : the labels and constants the project defines (guess nothing: to find where a register is used, use search)."},
+    {"find_code", Tier::Read, "find_code {\"query\": \"<what the code does, or names in it>\"} : the best matching parts of the whole project, ranked (use it when you do not know which file to read)."},
     {"kb_lookup", Tier::Read, "kb_lookup {\"id\": \"<name>\"} : the reference entry of a TIA/RIOT register, 6502 instruction, cartridge format or TV standard."},
     {"kb_search", Tier::Read, "kb_search {\"query\": \"<topic in words>\"} : reference entries and how-to notes about a topic."},
     {"build_errors", Tier::Read, "build_errors {} : the errors of the last build."},
@@ -606,6 +607,14 @@ ToolResult runTool(const ToolEnv& env, const ToolCall& call) {
   if (name == "read_file") return readFile(env, call.args);
   if (name == "search") return searchProject(env, call.args);
   if (name == "symbols") return symbolsTool(env, call.args);
+  if (name == "find_code") {
+    std::string query = stringArg(call.args, "query");
+    if (query.empty()) query = stringArg(call.args, "text");
+    if (query.empty()) return fail("find_code needs a \"query\"");
+    if (!env.findCode) return fail("the project index is not available");
+    std::string found = env.findCode(query);
+    return ok(found.empty() ? std::string("nothing in the project matches that\n") : found);
+  }
   if (name == "kb_lookup") return kbLookup(env, call.args);
   if (name == "kb_search") return kbSearch(env, call.args);
   if (name == "build_errors") return ok(env.buildErrors.empty() ? std::string("no errors in the last build\n") : env.buildErrors);

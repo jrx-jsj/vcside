@@ -38,6 +38,9 @@
 #include "assistant/http.h"
 #include "assistant/markdown.h"
 #include "assistant/tools.h"
+#include "assistant/chat_tabs.h"
+#include "assistant/project_index.h"
+#include <imgui.h>
 #include "assistant/secrets.h"
 #include "assistant/models.h"
 #include "assistant/prompt.h"
@@ -3351,7 +3354,7 @@ static void testAgentTools(const KnowledgeBase& kb) {
   CHECK(!findToolCall("Use ```asm\nlda #0\n``` here", &parsed));
   CHECK(!findToolCall("```tool\n{\"tool\": \"rm_rf\"}\n```", &parsed));
   CHECK(!findToolCall("The JSON {\"tool\":\"read_file\"} is an example", &parsed));  // not at the start
-  CHECK(toolNames(0).size() == 11 && toolNames(1).size() == 12 && toolNames(2).size() == 14);
+  CHECK(toolNames(0).size() == 12 && toolNames(1).size() == 13 && toolNames(2).size() == 15);
   CHECK(toolPrompt(0).find("edit_file") == std::string::npos && toolPrompt(2).find("run_emulator") != std::string::npos);
   CHECK(estimateTokens(toolPrompt(2)) < 1100);  // the design budget for the tool descriptions
 
@@ -3431,6 +3434,167 @@ static void testRemote() {
   Settings settings;
   settings.budgetTokens = 50000;
   CHECK(Settings::fromJson(settings.toJson()).budgetTokens == 50000);
+}
+
+// The tab bar's protocol on a headless ImGui: a click on "+" adds a tab and the new one stays selected.
+namespace {
+struct TabHarness {
+  ImGuiContext* context;
+  std::vector<vcs::assistant::TabView> tabs;
+  int active = 0, want = -1;
+  unsigned nextUid = 1;
+  ImVec2 plus;
+  std::vector<std::string> log;
+  TabHarness() {
+    context = ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO();
+    io.IniFilename = nullptr;
+    io.DisplaySize = ImVec2(800, 600);
+    unsigned char* pixels;
+    int width, height;
+    io.Fonts->AddFontDefault();
+    io.Fonts->GetTexDataAsRGBA32(&pixels, &width, &height);
+    tabs.push_back({"first", nextUid++});
+  }
+  ~TabHarness() { ImGui::DestroyContext(context); }
+  void frame() {
+    using namespace vcs::assistant;
+    ImGui::GetIO().DeltaTime = 1.0f / 60;
+    ImGui::NewFrame();
+    ImGui::SetNextWindowPos(ImVec2(0, 0));
+    ImGui::SetNextWindowSize(ImVec2(700, 300));
+    ImGui::Begin("tabs", nullptr, ImGuiWindowFlags_NoSavedSettings);
+    TabAction action = drawChatTabs(tabs, active, &want, false, "New chat", 150);
+    plus = action.plusCentre;
+    // the panel's model: "+" adds a tab and asks for it to be selected; a click on a tab switches
+    if (action.kind == TabAction::New) tabs.push_back({"chat " + std::to_string(nextUid), nextUid}), nextUid++, active = (int)tabs.size() - 1, want = active, log.push_back("new");
+    if (action.kind == TabAction::Switch) active = action.index, log.push_back("switch " + std::to_string(action.index));
+    if (action.kind == TabAction::Close) {
+      tabs.erase(tabs.begin() + action.index);
+      if (active >= (int)tabs.size()) active = (int)tabs.size() - 1;
+      want = active, log.push_back("close");
+    }
+    ImGui::End();
+    ImGui::Render();
+  }
+  void click(ImVec2 at) {
+    ImGuiIO& io = ImGui::GetIO();
+    io.AddMousePosEvent(at.x, at.y);
+    frame(), frame();
+    io.AddMouseButtonEvent(0, true);
+    frame();
+    io.AddMouseButtonEvent(0, false);
+    frame(), frame(), frame();
+  }
+};
+}  // namespace
+
+static void testChatTabs() {
+  TabHarness harness;
+  for (int i = 0; i < 4; i++) harness.frame();
+  harness.click(harness.plus);
+  CHECK(harness.tabs.size() == 2 && harness.active == 1);
+  for (int i = 0; i < 5; i++) harness.frame();
+  CHECK(harness.tabs.size() == 2 && harness.active == 1);  // it stays on the new tab: no switch back
+  CHECK(harness.log.size() == 1 && harness.log[0] == "new");
+  harness.click(harness.plus);
+  CHECK(harness.tabs.size() == 3 && harness.active == 2 && harness.log.size() == 2);
+  // the text cut keeps whole characters
+  CHECK(vcs::assistant::ellipsizeText("short", 500) == "short");
+  std::string cut = vcs::assistant::ellipsizeText(std::string("caf\xC3\xA9 caf\xC3\xA9 caf\xC3\xA9 caf\xC3\xA9"), 30);
+  CHECK(cut.size() >= 3 && cut.substr(cut.size() - 3) == "..." && vcs::assistant::sanitizeUtf8(cut) == cut);
+}
+
+// Text cut in the middle of a character, or not UTF-8 at all (a Latin-1 source file), must never reach
+// a JSON dump: that threw out of the chat store and ended the program.
+static void testInvalidUtf8() {
+  using namespace vcs::assistant;
+  CHECK(sanitizeUtf8("plain") == "plain" && sanitizeUtf8("caf\xC3\xA9") == "caf\xC3\xA9");
+  CHECK(sanitizeUtf8("caf\xC3") == "caf\xEF\xBF\xBD");                       // cut in the middle
+  CHECK(sanitizeUtf8("a\xE9" "b") == "a\xEF\xBF\xBD" "b");                   // Latin-1
+  CHECK(sanitizeUtf8("\xC0\xAF") == "\xEF\xBF\xBD\xEF\xBF\xBD");             // overlong
+  CHECK(sanitizeUtf8("\xED\xA0\x80") == "\xEF\xBF\xBD\xEF\xBF\xBD\xEF\xBF\xBD");  // a surrogate
+  CHECK(sanitizeUtf8("\xF0\x9F\x98\x80") == "\xF0\x9F\x98\x80");             // an emoji is fine
+  std::string spanish = "ñandú, ¿qué? ñandú, ¿qué? ñandú";
+  for (size_t limit = 1; limit < spanish.size(); limit++) {
+    CHECK(sanitizeUtf8(utf8Cut(spanish, limit)) == utf8Cut(spanish, limit) && utf8Cut(spanish, limit).size() <= limit);
+    CHECK(sanitizeUtf8(utf8Tail(spanish, limit)) == utf8Tail(spanish, limit));
+  }
+  // the chat store saves such a chat instead of throwing, and what it wrote loads back
+  namespace fs = std::filesystem;
+  fs::path root = fs::temp_directory_path() / "vcside_utf8_test";
+  fs::remove_all(root);
+  fs::create_directories(root);
+  Chat chat;
+  chat.id = "20260101-000000", chat.title = "title \xC3", chat.model = "m";
+  chat.messages.push_back({"user", "caf\xC3", {}, ""});
+  chat.messages.push_back({"assistant", "a\xE9" "b \xFF", {}, ""});
+  ChatStore store(root.string());
+  bool saved = false, threw = false;
+  try { saved = store.save(chat); } catch (...) { threw = true; }
+  CHECK(saved && !threw);
+  Chat loaded;
+  CHECK(store.load(chat.id, false, &loaded) && loaded.messages.size() == 2 && loaded.messages[0].content == "caf\xEF\xBF\xBD");
+  // and so does a request
+  Provider provider;
+  provider.model = "m";
+  bool bodyThrew = false;
+  try { chatRequestBody(provider, {{"user", "caf\xC3"}}); provider.dialect = "anthropic"; chatRequestBody(provider, {{"user", "a\xFF"}}); } catch (...) { bodyThrew = true; }
+  CHECK(!bodyThrew);
+  fs::remove_all(root);
+}
+
+static void testProjectIndex() {
+  namespace fs = std::filesystem;
+  using vcs::assistant::ProjectIndex;
+  // words are split like identifiers, and kept whole too
+  auto has = [](const std::vector<std::string>& list, const char* word) { return std::find(list.begin(), list.end(), word) != list.end(); };
+  auto split = ProjectIndex::words("playerX kernel_loop WSYNC HMOVE2");
+  CHECK(has(split, "playerx") && has(split, "player") && has(split, "kernel_loop") && has(split, "kernel") && has(split, "loop") && has(split, "wsync") && has(split, "hmove"));
+
+  fs::path root = fs::temp_directory_path() / "vcside_index_test";
+  fs::remove_all(root);
+  fs::create_directories(root / "src");
+  fs::create_directories(root / "build");
+  auto write = [](const fs::path& path, const std::string& text) { std::ofstream(path, std::ios::binary) << text; };
+  std::string joystick = "ReadJoystick\n  lda SWCHA\n  and #$80\n  bne NotRight\n  inc playerX\nNotRight\n  lda SWCHA\n  and #$40\n  bne NotLeft\n  dec playerX\nNotLeft\n  rts\n";
+  std::string sound = "PlayTone\n  lda #4\n  sta AUDC0\n  lda #31\n  sta AUDF0\n  lda #8\n  sta AUDV0\n  rts\nStopTone\n  lda #0\n  sta AUDV0\n  rts\n";
+  std::string kernel = "DrawKernel\n  sta WSYNC\n  lda #$0E\n  sta COLUBK\n  ldx #192\nKernelLoop\n  sta WSYNC\n  dex\n  bne KernelLoop\n  rts\n";
+  write(root / "src" / "input.asm", joystick);
+  write(root / "src" / "audio.asm", sound);
+  write(root / "kernel.asm", kernel);
+  write(root / ".env", "SECRET=1\n");
+  write(root / "build" / "main.lst", "ReadJoystick junk\n");
+  write(root / "game.bin", std::string("\0\1ReadJoystick", 13));
+  ProjectIndex index;
+  CHECK(index.update(root.string()) == 3 && index.files() == 3 && index.chunks() >= 3);
+  CHECK(index.update(root.string()) == 0);  // nothing changed: nothing read
+  auto hits = index.search("how does the joystick move the player left and right", 3);
+  CHECK(!hits.empty() && hits[0].file == "src/input.asm" && hits[0].firstLine == 1 && hits[0].text.find("SWCHA") != std::string::npos);
+  hits = index.search("where is the tone played, AUDV0 volume", 3);
+  CHECK(!hits.empty() && hits[0].file == "src/audio.asm");
+  hits = index.search("KernelLoop", 3);
+  CHECK(!hits.empty() && hits[0].file == "kernel.asm");
+  hits = index.search("what is the weather like in Madrid", 3);  // nothing in the project: no noise
+  CHECK(hits.empty());
+  CHECK(index.search("SWCHA", 3, "src/input.asm").empty());     // the attached file is left out
+  for (auto& hit : index.search("SWCHA playerX AUDV0 WSYNC", 8)) CHECK(hit.file != ".env" && hit.file.find("build") != 0 && hit.file != "game.bin");
+  std::string map = index.map("joystick", 400);
+  CHECK(map.find("src/input.asm: ReadJoystick NotRight NotLeft") != std::string::npos && map.find("kernel.asm") != std::string::npos);
+  CHECK(map.find("src/input.asm") < map.find("kernel.asm"));  // what the question mentions comes first
+  // a changed file is read again and a deleted one forgotten
+  write(root / "src" / "input.asm", joystick + "FireButton\n  lda INPT4\n  bmi NoFire\nNoFire\n  rts\n");
+  fs::last_write_time(root / "src" / "input.asm", fs::file_time_type::clock::now() + std::chrono::seconds(5));
+  CHECK(index.update(root.string()) == 1);
+  hits = index.search("fire button INPT4", 3);
+  CHECK(!hits.empty() && hits[0].file == "src/input.asm");
+  fs::remove(root / "src" / "audio.asm");
+  CHECK(index.update(root.string()) == 0 && index.files() == 2 && index.search("AUDV0 tone", 3).empty());
+  // a file that is not UTF-8 is indexed without trouble
+  write(root / "latin1.asm", "Caf\xE9\n  lda #1\n  rts\n");
+  CHECK(index.update(root.string()) == 1);
+  for (auto& hit : index.search("caf lda", 3)) CHECK(vcs::assistant::sanitizeUtf8(hit.text) == hit.text);
+  fs::remove_all(root);
 }
 
 static void testAssistant(const KnowledgeBase& kb) {
@@ -3746,6 +3910,9 @@ int main() {
   testMarkdown();
   testAgentTools(kb);
   testRemote();
+  testChatTabs();
+  testInvalidUtf8();
+  testProjectIndex();
   std::printf("%d checks, %d failures\n", checks, failures);
   return failures ? 1 : 0;
 }

@@ -13,6 +13,7 @@
 #include <mutex>
 #include <sstream>
 
+#include "assistant/chat_tabs.h"
 #include "assistant/http.h"
 #include "assistant/markdown.h"
 #include "assistant/secrets.h"
@@ -51,8 +52,75 @@ std::string oneLine(const std::string& text, size_t limit) {
     if (c == ' ' && !line.empty() && line.back() == ' ') continue;
     line += c;
   }
-  if (line.size() > limit) line = line.substr(0, limit) + "...";
+  if (line.size() > limit) line = utf8Cut(line, limit) + "...";
   return line;
+}
+
+// ---- small controls: icon buttons, toggle chips, a combo that fits its text ----------------
+
+enum class Icon { Chats, Settings, Request, Refresh };
+
+// A square button with a drawn icon and a tooltip; the icons are lines, so they follow the text colour.
+bool iconButton(const char* id, Icon icon, const char* tooltip) {
+  float size = ImGui::GetFrameHeight();
+  ImVec2 at = ImGui::GetCursorScreenPos();
+  bool pressed = ImGui::InvisibleButton(id, ImVec2(size, size));
+  bool hovered = ImGui::IsItemHovered();
+  ImDrawList* drawList = ImGui::GetWindowDrawList();
+  if (hovered) drawList->AddRectFilled(at, ImVec2(at.x + size, at.y + size), ImGui::GetColorU32(ImGuiCol_ButtonHovered), 4.0f);
+  ImU32 colour = ImGui::GetColorU32(theme::colv(hovered ? theme::Role::UiAccent : theme::Role::UiText));
+  ImVec2 centre(at.x + size * 0.5f, at.y + size * 0.5f);
+  float radius = size * 0.28f, thickness = std::max(1.5f, size * 0.08f);
+  switch (icon) {
+    case Icon::Chats:  // a list
+      for (int line = -1; line <= 1; line++) {
+        float y = centre.y + line * radius * 0.85f;
+        drawList->AddCircleFilled(ImVec2(centre.x - radius, y), thickness * 0.8f, colour);
+        drawList->AddLine(ImVec2(centre.x - radius * 0.35f, y), ImVec2(centre.x + radius * 1.1f, y), colour, thickness);
+      }
+      break;
+    case Icon::Settings: {  // a cog
+      drawList->AddCircle(centre, radius * 0.72f, colour, 0, thickness);
+      for (int tooth = 0; tooth < 8; tooth++) {
+        float angle = tooth * 3.14159265f / 4.0f;
+        ImVec2 direction(std::cos(angle), std::sin(angle));
+        drawList->AddLine(ImVec2(centre.x + direction.x * radius * 0.72f, centre.y + direction.y * radius * 0.72f),
+                          ImVec2(centre.x + direction.x * radius * 1.3f, centre.y + direction.y * radius * 1.3f), colour, thickness * 1.6f);
+      }
+      drawList->AddCircleFilled(centre, radius * 0.25f, colour);
+      break;
+    }
+    case Icon::Request: {  // a magnifying glass
+      ImVec2 lens(centre.x - radius * 0.2f, centre.y - radius * 0.2f);
+      drawList->AddCircle(lens, radius * 0.75f, colour, 0, thickness);
+      drawList->AddLine(ImVec2(lens.x + radius * 0.55f, lens.y + radius * 0.55f), ImVec2(centre.x + radius * 1.1f, centre.y + radius * 1.1f), colour, thickness * 1.4f);
+      break;
+    }
+    case Icon::Refresh: {  // a circular arrow
+      drawList->PathArcTo(centre, radius, 0.6f, 5.4f);
+      drawList->PathStroke(colour, 0, thickness);
+      ImVec2 tip(centre.x + std::cos(5.4f) * radius, centre.y + std::sin(5.4f) * radius);
+      drawList->AddTriangleFilled(ImVec2(tip.x - radius * 0.1f, tip.y - radius * 0.65f), ImVec2(tip.x + radius * 0.55f, tip.y + radius * 0.2f), ImVec2(tip.x - radius * 0.55f, tip.y + radius * 0.25f), colour);
+      break;
+    }
+  }
+  if (hovered) ImGui::SetTooltip("%s", tooltip);
+  return pressed;
+}
+
+std::string ellipsize(const std::string& text, float maxWidth) { return ellipsizeText(text, maxWidth); }
+
+// A combo as wide as its text (up to maxWidth, then "..."), whose list may be wider.
+bool beginFittedCombo(const char* id, const std::string& shown, float maxWidth, float listWidth) {
+  const ImGuiStyle& style = ImGui::GetStyle();
+  float extras = style.FramePadding.x * 2 + ImGui::GetFrameHeight();
+  float width = std::min(maxWidth, ImGui::CalcTextSize(shown.c_str()).x + extras);
+  std::string text = ellipsize(shown, width - extras);
+  ImGui::SetNextItemWidth(width);
+  ImGui::SetNextWindowSizeConstraints(ImVec2(listWidth, 0), ImVec2(FLT_MAX, FLT_MAX));
+  bool open = ImGui::BeginCombo(id, text.c_str());
+  if (!open && text != shown && ImGui::IsItemHovered()) ImGui::SetTooltip("%s", shown.c_str());
+  return open;
 }
 
 // ---- drawing Markdown ------------------------------------------------------------------
@@ -81,16 +149,19 @@ std::vector<Word> wordsOf(const std::vector<MdRun>& runs) {
 
 // Draws the runs wrapped to the width left at the cursor (a hanging indent of `indent` pixels
 // for the lines after the first) and advances the layout. Returns nothing: the cursor moves.
-void drawRuns(const std::vector<MdRun>& runs, ImFont* mono, float scale, bool strong, float indent) {
+void drawRuns(const std::vector<MdRun>& runs, ImFont* mono, float scale, bool strong, float indent, bool accent = false) {
   ImDrawList* drawList = ImGui::GetWindowDrawList();
   ImFont* plainFont = ImGui::GetFont();
   float plainSize = ImGui::GetFontSize() * scale, codeSize = (mono ? mono->FontSize : ImGui::GetFontSize()) * scale;
-  float lineHeight = std::max(plainSize, codeSize) + 2.0f;
+  float lineHeight = std::max(plainSize, codeSize) + 4.0f;  // a little air between lines
   ImVec2 origin = ImGui::GetCursorScreenPos();
   float width = std::max(ImGui::GetContentRegionAvail().x, 40.0f);
-  ImU32 textColor = ImGui::GetColorU32(strong ? theme::colv(theme::Role::UiAccent) : ImGui::GetStyleColorVec4(ImGuiCol_Text));
+  ImU32 textColor = ImGui::GetColorU32(accent ? theme::colv(theme::Role::UiAccent) : ImGui::GetStyleColorVec4(ImGuiCol_Text));
   ImU32 dimColor = ImGui::GetColorU32(theme::colv(theme::Role::UiTextDim));
-  ImU32 codeBackground = ImGui::GetColorU32(theme::colv(theme::Role::EdBackground));
+  // inline code: the text colour at a low alpha over whatever is behind, so it shows on every theme
+  ImVec4 codeTint = ImGui::GetStyleColorVec4(ImGuiCol_Text);
+  codeTint.w = 0.14f;
+  ImU32 codeBackground = ImGui::GetColorU32(codeTint);
   float x = indent, y = 0;
   bool lineEmpty = true;
   for (auto& word : wordsOf(runs)) {
@@ -102,8 +173,8 @@ void drawRuns(const std::vector<MdRun>& runs, ImFont* mono, float scale, bool st
       x = indent, y += lineHeight, lineEmpty = true;
     }
     ImVec2 position(origin.x + x, origin.y + y);
-    if (word.code) drawList->AddRectFilled(ImVec2(position.x - 1, position.y), ImVec2(position.x + visibleWidth + 1, position.y + lineHeight - 1), codeBackground, 2.0f);
-    ImU32 color = word.italic && !strong ? dimColor : textColor;
+    if (word.code) drawList->AddRectFilled(ImVec2(position.x - 2, position.y), ImVec2(position.x + visibleWidth + 2, position.y + lineHeight - 2), codeBackground, 3.0f);
+    ImU32 color = word.italic && !accent ? dimColor : textColor;
     drawList->AddText(font, size, position, color, word.text.c_str());
     if (word.bold || strong) drawList->AddText(font, size, ImVec2(position.x + 0.8f, position.y), color, word.text.c_str());
     x += wordWidth;
@@ -118,9 +189,14 @@ void drawMarkdown(const std::string& text, ImFont* mono) {
   for (auto& block : parseMarkdown(text)) {
     switch (block.kind) {
       case MdBlock::Heading: {
-        static const float scales[] = {1.0f, 1.35f, 1.2f, 1.1f, 1.0f, 1.0f, 1.0f};
-        ImGui::Dummy(ImVec2(0, gap));
-        drawRuns(block.runs, mono, scales[block.level], true, 0);
+        static const float scales[] = {1.0f, 1.55f, 1.32f, 1.15f, 1.05f, 1.0f, 1.0f};
+        ImGui::Dummy(ImVec2(0, gap * 1.5f));
+        drawRuns(block.runs, mono, scales[block.level], true, 0, block.level <= 2);
+        if (block.level <= 2) {  // a rule under the big headings
+          ImVec2 at = ImGui::GetCursorScreenPos();
+          ImGui::GetWindowDrawList()->AddLine(ImVec2(at.x, at.y), ImVec2(at.x + ImGui::GetContentRegionAvail().x, at.y), ImGui::GetColorU32(ImGuiCol_Separator));
+          ImGui::Dummy(ImVec2(0, 2.0f));
+        }
         break;
       }
       case MdBlock::Bullet:
@@ -140,7 +216,9 @@ void drawMarkdown(const std::string& text, ImFont* mono) {
         float em = ImGui::GetFontSize();
         ImGui::Indent(em * 0.9f);
         ImVec2 before = ImGui::GetCursorScreenPos();
+        ImGui::PushStyleColor(ImGuiCol_Text, theme::colv(theme::Role::UiTextDim));
         drawRuns(block.runs, mono, 1.0f, false, 0);
+        ImGui::PopStyleColor();
         ImGui::Unindent(em * 0.9f);
         float bottom = ImGui::GetCursorScreenPos().y - ImGui::GetStyle().ItemSpacing.y;
         ImGui::GetWindowDrawList()->AddRectFilled(ImVec2(at.x + 2, before.y), ImVec2(at.x + 5, bottom), ImGui::GetColorU32(theme::colv(theme::Role::UiAccent)));
@@ -158,7 +236,7 @@ void drawMarkdown(const std::string& text, ImFont* mono) {
             for (size_t c = 0; c < columns; c++) {
               ImGui::TableSetColumnIndex((int)c);
               static const std::vector<MdRun> none;
-              drawRuns(c < block.rows[r].size() ? block.rows[r][c] : none, mono, 1.0f, r == 0, 0);
+              drawRuns(c < block.rows[r].size() ? block.rows[r][c] : none, mono, 1.0f, r == 0, 0, false);
             }
           }
           ImGui::EndTable();
@@ -203,6 +281,98 @@ void AssistantPanel::newChat() {
   pendingEditActive_ = false, pendingRun_.clear(), allowedRun_.clear(), allowedEdit_.clear(), originals_.clear();
   privilegedTouched_ = waitingBuild_ = false;
   focusInput_ = true;
+}
+
+void AssistantPanel::ensureTabs() {
+  if (!tabs_.empty()) return;
+  tabs_.emplace_back();
+  tabs_[0].uid = nextTabUid_++;
+  activeTab_ = 0;
+}
+
+void AssistantPanel::storeActiveTab() {
+  ensureTabs();
+  ChatTabState& tab = tabs_[activeTab_];
+  tab.chat = chat_, tab.originals = originals_, tab.allowedRun = allowedRun_, tab.allowedEdit = allowedEdit_, tab.privilegedTouched = privilegedTouched_;
+}
+
+void AssistantPanel::loadTab(int index) {
+  request_.cancel();
+  ChatTabState& tab = tabs_[index];
+  chat_ = tab.chat;
+  streaming_.clear(), error_.clear(), lastRequest_.clear();
+  promptTokens_ = completionTokens_ = droppedTurns_ = 0;
+  agentSteps_ = 0, callCounts_.clear(), turnText_.clear();
+  pendingEditActive_ = false, pendingRun_.clear(), waitingBuild_ = false;
+  originals_ = tab.originals, allowedRun_ = tab.allowedRun, allowedEdit_ = tab.allowedEdit, privilegedTouched_ = tab.privilegedTouched;
+  activeTab_ = index, wantTab_ = index;
+  scrollDown_ = true, focusInput_ = true;
+}
+
+void AssistantPanel::switchTab(int index) {
+  if (index == activeTab_ || index < 0 || index >= (int)tabs_.size()) return;
+  storeActiveTab();
+  loadTab(index);
+}
+
+void AssistantPanel::addTab() {
+  storeActiveTab();
+  ChatTabState tab;
+  tab.uid = nextTabUid_++;
+  tabs_.push_back(tab);
+  loadTab((int)tabs_.size() - 1);
+}
+
+void AssistantPanel::closeTab(int index) {
+  if (index < 0 || index >= (int)tabs_.size()) return;
+  storeActiveTab();
+  tabs_.erase(tabs_.begin() + index);
+  if (tabs_.empty()) {
+    ensureTabs();
+    loadTab(0);
+  } else if (index == activeTab_) {
+    loadTab(std::min(index, (int)tabs_.size() - 1));
+  } else {
+    if (index < activeTab_) activeTab_--;
+    wantTab_ = activeTab_;
+  }
+}
+
+// A saved chat from the list: shown in its own tab, or in the current one if that is still empty.
+void AssistantPanel::openSavedChat(const Chat& loaded) {
+  storeActiveTab();
+  for (size_t i = 0; i < tabs_.size(); i++)
+    if (!loaded.id.empty() && tabs_[i].chat.id == loaded.id) {
+      loadTab((int)i);
+      return;
+    }
+  if (!tabs_[activeTab_].chat.messages.empty()) {
+    ChatTabState tab;
+    tab.uid = nextTabUid_++;
+    tabs_.push_back(tab);
+    activeTab_ = (int)tabs_.size() - 1;
+  }
+  tabs_[activeTab_].chat = loaded;
+  tabs_[activeTab_].originals.clear(), tabs_[activeTab_].allowedRun.clear(), tabs_[activeTab_].allowedEdit.clear(), tabs_[activeTab_].privilegedTouched = false;
+  loadTab(activeTab_);
+}
+
+// One tab per open conversation, as the files in the editor; "+" starts another.
+void AssistantPanel::drawTabs(bool busy) {
+  ensureTabs();
+  tabs_[activeTab_].chat.title = chat_.title, tabs_[activeTab_].chat.id = chat_.id;  // the live copy gives the title
+  std::vector<TabView> views;
+  for (auto& tab : tabs_) views.push_back({tab.chat.title.empty() ? std::string(T("New chat")) : tab.chat.title, tab.uid});
+  TabAction action = drawChatTabs(views, activeTab_, &wantTab_, busy, T("New chat"), theme::em(150));
+  switch (action.kind) {
+    case TabAction::New:
+      if (!chat_.messages.empty()) addTab();  // an empty chat is already a new one
+      else focusInput_ = true;
+      break;
+    case TabAction::Close: closeTab(action.index); break;
+    case TabAction::Switch: switchTab(action.index); break;
+    case TabAction::None: break;
+  }
 }
 
 void AssistantPanel::closeProject() {
@@ -271,8 +441,7 @@ void AssistantPanel::modelCombo(Provider& provider, const char* label, float wid
   const CatalogModel* current = catalogModel(provider.model);
   std::string own = ownModelFile(provider);
   std::string shown = !own.empty() ? std::filesystem::path(own).filename().string() : current ? current->name : std::string(T("(choose a model)"));
-  ImGui::SetNextItemWidth(width);
-  if (ImGui::BeginCombo(label, shown.c_str())) {
+  if (beginFittedCombo(label, shown, width, theme::em(360))) {
     if (ImGui::Selectable(T("A model file I already have..."), !own.empty())) {
       static const SDL_DialogFileFilter filters[] = {{"GGUF models", "gguf"}};
       SDL_ShowOpenFileDialog(modelFilePicked, nullptr, SDL_GetKeyboardFocus(), filters, 1, nullptr, false);
@@ -360,7 +529,10 @@ void AssistantPanel::refreshModels() {
 
 void AssistantPanel::saveChat(const PanelContext& context) {
   if (context.projectDir.empty() || chat_.messages.empty()) return;
-  ChatStore(context.projectDir).save(chat_);
+  try {
+    ChatStore(context.projectDir).save(chat_);
+  } catch (const std::exception&) {  // a chat that cannot be saved must never end the program
+  }
 }
 
 bool AssistantPanel::overBudget(const Provider& provider) {
@@ -379,10 +551,26 @@ void AssistantPanel::send(const PanelContext& context, const std::string& questi
   chat_.provider = provider->name, chat_.model = provider->model;
   Attachments attachments;
   attachments.projectInfo = context.projectInfo;
-  if (attachFile_) attachments.fileName = context.fileName, attachments.fileText = context.fileText;
-  if (attachSelection_) attachments.selection = context.selection;
-  if (attachErrors_) attachments.errors = context.errors;
-  std::string codeText = attachments.selection + "\n" + attachments.errors + "\n" + (attachFile_ ? attachments.fileText.substr(0, 8000) : std::string());
+  // No switches: the selection and the build errors go along when there are any, and the open file
+  // when nothing is selected (a selection says which part matters). The line under the input says so.
+  attachments.selection = context.selection;
+  attachments.errors = context.errors;
+  // The whole project, not only what is open: the files that match the question go along as excerpts
+  // (searched in an index of the project's files), and a map of the files and their names.
+  std::string searchText = question + " " + oneLine(context.selection, 400) + " " + oneLine(context.errors, 400);
+  if (!context.projectDir.empty()) {
+    index_.update(context.projectDir);
+    std::string excerpts;
+    for (auto& hit : index_.search(searchText, 3, context.selection.empty() ? context.fileRelative : std::string())) {
+      std::string piece = "--- " + hit.file + ":" + std::to_string(hit.firstLine) + "-" + std::to_string(hit.lastLine) + "\n```\n" + utf8Cut(hit.text, 1200) + "\n```\n";
+      if (excerpts.size() + piece.size() > 3200) break;
+      excerpts += piece;
+    }
+    attachments.excerpts = excerpts;
+    attachments.projectMap = index_.map(searchText, 900);
+  }
+  if (context.selection.empty()) attachments.fileName = context.fileName, attachments.fileText = context.fileText;
+  std::string codeText = attachments.selection + "\n" + attachments.errors + "\n" + utf8Cut(attachments.fileText, 8000);
   std::vector<GroundedEntry> entries;
   if (context.kb) entries = groundText(*context.kb, question, codeText, context.grounding);
   attachments.grounding = groundingBlock(entries);
@@ -437,11 +625,23 @@ ToolEnv AssistantPanel::toolEnv(const PanelContext& context) const {
   env.buildErrors = context.errors;
   env.spaceReport = context.spaceReport;
   env.symbols = context.symbols;
+  if (!context.projectDir.empty())
+    env.findCode = [this, dir = context.projectDir](const std::string& query) {
+      index_.update(dir);
+      std::string out;
+      for (auto& hit : index_.search(query, 4)) {
+        std::string piece = hit.file + ":" + std::to_string(hit.firstLine) + "-" + std::to_string(hit.lastLine) + "\n" + utf8Cut(hit.text, 1200) + "\n";
+        if (out.size() + piece.size() > 4000) break;
+        out += piece + "\n";
+      }
+      return out;
+    };
   return env;
 }
 
 void AssistantPanel::addToolResult(const PanelContext& context, const std::string& tool, const std::string& text, bool error) {
-  std::string shown = text.size() > kMaxResultChars ? text.substr(0, kMaxResultChars) + "\n... (cut)\n" : text;
+  std::string shown = text.size() > kMaxResultChars ? utf8Cut(text, kMaxResultChars) + "\n... (cut)\n" : text;
+  shown = sanitizeUtf8(shown);  // a source file may not be UTF-8 at all
   ChatMessage result;
   result.role = "user";
   result.kind = "result";
@@ -758,6 +958,8 @@ void AssistantPanel::draw(const PanelContext& context, ImFont* mono, bool* open)
   drawnThisFrame_ = true;
   monoFont_ = mono;
   if (context.projectDir != chatProject_) {  // another project: its own chats
+    tabs_.clear();
+    ensureTabs();
     newChat();
     chatProject_ = context.projectDir;
   }
@@ -787,33 +989,41 @@ void AssistantPanel::draw(const PanelContext& context, ImFont* mono, bool* open)
   if (provider->builtin) builtinReady = prepareBuiltin(*provider);
   else if (modelsFor_ != provider->baseUrl && !fetchingModels_) refreshModels();
 
-  // header: where the text goes, the model, and the chat's buttons
+  // the open conversations
+  bool busyNow = request_.running() || pendingEditActive_ || !pendingRun_.empty() || waitingBuild_;
+  drawTabs(busyNow);
+
+  // header: where the text goes, the model, and the buttons (icons, with a tooltip each)
   bool local = provider->builtin || provider->isLocal();
   ImGui::PushStyleColor(ImGuiCol_Text, theme::colv(local ? theme::Role::MsgInfo : theme::Role::MsgWarning));
   ImGui::TextUnformatted(local ? T("local") : (std::string(T("remote")) + ": " + provider->name).c_str());
   ImGui::PopStyleColor();
   ImGui::SameLine();
+  float button = ImGui::GetFrameHeight(), gap = ImGui::GetStyle().ItemSpacing.x;
+  float iconsWidth = button * (provider->builtin ? 2 : 3) + gap * (provider->builtin ? 1 : 2) + (provider->builtin ? 0 : button + gap);
+  float comboMax = std::max(theme::em(90), ImGui::GetContentRegionAvail().x - iconsWidth - gap);
   if (provider->builtin) {
-    modelCombo(*provider, "##model", theme::em(260));
+    modelCombo(*provider, "##model", comboMax);
   } else {
-    ImGui::SetNextItemWidth(theme::em(260));
-    if (ImGui::BeginCombo("##model", provider->model.empty() ? T("(choose a model)") : provider->model.c_str())) {
+    std::string shown = provider->model.empty() ? std::string(T("(choose a model)")) : provider->model;
+    if (beginFittedCombo("##model", shown, comboMax, theme::em(360))) {
       for (auto& id : models_)
         if (ImGui::Selectable(id.c_str(), id == provider->model)) provider->model = id, changed_ = true;
       if (models_.empty()) ImGui::TextDisabled("%s", modelsError_.empty() ? T("The server lists no models.") : modelsError_.c_str());
       ImGui::EndCombo();
     }
     ImGui::SameLine();
-    if (theme::dialogButton(T("Refresh"), ImVec2(0, 0), true)) refreshModels();
+    if (iconButton("##refresh", Icon::Refresh, T("Refresh the list of models"))) refreshModels();
   }
   ImGui::SameLine();
-  if (theme::dialogButton(T("New chat"), ImVec2(0, 0), true)) newChat();
+  float rightEdge = ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x;
+  float groupWidth = button * 3 + gap * 2;
+  if (rightEdge - groupWidth > ImGui::GetCursorPosX()) ImGui::SetCursorPosX(rightEdge - groupWidth);
+  if (iconButton("##chats", Icon::Chats, T("Saved chats of this project"))) wantHistory_ = true;
   ImGui::SameLine();
-  if (theme::dialogButton(T("Chats..."), ImVec2(0, 0), true)) wantHistory_ = true;
+  if (iconButton("##settings", Icon::Settings, T("Assistant settings"))) wantSettings_ = true;
   ImGui::SameLine();
-  if (theme::dialogButton(T("Settings..."), ImVec2(0, 0), true)) wantSettings_ = true;
-  ImGui::SameLine();
-  if (theme::dialogButton(T("View request"), ImVec2(0, 0), true) && !lastRequest_.empty()) wantInspector_ = true;
+  if (iconButton("##request", Icon::Request, T("View the request sent to the model")) && !lastRequest_.empty()) wantInspector_ = true;
 
   if (provider->builtin && !builtinReady) {
     builtinCard(*provider);
@@ -843,16 +1053,15 @@ void AssistantPanel::draw(const PanelContext& context, ImFont* mono, bool* open)
   }
   ImGui::EndChild();
 
-  // what is attached
-  ImGui::Checkbox(T("This file"), &attachFile_);
-  ImGui::SameLine();
-  ImGui::BeginDisabled(context.selection.empty());
-  ImGui::Checkbox(T("Selection"), &attachSelection_);
-  ImGui::EndDisabled();
-  ImGui::SameLine();
-  ImGui::BeginDisabled(context.errors.empty());
-  ImGui::Checkbox(T("Build errors"), &attachErrors_);
-  ImGui::EndDisabled();
+  // what goes along with the question, said in words (there is nothing to switch)
+  {
+    std::string along;
+    if (!context.selection.empty()) along = T("the selection");
+    else if (!context.fileText.empty()) along = context.fileName;
+    if (!context.errors.empty()) along += (along.empty() ? "" : ", ") + std::string(T("the build errors"));
+    if (!context.projectDir.empty()) along += (along.empty() ? "" : ", ") + std::string(T("the parts of the project that match"));
+    if (!along.empty()) ImGui::TextDisabled("%s", F("Sent with your question: {0}", {along}).c_str());
+  }
   if (settings_.explainErrors && !context.errors.empty() && !request_.running() && !pendingEditActive_ && pendingRun_.empty() && !waitingBuild_) {
     ImGui::SameLine();
     if (theme::dialogButton(T("Explain the errors"), ImVec2(0, 0), true)) pendingQuestion_ = "Explain these build errors and how to fix them.";
@@ -887,7 +1096,6 @@ void AssistantPanel::draw(const PanelContext& context, ImFont* mono, bool* open)
   }
   if (!pendingQuestion_.empty()) {  // from "Explain this error" in Problems, or the button above
     if (!running && !waitingForUser && builtinReady && (provider->isLocal() || provider->builtin || remoteConfirmed_.count(provider->baseUrl))) {
-      attachErrors_ = true;
       send(context, pendingQuestion_);
     }
     pendingQuestion_.clear();
@@ -1139,7 +1347,7 @@ void AssistantPanel::remoteDialog() {
   snprintf(title, sizeof title, "%s###assistant_remote", T("Send to a remote server?"));
   if (!theme::beginModal(title)) return;
   ImGui::PushTextWrapPos(theme::em(460));
-  ImGui::TextUnformatted(F("This model runs on {0}, not on this computer. Your messages, and any file, selection or build output you attach, will be sent there.", {pendingRemote_}).c_str());
+  ImGui::TextUnformatted(F("This model runs on {0}, not on this computer. Your messages, and the file, selection, build output and parts of your project that go with them, will be sent there.", {pendingRemote_}).c_str());
   ImGui::PopTextWrapPos();
   if (theme::primaryButton(T("Send to it"))) {
     remoteConfirmed_.insert(pendingRemote_);
@@ -1167,11 +1375,7 @@ void AssistantPanel::historyDialog() {
       std::string label = (item.title.empty() ? item.id : item.title) + (item.archived ? std::string("  [") + T("archived") + "]" : "");
       if (ImGui::Selectable(label.c_str(), item.id == chat_.id)) {
         Chat loaded;
-        if (store.load(item.id, item.archived, &loaded)) {
-          request_.cancel();
-          chat_ = loaded, streaming_.clear(), error_.clear();
-          scrollDown_ = true;
-        }
+        if (store.load(item.id, item.archived, &loaded)) openSavedChat(loaded);
       }
       ImGui::SameLine(ImGui::GetContentRegionAvail().x - theme::em(120));
       if (!item.archived && theme::dialogButton(T("Archive"), ImVec2(0, 0), true)) {
@@ -1182,7 +1386,12 @@ void AssistantPanel::historyDialog() {
       ImGui::SameLine();
       if (theme::dialogButton(T("Delete"), ImVec2(0, 0), true)) {
         store.remove(item.id, item.archived);
-        if (item.id == chat_.id) newChat();
+        storeActiveTab();
+        for (size_t t = 0; t < tabs_.size(); t++)
+          if (tabs_[t].chat.id == item.id) {
+            closeTab((int)t);
+            break;
+          }
         ImGui::PopID();
         break;
       }

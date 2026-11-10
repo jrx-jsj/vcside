@@ -1925,6 +1925,7 @@ MenuBar App::buildMenuBar(bool native) {
            zoom_ != 1.0f),
       MenuItem::sep(),
       sub(T("Theme"), themeMenu),
+      item(T("Documentation"), "", [this] { showDocs_ = !showDocs_; }, true, showDocs_),
       item(T("Assistant"), "", [this] { showAssistant_ = !showAssistant_; }, assistant_.enabled(), showAssistant_ && assistant_.enabled()),
       item(T("Reset layout"), "", [this] { resetLayout_ = true; }),
   }));
@@ -2442,6 +2443,7 @@ void App::assistantPanel() {
       !files_[activeFile_]->music && !files_[activeFile_]->image && !files_[activeFile_]->form) {
     OpenFile* active = files_[activeFile_].get();
     context.fileName = fs::path(active->path).filename().string();
+    if (project_) context.fileRelative = fs::relative(active->path, project_->dir).generic_string();
     context.fileText = active->editor.text();
     context.selection = active->editor.selectedText();
     context.canApply = true;
@@ -2868,8 +2870,9 @@ static void bullet(const std::string& text) {
 void App::docsPanel() {
   char title[64];
   snprintf(title, sizeof title, "%s###docs", T("Documentation"));
-  if (focusDocs_) ImGui::SetNextWindowFocus();
-  if (!theme::beginPanel(title)) {
+  if (focusDocs_) showDocs_ = true, ImGui::SetNextWindowFocus();
+  if (!showDocs_) return;
+  if (!theme::beginPanel(title, &showDocs_)) {
     theme::endPanel();
     return;
   }
