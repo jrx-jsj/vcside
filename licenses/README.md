@@ -23,7 +23,10 @@ VCSIDE links against these libraries. Their licences ship with the executable: C
 | [SDL 3](https://libsdl.org) | 3.2+ | zlib | `sdl3.txt` |
 | [Dear ImGui](https://github.com/ocornut/imgui) | 1.91.9b (docking) | MIT | `imgui.txt` |
 | [nlohmann/json](https://github.com/nlohmann/json) | 3.11.3 | MIT | `nlohmann-json.txt` |
+| [llama.cpp and ggml](https://github.com/ggml-org/llama.cpp) (the language-model helper, built from source with the IDE and run as a separate program) | tag set in `cmake/llm_helper.cmake` | MIT | `llama.cpp-MIT.txt` |
 | [stb_image](https://github.com/nothings/stb) | 2.30 (commit `4e9b368`) | MIT or public domain (your choice) | `stb.txt` |
+
+The language models themselves are **not** included. The assistant offers to download them (with your confirmation) from their publishers: the catalogue in `data/assistant/models.json` lists only models under Apache-2.0 for now (Qwen3, Alibaba Cloud), and shows each model's licence before the download.
 
 External tools (DASM, Stella, Gopher2600, batari Basic, wasmtime, Arm GNU toolchain, GNU Make) are **not included or redistributed**: VCSIDE uses the ones already installed and links to their official pages. Each keeps its own licence (DASM, Stella and Gopher2600 are GPL).
 

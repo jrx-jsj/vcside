@@ -5,9 +5,12 @@
 #include <imgui.h>
 #include <imgui_stdlib.h>
 
+#include <algorithm>
+#include <filesystem>
 #include <fstream>
 #include <sstream>
 
+#include "assistant/http.h"
 #include "i18n.h"
 #include "paths.h"
 #include "theme_ui.h"
@@ -33,8 +36,11 @@ std::string oneLine(const std::string& text, size_t limit) {
 }
 }  // namespace
 
-AssistantPanel::AssistantPanel() = default;
-AssistantPanel::~AssistantPanel() { request_.cancel(); }
+AssistantPanel::AssistantPanel() : settings_(Settings::fromJson(nlohmann::json::object())) {}
+AssistantPanel::~AssistantPanel() {
+  request_.cancel();
+  engine_.stop();
+}
 
 std::string AssistantPanel::systemPrompt() const {
   std::ifstream file(dataDir() + "/assistant/system.txt");
@@ -59,9 +65,92 @@ void AssistantPanel::closeProject() {
   chatProject_.clear();
 }
 
+const CatalogModel* AssistantPanel::catalogModel(const std::string& id) const {
+  for (auto& model : catalog_)
+    if (model.id == id) return &model;
+  return nullptr;
+}
+
+// Drives the helper for the built-in provider. Returns true when it can take a request.
+bool AssistantPanel::prepareBuiltin(Provider& provider) {
+  if (!catalogLoaded_) {
+    catalog_ = loadCatalog(dataDir() + "/assistant/models.json");
+    catalogLoaded_ = true;
+  }
+  if (!catalogModel(provider.model)) {  // none chosen yet: the one that fits this machine
+    const CatalogModel* pick = recommendedFor(catalog_, machineMemoryGb());
+    if (!pick && !catalog_.empty()) pick = &catalog_.front();
+    provider.model = pick ? pick->id : "";
+  }
+  const CatalogModel* model = catalogModel(provider.model);
+  if (!model || !isInstalled(*model)) {
+    engine_.stop();
+    return false;
+  }
+  std::string path = modelPath(*model);
+  bool wrongModel = engine_.state() != Engine::State::Stopped && engine_.modelPath() != path;
+  if (wrongModel) engine_.stop();
+  if (engine_.state() == Engine::State::Stopped) engine_.start(path, provider.contextTokens);
+  provider.baseUrl = engine_.baseUrl();
+  return engine_.state() == Engine::State::Ready;
+}
+
+void AssistantPanel::modelCombo(Provider& provider, const char* label, float width) {
+  const CatalogModel* current = catalogModel(provider.model);
+  std::string shown = current ? current->name : std::string(T("(choose a model)"));
+  ImGui::SetNextItemWidth(width);
+  if (ImGui::BeginCombo(label, shown.c_str())) {
+    for (auto& model : catalog_) {
+      std::string line = model.name + "  -  " + formatBytes(model.bytes) + (isInstalled(model) ? std::string("  (") + T("downloaded") + ")" : "");
+      if (ImGui::Selectable(line.c_str(), model.id == provider.model)) provider.model = model.id, changed_ = true;
+    }
+    ImGui::EndCombo();
+  }
+}
+
+void AssistantPanel::builtinCard(Provider& provider) {
+  const CatalogModel* model = catalogModel(provider.model);
+  if (!model) {
+    ImGui::TextWrapped("%s", T("This build has no model list."));
+    return;
+  }
+  if (!isInstalled(*model)) {
+    using DState = Download::State;
+    if (download_.state() == DState::Running || download_.state() == DState::Verifying) {
+      ImGui::TextUnformatted(F("Downloading {0}...", {model->name}).c_str());
+      ImGui::ProgressBar((float)download_.progress(), ImVec2(-theme::em(90), 0));
+      ImGui::SameLine();
+      if (download_.state() == DState::Running && theme::dialogButton(T("Cancel"), ImVec2(theme::em(80), 0))) download_.cancel();
+      if (download_.state() == DState::Verifying) ImGui::TextDisabled("%s", T("Checking the file..."));
+      return;
+    }
+    Url url = parseUrl(model->url);
+    ImGui::PushTextWrapPos(0);
+    ImGui::TextUnformatted(F("The assistant runs a language model on this computer. Download {0} ({1}, licence {2}) from {3}? The file is checked against a fixed checksum, and nothing from your project is sent.",
+                             {model->name, formatBytes(model->bytes), model->license, url.host}).c_str());
+    if (!model->note.empty()) ImGui::TextDisabled("%s", model->note.c_str());
+    ImGui::PopTextWrapPos();
+    if (download_.state() == DState::Failed) ImGui::TextColored(theme::colv(theme::Role::MsgError), "%s", download_.error().c_str());
+    ImGui::BeginDisabled(!download_.available());
+    if (theme::primaryButton(F("Download ({0})", {formatBytes(model->bytes)}).c_str())) download_.start(*model);
+    ImGui::EndDisabled();
+    if (!download_.available()) ImGui::TextDisabled("%s", T("curl was not found on this computer, so the download cannot start here."));
+    return;
+  }
+  switch (engine_.state()) {
+    case Engine::State::Starting: ImGui::TextUnformatted(F("Loading {0}...", {model->name}).c_str()); break;
+    case Engine::State::Failed:
+      ImGui::TextColored(theme::colv(theme::Role::MsgError), "%s", T("The built-in model could not start."));
+      ImGui::TextWrapped("%s", engine_.error().c_str());
+      if (theme::dialogButton(T("Try again"))) engine_.stop();
+      break;
+    default: break;
+  }
+}
+
 void AssistantPanel::refreshModels() {
   Provider* provider = settings_.provider();
-  if (!provider || fetchingModels_) return;
+  if (!provider || provider->builtin || fetchingModels_) return;
   Provider copy = *provider;
   modelsFor_ = provider->baseUrl;
   fetchingModels_ = true;
@@ -172,6 +261,7 @@ void AssistantPanel::drawMessage(const ChatMessage& message, const std::string& 
 
 void AssistantPanel::draw(const PanelContext& context, ImFont* mono, bool* open) {
   if (!settings_.chat || !open || !*open) return;
+  drawnThisFrame_ = true;
   if (context.projectDir != chatProject_) {  // another project: its own chats
     newChat();
     chatProject_ = context.projectDir;
@@ -198,23 +288,29 @@ void AssistantPanel::draw(const PanelContext& context, ImFont* mono, bool* open)
     auto result = modelsFuture_.get();
     models_ = result.first, modelsError_ = result.second, fetchingModels_ = false;
   }
-  if (modelsFor_ != provider->baseUrl && !fetchingModels_) refreshModels();
+  bool builtinReady = true;
+  if (provider->builtin) builtinReady = prepareBuiltin(*provider);
+  else if (modelsFor_ != provider->baseUrl && !fetchingModels_) refreshModels();
 
   // header: where the text goes, the model, and the chat's buttons
-  bool local = provider->isLocal();
+  bool local = provider->builtin || provider->isLocal();
   ImGui::PushStyleColor(ImGuiCol_Text, theme::colv(local ? theme::Role::MsgInfo : theme::Role::MsgWarning));
   ImGui::TextUnformatted(local ? T("local") : (std::string(T("remote")) + ": " + provider->name).c_str());
   ImGui::PopStyleColor();
   ImGui::SameLine();
-  ImGui::SetNextItemWidth(theme::em(260));
-  if (ImGui::BeginCombo("##model", provider->model.empty() ? T("(choose a model)") : provider->model.c_str())) {
-    for (auto& id : models_)
-      if (ImGui::Selectable(id.c_str(), id == provider->model)) provider->model = id, changed_ = true;
-    if (models_.empty()) ImGui::TextDisabled("%s", modelsError_.empty() ? T("The server lists no models.") : modelsError_.c_str());
-    ImGui::EndCombo();
+  if (provider->builtin) {
+    modelCombo(*provider, "##model", theme::em(260));
+  } else {
+    ImGui::SetNextItemWidth(theme::em(260));
+    if (ImGui::BeginCombo("##model", provider->model.empty() ? T("(choose a model)") : provider->model.c_str())) {
+      for (auto& id : models_)
+        if (ImGui::Selectable(id.c_str(), id == provider->model)) provider->model = id, changed_ = true;
+      if (models_.empty()) ImGui::TextDisabled("%s", modelsError_.empty() ? T("The server lists no models.") : modelsError_.c_str());
+      ImGui::EndCombo();
+    }
+    ImGui::SameLine();
+    if (theme::dialogButton(T("Refresh"), ImVec2(0, 0), true)) refreshModels();
   }
-  ImGui::SameLine();
-  if (theme::dialogButton(T("Refresh"), ImVec2(0, 0), true)) refreshModels();
   ImGui::SameLine();
   if (theme::dialogButton(T("New chat"), ImVec2(0, 0), true)) newChat();
   ImGui::SameLine();
@@ -223,6 +319,11 @@ void AssistantPanel::draw(const PanelContext& context, ImFont* mono, bool* open)
   if (theme::dialogButton(T("Settings..."), ImVec2(0, 0), true)) wantSettings_ = true;
   ImGui::SameLine();
   if (theme::dialogButton(T("View request"), ImVec2(0, 0), true) && !lastRequest_.empty()) wantInspector_ = true;
+
+  if (provider->builtin && !builtinReady) {
+    builtinCard(*provider);
+    ImGui::Separator();
+  }
 
   // conversation
   float footer = ImGui::GetFrameHeightWithSpacing() * 2 + ImGui::GetTextLineHeightWithSpacing() * 4;
@@ -275,9 +376,11 @@ void AssistantPanel::draw(const PanelContext& context, ImFont* mono, bool* open)
   if (running) {
     if (theme::dialogButton(T("Stop"), ImVec2(buttonWidth, 0))) request_.cancel();
   } else {
+    ImGui::BeginDisabled(!builtinReady);
     clicked = theme::primaryButton(T("Send"), ImVec2(buttonWidth, 0));
+    ImGui::EndDisabled();
   }
-  if ((enter || clicked) && !running && !input_.empty()) {
+  if ((enter || clicked) && !running && !input_.empty() && builtinReady) {
     if (!provider->isLocal() && !remoteConfirmed_.count(provider->baseUrl)) {
       pendingRemote_ = provider->baseUrl;
       wantRemote_ = true;
@@ -291,6 +394,13 @@ void AssistantPanel::draw(const PanelContext& context, ImFont* mono, bool* open)
 }
 
 void AssistantPanel::dialogs() {
+  download_.poll();
+  engine_.poll();
+  if (!drawnThisFrame_) {  // the panel is closed: stop the answer and give the memory back
+    request_.cancel();
+    engine_.stop();
+  }
+  drawnThisFrame_ = false;
   firstStartDialog();
   settingsDialog();
   applyDialog();
@@ -327,7 +437,6 @@ void AssistantPanel::firstStartDialog() {
   if (theme::primaryButton(T("Use the selected"))) {
     settings_.asked = true, settings_.chat = chat;
     changed_ = true, opened = false;
-    if (settings_.chat && settings_.providers.empty()) wantSettings_ = true;
     ImGui::CloseCurrentPopup();
   }
   ImGui::EndPopup();
@@ -369,6 +478,10 @@ void AssistantPanel::settingsDialog() {
   ImGui::SameLine();
   if (detecting_) ImGui::TextUnformatted(T("Looking..."));
   else if (!detectNote_.empty()) ImGui::TextUnformatted(detectNote_.c_str());
+  if (!catalogLoaded_) {
+    catalog_ = loadCatalog(dataDir() + "/assistant/models.json");
+    catalogLoaded_ = true;
+  }
   int removeIndex = -1;
   for (size_t i = 0; i < settings_.providers.size(); i++) {
     Provider& provider = settings_.providers[i];
@@ -376,6 +489,23 @@ void AssistantPanel::settingsDialog() {
     ImGui::Separator();
     if (ImGui::RadioButton("##active", settings_.active == (int)i)) settings_.active = (int)i, changed_ = true;
     ImGui::SameLine();
+    if (provider.builtin) {
+      ImGui::TextUnformatted(T("Built-in model (runs on this computer; no server to set up)"));
+      modelCombo(provider, T("Model"), theme::em(320));
+      ImGui::SetNextItemWidth(theme::em(120));
+      changed_ |= ImGui::InputInt(T("Context tokens"), &provider.contextTokens, 1024, 8192);
+      provider.contextTokens = std::clamp(provider.contextTokens, 1024, 1 << 20);
+      ImGui::TextDisabled("%s", F("Models are kept in {0}", {modelsDir()}).c_str());
+      const CatalogModel* chosen = catalogModel(provider.model);
+      if (chosen && isInstalled(*chosen) && theme::dialogButton(T("Delete the downloaded model"), ImVec2(0, 0), true)) {
+        engine_.stop();
+        std::error_code ignored;
+        std::filesystem::remove(modelPath(*chosen), ignored);
+      }
+      if (!engine_.available()) ImGui::TextColored(theme::colv(theme::Role::MsgWarning), "%s", T("This build does not include the language-model helper."));
+      ImGui::PopID();
+      continue;
+    }
     ImGui::SetNextItemWidth(theme::em(200));
     changed_ |= ImGui::InputText(T("Name"), &provider.name);
     ImGui::SetNextItemWidth(theme::em(360));

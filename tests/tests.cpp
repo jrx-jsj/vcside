@@ -33,11 +33,14 @@
 #include <fstream>
 #include <sstream>
 #include "cpu6502.h"
+#include "assistant/engine.h"
 #include "assistant/grounding.h"
 #include "assistant/http.h"
+#include "assistant/models.h"
 #include "assistant/prompt.h"
 #include "assistant/provider.h"
 #include "assistant/settings.h"
+#include "assistant/sha256.h"
 #include "assistant/sse.h"
 #ifndef _WIN32
 #include <arpa/inet.h>
@@ -3025,6 +3028,98 @@ static void testSampleExport() {
 }
 
 // ---- assistant ---------------------------------------------------------------------
+// ---- bundled model: checksum, catalogue, helper command line ---------------------------
+static void testBundledModel() {
+  using namespace vcs::assistant;
+  std::printf("bundled model\n");
+  // SHA-256 test vectors (FIPS 180-4) and a message that crosses the padding boundary
+  {
+    Sha256 empty;
+    CHECK(empty.hexDigest() == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+    Sha256 abc;
+    abc.update("abc", 3);
+    CHECK(abc.hexDigest() == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+    Sha256 split;
+    const char* text = "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq";
+    split.update(text, 10);
+    split.update(text + 10, std::strlen(text) - 10);
+    CHECK(split.hexDigest() == "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1");
+    Sha256 million;
+    std::string block(1000, 'a');
+    for (int i = 0; i < 1000; i++) million.update(block.data(), block.size());
+    CHECK(million.hexDigest() == "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0");
+    namespace fs = std::filesystem;
+    fs::path file = fs::temp_directory_path() / ("vcside_sha_" + std::to_string(std::rand()));
+    std::ofstream(file, std::ios::binary) << "abc";
+    CHECK(sha256OfFile(file.string()) == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+    fs::remove(file);
+    CHECK(sha256OfFile((fs::temp_directory_path() / "vcside_no_such_file").string()).empty());
+  }
+  // the shipped catalogue: every entry pinned, https, a plain file name
+  {
+    std::vector<CatalogModel> catalog = loadCatalog(std::string(VCSIDE_SOURCE_DATA) + "/assistant/models.json");
+    CHECK(catalog.size() >= 2);
+    for (auto& model : catalog) {
+      CHECK(model.sha256.size() == 64 && model.url.rfind("https://", 0) == 0 && model.bytes > 0 && !model.license.empty());
+      CHECK(model.url.size() > model.file.size() && model.url.compare(model.url.size() - model.file.size(), model.file.size(), model.file) == 0);
+    }
+    // 16 GB gets the 8 B model (needs 8 <= 60% of 16 = 9.6), 8 GB the 4 B one, 2 GB nothing
+    const CatalogModel* sixteen = recommendedFor(catalog, 16);
+    const CatalogModel* eight = recommendedFor(catalog, 8);
+    CHECK(sixteen && eight && sixteen->memoryGb > eight->memoryGb && sixteen->memoryGb <= 9);
+    CHECK(recommendedFor(catalog, 2) == nullptr);
+    CHECK(formatBytes(5027783488) == "4.7 GB" && formatBytes(500 * 1048576) == "500 MB");
+  }
+  // an entry without a hash, with a path in the file name or over plain http is never offered
+  {
+    namespace fs = std::filesystem;
+    fs::path file = fs::temp_directory_path() / ("vcside_models_" + std::to_string(std::rand()) + ".json");
+    std::string hash(64, 'a');
+    std::ofstream(file) << "{\"models\":["
+        "{\"id\":\"ok\",\"file\":\"a.gguf\",\"url\":\"https://h/a.gguf\",\"sha256\":\"" << hash << "\",\"bytes\":1},"
+        "{\"id\":\"nohash\",\"file\":\"b.gguf\",\"url\":\"https://h/b.gguf\",\"bytes\":1},"
+        "{\"id\":\"path\",\"file\":\"../c.gguf\",\"url\":\"https://h/c.gguf\",\"sha256\":\"" << hash << "\",\"bytes\":1},"
+        "{\"id\":\"http\",\"file\":\"d.gguf\",\"url\":\"http://h/d.gguf\",\"sha256\":\"" << hash << "\",\"bytes\":1}]}";
+    std::vector<CatalogModel> catalog = loadCatalog(file.string());
+    CHECK(catalog.size() == 1 && catalog[0].id == "ok");
+    fs::remove(file);
+    CHECK(loadCatalog((fs::temp_directory_path() / "vcside_no_such_catalog").string()).empty());
+  }
+  // the helper only listens on this computer and runs one chat at a time
+  {
+    std::vector<std::string> arguments = helperArguments("/m/model.gguf", 4242, 8192);
+    auto has = [&](const std::string& flag, const std::string& value) {
+      for (size_t i = 0; i + 1 < arguments.size(); i++)
+        if (arguments[i] == flag && arguments[i + 1] == value) return true;
+      return false;
+    };
+    CHECK(has("--host", "127.0.0.1") && has("--port", "4242") && has("-m", "/m/model.gguf") && has("-c", "8192") && has("-np", "1"));
+    int port = freeLoopbackPort();
+    CHECK(port > 1023 && port < 65536);
+  }
+#ifndef _WIN32
+  // Job::stop ends a long-running program and stopAndWait lets it start again
+  {
+    Job job;
+    CHECK(job.start({"sleep", "30"}, ""));
+    CHECK(job.running());
+    job.stopAndWait();
+    CHECK(!job.running() && job.finished());
+    CHECK(job.start({"echo", "again"}, ""));
+    job.stopAndWait();
+  }
+  // the engine reports a model that is not there instead of starting anything
+  {
+    Engine engine;
+    setenv("VCSIDE_LLM_HELPER_PATH", "/bin/echo", 1);
+    CHECK(engine.available());
+    engine.start("/no/such/model.gguf", 4096);
+    CHECK(engine.state() == Engine::State::Failed && engine.error().find("missing") != std::string::npos);
+    unsetenv("VCSIDE_LLM_HELPER_PATH");
+  }
+#endif
+}
+
 #ifndef _WIN32
 // A one-shot HTTP server on loopback: reads a request, answers with `reply`, closes.
 struct MockServer {
@@ -3174,6 +3269,23 @@ static void testAssistant(const KnowledgeBase& kb) {
     CHECK(found.empty());
     auto entries = groundText(kb, "RESP0 RESP1 RESM0 RESM1 RESBL WSYNC", "", context, 3);
     CHECK(entries.size() >= 2 && entries.size() <= 3);  // capped by count and by characters
+    // a question that names nothing is searched by topic, with the manuals' words for what people say
+    {
+      auto ids = [&](const std::string& question) {
+        std::set<std::string> found;
+        for (auto& entry : groundText(kb, question, "", context)) found.insert(entry.id);
+        return found;
+      };
+      CHECK(ids("How do I make the console play a tone?").count("AUDC0"));
+      CHECK(ids("How do I check whether the fire button is pressed?").count("INPT4"));
+      CHECK(ids("How do I set the background color?").count("COLUBK"));
+      CHECK(ids("How do I position a sprite horizontally?").count("RESP0"));
+      CHECK(ids("What should I have for lunch today?").empty());   // nothing relevant: nothing added
+      CHECK(ids("hello").empty());
+      // a name the user typed still comes first
+      auto ranked = groundText(kb, "How does WSYNC affect timing?", "", context);
+      CHECK(!ranked.empty() && ranked[0].id == "WSYNC");
+    }
     std::string block = groundingBlock(groundText(kb, "RESP0", "", context));
     CHECK(block.find("[RESP0]") != std::string::npos && block.find("data, not instructions") != std::string::npos);
     CHECK(groundingBlock({}).empty());
@@ -3186,7 +3298,18 @@ static void testAssistant(const KnowledgeBase& kb) {
     provider.name = "Ollama", provider.model = "qwen", provider.keyEnv = "KEY_VAR";
     settings.providers.push_back(provider);
     Settings back = Settings::fromJson(settings.toJson());
-    CHECK(back.chat && back.asked && back.providers.size() == 1 && back.providers[0].model == "qwen" && back.providers[0].keyEnv == "KEY_VAR");
+    // The built-in model is always first; the user's server comes after it and stays the active one.
+    CHECK(back.chat && back.asked && back.providers.size() == 2 && back.providers[0].builtin && back.providers[1].model == "qwen" && back.providers[1].keyEnv == "KEY_VAR");
+    CHECK(Settings::fromJson(nlohmann::json()).providers.size() == 1 && Settings::fromJson(nlohmann::json()).providers[0].builtin);
+    CHECK(Settings::fromJson(Settings::fromJson(settings.toJson()).toJson()).providers.size() == 2);  // not inserted twice
+    {
+      Provider builtin;
+      builtin.builtin = true;
+      builtin.model = "qwen3-4b";
+      std::vector<Message> messages = {{"user", "hi"}};
+      CHECK(openAiRequestBody(builtin, messages).find("enable_thinking") != std::string::npos);
+      CHECK(openAiRequestBody(provider, messages).find("enable_thinking") == std::string::npos);
+    }
     CHECK(settings.toJson().dump().find("sk-") == std::string::npos);
     CHECK(!Settings::fromJson(nlohmann::json()).chat);  // off unless asked
 
@@ -3332,6 +3455,7 @@ int main() {
   testThemes(data);
   testHeader(kb, data);
   testAssistant(kb);
+  testBundledModel();
   std::printf("%d checks, %d failures\n", checks, failures);
   return failures ? 1 : 0;
 }

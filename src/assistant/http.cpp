@@ -313,4 +313,21 @@ HttpResult httpRequest(const HttpRequest& request, const std::function<bool(cons
   return result;
 }
 
+int freeLoopbackPort() {
+#ifdef _WIN32
+  static WinsockStart winsock;
+#endif
+  Socket socket_;
+  socket_.handle = socket(AF_INET, SOCK_STREAM, 0);
+  if (socket_.handle == kInvalidSocket) return 0;
+  sockaddr_in address{};
+  address.sin_family = AF_INET;
+  address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+  address.sin_port = 0;
+  if (bind(socket_.handle, reinterpret_cast<sockaddr*>(&address), sizeof address) != 0) return 0;
+  socklen_t length = sizeof address;
+  if (getsockname(socket_.handle, reinterpret_cast<sockaddr*>(&address), &length) != 0) return 0;
+  return ntohs(address.sin_port);
+}
+
 }  // namespace vcs::assistant

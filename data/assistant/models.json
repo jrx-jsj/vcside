@@ -1,0 +1,41 @@
+{
+  "_comment": "Models the assistant can download. Provisional until the phase 6 evaluation (docs/design-assistant.md). Sizes and SHA-256 come from the publisher's Hugging Face file listing, read 2026-11-10; VCSIDE checks the hash after every download.",
+  "models": [
+    {
+      "id": "qwen3-4b",
+      "name": "Qwen3 4B",
+      "class": "Tiny",
+      "file": "Qwen3-4B-Q4_K_M.gguf",
+      "url": "https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q4_K_M.gguf",
+      "sha256": "7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5",
+      "bytes": 2497280256,
+      "memory_gb": 4,
+      "license": "Apache-2.0",
+      "note": "Any laptop with 8 GB of memory. Plain chat with the knowledge base; the agent may be unreliable."
+    },
+    {
+      "id": "qwen3-8b",
+      "name": "Qwen3 8B",
+      "class": "Small",
+      "file": "Qwen3-8B-Q4_K_M.gguf",
+      "url": "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q4_K_M.gguf",
+      "sha256": "d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785",
+      "bytes": 5027783488,
+      "memory_gb": 8,
+      "license": "Apache-2.0",
+      "note": "Recommended for 16 GB machines. The smallest size meant for the agent."
+    },
+    {
+      "id": "qwen3-14b",
+      "name": "Qwen3 14B",
+      "class": "Medium",
+      "file": "Qwen3-14B-Q4_K_M.gguf",
+      "url": "https://huggingface.co/Qwen/Qwen3-14B-GGUF/resolve/main/Qwen3-14B-Q4_K_M.gguf",
+      "sha256": "500a8806e85ee9c83f3ae08420295592451379b4f8cf2d0f41c15dffeb6b81f0",
+      "bytes": 9001752960,
+      "memory_gb": 12,
+      "license": "Apache-2.0",
+      "note": "For 24 GB machines or a GPU with 12 GB or more. Better at multi-step edits."
+    }
+  ]
+}

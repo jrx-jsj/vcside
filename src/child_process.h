@@ -22,6 +22,12 @@ class Job {
   bool finished() const { return started_ && !running_; }
   int exitCode() const { return exitCode_; }
   std::string output();  // thread-safe copy
+  // Ends the process now (a server we started). Safe to call at any time, also when it already ended.
+  void stop();
+  // stop(), then waits until the process is really gone (a new start() is possible after it).
+  void stopAndWait();
+  // For programs that run for a long time: keep only the last bytes of their output (0 = all).
+  void keepLastBytes(size_t limit) { outputLimit_ = limit; }
 
  private:
   std::thread thread_;
@@ -29,6 +35,8 @@ class Job {
   std::string output_;
   std::atomic<bool> running_{false};
   bool started_ = false;
+  void* process_ = nullptr;  // SDL_Process*, guarded by mutex_ while the thread runs
+  size_t outputLimit_ = 0;
   std::atomic<int> exitCode_{-1};
 };
 
