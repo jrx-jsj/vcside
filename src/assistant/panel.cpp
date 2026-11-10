@@ -1113,6 +1113,7 @@ void AssistantPanel::draw(const PanelContext& context, ImFont* mono, bool* open)
   // header: where the text goes, the model, and the buttons (icons, with a tooltip each)
   bool local = provider->builtin || provider->isLocal();
   ImGui::PushStyleColor(ImGuiCol_Text, theme::colv(local ? theme::Role::MsgInfo : theme::Role::MsgWarning));
+  ImGui::AlignTextToFramePadding();  // on the combo's baseline
   ImGui::TextUnformatted(local ? T("local") : (std::string(T("remote")) + ": " + provider->name).c_str());
   ImGui::PopStyleColor();
   ImGui::SameLine();
