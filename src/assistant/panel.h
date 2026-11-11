@@ -212,6 +212,9 @@ class AssistantPanel {
   bool wantInspector_ = false, wantRemote_ = false, wantHistory_ = false;
   std::set<std::string> remoteConfirmed_;
   std::string pendingRemote_, projectDir_;
+  bool remoteDontAsk_ = false;
+  bool sendConfirmed_ = false;  // "Send to it" was pressed: the message waiting in the input goes now  // the "Don't ask again" box of the remote question
+  bool remoteAllowed(const Provider& provider) const { return provider.isLocal() || provider.builtin || provider.trusted || remoteConfirmed_.count(provider.baseUrl); }
 
   void send(const PanelContext& context, const std::string& question);
   // Room kept in the window for the answer: a change with its diff takes a couple of thousand tokens.

@@ -800,6 +800,8 @@
     "Send": "Enviar",
     "Send to a remote server?": "¿Enviar a un servidor remoto?",
     "Send to it": "Enviar ahí",
+    "Don't ask again for this server": "No volver a preguntar para este servidor",
+    "Ask before sending to it": "Preguntar antes de enviarle nada",
     "Sent with: {0}": "Enviado con: {0}",
     "Services": "Servicios",
     "Settings": "Ajustes",

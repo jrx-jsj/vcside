@@ -1840,13 +1840,15 @@ void AssistantPanel::draw(const PanelContext& context, ImFont* mono, bool* open)
   ImGui::SetCursorScreenPos(ImVec2(buttonCorner.x, buttonCorner.y + ImGui::GetFrameHeight() + ImGui::GetStyle().ItemSpacing.y));  // under the button: how the assistant works
   modeSwitch(buttonWidth);
   if (!pendingQuestion_.empty()) {  // from "Explain this error" in Problems, or the button above
-    if (!running && !waitingForUser && builtinReady && (provider->isLocal() || provider->builtin || remoteConfirmed_.count(provider->baseUrl))) {
+    if (!running && !waitingForUser && builtinReady && remoteAllowed(*provider)) {
       send(context, pendingQuestion_);
     }
     pendingQuestion_.clear();
   }
-  if ((enter || clicked) && !running && !waitingForUser && !input_.empty() && builtinReady) {
-    if (!provider->isLocal() && !remoteConfirmed_.count(provider->baseUrl)) {
+  bool confirmed = sendConfirmed_;
+  sendConfirmed_ = false;
+  if ((enter || clicked || confirmed) && !running && !waitingForUser && !input_.empty() && builtinReady) {
+    if (!remoteAllowed(*provider)) {
       pendingRemote_ = provider->baseUrl;
       wantRemote_ = true;
     } else {
@@ -2071,7 +2073,11 @@ void AssistantPanel::settingsDialog() {
     ImGui::SetNextItemWidth(theme::em(120));
     changed_ |= ImGui::InputInt(T("Context tokens"), &provider.contextTokens, 1024, 8192);
     provider.contextTokens = std::clamp(provider.contextTokens, 1024, 1 << 20);
-    if (!provider.isLocal()) ImGui::TextColored(theme::colv(theme::Role::MsgWarning), "%s", T("Remote: your messages and attached code leave this computer."));
+    if (!provider.isLocal()) {
+      ImGui::TextColored(theme::colv(theme::Role::MsgWarning), "%s", T("Remote: your messages and attached code leave this computer."));
+      bool ask = !provider.trusted;
+      if (ImGui::Checkbox(T("Ask before sending to it"), &ask)) provider.trusted = !ask, changed_ = true;
+    }
     if (theme::dialogButton(T("Remove"), ImVec2(0, 0), true)) removeIndex = (int)i;
     ImGui::PopID();
   }
@@ -2139,8 +2145,16 @@ void AssistantPanel::remoteDialog() {
   ImGui::PushTextWrapPos(theme::em(460));
   ImGui::TextUnformatted(F("This model runs on {0}, not on this computer. Your messages, and the file, selection, build output and parts of your project that go with them, will be sent there.", {pendingRemote_}).c_str());
   ImGui::PopTextWrapPos();
+  ImGui::Checkbox(T("Don't ask again for this server"), &remoteDontAsk_);
   if (theme::primaryButton(T("Send to it"))) {
     remoteConfirmed_.insert(pendingRemote_);
+    if (remoteDontAsk_) {  // kept in the settings; the server's entry there can ask again
+      for (auto& provider : settings_.providers)
+        if (provider.baseUrl == pendingRemote_) provider.trusted = true;
+      changed_ = true;
+    }
+    remoteDontAsk_ = false;
+    sendConfirmed_ = true;
     ImGui::CloseCurrentPopup();
   }
   ImGui::SameLine();

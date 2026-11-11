@@ -4025,6 +4025,10 @@ static void testKnownProviders() {
   Provider made = providerFrom(*gemini);
   CHECK(made.preset == "gemini" && made.name == "Google Gemini" && !made.isLocal() && made.model.empty());
   CHECK(Settings::fromJson(([&] { Settings s; s.providers.push_back(made); return s.toJson(); })()).providers.back().preset == "gemini");
+  // "Don't ask again" is kept per server; a new one asks
+  CHECK(!made.trusted);
+  made.trusted = true;
+  CHECK(Settings::fromJson(([&] { Settings s; s.providers.push_back(made); return s.toJson(); })()).providers.back().trusted);
   // a list with a plain-http service or an invented protocol is not offered
   namespace fs = std::filesystem;
   fs::path file = fs::temp_directory_path() / "vcside_providers_test.json";

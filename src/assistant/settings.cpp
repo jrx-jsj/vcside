@@ -26,7 +26,8 @@ json Settings::toJson() const {
                                   {"builtin", provider.builtin},
                                   {"preset", provider.preset},
                                   {"key_env", provider.keyEnv},
-                                  {"context_tokens", provider.contextTokens}});
+                                  {"context_tokens", provider.contextTokens},
+                                  {"trusted", provider.trusted}});
   return value;
 }
 
@@ -57,6 +58,7 @@ Settings Settings::fromJson(const json& input) {
       provider.preset = item.value("preset", std::string());
       provider.keyEnv = item.value("key_env", std::string());
       provider.contextTokens = std::clamp(item.value("context_tokens", 8192), 1024, 1 << 20);
+      provider.trusted = item.value("trusted", false);
       settings.providers.push_back(provider);
     }
   // The model that ships with VCSIDE is always there, first, and is the default.
