@@ -179,7 +179,7 @@ std::string AssistantPanel::systemPrompt() const {
       ? "\nMODE: Agent. You do the task yourself with the tools; code you only write in the chat is NOT saved, so every change to a file goes through edit_file.\n"
         "A request that could be a question or a task (\"implement the jump\", \"make it blink\") is a task: do it, do not just explain.\n"
         "How: 1) find the place with find_code or search, 2) read_file around it, 3) edit_file with the search text copied exactly from what read_file showed, 4) say in one or two sentences what you changed.\n"
-        "Example. User: \"make the sprite blink\". You: find_code(query: \"sprite colour\"), then read_file(path: \"main.asm\", from: 40, to: 90), then edit_file(path: \"main.asm\", edits: [{search: \"  lda #$0E\\n  sta COLUP0\", replace: \"  lda FrameCounter\\n  sta COLUP0\"}]), then answer: \"The sprite colour now follows FrameCounter.\"\n"
+        "Example. User: \"make the sprite blink\". You: find_code(query: \"sprite colour\"), then read_file(path: \"" + exampleFile_ + "\", from: 40, to: 90), then edit_file(path: \"" + exampleFile_ + "\", edits: [{search: \"  lda #$0E\\n  sta COLUP0\", replace: \"  lda FrameCounter\\n  sta COLUP0\"}]), then answer: \"The sprite colour now follows FrameCounter.\"\n"
       : "\nMODE: Agent. Do the task yourself: read the files you need, then change them with edit_file, one change at a time; code you only write in the chat is not saved. Do not paste the new code into your answer unless asked, and say briefly what you changed.";
   const std::string askRule = "\nMODE: Ask. You cannot change files or run anything: answer, and propose a change as an edit block for the user to review.";
   const std::string englishRule = translateThisTurn_ ? "\nThe user's messages have been translated to English for you: answer in English, whatever language the user writes in. Code, register names, labels and file names stay exactly as they are." : std::string();
@@ -896,6 +896,7 @@ void AssistantPanel::dispatch(const PanelContext& context, const std::string& qu
   for (size_t k = 0; k + 1 < chat_.messages.size(); k++) historyTokens += estimateTokens(chat_.messages[k].english.empty() ? chat_.messages[k].content : chat_.messages[k].english);
   historyTokens = std::min(historyTokens, window / 4);
   // Code and hex take more tokens than prose (about 2.8 characters each, not 3.5): the estimates are raised by a quarter.
+  exampleFile_ = context.fileRelative.empty() ? "game.asm" : context.fileRelative;  // the example of the prompt names a file the model really has
   int fixedTokens = (estimateTokens(systemPrompt()) + estimateTokens(attachments.projectInfo + attachments.projectMap + attachments.excerpts + attachments.grounding + modelQuestion)) * 5 / 4 + historyTokens;
   size_t chipChars = (size_t)std::clamp((window - reserve - fixedTokens) * 14 / 5, 1200, window * 2);
   // In Agent mode the open file goes as the part around the cursor: the agent reads the rest with its tools when it needs it, and
