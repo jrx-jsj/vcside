@@ -121,6 +121,10 @@ class AssistantPanel {
   std::vector<ChatTabState> tabs_;
   int activeTab_ = 0, wantTab_ = -1;
   unsigned nextTabUid_ = 1;
+  std::string chatsBase_;  // where chats are kept: the application's data folder (empty: the project's own .vcsai folder)
+  ChatStore chatStore(const std::string& projectDir) const { return ChatStore(projectDir, chatsBase_); }
+  void saveOpenTabs();     // which chats are open, for the next session
+  void restoreOpenTabs();  // the chats that were open when this project was left
   void ensureTabs();
   void storeActiveTab();
   void loadTab(int index);

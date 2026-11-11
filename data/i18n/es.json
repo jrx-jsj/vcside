@@ -272,6 +272,7 @@
     "Controllers": "Mandos",
     "Copied": "Copiado",
     "Copy all": "Copiar todo",
+    "Open in the documentation": "Abrir en la documentación",
     "For {0}:": "Para {0}:",
     "Agent needs a larger model: this one works in Ask mode. In the settings, a model you know is good enough can be allowed to use Agent.": "El modo Agente necesita un modelo mayor: este trabaja en modo Preguntar. En los ajustes se puede permitir Agente a un modelo que sepas que es suficiente.",
     "Allow Agent mode with this model, even if its name says it is small (14B or less): small models work in Ask mode only": "Permitir el modo Agente con este modelo aunque su nombre diga que es pequeño (14B o menos): los modelos pequeños solo trabajan en modo Preguntar",

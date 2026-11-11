@@ -50,25 +50,35 @@ struct Chat {
   std::vector<ChatMessage> messages;
 };
 
-// <project>/.vcsai/chats: one JSON file per chat, archived ones in archive/. Creating the
-// folder also writes .vcsai/.gitignore so chats never reach git.
+// One JSON file per chat, archived ones in archive/. Where: with a `chatsBase` (the application's own data folder) in
+// <chatsBase>/<project name>-<hash of its path>/, so conversations (which hold code and tool results) never land in a project
+// folder or in git; without one, as before, in <project>/.vcsai/chats (and .vcsai/.gitignore keeps them out of git).
+// The first time a project's chats are asked for in the new place, the ones the project folder had are copied there (the
+// originals are left alone). Which chats were open in the tabs is kept too, so the next session shows them again.
 class ChatStore {
  public:
-  explicit ChatStore(std::string projectDir) : projectDir_(std::move(projectDir)) {}
+  explicit ChatStore(std::string projectDir, std::string chatsBase = "") : projectDir_(std::move(projectDir)), chatsBase_(std::move(chatsBase)) {}
   struct Item {
     std::string id, title;
     bool archived = false;
+  };
+  struct OpenTabs {
+    std::vector<std::string> ids;  // in tab order
+    std::string active;
   };
   std::vector<Item> list() const;  // newest first
   bool load(const std::string& id, bool archived, Chat* chat) const;
   bool save(const Chat& chat);
   bool archive(const std::string& id);
   bool remove(const std::string& id, bool archived);
+  OpenTabs loadOpenTabs() const;
+  void saveOpenTabs(const OpenTabs& tabs);
   static std::string newId();
+  static std::string folderKey(const std::string& projectDir);  // "osito-panda-3fa9c2d1"
   std::string chatsDir() const;
 
  private:
-  std::string projectDir_;
+  std::string projectDir_, chatsBase_;
   bool ensureFolders() const;
 };
 

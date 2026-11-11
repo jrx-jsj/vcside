@@ -4004,6 +4004,32 @@ static void testInvalidUtf8() {
   bool bodyThrew = false;
   try { chatRequestBody(provider, {{"user", "caf\xC3"}}); provider.dialect = "anthropic"; chatRequestBody(provider, {{"user", "a\xFF"}}); } catch (...) { bodyThrew = true; }
   CHECK(!bodyThrew);
+  // chats kept in the application's own data folder, the project's old ones brought along, and the open tabs remembered
+  {
+    fs::path project = fs::temp_directory_path() / "vcside_chat_base_project", base = fs::temp_directory_path() / "vcside_chat_base";
+    fs::remove_all(project), fs::remove_all(base);
+    fs::create_directories(project / ".vcsai" / "chats" / "archive");
+    Chat old;
+    old.id = "20260101-000000", old.title = "old one";
+    old.messages.push_back({"user", "hello", {}});
+    ChatStore legacy(project.string());
+    CHECK(legacy.save(old) && fs::exists(project / ".vcsai" / "chats" / "20260101-000000.json"));
+    ChatStore store(project.string(), base.string());
+    CHECK(store.loadOpenTabs().ids.empty());  // the first look brings the old chat across
+    CHECK(store.list().size() == 1 && store.list()[0].id == "20260101-000000" && fs::exists(project / ".vcsai" / "chats" / "20260101-000000.json"));
+    Chat fresh;
+    fresh.id = "20260102-000000", fresh.title = "new one";
+    fresh.messages.push_back({"user", "hi", {}});
+    CHECK(store.save(fresh) && fs::exists(fs::path(store.chatsDir()) / "20260102-000000.json") && !fs::exists(project / ".vcsai" / "chats" / "20260102-000000.json"));
+    CHECK(store.chatsDir().rfind(base.string(), 0) == 0 && ChatStore::folderKey(project.string()).rfind("vcside_chat_base_project-", 0) == 0);
+    CHECK(ChatStore::folderKey("/a/proj") != ChatStore::folderKey("/b/proj"));
+    ChatStore::OpenTabs open;
+    open.ids = {"20260101-000000", "20260102-000000"}, open.active = "20260102-000000";
+    store.saveOpenTabs(open);
+    auto back = ChatStore(project.string(), base.string()).loadOpenTabs();
+    CHECK(back.ids == open.ids && back.active == open.active && store.list().size() == 2);  // open.tabs is not a chat
+    fs::remove_all(project), fs::remove_all(base);
+  }
   fs::remove_all(root);
 }
 

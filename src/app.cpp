@@ -2977,7 +2977,7 @@ void App::docsPanel() {
     theme::endPanel();
     return;
   }
-  if (focusDocs_ && !docTopic_.empty()) docQuery_ = docTopic_;
+  if (focusDocs_ && !docTopic_.empty()) docQuery_ = docTopic_.find(':') == std::string::npos ? docTopic_ : std::string();  // a topic id ("K:...") is opened, not searched
   focusDocs_ = false;
   ImGui::SetNextItemWidth(-1);
   ImGui::InputTextWithHint("##q", T("Search"), &docQuery_);

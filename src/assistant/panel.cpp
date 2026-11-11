@@ -240,6 +240,7 @@ void AssistantPanel::load(const nlohmann::json& settings) {
   settings_ = Settings::fromJson(settings);
   setSecretFile((std::filesystem::path(configDir()) / "keys.json").string());
   useSecretFile(settings_.keysInFile);
+  chatsBase_ = (std::filesystem::path(configDir()) / "chats").string();
 }
 
 void AssistantPanel::loadTab(int index) {
@@ -264,6 +265,46 @@ void AssistantPanel::switchTab(int index) {
   if (index == activeTab_ || index < 0 || index >= (int)tabs_.size()) return;
   storeActiveTab();
   loadTab(index);
+  saveOpenTabs();
+}
+
+// Which chats are open and which one is in front, kept per project: the next session opens them again, as it does the files.
+void AssistantPanel::saveOpenTabs() {
+  if (projectDir_.empty() || tabs_.empty()) return;
+  ChatStore::OpenTabs open;
+  for (size_t i = 0; i < tabs_.size(); i++) {
+    const std::string& id = (int)i == activeTab_ ? chat_.id : tabs_[i].chat.id;
+    if (id.empty()) continue;  // a chat nothing was said in is not kept
+    open.ids.push_back(id);
+    if ((int)i == activeTab_) open.active = id;
+  }
+  try {
+    chatStore(projectDir_).saveOpenTabs(open);
+  } catch (const std::exception&) {
+  }
+}
+
+void AssistantPanel::restoreOpenTabs() {
+  if (projectDir_.empty()) return;
+  try {
+    ChatStore store = chatStore(projectDir_);
+    ChatStore::OpenTabs open = store.loadOpenTabs();
+    std::vector<ChatTabState> restored;
+    int front = -1;
+    for (auto& id : open.ids) {
+      Chat chat;
+      if (!store.load(id, false, &chat) || chat.messages.empty()) continue;
+      ChatTabState tab;
+      tab.chat = chat;
+      tab.uid = nextTabUid_++;
+      if (id == open.active) front = (int)restored.size();
+      restored.push_back(tab);
+    }
+    if (restored.empty()) return;
+    tabs_ = restored;
+    loadTab(front >= 0 ? front : (int)tabs_.size() - 1);
+  } catch (const std::exception&) {
+  }
 }
 
 void AssistantPanel::addTab() {
@@ -272,6 +313,7 @@ void AssistantPanel::addTab() {
   tab.uid = nextTabUid_++;
   tabs_.push_back(tab);
   loadTab((int)tabs_.size() - 1);
+  saveOpenTabs();
 }
 
 void AssistantPanel::closeTab(int index) {
@@ -287,6 +329,7 @@ void AssistantPanel::closeTab(int index) {
     if (index < activeTab_) activeTab_--;
     wantTab_ = activeTab_;
   }
+  saveOpenTabs();
 }
 
 // A saved chat from the list: shown in its own tab, or in the current one if that is still empty.
@@ -306,6 +349,7 @@ void AssistantPanel::openSavedChat(const Chat& loaded) {
   tabs_[activeTab_].chat = loaded;
   tabs_[activeTab_].originals.clear(), tabs_[activeTab_].allowedRun.clear(), tabs_[activeTab_].allowedEdit.clear(), tabs_[activeTab_].privilegedTouched = false;
   loadTab(activeTab_);
+  saveOpenTabs();
 }
 
 // One tab per open conversation, as the files in the editor; "+" starts another.
@@ -829,7 +873,8 @@ void AssistantPanel::embedCard() {
 void AssistantPanel::saveChat(const PanelContext& context) {
   if (context.projectDir.empty() || chat_.messages.empty()) return;
   try {
-    ChatStore(context.projectDir).save(chat_);
+    chatStore(context.projectDir).save(chat_);
+    saveOpenTabs();
   } catch (const std::exception&) {  // a chat that cannot be saved must never end the program
   }
 }
@@ -1877,12 +1922,43 @@ void AssistantPanel::drawMessageContent(const ChatMessage& message, const std::s
     }
   }
   if (!message.reference.empty() && !user) {  // after the answer: which reference entries it was given
-    std::string line = std::string(T("From the knowledge base")) + ":";
-    for (size_t k = 0; k < message.reference.size(); k++) line += (k ? ", " : " ") + message.reference[k];
+    // each entry is a link to its card in the documentation
+    auto topicOf = [&](const std::string& id) -> std::string {
+      if (!context.kb) return "";
+      if (context.kb->instruction(id)) return "I:" + context.kb->instruction(id)->mnemonic;
+      if (context.kb->reg(id)) return "R:" + context.kb->reg(id)->name;
+      if (context.kb->format(id)) return "F:" + context.kb->format(id)->id;
+      if (context.kb->tv(id)) return "T:" + context.kb->tv(id)->id;
+      for (auto& technique : context.kb->techniques())
+        if (technique.id == id) return "K:" + technique.id;
+      return "";
+    };
     ImGui::PushStyleColor(ImGuiCol_Text, theme::colv(theme::Role::UiTextDim));
-    ImGui::TextWrapped("%s", line.c_str());
+    ImGui::TextUnformatted((std::string(T("From the knowledge base")) + ":").c_str());
     ImGui::PopStyleColor();
-    if (ImGui::IsItemHovered())
+    bool explained = ImGui::IsItemHovered();
+    for (size_t k = 0; k < message.reference.size(); k++) {
+      const std::string& id = message.reference[k];
+      std::string topic = topicOf(id);
+      std::string label = id + (k + 1 < message.reference.size() ? "," : "");
+      float width = ImGui::CalcTextSize(label.c_str()).x + ImGui::GetStyle().ItemSpacing.x;
+      if (ImGui::GetContentRegionAvail().x > width) ImGui::SameLine();
+      if (topic.empty() || !context.showDoc) {
+        ImGui::PushStyleColor(ImGuiCol_Text, theme::colv(theme::Role::UiTextDim));
+        ImGui::TextUnformatted(label.c_str());
+        ImGui::PopStyleColor();
+        continue;
+      }
+      ImGui::PushStyleColor(ImGuiCol_Text, theme::colv(theme::Role::UiAccent));
+      ImGui::TextUnformatted(label.c_str());
+      ImGui::PopStyleColor();
+      if (ImGui::IsItemHovered()) {
+        ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+        ImGui::SetTooltip("%s", T("Open in the documentation"));
+        if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) context.showDoc(topic);
+      }
+    }
+    if (explained)
       ImGui::SetTooltip("%s", T("VCSIDE found these in its reference (instructions, registers, cartridge formats, TV standards) for your question and gave them to the model, which was asked to answer from them and to say when something is not confirmed."));
   }
   if (!message.warnings.empty() && !user) {
@@ -1911,6 +1987,8 @@ void AssistantPanel::draw(const PanelContext& context, ImFont* mono, bool* open)
     ensureTabs();
     newChat();
     chatProject_ = context.projectDir;
+    projectDir_ = context.projectDir;
+    restoreOpenTabs();  // what was open when the project was left
   }
   projectDir_ = context.projectDir;
   poll(context);
@@ -2487,7 +2565,7 @@ void AssistantPanel::historyDialog() {
   if (projectDir_.empty()) {
     ImGui::TextUnformatted(T("Open a project to keep chats."));
   } else {
-    ChatStore store(projectDir_);
+    ChatStore store = chatStore(projectDir_);
     auto items = store.list();
     if (items.empty()) ImGui::TextUnformatted(T("No saved chats yet."));
     ImGui::BeginChild("chats", ImVec2(theme::em(520), theme::em(260)), ImGuiChildFlags_Borders);

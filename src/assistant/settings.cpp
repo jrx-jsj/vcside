@@ -79,12 +79,42 @@ Settings Settings::fromJson(const json& input) {
   return settings;
 }
 
-std::string ChatStore::chatsDir() const { return (fs::path(projectDir_) / ".vcsai" / "chats").string(); }
+std::string ChatStore::folderKey(const std::string& projectDir) {
+  fs::path path(projectDir);
+  while (!path.empty() && path.filename().empty() && path.has_parent_path() && path != path.parent_path()) path = path.parent_path();
+  std::string name = path.filename().string();
+  for (auto& c : name)
+    if (!std::isalnum((unsigned char)c) && c != '-' && c != '_' && c != '.') c = '_';
+  if (name.empty()) name = "project";
+  unsigned hash = 2166136261u;  // FNV-1a over the whole path: two projects with the same name stay apart
+  for (unsigned char c : projectDir) hash = (hash ^ c) * 16777619u;
+  char suffix[16];
+  snprintf(suffix, sizeof suffix, "-%08x", hash);
+  return name + suffix;
+}
+
+std::string ChatStore::chatsDir() const {
+  if (chatsBase_.empty()) return (fs::path(projectDir_) / ".vcsai" / "chats").string();
+  return (fs::path(chatsBase_) / folderKey(projectDir_)).string();
+}
 
 bool ChatStore::ensureFolders() const {
   std::error_code error;
-  fs::create_directories(fs::path(projectDir_) / ".vcsai" / "chats" / "archive", error);
+  bool firstTime = !chatsBase_.empty() && !fs::exists(chatsDir(), error);
+  fs::create_directories(fs::path(chatsDir()) / "archive", error);
   if (error) return false;
+  if (!chatsBase_.empty()) {
+    if (firstTime) {  // the chats the project folder had come along (copied: the originals stay where they are)
+      fs::path legacy = fs::path(projectDir_) / ".vcsai" / "chats";
+      for (bool archived : {false, true}) {
+        fs::path from = archived ? legacy / "archive" : legacy, to = archived ? fs::path(chatsDir()) / "archive" : fs::path(chatsDir());
+        std::error_code listing;
+        for (auto& entry : fs::directory_iterator(from, listing))
+          if (entry.is_regular_file() && entry.path().extension() == ".json") fs::copy_file(entry.path(), to / entry.path().filename(), fs::copy_options::skip_existing, listing);
+      }
+    }
+    return true;
+  }
   // Conversations hold code and tool results: they must not reach git by accident, so the
   // entry is put back if someone removed it.
   fs::path ignore = fs::path(projectDir_) / ".vcsai" / ".gitignore";
@@ -92,6 +122,26 @@ bool ChatStore::ensureFolders() const {
   if (std::ifstream in{ignore}) text.assign(std::istreambuf_iterator<char>(in), {});
   if (text.find("chats/") == std::string::npos) std::ofstream(ignore, std::ios::app) << (text.empty() || text.back() == '\n' ? "" : "\n") << "chats/\n";
   return true;
+}
+
+ChatStore::OpenTabs ChatStore::loadOpenTabs() const {
+  OpenTabs tabs;
+  if (chatsBase_.empty()) return tabs;
+  ensureFolders();  // the first time, this is what brings the old chats along
+  std::ifstream in(fs::path(chatsDir()) / "open.tabs");
+  std::string line;
+  while (std::getline(in, line)) {
+    if (line.rfind("active ", 0) == 0) tabs.active = line.substr(7);
+    else if (line.rfind("tab ", 0) == 0 && line.size() > 4) tabs.ids.push_back(line.substr(4));
+  }
+  return tabs;
+}
+
+void ChatStore::saveOpenTabs(const OpenTabs& tabs) {
+  if (chatsBase_.empty() || !ensureFolders()) return;
+  std::ofstream out(fs::path(chatsDir()) / "open.tabs", std::ios::trunc);
+  for (auto& id : tabs.ids) out << "tab " << id << "\n";
+  if (!tabs.active.empty()) out << "active " << tabs.active << "\n";
 }
 
 std::string ChatStore::newId() {
