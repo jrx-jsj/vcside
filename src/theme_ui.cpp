@@ -38,6 +38,16 @@ bool beginModal(const char* name, bool* open, ImGuiWindowFlags flags) {
   drawList->PushClipRect(window->Rect().Min, window->Rect().Max, false);
   drawStripes(drawList, ImVec2(bar.Min.x + borderInset, bar.Max.y), ImVec2(bar.Max.x - borderInset, bar.Max.y + stripeHeight * 3));
   drawList->PopClipRect();
+  // scrolled content is clipped at their lower edge, so it never paints over them
+  float stripesBottom = bar.Max.y + stripeHeight * 3;
+  window->ClipRect.Min.y = std::max(window->ClipRect.Min.y, stripesBottom);
+  window->InnerClipRect.Min.y = std::max(window->InnerClipRect.Min.y, stripesBottom);
+  if (!drawList->_ClipRectStack.empty()) {
+    ImVec4& clip = drawList->_ClipRectStack.back();
+    clip.y = std::max(clip.y, stripesBottom);
+    drawList->_CmdHeader.ClipRect = clip;
+    drawList->_OnChangedClipRect();
+  }
   ImGui::Dummy(ImVec2(0, stripeHeight * 3 - em(6)));  // the content starts under them
   return true;
 }
