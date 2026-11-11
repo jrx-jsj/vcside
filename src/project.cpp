@@ -520,7 +520,9 @@ static bool copySharedFiles(const fs::path& templateDir, const fs::path& project
 std::vector<std::pair<std::string, const char*>> Project::examples(Language language) {
   if (language == Language::Dasm) return {{"animation", N_("Example: an animated sprite")}, {"dpcplus", N_("Example: music on a DPC+ cartridge")},
             {"cdfj", N_("Example: C and music on a CDFJ cartridge")}};
-  if (language == Language::ElfC || language == Language::AceC) return {{"animation", N_("Example: an animated sprite")}};
+  if (language == Language::ElfC) return {{"animation", N_("Example: an animated sprite")}};
+  if (language == Language::AceC)
+    return {{"animation", N_("Example: an animated sprite")}, {"vcslib", N_("Example: the ELF game on vcsLib (also builds as ELF)")}};
   return {};
 }
 
@@ -676,21 +678,24 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
     // data/templates/elf (or ace), copied whole, with an example's files over it; {{NAME}}
     // in the Makefile and the sources. ACE: the header's 16-character name and the visible
     // lines (the frame's, less the 63 of the overblank program).
-    std::string templateName = ace ? "ace" : "elf";
+    // ACE's vcsLib example is the ELF project as it is, built with make ace: the same
+    // source runs on both kinds of cartridge, and plain make still gives the ELF ROM.
+    const bool vcsLibOnAce = ace && example == "vcslib";
+    const std::string templateName = ace && !vcsLibOnAce ? "ace" : "elf", exampleName = vcsLibOnAce ? "" : example;
     std::string aceName = (projName + std::string(16, ' ')).substr(0, 16);
     std::string visibleLines = std::to_string((tvIs50Hz(tvStandard) ? 312 : 262) - 63);
     // the vcsLib system type an ELF game gets in its ACE build: ST_NTSC_2600, ST_PAL_2600, ST_PAL60_2600
     std::string aceSystem = tvStandard == "PAL" ? "1" : tvStandard == "PAL60" ? "2" : "0";
     fs::path templateDir = fs::path(dataDir()) / "templates" / templateName;
-    fs::path exampleDir = fs::path(dataDir()) / "templates" / (templateName + "-" + example);
-    if (!fs::exists(templateDir / "Makefile") || (!example.empty() && !fs::exists(exampleDir / "src" / "main.c"))) {
-      if (error) *error = F("Template not found in {0}", {(example.empty() ? templateDir : exampleDir).string()});
+    fs::path exampleDir = fs::path(dataDir()) / "templates" / (templateName + "-" + exampleName);
+    if (!fs::exists(templateDir / "Makefile") || (!exampleName.empty() && !fs::exists(exampleDir / "src" / "main.c"))) {
+      if (error) *error = F("Template not found in {0}", {(exampleName.empty() ? templateDir : exampleDir).string()});
       return false;
     }
     const std::vector<std::pair<std::string, std::string>> substitutions = {
         {"{{NAME}}", projName}, {"{{ACE_NAME}}", aceName}, {"{{VISIBLE_LINES}}", visibleLines}, {"{{ACE_SYSTEM}}", aceSystem}};
     std::vector<fs::path> from{templateDir};
-    if (!example.empty()) from.insert(from.begin(), exampleDir);  // the first copy of a file wins
+    if (!exampleName.empty()) from.insert(from.begin(), exampleDir);  // the first copy of a file wins
     for (auto& sourceDir : from) {
       for (auto& entry : fs::recursive_directory_iterator(sourceDir, errorCode)) {
         if (!entry.is_regular_file()) continue;
@@ -712,6 +717,7 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
     newProject.format = ace ? "ACE" : "ELF";
     if (ace) {
       newProject.output = "build/" + projName + ".ace";
+      if (vcsLibOnAce) newProject.buildCommand = "make ace";
       newProject.emulator = "gopher2600";                         // the only one that runs ACE
       newProject.emulatorOptions["gopher2600"]["armClock"] = "168";  // the STM32F407's MHz
     }

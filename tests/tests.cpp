@@ -1133,7 +1133,7 @@ static void testElfSpace() {
     CHECK(aceFileSize == builtSpace.startCode + builtSpace.code + builtSpace.constants + builtSpace.data);  // the file: all but .bss
   }
   // the ACE example: the animated sprite, its graphics' tables, NTSC lines
-  CHECK(Project::examples(Language::AceC).size() == 1 && Project::examples(Language::AceC)[0].first == "animation");
+  CHECK(Project::examples(Language::AceC).size() == 2 && Project::examples(Language::AceC)[0].first == "animation");
   fs::path aceAnimationDir = dir / "ace-animation";
   CHECK(Project::create(aceAnimationDir.string(), "walker", Language::AceC, "NTSC", &project, &error, "animation"));
   for (auto fileName : {"src/hero.vcsgfx", "src/hero.gfx.h", "src/theme.music.h", "src/ace.c", "src/start.S"})
@@ -1144,6 +1144,17 @@ static void testElfSpace() {
   if (!gcc.empty() && !make.empty()) {
     std::string command = "cd \"" + aceAnimationDir.string() + "\" && \"" + make + "\" > make.log 2>&1";
     CHECK(std::system(command.c_str()) == 0 && romFormat((aceAnimationDir / "build" / "walker.ace").string()) == "ACE");
+  }
+  // ACE's vcsLib example: the ELF project, built with make ace (and still as ELF with make)
+  fs::path aceVcsLibDir = dir / "ace-vcslib";
+  CHECK(Project::create(aceVcsLibDir.string(), "both", Language::AceC, "PAL", &project, &error, "vcslib"));
+  CHECK(project.format == "ACE" && project.output == "build/both.ace" && project.emulator == "gopher2600" && project.buildCommand == "make ace");
+  for (auto fileName : {"Makefile", "include/vcsLib.h", "src/main.c", "src/theme.music.h", "ace/vcslib_ace.c", "ace/main_ace.c", "ace/ace.c", "ace/start.S"})
+    CHECK(fs::exists(aceVcsLibDir / fileName));
+  CHECK(!fs::exists(aceVcsLibDir / "include" / "ace.h") && !fs::exists(aceVcsLibDir / "shared.json"));
+  if (!gcc.empty() && !make.empty()) {
+    std::string command = "cd \"" + aceVcsLibDir.string() + "\" && \"" + make + "\" ace > make-ace.log 2>&1 && \"" + make + "\" > make.log 2>&1";
+    CHECK(std::system(command.c_str()) == 0 && romFormat((aceVcsLibDir / "build" / "both.ace").string()) == "ACE" && fs::exists(aceVcsLibDir / "build" / "both.bin"));
   }
   if (!std::getenv("VCSIDE_TEST_KEEP")) fs::remove_all(dir, errorCode);
 }
