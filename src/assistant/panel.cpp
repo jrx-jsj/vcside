@@ -1263,8 +1263,9 @@ void AssistantPanel::undoEverything(const PanelContext& context) {
 }
 
 namespace {
-// A few changed lines with their neighbours: enough to judge an edit at a glance.
-void drawDiff(const std::string& before, const std::string& after) {
+// A few changed lines with their neighbours, each with its line number in the file: enough to judge an edit at a glance and
+// to see where it goes. Returns how many lines it draws (or would draw, when only measuring).
+size_t drawDiff(const std::string& before, const std::string& after, bool measureOnly = false) {
   auto split = [](const std::string& text) {
     std::vector<std::string> lines;
     std::istringstream in(text);
@@ -1278,20 +1279,25 @@ void drawDiff(const std::string& before, const std::string& after) {
   size_t suffix = 0;
   while (suffix < a.size() - prefix && suffix < b.size() - prefix && a[a.size() - 1 - suffix] == b[b.size() - 1 - suffix]) suffix++;
   auto dim = theme::colv(theme::Role::UiTextDim);
+  size_t count = 0;
+  auto row = [&](ImVec4 colour, const char* sign, size_t number, const std::string& text) {
+    count++;
+    if (!measureOnly) ImGui::TextColored(colour, "%4zu %s %s", number, sign, text.c_str());
+  };
   size_t from = prefix > 3 ? prefix - 3 : 0;
-  if (from > 0) ImGui::TextColored(dim, "  ...");
-  for (size_t i = from; i < prefix; i++) ImGui::TextColored(dim, "  %s", a[i].c_str());
+  for (size_t i = from; i < prefix; i++) row(dim, " ", i + 1, a[i]);
   size_t removedEnd = a.size() - suffix, addedEnd = b.size() - suffix, shown = 0;
   for (size_t i = prefix; i < removedEnd; i++) {
-    if (++shown > 40) { ImGui::TextColored(dim, "  ..."); break; }
-    ImGui::TextColored(theme::colv(theme::Role::MsgError), "- %s", a[i].c_str());
+    if (++shown > 40) { count++; if (!measureOnly) ImGui::TextColored(dim, "     ..."); break; }
+    row(theme::colv(theme::Role::MsgError), "-", i + 1, a[i]);
   }
   shown = 0;
   for (size_t i = prefix; i < addedEnd; i++) {
-    if (++shown > 40) { ImGui::TextColored(dim, "  ..."); break; }
-    ImGui::TextColored(theme::colv(theme::Role::MsgInfo), "+ %s", b[i].c_str());
+    if (++shown > 40) { count++; if (!measureOnly) ImGui::TextColored(dim, "     ..."); break; }
+    row(theme::colv(theme::Role::MsgInfo), "+", i + 1, b[i]);
   }
-  for (size_t i = removedEnd; i < std::min(a.size(), removedEnd + 3); i++) ImGui::TextColored(dim, "  %s", a[i].c_str());
+  for (size_t i = removedEnd; i < std::min(a.size(), removedEnd + 3); i++) row(dim, " ", i + 1 + addedEnd - removedEnd, a[i]);
+  return count;
 }
 }  // namespace
 
@@ -1324,12 +1330,19 @@ void AssistantPanel::drawEditBlock(const PanelContext& context, const EditBlock&
   ImGui::PushStyleColor(ImGuiCol_Text, theme::colv(theme::Role::UiAccent));
   ImGui::TextUnformatted(F("Change to {0}", {block.path}).c_str());
   ImGui::PopStyleColor();
+  const Placement* placed = finished ? &placementOf(context, key, block) : nullptr;
+  bool exact = placed && placed->ok;  // the real lines of the real file, with their numbers, instead of what the model wrote
   size_t lines = 0;
-  for (auto& section : block.sections) lines += (size_t)std::count(section.search.begin(), section.search.end(), '\n') + (section.search.empty() ? 0 : 1) + (size_t)std::count(section.replace.begin(), section.replace.end(), '\n') + 1 + 1;
+  if (exact) lines = drawDiff(placed->edit.before, placed->edit.after, true);
+  else
+    for (auto& section : block.sections) lines += (size_t)std::count(section.search.begin(), section.search.end(), '\n') + (section.search.empty() ? 0 : 1) + (size_t)std::count(section.replace.begin(), section.replace.end(), '\n') + 1 + 1;
   float height = std::min<float>((float)lines, 16.0f) * ImGui::GetTextLineHeight() + ImGui::GetStyle().WindowPadding.y * 2;
   ImGui::PushFont(monoFont_);
   ImGui::PushStyleColor(ImGuiCol_ChildBg, theme::colv(theme::Role::EdBackground));
   if (ImGui::BeginChild("edit_diff", ImVec2(-ImGui::GetFontSize() * 0.9f, height), ImGuiChildFlags_Borders, ImGuiWindowFlags_HorizontalScrollbar)) {
+    if (exact) {
+      drawDiff(placed->edit.before, placed->edit.after);
+    } else {
     auto draw = [](const std::string& text, const char* sign, ImVec4 colour) {
       std::istringstream in(text);
       std::string line;
@@ -1340,12 +1353,13 @@ void AssistantPanel::drawEditBlock(const PanelContext& context, const EditBlock&
       if (!block.sections[i].search.empty()) draw(block.sections[i].search, "-", theme::colv(theme::Role::MsgError));
       if (!block.sections[i].replace.empty()) draw(block.sections[i].replace, "+", theme::colv(theme::Role::MsgInfo));
     }
+    }
   }
   ImGui::EndChild();
   ImGui::PopStyleColor();
   ImGui::PopFont();
   if (!finished) return;
-  const Placement& placement = placementOf(context, key, block);
+  const Placement& placement = *placed;
   if (!placement.ok && placement.applied) {
     ImGui::PushStyleColor(ImGuiCol_Text, theme::colv(theme::Role::UiTextDim));
     ImGui::TextWrapped("%s", F("Already in {0}: the new text is there.", {block.path}).c_str());
