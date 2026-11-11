@@ -2103,7 +2103,7 @@ void AssistantPanel::keyControls(Provider& provider) {
   else ImGui::TextDisabled("%s", secretsPersistent() ? T("No key saved.") : T("No key saved (it will be kept for this session only)."));
   ImGui::SetNextItemWidth(theme::em(260));
   ImGui::InputText(T("API key"), &keyInput_, ImGuiInputTextFlags_Password);
-  ImGui::SameLine();
+  // the buttons go under the box, never beside it: at any zoom the row cannot grow past the window
   ImGui::BeginDisabled(keyInput_.empty());
   if (theme::dialogButton(T("Save key"), ImVec2(0, 0), true)) {
     saveSecret(provider.name, keyInput_);
@@ -2139,7 +2139,7 @@ void AssistantPanel::keyStoreChoice(float wrapWidth) {
 
 void AssistantPanel::settingsDialog() {
   static bool opened = false;
-  if (wantSettings_) ImGui::OpenPopup("###assistant_settings"), wantSettings_ = false, opened = true;
+  if (wantSettings_) ImGui::OpenPopup("###assistant_settings"), wantSettings_ = false, opened = true, openProvider_ = settings_.active;
   if (!opened) return;
   char title[96];
   snprintf(title, sizeof title, "%s###assistant_settings", T("Assistant settings"));
@@ -2188,15 +2188,16 @@ void AssistantPanel::settingsDialog() {
   }
   ImGui::TextDisabled("%s", T("Nothing is sent anywhere until a model is chosen below and you send a message."));
   theme::dialogHeading(T("Models"));
-  ImGui::TextWrapped("%s", T("A local server (llama.cpp's llama-server, Ollama, LM Studio) keeps everything on this computer. Keys are never saved: for a service that needs one, give the name of the environment variable that holds it."));
+  ImGui::TextWrapped("%s", T("A local server (llama.cpp's llama-server, Ollama, LM Studio) keeps everything on this computer. A service that needs a key keeps it in the system's secret store, or in a file only you can read."));
   if (theme::dialogButton(T("Detect local servers"))) {
     detecting_ = true;
     detectNote_.clear();
     detectFuture_ = std::async(std::launch::async, [] { return detectLocalServers(); });
   }
-  ImGui::SameLine();
-  if (detecting_) ImGui::TextUnformatted(T("Looking..."));
-  else if (!detectNote_.empty()) ImGui::TextUnformatted(detectNote_.c_str());
+  if (detecting_ || !detectNote_.empty()) {  // (a SameLine with nothing after it would pull the next row up beside the button)
+    ImGui::SameLine();
+    ImGui::TextUnformatted(detecting_ ? T("Looking...") : detectNote_.c_str());
+  }
   if (!catalogLoaded_) {
     catalog_ = loadCatalog(dataDir() + "/assistant/models.json");
     catalogLoaded_ = true;
@@ -2206,11 +2207,23 @@ void AssistantPanel::settingsDialog() {
   for (size_t i = 0; i < settings_.providers.size(); i++) {
     Provider& provider = settings_.providers[i];
     ImGui::PushID((int)i);
-    ImGui::Separator();
+    // one service open at a time (the others show only their name and model, selected or not)
+    if (i == 0) ImGui::Spacing();
     if (ImGui::RadioButton("##active", settings_.active == (int)i)) settings_.active = (int)i, changed_ = true;
     ImGui::SameLine();
+    {
+      std::string heading = provider.builtin ? std::string(T("Built-in model")) : provider.name.empty() ? std::string(T("(no name)")) : provider.name;
+      if (!provider.model.empty()) heading += "   -   " + provider.model;
+      ImGui::SetNextItemOpen(openProvider_ == (int)i, ImGuiCond_Always);
+      bool shown = ImGui::CollapsingHeader((heading + "###provider").c_str());
+      if (ImGui::IsItemToggledOpen()) openProvider_ = shown ? (int)i : -1;
+      if (!shown) {
+        ImGui::PopID();
+        continue;
+      }
+    }
     if (provider.builtin) {
-      ImGui::TextUnformatted(T("Built-in model (runs on this computer; no server to set up)"));
+      ImGui::TextWrapped("%s", T("Runs on this computer; no server to set up."));
       modelCombo(provider, T("Model"), theme::em(320));
       ImGui::SetNextItemWidth(theme::em(120));
       changed_ |= ImGui::InputInt(T("Context tokens"), &provider.contextTokens, 1024, 8192);
@@ -2255,7 +2268,6 @@ void AssistantPanel::settingsDialog() {
       for (auto& known : known_)
         if (known.id == provider.preset && !known.keyPage.empty()) {
           ImGui::TextDisabled("%s", F("{0} gives the key at {1}", {known.name, known.keyPage}).c_str());
-          ImGui::SameLine();
           if (theme::dialogButton(T("Open"), ImVec2(0, 0), true)) SDL_OpenURL(known.keyPage.c_str());
         }
       keyControls(provider);
@@ -2276,6 +2288,7 @@ void AssistantPanel::settingsDialog() {
   if (removeIndex >= 0) {
     settings_.providers.erase(settings_.providers.begin() + removeIndex);
     if (settings_.active >= (int)settings_.providers.size()) settings_.active = 0;
+    openProvider_ = -1;
     changed_ = true;
   }
   ImGui::Separator();
@@ -2295,6 +2308,7 @@ void AssistantPanel::settingsDialog() {
         }
         settings_.providers.push_back(made);
         settings_.active = (int)settings_.providers.size() - 1;
+        openProvider_ = settings_.active;
         changed_ = true;
       }
       if (ImGui::IsItemHovered() && !known.note.empty()) ImGui::SetTooltip("%s", known.note.c_str());
@@ -2304,6 +2318,7 @@ void AssistantPanel::settingsDialog() {
   ImGui::SameLine();
   if (theme::dialogButton(T("Add a model server"))) {
     settings_.providers.push_back(Provider());
+    openProvider_ = (int)settings_.providers.size() - 1;
     changed_ = true;
   }
   ImGui::Spacing();

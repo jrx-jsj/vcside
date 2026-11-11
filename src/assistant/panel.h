@@ -187,6 +187,7 @@ class AssistantPanel {
   int agentSteps_ = 0;
   std::map<std::string, int> callCounts_;
   std::string exampleFile_ = "game.asm";  // the file the prompt's example reads and edits: the one the user works on
+  int openProvider_ = -1;  // the service whose settings are open in the settings window (one at a time)
   int blockRetries_ = 0;  // times, in this message, the model was sent back an edit block that does not fit the file
   bool nudged_ = false;  // the model was already reminded, in this message, to use the tools
   std::string turnText_;                               // the user's last turn as sent (with its attachments)
