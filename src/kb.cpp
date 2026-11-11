@@ -141,6 +141,10 @@ bool KnowledgeBase::load(const std::string& dir, std::string* error) {
       reg.example = stringValue(registerJson, "example");
       reg.issues = stringList(registerJson, "issues");
       reg.sources = stringList(registerJson, "sources");
+      reg.seeAlso = stringList(registerJson, "see_also");
+      if (registerJson.contains("fields") && registerJson["fields"].is_array())
+        for (auto& field : registerJson["fields"])
+          if (field.is_object()) reg.fields.push_back({stringValue(field, "bits"), stringValue(field, "name"), stringValue(field, "meaning")});
       reg.verified = registerJson.value("verified", true);
       registers_.push_back(reg);
     }

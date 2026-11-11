@@ -153,6 +153,7 @@ class AssistantPanel {
   std::string mentionQuery_, mentionNote_, mentionListFor_;
   int mentionStart_ = -1, mentionIndex_ = 0, mentionDismissed_ = -1;
   double mentionNoteAt_ = 0;
+  double lastBusyAt_ = 0;                              // the last moment the built-in model was needed (it is unloaded after ten quiet minutes)
   double requestStartedAt_ = 0;                        // when the question went out, for the waiting line
   std::string waitingText_;                            // what the model is doing before its first word
   float chipsTopY_ = 0;

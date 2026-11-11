@@ -16,9 +16,10 @@
    "access": "RW",
    "bits": "76543210",
    "summary": "Port A data: joysticks, paddle buttons, keypad rows.",
-   "description": "Read: the state of the 8 port A pins, 0 = active. Bits 7-4 belong to the left port (player 0), bits 3-0 to the right port (player 1). Joystick: bit 7 = P0 right, 6 = left, 5 = down, 4 = up; bit 3 = P1 right, 2 = left, 1 = down, 0 = up. Paddle fire buttons share the port: bit 7 = paddle 0, bit 6 = paddle 1, bit 3 = paddle 2, bit 2 = paddle 3; the paddle positions come through TIA INPT0-INPT3. Write: the output latch for pins that SWACNT configures as outputs; keypad rows and peripherals such as SaveKey/AtariVox use this.",
+   "description": "Read: the state of the 8 port A pins, 0 = active. Bits 7-4 belong to the left port (player 0), bits 3-0 to the right port (player 1). Joystick: bit 7 = P0 right, 6 = left, 5 = down, 4 = up; bit 3 = P1 right, 2 = left, 1 = down, 0 = up. Paddle fire buttons share the port: bit 7 = paddle 0, bit 6 = paddle 1, bit 3 = paddle 2, bit 2 = paddle 3; the paddle positions come through TIA INPT0-INPT3. Write: the output latch for pins that SWACNT configures as outputs; keypad rows and peripherals such as SaveKey/AtariVox use this. The joystick fire button is not in this register: read it from INPT4 (player 0) or INPT5 (player 1), bit 7.",
    "timing": "",
    "issues": [
+    "The joystick fire button is not here: it comes through INPT4 (player 0) and INPT5 (player 1), bit 7, 0 = pressed. SWCHA holds only the four directions of each joystick (and the buttons of paddles).",
     "Active low: 0 = pressed. The left port is the high nibble and the right port the low nibble.",
     "Stella models a pin that is an output with a 0 in the latch as pulled low, so a read returns 0 there even when nothing is pressed: only outputs written as 1 leave the pin free.",
     "Keypad controllers: the four rows are driven low through SWCHA output bits (bits 7-4 left, 3-0 right, bit 7 = bottom row of the left keypad, bit 4 = top row) and the columns are read on INPT0, INPT1, INPT4 (left) or INPT2, INPT3, INPT5 (right); the guide asks for about 400 microseconds between the write and the read.",
@@ -31,6 +32,55 @@
     "stella-guide",
     "mos6532",
     "stella-src"
+   ],
+   "fields": [
+    {
+     "bits": "7",
+     "name": "P0 right",
+     "meaning": "0 = pressed, 1 = released"
+    },
+    {
+     "bits": "6",
+     "name": "P0 left",
+     "meaning": "0 = pressed, 1 = released"
+    },
+    {
+     "bits": "5",
+     "name": "P0 down",
+     "meaning": "0 = pressed, 1 = released"
+    },
+    {
+     "bits": "4",
+     "name": "P0 up",
+     "meaning": "0 = pressed, 1 = released"
+    },
+    {
+     "bits": "3",
+     "name": "P1 right",
+     "meaning": "0 = pressed, 1 = released"
+    },
+    {
+     "bits": "2",
+     "name": "P1 left",
+     "meaning": "0 = pressed, 1 = released"
+    },
+    {
+     "bits": "1",
+     "name": "P1 down",
+     "meaning": "0 = pressed, 1 = released"
+    },
+    {
+     "bits": "0",
+     "name": "P1 up",
+     "meaning": "0 = pressed, 1 = released"
+    }
+   ],
+   "see_also": [
+    "INPT4",
+    "INPT5",
+    "SWCHB",
+    "SWACNT",
+    "read-controls"
    ]
   },
   {
@@ -73,6 +123,43 @@
     "stella-guide",
     "mos6532",
     "stella-src"
+   ],
+   "fields": [
+    {
+     "bits": "7",
+     "name": "P1 difficulty",
+     "meaning": "0 = B (amateur), 1 = A (pro)"
+    },
+    {
+     "bits": "6",
+     "name": "P0 difficulty",
+     "meaning": "0 = B (amateur), 1 = A (pro)"
+    },
+    {
+     "bits": "5, 4, 2",
+     "name": "not used",
+     "meaning": "read as 1"
+    },
+    {
+     "bits": "3",
+     "name": "TV type",
+     "meaning": "1 = colour, 0 = black and white"
+    },
+    {
+     "bits": "1",
+     "name": "Game select",
+     "meaning": "0 = pressed"
+    },
+    {
+     "bits": "0",
+     "name": "Game reset",
+     "meaning": "0 = pressed"
+    }
+   ],
+   "see_also": [
+    "SWCHA",
+    "SWBCNT",
+    "read-controls"
    ]
   },
   {
@@ -115,6 +202,11 @@
     "stella-guide",
     "mos6532",
     "stella-src"
+   ],
+   "see_also": [
+    "TIM64T",
+    "TIMINT",
+    "wait-exact-time"
    ]
   },
   {
@@ -138,6 +230,18 @@
     "mos6532",
     "stella-src",
     "dasm-vcs-h"
+   ],
+   "fields": [
+    {
+     "bits": "7",
+     "name": "Timer flag",
+     "meaning": "1 = the timer counted through 0"
+    },
+    {
+     "bits": "6",
+     "name": "PA7 edge flag",
+     "meaning": "1 = the selected PA7 edge happened"
+    }
    ]
   },
   {
@@ -158,6 +262,10 @@
     "stella-guide",
     "mos6532",
     "stella-src"
+   ],
+   "see_also": [
+    "INTIM",
+    "wait-exact-time"
    ]
   },
   {
@@ -178,6 +286,11 @@
     "stella-guide",
     "mos6532",
     "stella-src"
+   ],
+   "see_also": [
+    "INTIM",
+    "TIM64T",
+    "wait-exact-time"
    ]
   },
   {
@@ -199,6 +312,11 @@
     "stella-guide",
     "mos6532",
     "stella-src"
+   ],
+   "see_also": [
+    "INTIM",
+    "TIM8T",
+    "wait-exact-time"
    ]
   },
   {
@@ -219,6 +337,10 @@
     "stella-guide",
     "mos6532",
     "stella-src"
+   ],
+   "see_also": [
+    "INTIM",
+    "wait-exact-time"
    ]
   },
   {

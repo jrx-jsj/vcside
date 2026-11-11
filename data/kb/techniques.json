@@ -446,6 +446,306 @@
    ],
    "verified": false,
    "note": "The structure comes from the register descriptions; the exact cycle windows of the six writes were not worked out for this entry. Use a known 48-pixel routine and check it in an emulator."
-  }
+  },
+ {
+  "id": "fire-button-action",
+  "title": "Do something when the fire button is pressed (once per press)",
+  "keywords": [
+   "fire",
+   "button",
+   "press",
+   "pressed",
+   "trigger",
+   "joystick",
+   "jump",
+   "shoot",
+   "action",
+   "inpt4",
+   "inpt5",
+   "once",
+   "debounce",
+   "edge"
+  ],
+  "summary": "Read INPT4 (player 0) or INPT5 (player 1), bit 7 (0 = pressed). To act once per press and not on every frame, keep the previous state in RAM and act only when it changed from released to pressed.",
+  "steps": [
+   "The joystick fire button is not in SWCHA: read INPT4 (player 0) or INPT5 (player 1). Bit 7 is 0 while the button is pressed and 1 when it is released.",
+   "LDA INPT4 sets the N flag from bit 7: BMI means released, BPL means pressed. No mask is needed.",
+   "To act once per press, keep the last state in a RAM byte (FireWas): act only when the button is pressed now and was released in the previous frame, and store the current state afterwards.",
+   "Read it once per frame, in the vertical blank or the overscan, where there is time to spare, and save the result for the code that needs it.",
+   "Alternative: VBLANK bit 6 = 1 latches INPT4 and INPT5, so a short press between two reads is not lost; the latch is cleared by writing VBLANK with bit 6 = 0 and then 1 again."
+  ],
+  "related": [
+   "INPT4",
+   "INPT5",
+   "VBLANK",
+   "SWCHA",
+   "BIT",
+   "BMI",
+   "BPL"
+  ],
+  "sources": [
+   "stella-guide"
+  ],
+  "verified": true,
+  "example": "; FireWas: RAM byte, bit 7 = the fire state of the last frame (1 = released)\n        lda INPT4          ; bit 7: 0 = pressed\n        tax                ; keep it for FireWas\n        bmi .Released      ; released now: nothing to do\n        lda FireWas\n        bpl .Held          ; it was pressed already: not a new press\n        ; ---- a new press: start the jump, fire the shot... ----\n.Held\n.Released\n        stx FireWas        ; the state for the next frame",
+  "note": "After a reset the RAM is clear, so FireWas starts as 'pressed' and a button held during the start does not count as a new press."
+ },
+ {
+  "id": "jump-with-gravity",
+  "title": "Make a character jump and fall (gravity)",
+  "keywords": [
+   "jump",
+   "jumping",
+   "gravity",
+   "fall",
+   "falling",
+   "height",
+   "velocity",
+   "speed",
+   "vertical",
+   "platform",
+   "ground",
+   "land",
+   "arc",
+   "salto",
+   "saltar"
+  ],
+  "summary": "Keep the height above the ground and a signed speed in RAM. A press on the ground gives the speed an upward value; every frame the speed is added to the height and gravity takes one off the speed, until the height reaches 0 again.",
+  "steps": [
+   "RAM: Height (pixels above the ground, 0 = standing) and Speed (signed, pixels per frame: $FF = -1). Draw the sprite at GroundLine - Height.",
+   "Take off only when Height is 0 and the fire button has just been pressed (see the recipe for the fire button: read INPT4, not SWCHA).",
+   "Each frame, while in the air: Height = Height + Speed, then Speed = Speed - 1 (gravity). The jump rises, slows down, turns and falls without any table.",
+   "Landing: when Height is 0 or has gone negative (bit 7 set), set Height and Speed to 0.",
+   "A bigger take-off speed gives a higher jump (a speed of 7 and gravity 1 reach about 28 pixels); keep Height below 128 so the sign test works.",
+   "Do it once per frame in the vertical blank or the overscan, before the picture, so the kernel only draws at the new height."
+  ],
+  "related": [
+   "INPT4",
+   "GRP0",
+   "RESP0"
+  ],
+  "sources": [
+   "stella-guide"
+  ],
+  "verified": false,
+  "example": "; Height: pixels above the ground (0 = standing). Speed: signed pixels per frame.\n; JumpPressed: non-zero for the frame of a new press (from the fire-button code)\n        lda Height\n        bne .Air           ; already in the air\n        lda JumpPressed\n        beq .Done          ; standing and no press\n        lda #7\n        sta Speed          ; take off\n.Air    lda Height\n        clc\n        adc Speed\n        sta Height         ; Height = Height + Speed (signed)\n        dec Speed          ; gravity\n        lda Height\n        beq .Land          ; exactly on the ground\n        bpl .Done          ; still above it\n.Land   lda #0             ; on the ground or below it\n        sta Height\n        sta Speed\n.Done",
+  "note": "The routine was written for this entry from the register descriptions and checked by hand, not run in an emulator."
+ },
+ {
+  "id": "move-with-joystick",
+  "title": "Move a sprite with the joystick",
+  "keywords": [
+   "joystick",
+   "move",
+   "movement",
+   "direction",
+   "left",
+   "right",
+   "up",
+   "down",
+   "swcha",
+   "walk",
+   "player",
+   "position",
+   "limit"
+  ],
+  "summary": "Read SWCHA once per frame: for player 0, bits 7 to 4 are right, left, down and up (0 = pressed). Shift each bit into the carry in turn and add to or take from the position.",
+  "steps": [
+   "LDA SWCHA, then ASL once per direction: each ASL moves the next bit into the carry (7 right, 6 left, 5 down, 4 up). Carry set = not pressed.",
+   "INC or DEC the position (they do not touch the carry), then ASL again for the next direction.",
+   "Keep the position inside the screen: compare with the limits after moving (X between about 1 and 153 for an 8-pixel sprite).",
+   "The fire button is not in SWCHA: read INPT4 for it.",
+   "Player 1 uses bits 3 to 0 of the same register in the same order: shift the register four times first, or mask with AND #$0F."
+  ],
+  "related": [
+   "SWCHA",
+   "INPT4",
+   "RESP0",
+   "HMP0"
+  ],
+  "sources": [
+   "stella-guide"
+  ],
+  "verified": true,
+  "example": "        lda SWCHA\n        asl                ; bit 7: player 0 right -> carry\n        bcs .NoRight       ; 1 = not pressed\n        inc PlayerX\n.NoRight\n        asl                ; bit 6: left\n        bcs .NoLeft\n        dec PlayerX\n.NoLeft\n        asl                ; bit 5: down\n        bcs .NoDown\n        dec PlayerY\n.NoDown\n        asl                ; bit 4: up\n        bcs .NoUp\n        inc PlayerY\n.NoUp"
+ },
+ {
+  "id": "sprite-at-y",
+  "title": "Draw a sprite at a vertical position",
+  "keywords": [
+   "vertical",
+   "y",
+   "position",
+   "sprite",
+   "scanline",
+   "kernel",
+   "height",
+   "draw",
+   "line",
+   "grp0",
+   "row"
+  ],
+  "summary": "The sprite is drawn by the kernel: on each line compare the line with the sprite's first line, and write GRP0 with the matching row of the picture or with zero.",
+  "steps": [
+   "Keep SpriteY (the first line of the sprite) and the sprite's rows in a table. In the kernel X counts the lines of the picture.",
+   "On each line: line - SpriteY. If it is 0 to height - 1 it is a row of the table, otherwise the sprite is not on this line.",
+   "Put a row of zeros after the table, and use it for the lines outside: no branch is needed to draw nothing.",
+   "Look the byte up before STA WSYNC and write GRP0 right after it, at the start of the line, so the beam has not reached the sprite yet.",
+   "The horizontal position is separate (RESP0 and HMP0); the vertical one is only this comparison."
+  ],
+  "related": [
+   "GRP0",
+   "WSYNC",
+   "RESP0"
+  ],
+  "sources": [
+   "stella-guide"
+  ],
+  "verified": false,
+  "example": "; X = line of the picture (0-191), SpriteY = first line of the sprite, 8 rows\n.Line   txa\n        sec\n        sbc SpriteY\n        cmp #8\n        bcc .Inside        ; 0-7: a row of the sprite\n        lda #8             ; elsewhere: the row of zeros\n.Inside tay\n        lda Sprite,y\n        sta WSYNC\n        sta GRP0           ; at the start of the line\n        inx\n        cpx #192\n        bne .Line\n; Sprite: .byte 8 rows of graphics, then .byte 0",
+  "note": "The routine was written for this entry and checked by hand, not run in an emulator."
+ },
+ {
+  "id": "random-numbers",
+  "title": "Random numbers",
+  "keywords": [
+   "random",
+   "rand",
+   "rnd",
+   "lfsr",
+   "shift",
+   "register",
+   "seed",
+   "number",
+   "chance",
+   "aleatorio"
+  ],
+  "summary": "An 8-bit linear feedback shift register: shift the seed right and, if a 1 fell out, XOR it with $B4. It visits all values from 1 to 255 before repeating. The seed must never be 0.",
+  "steps": [
+   "Keep one RAM byte (Seed). After a reset RAM is clear, so set it to a non-zero value once (or to the frame counter when the player first presses a button, so every game differs).",
+   "Each call: LSR the seed; if the carry is set, EOR with $B4; store it. The result is the new seed and also the random number.",
+   "For a smaller range, mask it (AND #7 gives 0 to 7) or compare and subtract; avoid dividing, which is slow.",
+   "Call it once per frame or per event, not inside the kernel."
+  ],
+  "related": [
+   "LSR",
+   "EOR"
+  ],
+  "sources": [
+   "stella-guide"
+  ],
+  "verified": true,
+  "example": "Random: lda Seed           ; never 0\n        lsr\n        bcc .NoTap\n        eor #$B4\n.NoTap  sta Seed\n        rts                ; A = the new number"
+ },
+ {
+  "id": "console-switches",
+  "title": "Read RESET, SELECT and the difficulty switches",
+  "keywords": [
+   "reset",
+   "select",
+   "switch",
+   "switches",
+   "console",
+   "difficulty",
+   "swchb",
+   "bw",
+   "color",
+   "start",
+   "game"
+  ],
+  "summary": "SWCHB holds the console switches: bit 0 RESET and bit 1 SELECT (0 = pressed), bit 3 colour or black and white, bits 6 and 7 the difficulty of each player.",
+  "steps": [
+   "Test a switch with BIT: LDA #mask, BIT SWCHB, and BNE when the bit is 1 (not pressed).",
+   "RESET and SELECT are momentary buttons: act on the change, not on every frame, or the game restarts again and again while it is held (keep the last state like the fire button).",
+   "The colour/B&W and difficulty switches are levers: read them when you need them.",
+   "SWBCNT must stay 0 (all inputs), which is the value after a reset."
+  ],
+  "related": [
+   "SWCHB",
+   "SWBCNT",
+   "BIT"
+  ],
+  "sources": [
+   "stella-guide",
+   "mos6532"
+  ],
+  "verified": true,
+  "example": "        lda #%00000001     ; RESET\n        bit SWCHB\n        bne .NoReset       ; 1 = not pressed\n        ; RESET is pressed: restart the game\n.NoReset\n        lda #%00000010     ; SELECT\n        bit SWCHB\n        bne .NoSelect\n        ; SELECT is pressed: next game variation\n.NoSelect"
+ },
+ {
+  "id": "clean-start",
+  "title": "Start of the program: set the machine up",
+  "keywords": [
+   "start",
+   "reset",
+   "init",
+   "initialize",
+   "clear",
+   "ram",
+   "stack",
+   "boot",
+   "clean",
+   "vector",
+   "cold"
+  ],
+  "summary": "On power-up the RAM and the TIA registers hold random values. The usual first code disables interrupts, clears decimal mode and writes zero over the whole page 0 and the stack, which also clears the TIA.",
+  "steps": [
+   "SEI and CLD first: no interrupts, binary arithmetic.",
+   "X = 0, A = 0, then loop DEX / TXS / PHA until X is 0 again: the stack pointer walks down through $FF..$00 and each PHA writes a 0 there, which covers the TIA ($00-$7F, mirrored) and the RAM ($80-$FF).",
+   "After the loop the stack pointer is $FF (the top). The program counter has not been affected, so execution continues.",
+   "Then set what the game needs (colours, variables) and start the frame loop.",
+   "The reset vector ($FFFC) must point at this code."
+  ],
+  "related": [
+   "VSYNC",
+   "SEI",
+   "CLD",
+   "TXS"
+  ],
+  "sources": [
+   "stella-guide"
+  ],
+  "verified": true,
+  "example": "Start:  sei\n        cld\n        ldx #0\n        txa\n.Clear  dex\n        txs\n        pha\n        bne .Clear         ; the whole page 0 and the stack are 0"
+ },
+ {
+  "id": "read-paddle",
+  "title": "Read a paddle",
+  "keywords": [
+   "paddle",
+   "paddles",
+   "knob",
+   "dial",
+   "analog",
+   "inpt0",
+   "charge",
+   "capacitor",
+   "dump",
+   "resistance"
+  ],
+  "summary": "A paddle is a variable resistor that charges a capacitor. Discharge it with VBLANK bit 7, then count the lines until INPT0 bit 7 becomes 1: the count is the position.",
+  "steps": [
+   "Set VBLANK bit 7 for a few lines (discharge the capacitors), then clear it: they start to charge.",
+   "Count lines (WSYNC) until the paddle's INPT bit 7 reads 1: INPT0 for paddle 0, INPT1 for 1, INPT2 for 2, INPT3 for 3.",
+   "The count grows with the resistance: use it as the position. Stop at a limit (about 255) if it never reaches 1.",
+   "The fire button of a paddle is in SWCHA: bit 7 paddle 0, bit 6 paddle 1, bit 3 paddle 2, bit 2 paddle 3 (0 = pressed).",
+   "Do it every frame; the reading is noisy, so smooth it (average with the previous value)."
+  ],
+  "related": [
+   "INPT0",
+   "INPT1",
+   "INPT2",
+   "INPT3",
+   "VBLANK",
+   "SWCHA",
+   "WSYNC"
+  ],
+  "sources": [
+   "stella-guide"
+  ],
+  "verified": false,
+  "example": "        lda #$80\n        sta VBLANK         ; discharge (leave it a few lines, earlier in the frame)\n        lda #0\n        sta VBLANK         ; charging starts\n        ldx #0\n.Count  sta WSYNC\n        lda INPT0\n        bmi .Done          ; bit 7 = 1: charged\n        inx\n        bne .Count\n.Done   stx Paddle0        ; the position",
+  "note": "The routine was written for this entry from the register descriptions, not run on hardware."
+ }
  ]
 }

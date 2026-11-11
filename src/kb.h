@@ -26,9 +26,16 @@ struct Instruction {
   std::vector<const Opcode*> opcodes;
 };
 
+// One line of a register's bit table: "7-4", "P0 joystick", "right, left, down, up; 0 = pressed".
+struct BitField {
+  std::string bits, name, meaning;
+};
+
 struct Register {
   std::string chip, name, address, access, bits, summary, description, timing, example;
   std::vector<std::string> issues, sources;
+  std::vector<BitField> fields;    // the bits, as a table (optional)
+  std::vector<std::string> seeAlso;  // registers, instructions or recipe ids worth reading next (optional)
   bool verified = true;
   int addr() const;
 };

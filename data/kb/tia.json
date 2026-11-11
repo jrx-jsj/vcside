@@ -36,6 +36,24 @@
    "verified": true,
    "sources": [
     "stella-guide"
+   ],
+   "fields": [
+    {
+     "bits": "1",
+     "name": "VSYNC",
+     "meaning": "1 = vertical sync on, 0 = off"
+    },
+    {
+     "bits": "7-2, 0",
+     "name": "ignored",
+     "meaning": ""
+    }
+   ],
+   "see_also": [
+    "VBLANK",
+    "WSYNC",
+    "frame-structure",
+    "fix-rolling-picture"
    ]
   },
   {
@@ -55,6 +73,34 @@
    "verified": true,
    "sources": [
     "stella-guide"
+   ],
+   "fields": [
+    {
+     "bits": "7",
+     "name": "Dump paddle capacitors",
+     "meaning": "1 = INPT0-INPT3 grounded (discharge), 0 = they charge"
+    },
+    {
+     "bits": "6",
+     "name": "Latch the fire inputs",
+     "meaning": "1 = INPT4 and INPT5 stay 0 once pressed, until this bit is cleared"
+    },
+    {
+     "bits": "1",
+     "name": "Blank",
+     "meaning": "1 = picture blanked (black), 0 = picture shown"
+    },
+    {
+     "bits": "5-2, 0",
+     "name": "ignored",
+     "meaning": ""
+    }
+   ],
+   "see_also": [
+    "VSYNC",
+    "WSYNC",
+    "INPT4",
+    "frame-structure"
    ]
   },
   {
@@ -74,6 +120,10 @@
    "verified": true,
    "sources": [
     "stella-guide"
+   ],
+   "see_also": [
+    "frame-structure",
+    "wait-exact-time"
    ]
   },
   {
@@ -113,6 +163,18 @@
    "sources": [
     "stella-guide",
     "towers-tia"
+   ],
+   "fields": [
+    {
+     "bits": "5-4",
+     "name": "Missile width",
+     "meaning": "00 = 1 clock, 01 = 2, 10 = 4, 11 = 8"
+    },
+    {
+     "bits": "2-0",
+     "name": "Player copies and size",
+     "meaning": "000 one copy; 001 two close; 010 two medium; 011 three close; 100 two wide; 101 double size; 110 three medium; 111 quad size"
+    }
    ]
   },
   {
@@ -133,6 +195,18 @@
    "sources": [
     "stella-guide",
     "towers-tia"
+   ],
+   "fields": [
+    {
+     "bits": "5-4",
+     "name": "Missile width",
+     "meaning": "00 = 1 clock, 01 = 2, 10 = 4, 11 = 8"
+    },
+    {
+     "bits": "2-0",
+     "name": "Player copies and size",
+     "meaning": "000 one copy; 001 two close; 010 two medium; 011 three close; 100 two wide; 101 double size; 110 three medium; 111 quad size"
+    }
    ]
   },
   {
@@ -152,6 +226,28 @@
    "verified": false,
    "sources": [
     "stella-guide"
+   ],
+   "fields": [
+    {
+     "bits": "7-4",
+     "name": "Hue",
+     "meaning": "0-15 (the meaning differs between NTSC, PAL and SECAM)"
+    },
+    {
+     "bits": "3-1",
+     "name": "Luminance",
+     "meaning": "0-7 (8 brightness levels)"
+    },
+    {
+     "bits": "0",
+     "name": "ignored",
+     "meaning": ""
+    }
+   ],
+   "see_also": [
+    "COLUP1",
+    "COLUBK",
+    "set-colors"
    ]
   },
   {
@@ -169,6 +265,28 @@
    "verified": true,
    "sources": [
     "stella-guide"
+   ],
+   "fields": [
+    {
+     "bits": "7-4",
+     "name": "Hue",
+     "meaning": "0-15 (the meaning differs between NTSC, PAL and SECAM)"
+    },
+    {
+     "bits": "3-1",
+     "name": "Luminance",
+     "meaning": "0-7 (8 brightness levels)"
+    },
+    {
+     "bits": "0",
+     "name": "ignored",
+     "meaning": ""
+    }
+   ],
+   "see_also": [
+    "COLUP0",
+    "COLUBK",
+    "set-colors"
    ]
   },
   {
@@ -186,6 +304,28 @@
    "verified": true,
    "sources": [
     "stella-guide"
+   ],
+   "fields": [
+    {
+     "bits": "7-4",
+     "name": "Hue",
+     "meaning": "0-15 (the meaning differs between NTSC, PAL and SECAM)"
+    },
+    {
+     "bits": "3-1",
+     "name": "Luminance",
+     "meaning": "0-7 (8 brightness levels)"
+    },
+    {
+     "bits": "0",
+     "name": "ignored",
+     "meaning": ""
+    }
+   ],
+   "see_also": [
+    "COLUBK",
+    "CTRLPF",
+    "set-colors"
    ]
   },
   {
@@ -203,6 +343,28 @@
    "verified": true,
    "sources": [
     "stella-guide"
+   ],
+   "fields": [
+    {
+     "bits": "7-4",
+     "name": "Hue",
+     "meaning": "0-15 (the meaning differs between NTSC, PAL and SECAM)"
+    },
+    {
+     "bits": "3-1",
+     "name": "Luminance",
+     "meaning": "0-7 (8 brightness levels)"
+    },
+    {
+     "bits": "0",
+     "name": "ignored",
+     "meaning": ""
+    }
+   ],
+   "see_also": [
+    "COLUPF",
+    "COLUP0",
+    "set-colors"
    ]
   },
   {
@@ -222,6 +384,33 @@
    "verified": false,
    "sources": [
     "stella-guide"
+   ],
+   "fields": [
+    {
+     "bits": "5-4",
+     "name": "Ball width",
+     "meaning": "00 = 1 clock, 01 = 2, 10 = 4, 11 = 8"
+    },
+    {
+     "bits": "2",
+     "name": "PFP",
+     "meaning": "1 = playfield and ball in front of the players"
+    },
+    {
+     "bits": "1",
+     "name": "SCORE",
+     "meaning": "1 = left half in the colour of P0, right half in the colour of P1"
+    },
+    {
+     "bits": "0",
+     "name": "REF",
+     "meaning": "1 = the right half mirrors the left, 0 = repeats it"
+    }
+   ],
+   "see_also": [
+    "PF0",
+    "COLUPF",
+    "playfield-pattern"
    ]
   },
   {
@@ -239,6 +428,13 @@
    "verified": false,
    "sources": [
     "stella-guide"
+   ],
+   "fields": [
+    {
+     "bits": "3",
+     "name": "Reflect",
+     "meaning": "1 = bit 0 of GRP0 is drawn leftmost"
+    }
    ]
   },
   {
@@ -256,6 +452,13 @@
    "verified": true,
    "sources": [
     "stella-guide"
+   ],
+   "fields": [
+    {
+     "bits": "3",
+     "name": "Reflect",
+     "meaning": "1 = bit 0 of GRP1 is drawn leftmost"
+    }
    ]
   },
   {
@@ -275,6 +478,19 @@
    "verified": false,
    "sources": [
     "stella-guide"
+   ],
+   "fields": [
+    {
+     "bits": "7-4",
+     "name": "Blocks 0-3 (4 pixels each)",
+     "meaning": "bit 4 is the leftmost block, then 5, 6, 7"
+    }
+   ],
+   "see_also": [
+    "PF1",
+    "PF2",
+    "CTRLPF",
+    "playfield-pattern"
    ]
   },
   {
@@ -292,6 +508,19 @@
    "verified": true,
    "sources": [
     "stella-guide"
+   ],
+   "fields": [
+    {
+     "bits": "7-0",
+     "name": "Blocks 4-11",
+     "meaning": "bit 7 is the leftmost block, bit 0 the rightmost"
+    }
+   ],
+   "see_also": [
+    "PF0",
+    "PF2",
+    "CTRLPF",
+    "playfield-pattern"
    ]
   },
   {
@@ -309,6 +538,19 @@
    "verified": true,
    "sources": [
     "stella-guide"
+   ],
+   "fields": [
+    {
+     "bits": "0-7",
+     "name": "Blocks 12-19",
+     "meaning": "bit 0 is the leftmost block, bit 7 the rightmost"
+    }
+   ],
+   "see_also": [
+    "PF0",
+    "PF1",
+    "CTRLPF",
+    "playfield-pattern"
    ]
   },
   {
@@ -330,6 +572,11 @@
     "stella-guide",
     "towers-tia",
     "gopher-bin"
+   ],
+   "see_also": [
+    "HMP0",
+    "HMOVE",
+    "position-object-x"
    ]
   },
   {
@@ -351,6 +598,11 @@
     "stella-guide",
     "towers-tia",
     "gopher-bin"
+   ],
+   "see_also": [
+    "HMP1",
+    "HMOVE",
+    "position-object-x"
    ]
   },
   {
@@ -432,6 +684,18 @@
    "verified": true,
    "sources": [
     "stella-guide"
+   ],
+   "fields": [
+    {
+     "bits": "3-0",
+     "name": "Sound type",
+     "meaning": "0 silence, 4 and 5 pure tone, 8 noise; the other values in the description"
+    }
+   ],
+   "see_also": [
+    "AUDF0",
+    "AUDV0",
+    "make-sound"
    ]
   },
   {
@@ -449,6 +713,18 @@
    "verified": true,
    "sources": [
     "stella-guide"
+   ],
+   "fields": [
+    {
+     "bits": "3-0",
+     "name": "Sound type",
+     "meaning": "0 silence, 4 and 5 pure tone, 8 noise; the other values in the description"
+    }
+   ],
+   "see_also": [
+    "AUDF1",
+    "AUDV1",
+    "make-sound"
    ]
   },
   {
@@ -466,6 +742,18 @@
    "verified": true,
    "sources": [
     "stella-guide"
+   ],
+   "fields": [
+    {
+     "bits": "4-0",
+     "name": "Frequency divider",
+     "meaning": "clock divided by value + 1"
+    }
+   ],
+   "see_also": [
+    "AUDC0",
+    "AUDV0",
+    "make-sound"
    ]
   },
   {
@@ -483,6 +771,18 @@
    "verified": true,
    "sources": [
     "stella-guide"
+   ],
+   "fields": [
+    {
+     "bits": "4-0",
+     "name": "Frequency divider",
+     "meaning": "clock divided by value + 1"
+    }
+   ],
+   "see_also": [
+    "AUDC1",
+    "AUDV1",
+    "make-sound"
    ]
   },
   {
@@ -500,6 +800,18 @@
    "verified": false,
    "sources": [
     "stella-guide"
+   ],
+   "fields": [
+    {
+     "bits": "3-0",
+     "name": "Volume",
+     "meaning": "0 = off, 15 = loudest"
+    }
+   ],
+   "see_also": [
+    "AUDC0",
+    "AUDF0",
+    "make-sound"
    ]
   },
   {
@@ -517,6 +829,18 @@
    "verified": false,
    "sources": [
     "stella-guide"
+   ],
+   "fields": [
+    {
+     "bits": "3-0",
+     "name": "Volume",
+     "meaning": "0 = off, 15 = loudest"
+    }
+   ],
+   "see_also": [
+    "AUDC1",
+    "AUDF1",
+    "make-sound"
    ]
   },
   {
@@ -535,6 +859,12 @@
    "verified": false,
    "sources": [
     "stella-guide"
+   ],
+   "see_also": [
+    "GRP1",
+    "VDELP0",
+    "NUSIZ0",
+    "sprite-48-pixels"
    ]
   },
   {
@@ -553,6 +883,12 @@
    "sources": [
     "stella-guide",
     "stella-src"
+   ],
+   "see_also": [
+    "GRP0",
+    "VDELP1",
+    "NUSIZ1",
+    "sprite-48-pixels"
    ]
   },
   {
@@ -570,6 +906,13 @@
    "verified": true,
    "sources": [
     "stella-guide"
+   ],
+   "fields": [
+    {
+     "bits": "1",
+     "name": "Enable",
+     "meaning": "1 = missile 0 on"
+    }
    ]
   },
   {
@@ -585,6 +928,13 @@
    "verified": true,
    "sources": [
     "stella-guide"
+   ],
+   "fields": [
+    {
+     "bits": "1",
+     "name": "Enable",
+     "meaning": "1 = missile 1 on"
+    }
    ]
   },
   {
@@ -603,6 +953,13 @@
    "sources": [
     "stella-guide",
     "stella-src"
+   ],
+   "fields": [
+    {
+     "bits": "1",
+     "name": "Enable",
+     "meaning": "1 = ball on"
+    }
    ]
   },
   {
@@ -623,6 +980,13 @@
    "sources": [
     "stella-guide",
     "towers-tia"
+   ],
+   "fields": [
+    {
+     "bits": "7-4",
+     "name": "Fine motion",
+     "meaning": "signed: $70 = 7 pixels left, $00 none, $80 = 8 pixels right (applied at HMOVE)"
+    }
    ]
   },
   {
@@ -643,6 +1007,13 @@
    "sources": [
     "stella-guide",
     "towers-tia"
+   ],
+   "fields": [
+    {
+     "bits": "7-4",
+     "name": "Fine motion",
+     "meaning": "signed: $70 = 7 pixels left, $00 none, $80 = 8 pixels right (applied at HMOVE)"
+    }
    ]
   },
   {
@@ -663,6 +1034,13 @@
    "sources": [
     "stella-guide",
     "towers-tia"
+   ],
+   "fields": [
+    {
+     "bits": "7-4",
+     "name": "Fine motion",
+     "meaning": "signed: $70 = 7 pixels left, $00 none, $80 = 8 pixels right (applied at HMOVE)"
+    }
    ]
   },
   {
@@ -683,6 +1061,13 @@
    "sources": [
     "stella-guide",
     "towers-tia"
+   ],
+   "fields": [
+    {
+     "bits": "7-4",
+     "name": "Fine motion",
+     "meaning": "signed: $70 = 7 pixels left, $00 none, $80 = 8 pixels right (applied at HMOVE)"
+    }
    ]
   },
   {
@@ -703,6 +1088,13 @@
    "sources": [
     "stella-guide",
     "towers-tia"
+   ],
+   "fields": [
+    {
+     "bits": "7-4",
+     "name": "Fine motion",
+     "meaning": "signed: $70 = 7 pixels left, $00 none, $80 = 8 pixels right (applied at HMOVE)"
+    }
    ]
   },
   {
@@ -722,6 +1114,13 @@
    "sources": [
     "stella-guide",
     "stella-src"
+   ],
+   "fields": [
+    {
+     "bits": "0",
+     "name": "Delay",
+     "meaning": "1 = draw GRP0 delayed"
+    }
    ]
   },
   {
@@ -740,6 +1139,13 @@
    "sources": [
     "stella-guide",
     "stella-src"
+   ],
+   "fields": [
+    {
+     "bits": "0",
+     "name": "Delay",
+     "meaning": "1 = draw GRP1 delayed"
+    }
    ]
   },
   {
@@ -758,6 +1164,13 @@
    "sources": [
     "stella-guide",
     "stella-src"
+   ],
+   "fields": [
+    {
+     "bits": "0",
+     "name": "Delay",
+     "meaning": "1 = draw the ball delayed"
+    }
    ]
   },
   {
@@ -776,6 +1189,13 @@
    "verified": false,
    "sources": [
     "stella-guide"
+   ],
+   "fields": [
+    {
+     "bits": "1",
+     "name": "Lock",
+     "meaning": "1 = missile 0 locked to the centre of player 0 (and hidden)"
+    }
    ]
   },
   {
@@ -793,6 +1213,13 @@
    "verified": false,
    "sources": [
     "stella-guide"
+   ],
+   "fields": [
+    {
+     "bits": "1",
+     "name": "Lock",
+     "meaning": "1 = missile 1 locked to the centre of player 1 (and hidden)"
+    }
    ]
   },
   {
@@ -814,6 +1241,12 @@
    "sources": [
     "stella-guide",
     "towers-tia"
+   ],
+   "see_also": [
+    "HMCLR",
+    "HMP0",
+    "RESP0",
+    "position-object-x"
    ]
   },
   {
@@ -849,6 +1282,11 @@
    "verified": true,
    "sources": [
     "stella-guide"
+   ],
+   "see_also": [
+    "CXP0FB",
+    "CXPPMM",
+    "detect-collisions"
    ]
   },
   {
@@ -868,6 +1306,18 @@
    "verified": true,
    "sources": [
     "stella-guide"
+   ],
+   "fields": [
+    {
+     "bits": "7",
+     "name": "M0 - P1",
+     "meaning": "1 = touched since CXCLR"
+    },
+    {
+     "bits": "6",
+     "name": "M0 - P0",
+     "meaning": "1 = touched since CXCLR"
+    }
    ]
   },
   {
@@ -887,6 +1337,18 @@
    "verified": true,
    "sources": [
     "stella-guide"
+   ],
+   "fields": [
+    {
+     "bits": "7",
+     "name": "M1 - P0",
+     "meaning": "1 = touched since CXCLR"
+    },
+    {
+     "bits": "6",
+     "name": "M1 - P1",
+     "meaning": "1 = touched since CXCLR"
+    }
    ]
   },
   {
@@ -906,6 +1368,18 @@
    "verified": true,
    "sources": [
     "stella-guide"
+   ],
+   "fields": [
+    {
+     "bits": "7",
+     "name": "P0 - playfield",
+     "meaning": "1 = touched since CXCLR"
+    },
+    {
+     "bits": "6",
+     "name": "P0 - ball",
+     "meaning": "1 = touched since CXCLR"
+    }
    ]
   },
   {
@@ -925,6 +1399,18 @@
    "verified": true,
    "sources": [
     "stella-guide"
+   ],
+   "fields": [
+    {
+     "bits": "7",
+     "name": "P1 - playfield",
+     "meaning": "1 = touched since CXCLR"
+    },
+    {
+     "bits": "6",
+     "name": "P1 - ball",
+     "meaning": "1 = touched since CXCLR"
+    }
    ]
   },
   {
@@ -944,6 +1430,18 @@
    "verified": true,
    "sources": [
     "stella-guide"
+   ],
+   "fields": [
+    {
+     "bits": "7",
+     "name": "M0 - playfield",
+     "meaning": "1 = touched since CXCLR"
+    },
+    {
+     "bits": "6",
+     "name": "M0 - ball",
+     "meaning": "1 = touched since CXCLR"
+    }
    ]
   },
   {
@@ -963,6 +1461,18 @@
    "verified": true,
    "sources": [
     "stella-guide"
+   ],
+   "fields": [
+    {
+     "bits": "7",
+     "name": "M1 - playfield",
+     "meaning": "1 = touched since CXCLR"
+    },
+    {
+     "bits": "6",
+     "name": "M1 - ball",
+     "meaning": "1 = touched since CXCLR"
+    }
    ]
   },
   {
@@ -982,6 +1492,13 @@
    "verified": true,
    "sources": [
     "stella-guide"
+   ],
+   "fields": [
+    {
+     "bits": "7",
+     "name": "ball - playfield",
+     "meaning": "1 = touched since CXCLR"
+    }
    ]
   },
   {
@@ -1001,6 +1518,18 @@
    "verified": true,
    "sources": [
     "stella-guide"
+   ],
+   "fields": [
+    {
+     "bits": "7",
+     "name": "P0 - P1",
+     "meaning": "1 = touched since CXCLR"
+    },
+    {
+     "bits": "6",
+     "name": "M0 - M1",
+     "meaning": "1 = touched since CXCLR"
+    }
    ]
   },
   {
@@ -1021,6 +1550,18 @@
    "verified": false,
    "sources": [
     "stella-guide"
+   ],
+   "fields": [
+    {
+     "bits": "7",
+     "name": "Paddle charge",
+     "meaning": "1 once the capacitor passed the threshold (count lines from VBLANK D7 = 0)"
+    },
+    {
+     "bits": "6-0",
+     "name": "not driven",
+     "meaning": "mask them"
+    }
    ]
   },
   {
@@ -1041,6 +1582,18 @@
    "verified": false,
    "sources": [
     "stella-guide"
+   ],
+   "fields": [
+    {
+     "bits": "7",
+     "name": "Paddle charge",
+     "meaning": "1 once the capacitor passed the threshold (count lines from VBLANK D7 = 0)"
+    },
+    {
+     "bits": "6-0",
+     "name": "not driven",
+     "meaning": "mask them"
+    }
    ]
   },
   {
@@ -1061,6 +1614,18 @@
    "verified": false,
    "sources": [
     "stella-guide"
+   ],
+   "fields": [
+    {
+     "bits": "7",
+     "name": "Paddle charge",
+     "meaning": "1 once the capacitor passed the threshold (count lines from VBLANK D7 = 0)"
+    },
+    {
+     "bits": "6-0",
+     "name": "not driven",
+     "meaning": "mask them"
+    }
    ]
   },
   {
@@ -1081,6 +1646,18 @@
    "verified": false,
    "sources": [
     "stella-guide"
+   ],
+   "fields": [
+    {
+     "bits": "7",
+     "name": "Paddle charge",
+     "meaning": "1 once the capacitor passed the threshold (count lines from VBLANK D7 = 0)"
+    },
+    {
+     "bits": "6-0",
+     "name": "not driven",
+     "meaning": "mask them"
+    }
    ]
   },
   {
@@ -1101,6 +1678,24 @@
    "verified": true,
    "sources": [
     "stella-guide"
+   ],
+   "fields": [
+    {
+     "bits": "7",
+     "name": "Fire button, player 0",
+     "meaning": "0 = pressed, 1 = released"
+    },
+    {
+     "bits": "6-0",
+     "name": "not driven",
+     "meaning": "mask them or test only bit 7 (BIT / BMI)"
+    }
+   ],
+   "see_also": [
+    "INPT5",
+    "SWCHA",
+    "VBLANK",
+    "read-controls"
    ]
   },
   {
@@ -1121,6 +1716,24 @@
    "verified": true,
    "sources": [
     "stella-guide"
+   ],
+   "fields": [
+    {
+     "bits": "7",
+     "name": "Fire button, player 1",
+     "meaning": "0 = pressed, 1 = released"
+    },
+    {
+     "bits": "6-0",
+     "name": "not driven",
+     "meaning": "mask them or test only bit 7 (BIT / BMI)"
+    }
+   ],
+   "see_also": [
+    "INPT4",
+    "SWCHA",
+    "VBLANK",
+    "read-controls"
    ]
   }
  ],

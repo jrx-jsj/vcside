@@ -14,6 +14,8 @@
 #include <SDL3/SDL_opengl.h>
 
 #include "about.h"
+#include "assistant/markdown_view.h"
+#include "doc_markdown.h"
 #include "file_icons.h"
 #include "cycles.h"
 #include "window_icon.h"
@@ -2914,41 +2916,70 @@ void App::docsPanel() {
   if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) docTopic_.clear(), docQuery_.clear();
   if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", T("The Atari 2600: general notes"));
   if (rootOpen) {
-  ImGui::SetNextItemOpen(true, ImGuiCond_Once);
-  if (ImGui::TreeNode(T("Instructions"))) {
-    const char* groups[] = {N_("Legal"), N_("Illegal (stable)"), N_("Illegal (unstable)")};
-    for (int groupIndex = 0; groupIndex < 3; groupIndex++) {
-      if (ImGui::TreeNodeEx(T(groups[groupIndex]), groupIndex == 0 ? ImGuiTreeNodeFlags_DefaultOpen : 0)) {
-        for (auto& [mnemonic, instruction] : kb_.instructions()) {
-          bool stable = instruction.opcodes.empty() || instruction.opcodes[0]->stable;
-          int instructionGroup = !instruction.illegal ? 0 : stable ? 1 : 2;
-          if (instructionGroup != groupIndex || !(match(mnemonic) || match(instruction.summary))) continue;
-          item("I:" + mnemonic, mnemonic + "  " + instruction.summary, groupIndex == 0 ? legal : groupIndex == 1 ? illegal : unstable);
+  // A branch that leads to nothing is not drawn; while searching, the ones that do lead somewhere are open.
+  auto openBranch = [&](const char* label, bool firstTime) {
+    if (!query.empty()) ImGui::SetNextItemOpen(true, ImGuiCond_Always);
+    else if (firstTime) ImGui::SetNextItemOpen(true, ImGuiCond_Once);
+    return ImGui::TreeNode(T(label));
+  };
+  const char* groups[] = {N_("Legal"), N_("Illegal (stable)"), N_("Illegal (unstable)")};
+  std::vector<std::vector<const Instruction*>> groupItems(3);
+  for (auto& [mnemonic, instruction] : kb_.instructions()) {
+    bool stable = instruction.opcodes.empty() || instruction.opcodes[0]->stable;
+    if (match(mnemonic) || match(instruction.summary)) groupItems[!instruction.illegal ? 0 : stable ? 1 : 2].push_back(&instruction);
+  }
+  if (!groupItems[0].empty() || !groupItems[1].empty() || !groupItems[2].empty()) {
+    if (openBranch("Instructions", true)) {
+      for (int groupIndex = 0; groupIndex < 3; groupIndex++) {
+        if (groupItems[groupIndex].empty()) continue;
+        if (!query.empty()) ImGui::SetNextItemOpen(true, ImGuiCond_Always);
+        if (ImGui::TreeNodeEx(T(groups[groupIndex]), groupIndex == 0 ? ImGuiTreeNodeFlags_DefaultOpen : 0)) {
+          for (auto* instruction : groupItems[groupIndex])
+            item("I:" + instruction->mnemonic, instruction->mnemonic + "  " + instruction->summary, groupIndex == 0 ? legal : groupIndex == 1 ? illegal : unstable);
+          ImGui::TreePop();
         }
-        ImGui::TreePop();
       }
+      ImGui::TreePop();
     }
+  }
+  std::vector<const Register*> shownRegisters;
+  for (auto& registerEntry : kb_.registers())
+    if (match(registerEntry.name) || match(registerEntry.summary)) shownRegisters.push_back(&registerEntry);
+  if (!shownRegisters.empty() && openBranch("Registers", false)) {
+    for (auto* registerEntry : shownRegisters) item("R:" + registerEntry->name, registerEntry->name + "  " + registerEntry->address + "  " + registerEntry->summary, plain);
     ImGui::TreePop();
   }
-  if (ImGui::TreeNode(T("Registers"))) {
-    for (auto& registerEntry : kb_.registers())
-      if (match(registerEntry.name) || match(registerEntry.summary)) item("R:" + registerEntry.name, registerEntry.name + "  " + registerEntry.address + "  " + registerEntry.summary, plain);
+  std::vector<const Technique*> shownRecipes;
+  for (auto& technique : kb_.techniques()) {
+    bool keyword = false;
+    for (auto& word : technique.keywords) keyword = keyword || match(word);
+    if (match(technique.title) || match(technique.summary) || keyword) shownRecipes.push_back(&technique);
+  }
+  if (!shownRecipes.empty() && openBranch("Recipes", false)) {
+    for (auto* technique : shownRecipes) item("K:" + technique->id, technique->title, plain);
     ImGui::TreePop();
   }
-  if (ImGui::TreeNode(T("Cartridge formats"))) {
-    for (auto& [category, categoryTitle] : formatCategories()) {
-      std::vector<const CartFormat*> categoryFormats;
-      for (auto& cartFormat : kb_.formats())
-        if (cartFormat.category == category && (match(cartFormat.id) || match(cartFormat.name))) categoryFormats.push_back(&cartFormat);
-      if (categoryFormats.empty()) continue;
-      std::sort(categoryFormats.begin(), categoryFormats.end(), [](auto* left, auto* right) { return naturalLess(left->name, right->name); });
+  std::vector<std::pair<std::string, std::vector<const CartFormat*>>> shownFormats;
+  for (auto& [category, categoryTitle] : formatCategories()) {
+    std::vector<const CartFormat*> categoryFormats;
+    for (auto& cartFormat : kb_.formats())
+      if (cartFormat.category == category && (match(cartFormat.id) || match(cartFormat.name))) categoryFormats.push_back(&cartFormat);
+    if (categoryFormats.empty()) continue;
+    std::sort(categoryFormats.begin(), categoryFormats.end(), [](auto* left, auto* right) { return naturalLess(left->name, right->name); });
+    shownFormats.push_back({categoryTitle, categoryFormats});
+  }
+  if (!shownFormats.empty() && openBranch("Cartridge formats", false)) {
+    for (auto& [categoryTitle, categoryFormats] : shownFormats) {
       ImGui::SeparatorText(categoryTitle.c_str());
       for (auto* cartFormat : categoryFormats) item("F:" + cartFormat->id, cartFormat->id + "  " + cartFormat->name, plain);
     }
     ImGui::TreePop();
   }
-  if (ImGui::TreeNode(T("TV standards"))) {
-    for (auto& tvStandard : kb_.tvStandards()) item("T:" + tvStandard.id, tvStandard.id, plain);
+  std::vector<const TvStandard*> shownTv;
+  for (auto& tvStandard : kb_.tvStandards())
+    if (match(tvStandard.id)) shownTv.push_back(&tvStandard);
+  if (!shownTv.empty() && openBranch("TV standards", false)) {
+    for (auto* tvStandard : shownTv) item("T:" + tvStandard->id, tvStandard->id, plain);
     ImGui::TreePop();
   }
   ImGui::TreePop();
@@ -2956,6 +2987,15 @@ void App::docsPanel() {
   ImGui::EndChild();
 
   ImGui::BeginChild("topic");
+  // registers and instructions named in the cards open their own card
+  assistant::MdLinks docLinks{&kb_, [this](const std::string& name) { docTopic_ = name; }};
+  assistant::setMarkdownLinks(&docLinks);
+  auto seeAlso = [&](const std::vector<DocLink>& links) {
+    if (links.empty()) return;
+    ImGui::SeparatorText(T("See also"));
+    for (auto& link : links)
+      if (ImGui::Selectable((link.label + "##see" + link.topic).c_str(), false)) docTopic_ = link.topic;
+  };
   std::string topic = docTopic_;
   // a bare word (from F1) resolves to an instruction or a register
   if (topic.find(':') == std::string::npos && !topic.empty()) {
@@ -3032,22 +3072,23 @@ void App::docsPanel() {
       ImGui::TextWrapped("%s", reg->summary.c_str());
       unverifiedNotice(reg->verified);
       ImGui::Separator();
-      ImGui::TextWrapped("%s", reg->description.c_str());
-      if (!reg->timing.empty()) {
-        ImGui::SeparatorText(T("Timing"));
-        ImGui::TextWrapped("%s", reg->timing.c_str());
-      }
-      if (!reg->issues.empty()) {
-        ImGui::SeparatorText(T("Known issues"));
-        for (auto& issue : reg->issues) bullet(issue);
-      }
+      assistant::drawMarkdownWithCode(registerMarkdown(*reg), mono_);
+      seeAlso(registerSeeAlso(kb_, *reg));
       provenance(kb_, reg->sources);
-      if (!reg->example.empty()) {
-        ImGui::SeparatorText(T("Example"));
-        ImGui::PushFont(mono_);
-        ImGui::TextUnformatted(reg->example.c_str());
-        ImGui::PopFont();
-      }
+    }
+  } else if (topic.rfind("K:", 0) == 0) {
+    const Technique* recipe = nullptr;
+    for (auto& technique : kb_.techniques())
+      if (technique.id == topic.substr(2)) recipe = &technique;
+    if (recipe) {
+      ImGui::PushFont(mono_);
+      ImGui::TextColored(theme::colv(theme::Role::MsgName), "%s", recipe->title.c_str());
+      ImGui::PopFont();
+      unverifiedNotice(recipe->verified);
+      ImGui::Separator();
+      assistant::drawMarkdownWithCode(techniqueMarkdown(*recipe), mono_);
+      seeAlso(techniqueSeeAlso(kb_, *recipe));
+      provenance(kb_, recipe->sources);
     }
   } else if (topic.rfind("F:", 0) == 0) {
     if (const CartFormat* cartFormat = kb_.format(topic.substr(2))) {
@@ -3097,6 +3138,7 @@ void App::docsPanel() {
     ImGui::SeparatorText("TIA");
     for (auto& note : kb_.tiaNotes()) bullet(note);
   }
+  assistant::setMarkdownLinks(nullptr);
   ImGui::EndChild();
   theme::endPanel();
 }

@@ -53,6 +53,7 @@
 #include "assistant/models.h"
 #include "assistant/prompt.h"
 #include "assistant/provider.h"
+#include "doc_markdown.h"
 #include "assistant/settings.h"
 #include "assistant/sha256.h"
 #include "assistant/sse.h"
@@ -4410,7 +4411,7 @@ static void testAssistant(const KnowledgeBase& kb) {
         CHECK(!technique.id.empty() && !technique.title.empty() && !technique.summary.empty() && technique.steps.size() >= 3);
         CHECK(!technique.sources.empty() && !technique.keywords.empty());
         for (auto& source : technique.sources) CHECK(kb.source(source) != nullptr);
-        for (auto& name : technique.related) CHECK(kb.reg(name) != nullptr || kb.format(name) != nullptr);  // every register it names exists
+        for (auto& name : technique.related) CHECK(kb.reg(name) != nullptr || kb.format(name) != nullptr || kb.instruction(name) != nullptr);  // every register or instruction it names exists
       }
       auto ids = [&](const std::string& question) {
         std::set<std::string> found;
@@ -4433,7 +4434,7 @@ static void testAssistant(const KnowledgeBase& kb) {
         return found;
       };
       CHECK(ids("How do I make the console play a tone?").count("AUDC0"));
-      CHECK(ids("How do I check whether the fire button is pressed?").count("INPT4"));
+      CHECK(ids("How do I check whether the fire button is pressed?").count("INPT4") || ids("How do I check whether the fire button is pressed?").count("fire-button-action"));
       CHECK(ids("How do I set the background color?").count("COLUBK"));
       CHECK(ids("How do I position a sprite horizontally?").count("position-object-x"));
       CHECK(ids("What should I have for lunch today?").empty());   // nothing relevant: nothing added
@@ -4578,6 +4579,23 @@ static void testAssistant(const KnowledgeBase& kb) {
 #endif
 }
 
+// The documentation cards as Markdown, with their See also.
+static void testDocCards(const KnowledgeBase& kb) {
+  const Register* swcha = kb.reg("SWCHA");
+  CHECK(swcha && !swcha->fields.empty() && swcha->fields.size() == 8);
+  std::string card = swcha ? registerMarkdown(*swcha) : "";
+  CHECK(card.find("| Bits |") != std::string::npos && card.find("| `7` | P0 right |") != std::string::npos && card.find("```asm\n") != std::string::npos);
+  bool seeFire = false, seeRecipe = false;
+  if (swcha)
+    for (auto& link : registerSeeAlso(kb, *swcha)) seeFire = seeFire || link.topic == "R:INPT4", seeRecipe = seeRecipe || link.topic == "K:read-controls";
+  CHECK(seeFire && seeRecipe);
+  const Technique* fire = nullptr;
+  for (auto& technique : kb.techniques())
+    if (technique.id == "fire-button-action") fire = &technique;
+  CHECK(fire && techniqueMarkdown(*fire).find("1. ") != std::string::npos && !techniqueSeeAlso(kb, *fire).empty());
+  for (auto& reg : kb.registers()) CHECK(registerMarkdown(reg).find("|||") == std::string::npos);
+}
+
 int main() {
   KnowledgeBase kb;
   std::string error;
@@ -4588,6 +4606,7 @@ int main() {
   if (!error.empty()) std::fprintf(stderr, "knowledge base: %s", error.c_str());
   CHECK(error.empty());
   testKb(kb);
+  testDocCards(kb);
   testIndentation();
   testCycles(kb);
   testParsers();
