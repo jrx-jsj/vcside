@@ -168,8 +168,16 @@ bool AssistantPanel::smallModel() const {
   return false;
 }
 
+bool AssistantPanel::agentMode() const {
+  if (!settings_.agent) return false;
+  if (!smallModel()) return true;
+  if (settings_.providers.empty()) return false;
+  const Provider& provider = settings_.providers[std::clamp(settings_.active, 0, (int)settings_.providers.size() - 1)];
+  return !provider.builtin && provider.agentAnyway;
+}
+
 // Native tool calls: the service's own mechanism, with a schema per tool, when the user did not turn it off and the service did not refuse it.
-bool AssistantPanel::useNativeTools() const { return settings_.agent && settings_.nativeTools && !nativeOff_.count(providerKey()); }
+bool AssistantPanel::useNativeTools() const { return agentMode() && settings_.nativeTools && !nativeOff_.count(providerKey()); }
 
 std::string AssistantPanel::systemPrompt() const {
   // Agent mode: the work is done with the tools. Ask mode: answers, and changes as blocks the user reviews.
@@ -188,9 +196,9 @@ std::string AssistantPanel::systemPrompt() const {
   if (file) {
     std::stringstream text;
     text << file.rdbuf();
-    if (!text.str().empty()) return text.str() + (settings_.agent ? "\n" + toolPrompt(settings_.toolProfile, useNativeTools(), toolSet()) + agentRule : askRule) + englishRule;
+    if (!text.str().empty()) return text.str() + (agentMode() ? "\n" + toolPrompt(settings_.toolProfile, useNativeTools(), toolSet()) + agentRule : askRule) + englishRule;
   }
-  return std::string(kFallbackPrompt) + (settings_.agent ? "\n" + toolPrompt(settings_.toolProfile, useNativeTools(), toolSet()) + agentRule : askRule) + englishRule;
+  return std::string(kFallbackPrompt) + (agentMode() ? "\n" + toolPrompt(settings_.toolProfile, useNativeTools(), toolSet()) + agentRule : askRule) + englishRule;
 }
 
 void AssistantPanel::newChat() {
@@ -570,21 +578,25 @@ bool drawChip(const char* id, const std::string& label, ImVec4 tint, const std::
 // still waiting for a click. A combo as wide as the Send button, so it fits whatever language the labels are in.
 void AssistantPanel::modeSwitch(float width) {
   bool busy = busyWithModel() || pendingEditActive_ || !pendingRun_.empty() || waitingBuild_;
+  bool agentAllowed = !smallModel() || (!settings_.providers.empty() && !settings_.providers[std::clamp(settings_.active, 0, (int)settings_.providers.size() - 1)].builtin &&
+                                       settings_.providers[std::clamp(settings_.active, 0, (int)settings_.providers.size() - 1)].agentAnyway);
+  const char* agentTip = T("Agent: reads your project and makes the changes itself with its tools. Every change, build and run waits for your click.");
+  const char* askTip = T("Ask: answers your question and proposes changes in the chat, which you review and apply.");
+  const char* smallTip = T("Agent needs a larger model: this one works in Ask mode. In the settings, a model you know is good enough can be allowed to use Agent.");
   ImGui::BeginDisabled(busy);
   ImGui::SetNextItemWidth(width);
-  if (ImGui::BeginCombo("##mode", settings_.agent ? T("Agent") : T("Ask"))) {
+  if (ImGui::BeginCombo("##mode", agentMode() ? T("Agent") : T("Ask"))) {
     for (int agent = 0; agent < 2; agent++) {
-      if (ImGui::Selectable(agent ? T("Agent") : T("Ask"), settings_.agent == (agent == 1))) settings_.agent = agent == 1, changed_ = true;
-      if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("%s", agent ? T("Agent: reads your project and makes the changes itself with its tools. Every change, build and run waits for your click.")
-                                      : T("Ask: answers your question and proposes changes in the chat, which you review and apply."));
+      bool offered = agent == 0 || agentAllowed;
+      ImGui::BeginDisabled(!offered);
+      if (ImGui::Selectable(agent ? T("Agent") : T("Ask"), agentMode() == (agent == 1))) settings_.agent = agent == 1, changed_ = true;
+      ImGui::EndDisabled();
+      if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("%s", !offered ? smallTip : agent ? agentTip : askTip);
     }
     ImGui::EndCombo();
   }
   ImGui::EndDisabled();
-  if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-    ImGui::SetTooltip("%s", settings_.agent ? T("Agent: reads your project and makes the changes itself with its tools. Every change, build and run waits for your click.")
-                                            : T("Ask: answers your question and proposes changes in the chat, which you review and apply."));
+  if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("%s", !agentAllowed && settings_.agent ? smallTip : agentMode() ? agentTip : askTip);
 }
 
 void AssistantPanel::drawContextChips(const PanelContext& context) {
@@ -907,7 +919,7 @@ void AssistantPanel::dispatch(const PanelContext& context, const std::string& qu
   size_t chipChars = (size_t)std::clamp((window - reserve - fixedTokens) * 14 / 5, 1200, window * 2);
   // In Agent mode the open file goes as the part around the cursor: the agent reads the rest with its tools when it needs it, and
   // the whole file would travel again with every step.
-  size_t openFileChars = settings_.agent ? 2400 : (size_t)-1;
+  size_t openFileChars = agentMode() ? 2400 : (size_t)-1;
   GatheredContext gathered = gatherContext(chips, {context.fileText, context.selection, context.errors, context.cursorLine}, context.projectDir, chipChars, openFileChars);
   attachments.selection = gathered.selection, attachments.selectionLabel = gathered.selectionLabel;
   attachments.errors = gathered.errors;
@@ -929,7 +941,7 @@ void AssistantPanel::dispatch(const PanelContext& context, const std::string& qu
       else part = F("{0}: lines {1} to {2} of {3}, around the cursor", {cut.label, number(cut.firstLine), number(cut.lastLine), number(cut.totalLines)});
       cuts += (cuts.empty() ? "" : "; ") + part;
     }
-    std::string why = settings_.agent ? std::string(T("the assistant reads the rest with its tools")) : F("the model's window is {0}K tokens, and the answer needs room", {std::to_string(window / 1024)});
+    std::string why = agentMode() ? std::string(T("the assistant reads the rest with its tools")) : F("the model's window is {0}K tokens, and the answer needs room", {std::to_string(window / 1024)});
     attachedNote += (attachedNote.empty() ? "" : " ") + std::string("(") + cuts + " - " + why + ")";
   }
   std::string turn = userTurn(modelQuestion, attachments);
@@ -978,13 +990,13 @@ void AssistantPanel::finishAnswer(const PanelContext& context, const std::string
     chat_.messages.back().content = before.empty() ? F("The model asked for another tool, but the tool calls for this message were used up. Ask it to go on, or ask again more precisely.", {}) : before;
     answer = chat_.messages.back().content;
   }
-  if (settings_.agent && !noMoreTools_ && note != "stopped" && error_.empty() && !chat_.messages.empty() && chat_.messages.back().role == "assistant" && findToolCall(answer, &call)) {
+  if (agentMode() && !noMoreTools_ && note != "stopped" && error_.empty() && !chat_.messages.empty() && chat_.messages.back().role == "assistant" && findToolCall(answer, &call)) {
     chat_.messages.back().kind = "call";
     saveChat(context);
     handleToolCall(context, call);
     return;
   }
-  if (settings_.agent && !noMoreTools_ && blockRetries_ < 2 && note != "stopped" && error_.empty() && !answer.empty() && !chat_.messages.empty() && chat_.messages.back().role == "assistant" &&
+  if (agentMode() && !noMoreTools_ && blockRetries_ < 2 && note != "stopped" && error_.empty() && !answer.empty() && !chat_.messages.empty() && chat_.messages.back().role == "assistant" &&
       chat_.messages.back().kind.empty()) {
     // The answer proposes a change in a block whose search text is not in the file: the model is told what the file really says
     // (the closest lines) and asked to make the change with edit_file, instead of leaving the user a change that cannot be placed.
@@ -1042,7 +1054,7 @@ void AssistantPanel::finishAnswer(const PanelContext& context, const std::string
       return;
     }
   }
-  if (settings_.agent && !noMoreTools_ && !nudged_ && settings_.toolProfile >= 1 && note != "stopped" && error_.empty() && !answer.empty() && !chat_.messages.empty() &&
+  if (agentMode() && !noMoreTools_ && !nudged_ && settings_.toolProfile >= 1 && note != "stopped" && error_.empty() && !answer.empty() && !chat_.messages.empty() &&
       chat_.messages.back().role == "assistant") {
     // A change was asked for and the model only talked: once, it is told to look at the project and make the change with the tools.
     std::string request;
@@ -1269,7 +1281,7 @@ void AssistantPanel::handleToolCall(const PanelContext& context, const ToolCall&
     // A change was asked for and after several lookups nothing has been edited: with the result it gets a push to make the
     // change (every third call from the fourth on), so it does not wander through the project.
     int callsLeft = (smallModel() ? kMaxToolCalls : kMaxToolCalls * 2) - agentSteps_;
-    if (settings_.agent && profile >= 1 && ((agentSteps_ >= 4 && (agentSteps_ - 4) % 3 == 0) || (agentSteps_ >= 4 && callsLeft <= 3 && callsLeft >= 1))) {
+    if (agentMode() && profile >= 1 && ((agentSteps_ >= 4 && (agentSteps_ - 4) % 3 == 0) || (agentSteps_ >= 4 && callsLeft <= 3 && callsLeft >= 1))) {
       bool edited = false;
       for (auto& entry : callCounts_) edited = edited || entry.first.rfind("edit_file", 0) == 0;
       std::string request;
@@ -2351,6 +2363,7 @@ void AssistantPanel::settingsDialog() {
     ImGui::SetNextItemWidth(fitWidth(theme::em(120), T("Context tokens")));
     changed_ |= ImGui::InputInt(T("Context tokens"), &provider.contextTokens, 1024, 8192);
     provider.contextTokens = std::clamp(provider.contextTokens, 1024, 1 << 20);
+    if (wrappedCheckbox(T("Allow Agent mode with this model, even if it looks small (a local server, or a name under 14B): small models work in Ask mode only"), &provider.agentAnyway, wrapWidth)) changed_ = true;
     if (!provider.isLocal()) {
       ImGui::TextColored(theme::colv(theme::Role::MsgWarning), "%s", T("Remote: your messages and attached code leave this computer."));
       bool ask = !provider.trusted;

@@ -272,6 +272,8 @@
     "Controllers": "Mandos",
     "Copied": "Copiado",
     "Copy all": "Copiar todo",
+    "Agent needs a larger model: this one works in Ask mode. In the settings, a model you know is good enough can be allowed to use Agent.": "El modo Agente necesita un modelo mayor: este trabaja en modo Preguntar. En los ajustes se puede permitir Agente a un modelo que sepas que es suficiente.",
+    "Allow Agent mode with this model, even if it looks small (a local server, or a name under 14B): small models work in Ask mode only": "Permitir el modo Agente con este modelo aunque parezca pequeño (un servidor local, o un nombre de menos de 14B): los modelos pequeños solo trabajan en modo Preguntar",
     "Chat is available once the model has loaded.": "El chat estará disponible cuando termine de cargar el modelo.",
     "Apply all ({0})": "Aplicar todo ({0})",
     "Applies every change of this answer that fits its file, one after another. Undo everything this conversation changed brings the files back.": "Aplica, una tras otra, todas las modificaciones de esta respuesta que encajan en su archivo. «Deshacer todo lo que cambió esta conversación» devuelve los archivos a como estaban.",

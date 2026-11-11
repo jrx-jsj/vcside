@@ -35,6 +35,7 @@ struct Provider {
   bool builtin = false;                           // the helper that ships with VCSIDE; model = catalogue id
   std::string keyEnv;                             // name of an environment variable holding the key
   int contextTokens = 8192;
+  bool agentAnyway = false;                       // Agent mode even if the model looks small (the user knows the model is good enough)
   bool trusted = false;                           // a remote server: send to it without asking each session
   bool isLocal() const;                           // loopback host
 };

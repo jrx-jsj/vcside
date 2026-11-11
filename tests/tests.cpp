@@ -4501,6 +4501,9 @@ static void testKnownProviders() {
   CHECK(!made.trusted);
   made.trusted = true;
   CHECK(Settings::fromJson(([&] { Settings s; s.providers.push_back(made); return s.toJson(); })()).providers.back().trusted);
+  CHECK(!made.agentAnyway && !Settings::fromJson(([&] { Settings s; s.providers.push_back(made); return s.toJson(); })()).providers.back().agentAnyway);
+  made.agentAnyway = true;
+  CHECK(Settings::fromJson(([&] { Settings s; s.providers.push_back(made); return s.toJson(); })()).providers.back().agentAnyway);
   // a list with a plain-http service or an invented protocol is not offered
   namespace fs = std::filesystem;
   fs::path file = fs::temp_directory_path() / "vcside_providers_test.json";

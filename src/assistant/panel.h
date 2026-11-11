@@ -206,6 +206,7 @@ class AssistantPanel {
   bool noMoreTools_ = false;                           // the last turn of a message: no tools, a summary
   std::map<std::string, std::string> lastResults_;     // the answer to each call this message, to show again on a repeat
   bool smallModel() const;
+  bool agentMode() const;  // Agent is chosen and the model may use it: a small model answers in Ask mode, unless its settings allow Agent anyway
   int toolSet() const;  // 1 small model, 2 large
   void finishWithSummary(const PanelContext& context, const std::string& why);
   bool nativeCallSeen_ = false;                        // this answer already holds a native call
