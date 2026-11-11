@@ -77,6 +77,7 @@ struct ContextText {  // what the editor holds
   std::string fileText, selection, errors;
   int cursorLine = 0;  // 1-based; a file too long for the budget is cut around it, not at its start
 };
-GatheredContext gatherContext(const std::vector<ContextChip>& chips, const ContextText& text, const std::string& projectDir, size_t budgetChars);
+GatheredContext gatherContext(const std::vector<ContextChip>& chips, const ContextText& text, const std::string& projectDir, size_t budgetChars,
+                             size_t automaticFileChars = (size_t)-1);
 
 }  // namespace vcs::assistant

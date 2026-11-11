@@ -1086,7 +1086,10 @@ void AssistantPanel::dispatch(const PanelContext& context, const std::string& qu
   // Code and hex take more tokens than prose (about 2.8 characters each, not 3.5): the estimates are raised by a quarter.
   int fixedTokens = (estimateTokens(systemPrompt()) + estimateTokens(attachments.projectInfo + attachments.projectMap + attachments.excerpts + attachments.grounding + modelQuestion)) * 5 / 4 + historyTokens;
   size_t chipChars = (size_t)std::clamp((window - reserve - fixedTokens) * 14 / 5, 1200, window * 2);
-  GatheredContext gathered = gatherContext(chips, {context.fileText, context.selection, context.errors, context.cursorLine}, context.projectDir, chipChars);
+  // In Agent mode the open file goes as the part around the cursor: the agent reads the rest with its tools when it needs it, and
+  // the whole file would travel again with every step.
+  size_t openFileChars = settings_.agent ? 2400 : (size_t)-1;
+  GatheredContext gathered = gatherContext(chips, {context.fileText, context.selection, context.errors, context.cursorLine}, context.projectDir, chipChars, openFileChars);
   attachments.selection = gathered.selection, attachments.selectionLabel = gathered.selectionLabel;
   attachments.errors = gathered.errors;
   attachments.fileName = gathered.fileName, attachments.fileText = gathered.fileText;
@@ -1107,7 +1110,8 @@ void AssistantPanel::dispatch(const PanelContext& context, const std::string& qu
       else part = F("{0}: lines {1} to {2} of {3}, around the cursor", {cut.label, number(cut.firstLine), number(cut.lastLine), number(cut.totalLines)});
       cuts += (cuts.empty() ? "" : "; ") + part;
     }
-    attachedNote += (attachedNote.empty() ? "" : " ") + std::string("(") + cuts + " - " + F("the model's window is {0}K tokens, and the answer needs room", {std::to_string(window / 1024)}) + ")";
+    std::string why = settings_.agent ? std::string(T("the assistant reads the rest with its tools")) : F("the model's window is {0}K tokens, and the answer needs room", {std::to_string(window / 1024)});
+    attachedNote += (attachedNote.empty() ? "" : " ") + std::string("(") + cuts + " - " + why + ")";
   }
   std::string turn = userTurn(modelQuestion, attachments);
   chat_.messages.back().english = english;
@@ -1238,6 +1242,24 @@ void AssistantPanel::addToolResult(const PanelContext& context, const std::strin
   saveChat(context);
 }
 
+// The newest tool results stay whole up to a budget (about a fifth of the window in characters); older ones are replaced by a
+// line saying so, so every step does not carry what the agent read ten steps ago. It can call the tool again for it.
+static void pruneOldResults(std::vector<ChatMessage>& history, size_t windowTokens) {
+  size_t budget = std::min<size_t>(std::max<size_t>(windowTokens / 5 * 3, 3000), 120000), kept = 0;
+  for (size_t i = history.size(); i-- > 0;) {
+    ChatMessage& message = history[i];
+    if (message.role != "user" || message.kind != "result") continue;
+    if (kept + message.content.size() <= budget) {
+      kept += message.content.size();
+      continue;
+    }
+    size_t lineEnd = message.content.find('\n');
+    std::string header = message.content.substr(0, lineEnd);
+    message.content = header + "\n[old result left out to save space: call the tool again if you need it]";
+    message.english.clear();
+  }
+}
+
 void AssistantPanel::continueAgent(const PanelContext& /*context*/) {  // the history is in chat_; the context is not needed to ask again
   Provider* provider = settings_.provider();
   if (!provider || chat_.messages.empty()) return;
@@ -1249,6 +1271,7 @@ void AssistantPanel::continueAgent(const PanelContext& /*context*/) {  // the hi
       if (!turnText_.empty()) history[i].content = turnText_;
       break;
     }
+  pruneOldResults(history, (size_t)provider->contextTokens);
   std::vector<Message> messages = buildMessages(systemPrompt(), history, chat_.messages.back().content, provider->contextTokens, replyReserve(provider->contextTokens), &droppedTurns_);
   lastRequest_ = chatRequestBody(*provider, messages);
   streaming_.clear();

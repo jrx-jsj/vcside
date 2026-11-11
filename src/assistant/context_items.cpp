@@ -197,14 +197,14 @@ std::string cutToLines(const std::string& text, size_t budget, int centerLine, C
 }
 }  // namespace
 
-GatheredContext gatherContext(const std::vector<ContextChip>& chips, const ContextText& text, const std::string& projectDir, size_t budgetChars) {
+GatheredContext gatherContext(const std::vector<ContextChip>& chips, const ContextText& text, const std::string& projectDir, size_t budgetChars, size_t automaticFileChars) {
   GatheredContext result;
   size_t left = budgetChars;
   std::vector<std::string> names;
-  auto take = [&](const std::string& source, const std::string& label, int centerLine, std::string* into) {
+  auto take = [&](const std::string& source, const std::string& label, int centerLine, std::string* into, size_t limit = (size_t)-1) {
     ContextCut cut;
     cut.label = label;
-    std::string piece = cutToLines(source, left, centerLine, &cut);
+    std::string piece = cutToLines(source, std::min(left, limit), centerLine, &cut);
     if (piece.size() < source.size()) {
       if (piece.empty()) cut.reason = "no room left";
       result.notes.push_back(cut);
@@ -221,7 +221,7 @@ GatheredContext gatherContext(const std::vector<ContextChip>& chips, const Conte
         break;
       case ContextChip::File:
         result.fileName = chip.path;
-        take(text.fileText, chip.path, text.cursorLine, &result.fileText);
+        take(text.fileText, chip.path, text.cursorLine, &result.fileText, chip.automatic ? automaticFileChars : (size_t)-1);
         names.push_back(chip.label);
         break;
       case ContextChip::Errors:
