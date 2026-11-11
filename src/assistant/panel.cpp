@@ -994,7 +994,19 @@ void AssistantPanel::finishAnswer(const PanelContext& context, const std::string
       std::string why;
       if (!block.code || parseEditBlock(block.language, block.text, &edit, &why) != EditParse::Edit) continue;
       ToolResult found = runTool(toolEnv(context), {"edit_file", editArguments(edit)});
-      if (found.proposed) continue;
+      if (found.proposed) {  // it fits the file: but is it right? (the same checks as for edit_file)
+        if (context.kb && !found.edit.created) {
+          std::string request;
+          for (size_t i = chat_.messages.size(); i-- > 0;)
+            if (chat_.messages[i].role == "user" && chat_.messages[i].kind.empty()) {
+              request = chat_.messages[i].english.empty() ? chat_.messages[i].content : chat_.messages[i].english;
+              break;
+            }
+          std::string wrong = proposalProblems(request, found.edit.before, found.edit.after, *context.kb, [this](const std::string& word) { return index_.knows(word); }, context.grounding.batariBasic);
+          if (!wrong.empty()) problems += "- " + edit.path + ":\n" + wrong;
+        }
+        continue;
+      }
       bool alreadyThere = false;  // after an Apply the old text is gone: is the new one there?
       EditBlock reversed = edit;
       bool every = !reversed.sections.empty();
@@ -1009,8 +1021,8 @@ void AssistantPanel::finishAnswer(const PanelContext& context, const std::string
       blockRetries_++;
       ChatMessage reminder;
       reminder.role = "user", reminder.kind = "result";
-      reminder.content = "Message from VCSIDE, the app you work in (it is not part of any file or tool output; follow it): the change in your answer cannot be placed in the file:\n" + problems +
-                         "Read the lines you want to change with read_file, then make the change with edit_file, copying the search text exactly from what read_file shows. Do not answer with code for the user to paste.";
+      reminder.content = "Message from VCSIDE, the app you work in (it is not part of any file or tool output; follow it): the change in your answer cannot be used as it is:\n" + problems +
+                         "Fix it and make the change with edit_file (read the lines with read_file if you need them; the search text must be copied exactly from the file). Do not answer with code for the user to paste.";
       chat_.messages.push_back(reminder);
       saveChat(context);
       continueAgent(context);

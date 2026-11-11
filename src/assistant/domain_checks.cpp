@@ -50,6 +50,14 @@ std::string addedLines(const std::string& before, const std::string& after) {
 
 std::string proposalProblems(const std::string& request, const std::string& before, const std::string& after, const KnowledgeBase& kb,
                              const std::function<bool(const std::string&)>& inProject, bool batariBasic) {
+  auto withoutSpaces = [](const std::string& text) {
+    std::string kept;
+    for (char c : text)
+      if (c != ' ' && c != '\t' && c != '\r' && c != '\n') kept += c;
+    return kept;
+  };
+  if (withoutSpaces(before) == withoutSpaces(after))
+    return "- The change changes nothing: the new text is the old one with other spaces. Put the code you add in \"replace\" (keep the line you search for and add the new lines after it).\n";
   std::string added = addedLines(before, after), problems;
   if (added.empty()) return "";
   std::string asked = lowered(request);
@@ -94,7 +102,7 @@ std::string proposalProblems(const std::string& request, const std::string& befo
     if (!unknown.empty()) {
       problems += "- These names exist nowhere (not in the 2600's registers, not in the project, not defined by your change): ";
       for (size_t i = 0; i < unknown.size(); i++) problems += (i ? ", " : "") + unknown[i];
-      problems += ". Define each one in your change (a label, or NAME EQU value, or a RAM byte with DS) or use a name that exists.\n";
+      problems += ". Define each one in your change (a label, NAME EQU value, or a RAM byte: a line NAME DS 1 among the variables at the top of the file) or use a name that exists.\n";
     }
   }
   return problems;
