@@ -916,7 +916,7 @@ void App::switchCycleColumn() {
 
 int App::gutterChars(const OpenFile& file) const {
   if (!showCycles_ || !file.asmSyntax) return 0;
-  return columnAddresses_ ? 9 : 5;  // "$F6F0 256"
+  return 9;  // "$F6F0 256": the same in both modes, so a switch moves nothing
 }
 
 std::string App::addressColumn(const std::string& path, int line) {

@@ -190,6 +190,8 @@ class TextEditor {
   bool scrollToCursor_ = false, centerOnCursor_ = false;
   int tabSize_ = 8;
   int gutterChars_ = 0;
+  int cycleRestLine_ = -1;     // the cycle column line the mouse rests on, and since when
+  double cycleRestTime_ = 0;
   EditorHooks hooks_;
   std::map<int, std::pair<bool, std::string>> markers_;
   std::map<int, std::string> separators_;

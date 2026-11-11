@@ -1040,7 +1040,10 @@ bool TextEditor::render(const char* id, ImFont* font) {
   bool inFolds = foldW > 0 && io.MousePos.x >= foldX && io.MousePos.x < foldX + foldW + charW_ * 0.5f;
   bool inCycles = cycW > 0 && (hooks_.lineInfo || hooks_.gutterClick) && !inMargin && io.MousePos.x < foldX;
   if (hovered && inCycles && hooks_.gutterClick) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-  if (hovered && inCycles && hooks_.lineInfo && !ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+  // details only once the mouse rests on a line for a moment, so a click does not pop one up
+  int restLine = hovered && inCycles ? lineAtY(io.MousePos.y) : -1;
+  if (restLine != cycleRestLine_ || ImGui::IsMouseDown(ImGuiMouseButton_Left)) cycleRestLine_ = restLine, cycleRestTime_ = ImGui::GetTime();
+  if (restLine >= 0 && hooks_.lineInfo && ImGui::GetTime() - cycleRestTime_ > 0.6) {
     std::string info = hooks_.lineInfo(lineAtY(io.MousePos.y));
     if (!info.empty()) ImGui::SetTooltip("%s", info.c_str());
   }
