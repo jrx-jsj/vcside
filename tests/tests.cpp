@@ -3496,7 +3496,7 @@ static void testAgentTools(const KnowledgeBase& kb) {
     CHECK(capped.text.find("1:   processor 6502\n") == 0 && capped.text.find("[showing lines 1-1 of 5; ask for the next lines with from=2]") != std::string::npos);
     small.searchLimit = 1;
     auto fewer = runTool(small, {"search", {{"text", "wsync"}}});
-    CHECK(fewer.text.find("main.asm:3:") != std::string::npos && fewer.text.find("main.asm:4:") == std::string::npos && fewer.text.find("[showing the first 1 lines") != std::string::npos);
+    CHECK(fewer.text.find("  3:") != std::string::npos && fewer.text.find("  4:") == std::string::npos && fewer.text.find("1 more lines not shown") != std::string::npos);
   }
   CHECK(toolNames(2, 2).size() == 13 && [] { auto names = toolNames(2, 2); return std::find(names.begin(), names.end(), "list_files") == names.end() && std::find(names.begin(), names.end(), "project_info") == names.end(); }() && toolNames(2, 1).size() == 7 && toolNames(0, 1).size() == 5 && toolNames(1, 1).size() == 6 && toolNames(2).size() == 15);
   CHECK(toolPrompt(2, false, 1).find("symbols") == std::string::npos && toolPrompt(2, false, false).find("symbols") != std::string::npos && toolPrompt(2, true).find("```tool") == std::string::npos);
@@ -3504,7 +3504,11 @@ static void testAgentTools(const KnowledgeBase& kb) {
   CHECK(call("read_file", {{"path", "game.bin"}}).error);
   CHECK(call("read_file", {{"path", "../x"}}).error);
   auto found = call("search", {{"text", "wsync"}});
-  CHECK(found.text.find("main.asm:3:") != std::string::npos && found.text.find("main.asm:4:") != std::string::npos && found.text.find(".env") == std::string::npos);
+  CHECK(found.text.find("main.asm (") != std::string::npos && found.text.find("  3:") != std::string::npos && found.text.find("  4:") != std::string::npos && found.text.find(".env") == std::string::npos);
+  // alternatives with |, and a place to look in
+  auto either = call("search", {{"text", "nothing-here|WSYNC"}});
+  CHECK(either.text.find("  3:") != std::string::npos);
+  CHECK(call("search", {{"text", "wsync"}, {"path", "*.txt"}}).text == "no matches\n" && call("search", {{"text", "wsync"}, {"path", "main.asm"}}).text.find("  3:") != std::string::npos && call("search", {{"text", "wsync"}, {"path", "sub"}}).text == "no matches\n");
   CHECK(call("symbols", {{"name", "util"}}).text == "Util sub/util.asm:1\n");
   CHECK(call("build_errors", {}).text == env.buildErrors);
   CHECK(call("project_info", {}).text.find("DASM") != std::string::npos);
@@ -3515,7 +3519,7 @@ static void testAgentTools(const KnowledgeBase& kb) {
   CHECK(call("kb_search", {{"q", "how do I make a tone"}}).text.find("AUDC") != std::string::npos);
   CHECK(call("kb_search", {{"topic_words", "how do I make a tone"}}).text.find("AUDC") != std::string::npos);
   CHECK(call("kb_lookup", {{"register", "RESP0"}}).text.find("RESP0") != std::string::npos);
-  CHECK(call("search", {{"keyword", "wsync"}}).text.find("main.asm:3:") != std::string::npos);
+  CHECK(call("search", {{"keyword", "wsync"}}).text.find("  3:") != std::string::npos);
   CHECK(call("read_file", {{"file", "main.asm"}, {"from", 2}, {"to", 2}}).text.find("2: Start") != std::string::npos);
   CHECK(call("find_code", {}).error && call("find_code", {{"a", "x"}, {"b", "y"}}).error);  // nothing, or two texts and no way to tell: refused with a reason
   CHECK(call("find_code", {}).text.find("query") != std::string::npos);
@@ -3558,7 +3562,7 @@ static void testAgentTools(const KnowledgeBase& kb) {
   auto flat = call("read_file", {{"file", "main.asm"}, {"from", "2"}, {"to", 3.0}, {"unknown", "x"}, {"note", nullptr}});
   CHECK(!flat.error && flat.text.find("2: Start") != std::string::npos && flat.text.find("3:") != std::string::npos && flat.text.find("(Note:") == 0);
   CHECK(call("ReadFile", {{"path", "main.asm"}}).text.find("1: ") != std::string::npos);
-  CHECK(call("functions.search", {{"text", "wsync"}}).text.find("main.asm:3:") != std::string::npos);
+  CHECK(call("functions.search", {{"text", "wsync"}}).text.find("  3:") != std::string::npos);
   auto stringArgs = runTool(env, {"read_file", "{\"path\": \"main.asm\"}"});
   CHECK(!stringArgs.error && stringArgs.text.find("1: ") != std::string::npos);
   auto missingPath = call("read_file", {{"from", 2}});

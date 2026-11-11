@@ -34,7 +34,7 @@ const std::vector<Schema>& schemas() {
        {{"path", "string", true, "The file (or folder) to read, relative to the project.", kPath},
         {"from", "integer", false, "First line to read (1 by default).", {"start", "start_line", "offset", "line"}},
         {"to", "integer", false, "Last line to read (200 lines at most per call).", {"end", "end_line", "limit_line"}}}},
-      {"search", {{"text", "string", true, "Text to find in the project's own files (not case sensitive).", {"query", "q", "search", "term", "keyword", "pattern"}}}},
+      {"search", {{"text", "string", true, "Text to find in the project's own files (not case sensitive); a|b|c finds any of several in one call.", {"query", "q", "search", "term", "keyword", "pattern"}}, {"path", "string", false, "Optional: a folder, a file or a pattern like *.asm to look in.", {"folder", "file", "in"}}}},
       {"symbols", {{"name", "string", false, "Part of a label or constant name; all of them if omitted.", {"query", "symbol", "text", "q"}}}},
       {"find_code", {{"query", "string", true, "What the code does, or names in it.", kQuery}}},
       {"kb_lookup", {{"id", "string", true, "The name of a TIA/RIOT register, 6502 instruction, cartridge format or TV standard.", {"name", "register", "instruction", "symbol", "query", "text"}}}},

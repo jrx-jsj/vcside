@@ -35,8 +35,8 @@ struct ToolInfo {
 const ToolInfo kTools[] = {
     {"project_info", Tier::Read, "project_info {} : language, format, TV standard and main file."},
     {"list_files", Tier::Read, "list_files {\"path\": \".\"} : files and folders of the project (\".\" is its top)."},
-    {"read_file", Tier::Read, "read_file {\"path\": \"<file>\", \"from\": 1, \"to\": 120} : numbered lines of a project file (at most 200 per call)."},
-    {"search", Tier::Read, "search {\"text\": \"<text>\"} : lines of the project's own files that contain the text."},
+    {"read_file", Tier::Read, "read_file {\"path\": \"<file>\", \"from\": 1, \"to\": 300} : numbered lines of a project file. Prefer one larger read to many small ones; it says where to go on if the file is longer."},
+    {"search", Tier::Read, "search {\"text\": \"<text>\"} : lines of the project's own files that contain the text, grouped by file; \"a|b|c\" finds any of several names in one call; optional \"path\" limits it to a folder or a pattern like \"*.asm\"."},
     {"symbols", Tier::Read, "symbols {\"name\": \"<part of a name>\"} : the labels and constants the project defines (guess nothing: to find where a register is used, use search)."},
     {"find_code", Tier::Read, "find_code {\"query\": \"<what the code does, or names in it>\"} : the best matching parts of the whole project, ranked (use it when you do not know which file to read)."},
     {"kb_lookup", Tier::Read, "kb_lookup {\"id\": \"<name>\"} : the reference entry of a TIA/RIOT register, 6502 instruction, cartridge format or TV standard."},
@@ -208,8 +208,9 @@ ToolResult readFile(const ToolEnv& env, const json& args) {
   if (looksBinary(text) || !isTextFileName(absolute)) return fail("not a text file: " + stringArg(args, "path"));
   auto lines = splitLines(text);
   int from = std::max(1, intArg(args, "from", 1));
-  int to = intArg(args, "to", from + 199);
-  to = std::min({to, from + 199, (int)lines.size()});
+  int most = env.readCapChars >= 12000 ? 399 : 199;  // a large window reads more in one go
+  int to = intArg(args, "to", from + most);
+  to = std::min({to, from + most, (int)lines.size()});
   if (from > (int)lines.size()) return ok("(the file has " + std::to_string(lines.size()) + " lines)\n");
   std::string out;
   int shownTo = from - 1;
@@ -227,11 +228,30 @@ ToolResult readFile(const ToolEnv& env, const json& args) {
 ToolResult searchProject(const ToolEnv& env, const json& args) {
   std::string needle = textArg(args, {"text", "query", "q", "search", "term", "keyword", "pattern"});
   if (needle.empty()) return fail("search needs a \"text\"");
-  std::string lowered = lower(needle);
+  // "a|b|c" are alternatives: a line that has any of them matches (one call finds the joystick code by "INPT4|SWCHA|joy")
+  std::vector<std::string> terms;
+  for (size_t start = 0; start <= needle.size();) {
+    size_t bar = needle.find('|', start);
+    if (bar == std::string::npos) bar = needle.size();
+    std::string term = lower(needle.substr(start, bar - start));
+    while (!term.empty() && term.front() == ' ') term.erase(term.begin());
+    while (!term.empty() && term.back() == ' ') term.pop_back();
+    if (!term.empty()) terms.push_back(term);
+    start = bar + 1;
+  }
+  if (terms.empty()) return fail("search needs a \"text\"");
+  // where to look: a folder of the project, a file, or a pattern like "*.asm"
+  std::string where = stringArg(args, "path");
+  std::string suffix;
+  if (!where.empty() && where.find('*') != std::string::npos) suffix = lower(where.substr(where.rfind('*') + 1)), where.clear();
+  if (where == ".") where.clear();
   std::error_code ec;
-  std::vector<std::string> hits;
+  struct Hit { size_t line; std::string text; };
+  struct FileHits { std::string file; std::vector<Hit> hits; bool nameMatches = false; };
+  std::vector<FileHits> files;
+  size_t total = 0;
   fs::recursive_directory_iterator it(env.projectDir, fs::directory_options::skip_permission_denied, ec), end;
-  for (; it != end && hits.size() < env.searchLimit; it.increment(ec)) {
+  for (; it != end && total < 600; it.increment(ec)) {
     if (ec) break;
     std::string name = it->path().filename().string();
     if (hidden(name) || name == "build") {
@@ -239,20 +259,52 @@ ToolResult searchProject(const ToolEnv& env, const json& args) {
       continue;
     }
     if (!it->is_regular_file(ec) || isSecretFile(name) || buildOutputFile(name) || !isTextFileName(name) || it->file_size(ec) > (1 << 20)) continue;
+    std::string relative = relativeName(env.projectDir, it->path());
+    if (!where.empty() && relative != where && relative.rfind(where.back() == '/' ? where : where + "/", 0) != 0) continue;
+    if (!suffix.empty() && lower(name).size() >= suffix.size() && lower(name).compare(lower(name).size() - suffix.size(), suffix.size(), suffix) != 0) continue;
     std::string text;
     if (!readText(it->path().string(), &text) || looksBinary(text)) continue;
+    FileHits found;
+    found.file = relative;
+    std::string lowerName = lower(name);
+    for (auto& term : terms) found.nameMatches = found.nameMatches || lowerName.find(term) != std::string::npos;
     auto lines = splitLines(text);
-    for (size_t i = 0; i < lines.size() && hits.size() < env.searchLimit; i++)
-      if (lower(lines[i]).find(lowered) != std::string::npos) {
-        std::string shown = lines[i].size() > 160 ? lines[i].substr(0, 160) + "..." : lines[i];
-        hits.push_back(relativeName(env.projectDir, it->path()) + ":" + std::to_string(i + 1) + ": " + shown);
-      }
+    for (size_t i = 0; i < lines.size(); i++) {
+      std::string lowerLine = lower(lines[i]);
+      bool match = false;
+      for (auto& term : terms) match = match || lowerLine.find(term) != std::string::npos;
+      if (!match) continue;
+      found.hits.push_back({i + 1, lines[i].size() > 160 ? lines[i].substr(0, 160) + "..." : lines[i]});
+      total++;
+    }
+    if (!found.hits.empty()) files.push_back(std::move(found));
   }
-  if (hits.empty()) return ok("no matches\n");
-  std::sort(hits.begin(), hits.end());
+  if (files.empty()) return ok("no matches\n");
+  // the files that matter first: a name that matches, then the most matches
+  std::stable_sort(files.begin(), files.end(), [](const FileHits& a, const FileHits& b) {
+    if (a.nameMatches != b.nameMatches) return a.nameMatches;
+    if (a.hits.size() != b.hits.size()) return a.hits.size() > b.hits.size();
+    return a.file < b.file;
+  });
   std::string out;
-  for (auto& hit : hits) out += hit + "\n";
-  if (hits.size() >= env.searchLimit) out += "[showing the first " + std::to_string(hits.size()) + " lines; search for something more specific]\n";
+  size_t shown = 0, omitted = 0;
+  for (auto& file : files) {
+    if (shown >= env.searchLimit) {
+      omitted += file.hits.size();
+      continue;
+    }
+    out += file.file + " (" + std::to_string(file.hits.size()) + (file.hits.size() == 1 ? " line)\n" : " lines)\n");
+    size_t perFile = 0;
+    for (auto& hit : file.hits) {
+      if (shown >= env.searchLimit || perFile >= 15) {
+        omitted++;
+        continue;
+      }
+      out += "  " + std::to_string(hit.line) + ": " + hit.text + "\n";
+      shown++, perFile++;
+    }
+  }
+  if (omitted) out += "[" + std::to_string(omitted) + " more lines not shown; narrow it with a more specific text or a \"path\" such as a folder or \"*.asm\"]\n";
   return ok(out);
 }
 

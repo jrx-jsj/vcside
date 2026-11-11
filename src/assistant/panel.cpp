@@ -1087,8 +1087,8 @@ ToolEnv AssistantPanel::toolEnv(const PanelContext& context) const {
   if (const Provider* provider = settings_.providers.empty() ? nullptr : &settings_.providers[std::clamp(settings_.active, 0, (int)settings_.providers.size() - 1)]) {
     // what a tool gives back must leave room in the window: a small window gets small answers
     int window = provider->contextTokens;
-    env.readCapChars = (size_t)std::clamp(window * 2 / 5, 1500, 12000);
-    env.searchLimit = window <= 8192 ? 20 : 40;
+    env.readCapChars = (size_t)std::clamp(window * 2 / 5, 1500, window > 24000 ? 20000 : 12000);
+    env.searchLimit = window <= 8192 ? 25 : 80;
   }
   if (!context.projectDir.empty())
     env.findCode = [self = const_cast<AssistantPanel*>(this), dir = context.projectDir](const std::string& query) {
@@ -1121,15 +1121,19 @@ void AssistantPanel::addToolResult(const PanelContext& context, const std::strin
 
 // The newest tool results stay whole up to a budget (about a fifth of the window in characters); older ones are replaced by a
 // line saying so, so every step does not carry what the agent read ten steps ago. It can call the tool again for it.
+// Old tool results are left out once together they pass a budget. All the old ones go at once (not one more on every request): a
+// service that caches the start of the conversation then sees the same start for several requests, and the cached part is not lost
+// each time a result is dropped. The newest two stay whole, and the call that made each one stays to say what it was.
 static void pruneOldResults(std::vector<ChatMessage>& history, size_t windowTokens) {
-  size_t budget = std::min<size_t>(std::max<size_t>(windowTokens / 5 * 3, 3000), 120000), kept = 0;
+  size_t budget = std::min<size_t>(std::max<size_t>(windowTokens / 5 * 3, 3000), 120000), total = 0;
+  for (auto& message : history)
+    if (message.role == "user" && message.kind == "result") total += message.content.size();
+  if (total <= budget) return;
+  int newest = 0;
   for (size_t i = history.size(); i-- > 0;) {
     ChatMessage& message = history[i];
     if (message.role != "user" || message.kind != "result") continue;
-    if (kept + message.content.size() <= budget) {
-      kept += message.content.size();
-      continue;
-    }
+    if (++newest <= 2) continue;
     size_t lineEnd = message.content.find('\n');
     std::string header = message.content.substr(0, lineEnd);
     message.content = header + "\n[old result left out to save space: call the tool again if you need it]";
@@ -1230,7 +1234,8 @@ void AssistantPanel::handleToolCall(const PanelContext& context, const ToolCall&
     std::string shown = result.text;
     // A change was asked for and after several lookups nothing has been edited: with the result it gets a push to make the
     // change (every third call from the fourth on), so it does not wander through the project.
-    if (settings_.agent && profile >= 1 && agentSteps_ >= 4 && (agentSteps_ - 4) % 3 == 0) {
+    int callsLeft = (smallModel() ? kMaxToolCalls : kMaxToolCalls * 2) - agentSteps_;
+    if (settings_.agent && profile >= 1 && ((agentSteps_ >= 4 && (agentSteps_ - 4) % 3 == 0) || (agentSteps_ >= 4 && callsLeft <= 3 && callsLeft >= 1))) {
       bool edited = false;
       for (auto& entry : callCounts_) edited = edited || entry.first.rfind("edit_file", 0) == 0;
       std::string request;
@@ -1241,7 +1246,7 @@ void AssistantPanel::handleToolCall(const PanelContext& context, const ToolCall&
         }
       if (!edited && asksForChange(request))
         shown += "\n\nMessage from VCSIDE, the app you work in (it is not part of any file or tool output; follow it): you have looked enough (" + std::to_string(agentSteps_) +
-                 " calls) and nothing is changed yet. Make the change now with edit_file, in the code you have already read. If what was asked for does not exist, create it there: do not keep searching for it.";
+                 " calls, " + std::to_string(std::max(0, callsLeft)) + " left for this message) and nothing is changed yet. Make the change now with edit_file, in the code you have already read. If what was asked for does not exist, create it there: do not keep searching for it.";
     }
     addToolResult(context, describeCall(call), shown, result.error);
     continueAgent(context);
