@@ -610,6 +610,7 @@ void App::pollBuild() {
     auto size = fs::file_size(project_->outputPath(), errorCode);
     if (!errorCode) output_ += F("{0}: {1} bytes", {project_->outputPath(), std::to_string(size)}) + "\n";
     loadSymbols();
+    if (plusCart_.running()) updatePlusCartRoms();
     if (isC(project_->language) && (project_->language == Language::AceC || project_->format == "ACE")) measureAce();
     else if (project_->language == Language::ElfC) measureElf();
     else if (basic) measureBasic(errorCode ? 0 : (long)size);
@@ -712,6 +713,39 @@ void App::measureAce() {
     diagnostics_.push_back(diagnostic);
   }
   output_ += elfSpace_->summary() + "\n";
+}
+
+// The project's ROM and, for an ELF project built with make ace, its ACE file too.
+void App::updatePlusCartRoms() {
+  if (!project_) return;
+  std::vector<ServedRom> roms;
+  std::error_code errorCode;
+  fs::path output = project_->outputPath();
+  for (fs::path candidate : {output, fs::path(output).replace_extension(".ace")})
+    if (fs::is_regular_file(candidate, errorCode) && (roms.empty() || candidate != output))
+      roms.push_back({candidate.filename().string(), candidate.string()});
+  plusCart_.setRoms(roms, "VCSIDE: " + project_->name);
+}
+
+void App::togglePlusCart() {
+  outputScroll_ = true;
+  if (plusCart_.running()) {
+    plusCart_.stop();
+    output_ += std::string(T("PlusCart: no longer serving.")) + "\n";
+    return;
+  }
+  if (!project_) return;
+  std::string error;
+  if (!plusCart_.start(80, &error)) {
+    output_ += F("PlusCart: cannot listen on port 80 ({0}). The PlusCart only asks on that port: close the program that uses it. On Linux, ports below 1024 need permission (for example, setcap cap_net_bind_service on VCSIDE).",
+                 {error}) + "\n";
+    return;
+  }
+  updatePlusCartRoms();
+  std::string address = localNetworkAddress();
+  if (address.empty()) address = T("this computer's address on the network");
+  output_ += F("PlusCart: serving the project's ROM at {0}. On the PlusCart (on the same network): Setup > API Host, enter {0}, and its menu lists the ROM; choose it to run it. After each build, choose it again. To use the PlusStore again, set the API Host back to pluscart.firmaplus.de.",
+               {address}) + "\n";
 }
 
 void App::pollSpace() {
@@ -1572,6 +1606,7 @@ void App::closeProject() {
 }
 
 void App::doCloseProject() {
+  plusCart_.stop();
   saveUserState();
   files_.clear();
   activeFile_ = -1;
@@ -1599,6 +1634,8 @@ void App::requestQuit() {
 
 void App::frame() {
   syncSettings();
+  if (plusCart_.running())
+    for (auto& line : plusCart_.takeLog()) output_ += line + "\n", outputScroll_ = true;
   {
     std::lock_guard<std::mutex> lock(dialogMutex_);
     while (!dialogResults_.empty()) {
@@ -1839,6 +1876,8 @@ MenuBar App::buildMenuBar(bool native) {
                              item(T("Build and run"), "F5", [this] { build(1); }, canBuild),
                              item(T("Build and debug"), "F6", [this] { build(2); }, canBuild),
                              item(T("Run"), "", [this] { run(false); }, canBuild),
+                             item(T("Serve to the PlusCart (Wi-Fi)"), "", [this] { togglePlusCart(); }, project_.has_value() || plusCart_.running(),
+                                  plusCart_.running()),
                              MenuItem::sep(),
                              item(T("Toggle breakpoint"), "F9", onEditor([](TextEditor& textEditor) { textEditor.toggleBreakpoint(textEditor.cursor().line); }), hasFile),
                              item(T("Clear all breakpoints"), "", [this] {

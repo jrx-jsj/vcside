@@ -1,6 +1,6 @@
 # ACE cartridges — design proposal
 
-Status: proposal (2026-11-10). Phases 1 to 5 (knowledge, proof of concept, template, space report and `make ace` for ELF games) are done, except for real hardware. Sources are at the end and in [sources.md](sources.md#ace-cartridges-read-2026-11-10).
+Status: proposal (2026-11-10). Phases 1 to 6 (knowledge, proof of concept, template, space report, `make ace` for ELF games and sending to the PlusCart) are done; none has been tried on a real cartridge yet. Sources are at the end and in [sources.md](sources.md#ace-cartridges-read-2026-11-10).
 
 ## What ACE is
 
@@ -189,8 +189,32 @@ A new ELF project also builds as an ACE file: `make ace` writes `build/<name>.ac
 - **Compiled for the Cortex-M4**, with hard float, `-gstrict-dwarf` and no C library, as the ACE template. `RAM_FUNC` code goes into `.text` (everything runs from SRAM anyway). The `#pragma long_calls` in `vcsLib.h` are harmless there.
 - **The overblank program** is the ACE template's. It writes AUDV0 itself, so the ELF games' check for `sta $2d` at `$86`-`$87` finds something else and leaves it alone.
 - **Checked in Gopher2600:** the ELF template and its animated sprite example draw, move, play the music (15-16 levels in a WAV recording) and keep 262 stable lines; the debugger finds the C source (49 and 52 functions).
-- **Found on the way:** the ELF templates started with `swcha` and `swchb` at 0, which read as RESET pressed until the first kernel had read them. On a multicart (`FF_MULTI_CART`) the game went back to the menu on its first frame. As ACE in Gopher2600 it restarted forever. They now start at `0xFF` in all four templates.
+- **Found on the way:** the ELF templates started with `swcha` and `swchb` at 0, which read as RESET pressed until the first kernel had read them. On a multicart (`FF_MULTI_CART`) the game went back to the menu on its first frame. As ACE in Gopher2600 it restarted forever. They now start at `0xFF` in all four templates. A review afterwards found the same with the fire button: `inpt4` started at 0 (pressed) and `last_inpt4` at `0x80`, so the shot sound played on the first frame. It now starts at `0x80`.
 - **Projects created before** have no `ace/` folder: creating a new ELF project and copying its `ace/` folder and the Makefile's `ace` section is enough.
+
+## Sending the ROM to the PlusCart (phase 6)
+
+The PlusCart gets its menu and its ROMs from its **API host**, `pluscart.firmaplus.de` by default. The host can be changed from the cart's own menu (*Setup > API Host*), with no account and nothing to authorise. VCSIDE can therefore stand in for it on the local network: *Build > Serve to the PlusCart (Wi-Fi)* listens on port 80 (`src/pluscart_server.cpp`). The cart's menu then lists the project's ROM, and choosing it downloads and runs it, as from the PlusStore.
+
+The protocol, from the UCA firmware (`esp8266.c`, `main.c`, `global.h`, `cartridge_firmware.c`):
+
+- **Port 80 only:** the firmware appends `",80"` to the host.
+- **Menu:** `GET /api.php?p=<path> HTTP/1.0`, where the path is `""` at the top and grows with `/<name>`. Names are percent-encoded for ` =+&#%`, and a space may also arrive as `+`. The cart sends `Host`, `PlusStore-ID` (version, the STM32's unique id, device) and `Client-Conf` headers; VCSIDE does not use them.
+- **The menu's answer:**
+  - It needs a `Content-Length`, which the cart reads as 16 bits.
+  - The first line is a status: one character for the account icon (`1` = PlusStore account), one digit for how many path levels the cart should drop, and a message shown at the top.
+  - Then one line per entry: the type (`0` back, `1` folder, `2` ROM file…), a character the cart skips, the size in six digits (indexes 2-7), another skipped character and the name (indexes 9-40).
+  - At the top the cart adds its own *Setup* (and offline ROMs), so the user can always set the host back.
+- **A ROM:** the same request with `Range: bytes=<first>-<last>`, at most 32 KB each, all on one keep-alive connection. The cart reads exactly that many bytes after the blank line that ends the headers. It downloads the first 96 KB, and the last 16 bytes of bigger files, before choosing how to run it. The type comes from the extension (`.ace`, `.elf`…) or, for `.bin`, from the contents.
+
+**What VCSIDE serves:** the project's ROM and, in an ELF project built with `make ace`, `build/<name>.ace` too. Files are read again on each request, so a new build is on the cart the next time it is chosen. The *Output* panel says which address to enter and each time the cart asks for its menu or a ROM.
+
+**Limits and notes:**
+
+- the computer and the cart must be on the same network, and the system's firewall may ask to let VCSIDE accept connections;
+- macOS (since 10.14) and Windows let a normal user listen on port 80, but Linux needs permission (`setcap cap_net_bind_service`) or VCSIDE run another way;
+- while the API host points at VCSIDE, the PlusStore is not reachable from the cart, and its account icon shows none;
+- **not tried on a cart:** the tests check the menu and range answers byte by byte, and a loopback connection that sends exactly what the firmware sends (menu, then two ranges on one connection).
 
 ## Phased plan
 
@@ -203,7 +227,7 @@ A new ELF project also builds as an ACE file: `make ace` writes `build/<name>.ac
 3. **Template — done 2026-11-11, except real hardware.** `data/templates/ace` and the `ace-animation` example, as above: the program runs from SRAM, its own bus library and overblank program, the music player unchanged. Language "C for ACE" in *New project*, Gopher2600 at 168 MHz, tests that build both.
 4. **Space report — done 2026-11-11.** The file, the SRAM and Gopher2600's SRAM, as above, in the *Space* panel, the status bar and the build's diagnostics. The cart choice was dropped: for `ACE-UF00` both carts have the same limits.
 5. **Shared C — done 2026-11-11.** `make ace` in an ELF project, as described in "ELF games as ACE files" above.
-6. **Hardware.** Send the file to the PlusCart, once that route exists (pending idea in `design.md`).
+6. **Sending to the PlusCart — done 2026-11-11, not tried on a cart.** *Build > Serve to the PlusCart (Wi-Fi)*, as described in "Sending the ROM to the PlusCart" above. For any project, not only ACE. The UnoCart has no Wi-Fi: its ROMs go on its SD card.
 
 ## Open questions
 

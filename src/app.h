@@ -31,6 +31,7 @@
 #include "project.h"
 #include "project_form.h"
 #include "elf_space.h"
+#include "pluscart_server.h"
 #include "image_viewer.h"
 #include "space.h"
 #include "theme_ui.h"
@@ -282,6 +283,10 @@ class App {
   std::optional<ElfSpace> elfSpace_;  // ELF projects
   void measureElf();
   void measureAce();
+  // The PlusCart on the local network: the project's ROMs served as its API host.
+  PlusCartServer plusCart_;
+  void togglePlusCart();
+  void updatePlusCartRoms();
   bool finishBasicBuild();
   void measureBasic(long romSize);
   std::string spaceNote_;      // why there is no report (ELF, custom build...)

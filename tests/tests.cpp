@@ -17,6 +17,7 @@
 #include "debugmap.h"
 #include "basic_syntax.h"
 #include "elf_space.h"
+#include "pluscart_server.h"
 #include "emulator_launch.h"
 #include "i18n.h"
 #include "gfx.h"
@@ -693,6 +694,83 @@ static std::string makeElf(int type, const std::vector<std::tuple<std::string, u
   put(bytes, tableOffset + 20, (uint32_t)names.size(), 4);
   bytes.resize(tableOffset + 40);
   return bytes;
+}
+
+// The PlusCart's requests, as its firmware writes them (esp8266.c): the menu, then a ROM in
+// ranges on one keep-alive connection.
+static void testPlusCartServer() {
+  namespace fs = std::filesystem;
+  fs::path dir = fs::temp_directory_path() / "vcside-test-pluscart";
+  std::error_code errorCode;
+  fs::create_directories(dir, errorCode);
+  std::string rom(40000, '\0');
+  for (size_t index = 0; index < rom.size(); index++) rom[index] = (char)(index * 7);
+  std::ofstream(dir / "my game.ace", std::ios::binary) << rom;
+  std::vector<ServedRom> roms = {{"my game.ace", (dir / "my game.ace").string()}};
+  CHECK(decodePlusStorePath("/my%20game.ace") == "/my game.ace" && decodePlusStorePath("/a+b%2B") == "/a b+");
+  const std::string headers = " HTTP/1.0\r\nHost: 192.168.1.20\r\nPlusStore-ID: v2.3.32 0123456789abcdef01234567 PlusCart(+)\r\nClient-Conf: 5,0,0,1,1, 9\r\nConnection: keep-alive\r\n";
+  PlusStoreRequest request = parsePlusStoreRequest("GET /api.php?p=" + headers + "\r\n");
+  CHECK(request.valid && request.path.empty() && !request.hasRange);
+  // the menu: status line, then type 2 (a ROM file), the size in 6 digits from index 2, the name from index 9
+  std::string menu = plusStoreMenu(roms, "", "VCSIDE: game");
+  CHECK(menu == "00VCSIDE: game\n2 040000 my game.ace\n");
+  CHECK(plusStoreMenu(roms, "/Somewhere", "") == "00\n0 000000 ..\n");
+  request = parsePlusStoreRequest("GET /api.php?p=/my%20game.ace" + headers + "Range: bytes=32768-39999\r\n\r\n");
+  CHECK(request.valid && request.path == "/my game.ace" && request.hasRange && request.first == 32768 && request.last == 39999);
+  std::string logLine;
+  std::string response = plusStoreResponse(request, roms, "", &logLine);
+  CHECK(response.find("206") != std::string::npos && response.find("Content-Length: 7232\r\n") != std::string::npos && logLine.empty());
+  CHECK(response.substr(response.find("\r\n\r\n") + 4) == rom.substr(32768));
+  request.first = 0, request.last = 32767;
+  plusStoreResponse(request, roms, "", &logLine);
+  CHECK(logLine.find("my game.ace") != std::string::npos);  // the first range: it is being downloaded
+  request.path = "/other.bin";
+  CHECK(plusStoreResponse(request, roms, "", nullptr).find("416") != std::string::npos);
+  CHECK(!parsePlusStoreRequest("GET /index.html HTTP/1.0\r\n\r\n").valid);
+#ifndef _WIN32
+  // a real connection on the loopback, with the requests one after another
+  PlusCartServer server;
+  std::string error;
+  CHECK(server.start(0, &error) && server.port() > 0);
+  server.setRoms(roms, "VCSIDE: game");
+  int client = socket(AF_INET, SOCK_STREAM, 0);
+  sockaddr_in address{};
+  address.sin_family = AF_INET;
+  address.sin_port = htons((uint16_t)server.port());
+  inet_pton(AF_INET, "127.0.0.1", &address.sin_addr);
+  CHECK(connect(client, (sockaddr*)&address, sizeof address) == 0);
+  std::string requests = "GET /api.php?p=" + headers + "\r\n";
+  requests += "GET /api.php?p=/my%20game.ace" + headers + "Range: bytes=0-32767\r\n\r\n";
+  requests += "GET /api.php?p=/my%20game.ace" + headers + "Range: bytes=32768-39999\r\n\r\n";
+  CHECK(send(client, requests.data(), requests.size(), 0) == (ssize_t)requests.size());
+  std::string received;
+  char buffer[8192];
+  auto complete = [&received] {  // three answers, each its header and Content-Length bytes
+    size_t position = 0;
+    for (int answer = 0; answer < 3; answer++) {
+      size_t headerEnd = received.find("\r\n\r\n", position), lengthAt = received.find("Content-Length: ", position);
+      if (headerEnd == std::string::npos || lengthAt == std::string::npos) return false;
+      position = headerEnd + 4 + std::stoul(received.substr(lengthAt + 16));
+      if (position > received.size()) return false;
+    }
+    return true;
+  };
+  for (int attempt = 0; attempt < 500 && !complete(); attempt++) {
+    ssize_t count = recv(client, buffer, sizeof buffer, 0);
+    if (count <= 0) break;
+    received.append(buffer, (size_t)count);
+  }
+  close(client);
+  CHECK(complete() && received.find("2 040000 my game.ace\n") != std::string::npos);
+  size_t firstBody = received.find("\r\n\r\n", received.find("206")) + 4;
+  CHECK(received.compare(firstBody, 32768, rom, 0, 32768) == 0);
+  CHECK(received.size() >= 7232 && received.compare(received.size() - 7232, 7232, rom, 32768, 7232) == 0);
+  server.stop();
+  CHECK(!server.running());
+  auto log = server.takeLog();
+  CHECK(log.size() == 2);  // the menu, and the ROM once
+#endif
+  fs::remove_all(dir, errorCode);
 }
 
 static void testElfSpace() {
@@ -4699,6 +4777,7 @@ int main() {
   loadLanguages(data + "/i18n");
   testEmulatorOptions(kb);
   testElfSpace();
+  testPlusCartServer();
   testMusic();
   testSong();
   testMusicExport();
