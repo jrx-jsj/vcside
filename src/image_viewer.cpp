@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <fstream>
 
 #include "i18n.h"
 #include "imgui.h"
@@ -30,10 +31,24 @@ static std::string lowerExt(const std::string& path) {
   return extension;
 }
 
-bool ImageViewer::handles(const std::string& path) {
+// ".bmp", ".png" or "": by the extension, or for any other name by the first bytes (a screenshot saved
+// without an extension is still a picture).
+static std::string imageKind(const std::string& path) {
   std::string extension = lowerExt(path);
-  return extension == ".png" || extension == ".bmp";
+  if (extension == ".png" || extension == ".bmp") return extension;
+  unsigned char head[18] = {};
+  std::ifstream file(path, std::ios::binary);
+  if (!file.read(reinterpret_cast<char*>(head), sizeof head)) return "";
+  static const unsigned char pngSignature[8] = {0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n'};
+  if (std::equal(pngSignature, pngSignature + 8, head)) return ".png";
+  // "BM", then at byte 14 the size of the header that follows: one of the sizes the BMP versions use
+  unsigned headerSize = head[14] | head[15] << 8 | head[16] << 16 | (unsigned)head[17] << 24;
+  bool knownHeader = headerSize == 12 || headerSize == 40 || headerSize == 52 || headerSize == 56 || headerSize == 108 || headerSize == 124;
+  if (head[0] == 'B' && head[1] == 'M' && knownHeader) return ".bmp";
+  return "";
 }
+
+bool ImageViewer::handles(const std::string& path) { return !imageKind(path).empty(); }
 
 ImageViewer::~ImageViewer() {
   if (texture_) {
@@ -45,7 +60,7 @@ ImageViewer::~ImageViewer() {
 // The file as RGBA32 pixels.
 static SDL_Surface* readImage(const std::string& path) {
   SDL_Surface* surface = nullptr;
-  if (lowerExt(path) == ".bmp") {
+  if (imageKind(path) == ".bmp") {
     surface = SDL_LoadBMP(path.c_str());
   } else {
 #if SDL_VERSION_ATLEAST(3, 4, 0)
