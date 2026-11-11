@@ -965,6 +965,44 @@ std::string lineList(const std::vector<int>& lines) {
 }
 }  // namespace
 
+// What read_file shows has the line number in front ("898: \tlda X"). A model that copies it into its search text, and into the new text, is
+// meant the lines without the numbers: when every line of the search has one, they are taken off both texts.
+static void stripLineNumbers(std::string* search, std::string* replace) {
+  auto prefixLength = [](const std::string& line) -> size_t {
+    size_t digits = 0;
+    while (digits < line.size() && std::isdigit((unsigned char)line[digits])) digits++;
+    if (digits == 0 || digits > 6 || digits >= line.size() || line[digits] != ':') return 0;
+    return digits + 1 + (digits + 1 < line.size() && line[digits + 1] == ' ' ? 1 : 0);
+  };
+  auto linesOf = [](const std::string& text) {
+    std::vector<std::string> lines;
+    size_t from = 0;
+    while (from <= text.size()) {
+      size_t newline = text.find('\n', from);
+      lines.push_back(text.substr(from, (newline == std::string::npos ? text.size() : newline) - from));
+      if (newline == std::string::npos) break;
+      from = newline + 1;
+    }
+    return lines;
+  };
+  std::vector<std::string> searchLines = linesOf(*search);
+  int numbered = 0, filled = 0;
+  for (auto& line : searchLines) {
+    if (line.find_first_not_of(" \t\r") == std::string::npos) continue;
+    filled++;
+    numbered += prefixLength(line) > 0;
+  }
+  if (filled == 0 || numbered != filled) return;
+  auto strip = [&](const std::string& text) {
+    std::string out;
+    std::vector<std::string> lines = linesOf(text);
+    for (size_t i = 0; i < lines.size(); i++) out += lines[i].substr(prefixLength(lines[i])) + (i + 1 < lines.size() ? "\n" : "");
+    return out;
+  };
+  *search = strip(*search);
+  *replace = strip(*replace);
+}
+
 // The model quotes the lines it wants to change but leaves some out ("jsr X" and the lines after the label that follows it): the
 // lines it names do exist, in this order, with a few others between them. The change is then made on the real lines: the new lines
 // go where the model put them relative to the lines it named, the lines it dropped from its text stay as they are, and a line it
@@ -1081,6 +1119,7 @@ bool applySearchReplace(const std::string& text, const json& edits, std::string*
       return false;
     }
     std::string search = edit["search"].get<std::string>(), replace = edit["replace"].get<std::string>();
+    stripLineNumbers(&search, &replace);
     if (search.empty()) {
       if (error) *error = "edit " + std::to_string(number) + ": the search text is empty";
       return false;

@@ -4335,6 +4335,13 @@ static void testEditBlocks() {
   write(root / "done.asm", "Start\n  lda #7\n  rts\n");
   auto already = locate("edit done.asm", "<<<<<<< SEARCH\n  lda #1\n=======\n  lda #7\n>>>>>>> REPLACE");
   CHECK(already.error && already.text.find("already in the file (line 2)") != std::string::npos);
+  // line numbers copied from read_file into the search and the new text are taken off
+  {
+    write(root / "numbered.asm", "\t\t\t; Read from joystick port\n\t\t\tlda #0\n\t\t\tsta SWACNT\n");
+    auto numbered = locate("edit numbered.asm", "<<<<<<< SEARCH\n898: \t\t\t; Read from joystick port\n899: \t\t\tlda #0\n=======\n898: \t\t\t; Read from joystick port\n899: \t\t\tlda #0\n900: \t\t\tlda INPT4\n>>>>>>> REPLACE");
+    CHECK(numbered.proposed && numbered.edit.after == "\t\t\t; Read from joystick port\n\t\t\tlda #0\n\t\t\tlda INPT4\n\t\t\tsta SWACNT\n");
+    fs::remove(root / "numbered.asm");
+  }
   // the model names lines but leaves some out: the change is made on the real lines, and the lines it left out stay
   {
     write(root / "rebase.asm", "\t\t\tjsr SFX_TRIGGER\t\t\t\n.AddMovement\n\t\t\t; Check right\n\t\t\tlda PLAYER_DIRECTION\n\t\t\tcmp #RIGHT\n\t\t\tbne .RightDone\n\t\t\t; Moving to the right\n");
