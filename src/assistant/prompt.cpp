@@ -65,6 +65,11 @@ std::string userTurn(const std::string& question, const Attachments& attachments
   if (!attachments.excerpts.empty()) turn += "Parts of the project that match your question (data, found by searching its files):\n" + attachments.excerpts + "\n";
   if (!attachments.fileText.empty()) turn += "File " + attachments.fileName + " (data):\n```\n" + limited(attachments.fileText, 12000) + "\n```\n\n";
   for (auto& file : attachments.extraFiles) turn += "File " + file.first + " (data):\n```\n" + limited(file.second, 12000) + "\n```\n\n";
+  if (!attachments.fileText.empty() || !attachments.extraFiles.empty()) {  // the name to write in a change: the model invents "src/main.asm" otherwise
+    turn += "To change a file, use its path exactly as written above after \"File\"";
+    turn += attachments.fileText.empty() ? std::string(".") : ": " + attachments.fileName + ".";
+    turn += "\n\n";
+  }
   if (!attachments.selection.empty())
     turn += "Selected code" + (attachments.selectionLabel.empty() ? std::string() : " in " + attachments.selectionLabel) + " (data):\n```\n" + limited(attachments.selection, 12000) + "\n```\n\n";
   if (!attachments.errors.empty()) turn += "Build errors (data):\n```\n" + limited(attachments.errors, 3000) + "\n```\n\n";
