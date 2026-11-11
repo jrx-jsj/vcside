@@ -3616,6 +3616,8 @@ static void testAgentTools(const KnowledgeBase& kb) {
   {
     ToolCall shape;
     CHECK(findToolCall("```tool\n{\"tool\": \"read_file\", \"path\": \"main.asm\", \"from\": 2}\n```", &shape) && shape.name == "read_file" && shape.args["path"] == "main.asm" && shape.args["from"] == 2);  // flat
+    // the tool's name inside the arguments
+    CHECK(findToolCall("```tool\n{\"args\":{\"path\":\"a.asm\",\"text\":\"x\",\"tool\":\"search\"}}\n```", &shape) && shape.name == "search" && shape.args["path"] == "a.asm" && !shape.args.contains("tool"));
     // real tabs and line ends inside the strings (not valid JSON): the call is read all the same
     CHECK(findToolCall("Here:\n```tool\n{\"args\":{\"path\":\"a.asm\",\"edits\":[{\"search\":\"\t\tlda #1\nsta X\",\"replace\":\"\t\tlda #2\"}]},\"tool\":\"edit_file\"}\n```", &shape) && shape.name == "edit_file" && shape.args["edits"][0]["search"] == "\t\tlda #1\nsta X");
     CHECK(findToolCall("{\"name\": \"read_file\", \"arguments\": \"{\\\"path\\\": \\\"main.asm\\\"}\"}", &shape) && shape.args["path"] == "main.asm");   // arguments as a JSON string

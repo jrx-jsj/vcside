@@ -511,6 +511,17 @@ bool callFromJson(const json& value, ToolCall* call) {
       name = (*body)[key].get<std::string>();
       break;
     }
+  if (name.empty() && value.contains("args") && value["args"].is_object()) {
+    // the name written inside the arguments: {"args": {"path": ..., "edits": [...], "tool": "edit_file"}}
+    for (const char* key : {"tool", "name", "tool_name"})
+      if (value["args"].contains(key) && value["args"][key].is_string() && !resolveToolName(value["args"][key].get<std::string>()).empty()) {
+        name = value["args"][key].get<std::string>();
+        call->name = resolveToolName(name);
+        call->args = value["args"];
+        call->args.erase(key);
+        return true;
+      }
+  }
   if (name.empty()) return false;
   std::string real = resolveToolName(name);
   if (real.empty()) return false;
