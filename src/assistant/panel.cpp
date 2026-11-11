@@ -20,6 +20,7 @@
 #include "assistant/markdown.h"
 #include "assistant/markdown_view.h"
 #include "assistant/secrets.h"
+#include "assistant/domain_checks.h"
 #ifdef __APPLE__
 #include "platform/apple_backends.h"
 #endif
@@ -200,7 +201,7 @@ void AssistantPanel::newChat() {
   selectingIndex_ = -1;
   streaming_.clear(), error_.clear(), lastRequest_.clear();
   promptTokens_ = completionTokens_ = droppedTurns_ = 0;
-  agentSteps_ = 0, nudged_ = false, blockRetries_ = 0, callCounts_.clear(), turnText_.clear();
+  agentSteps_ = 0, nudged_ = false, blockRetries_ = 0, proposalRejects_ = 0, callCounts_.clear(), turnText_.clear();
   placements_.clear(), notice_.clear(), pendingEditFromChat_ = false;
   pendingEditActive_ = false, pendingRun_.clear(), allowedRun_.clear(), allowedEdit_.clear(), originals_.clear();
   privilegedTouched_ = waitingBuild_ = false;
@@ -236,7 +237,7 @@ void AssistantPanel::loadTab(int index) {
   selectingIndex_ = -1;
   streaming_.clear(), error_.clear(), lastRequest_.clear();
   promptTokens_ = completionTokens_ = droppedTurns_ = 0;
-  agentSteps_ = 0, nudged_ = false, blockRetries_ = 0, callCounts_.clear(), turnText_.clear();
+  agentSteps_ = 0, nudged_ = false, blockRetries_ = 0, proposalRejects_ = 0, callCounts_.clear(), turnText_.clear();
   placements_.clear(), notice_.clear(), pendingEditFromChat_ = false;
   pendingEditActive_ = false, pendingRun_.clear(), waitingBuild_ = false;
   originals_ = tab.originals, allowedRun_ = tab.allowedRun, allowedEdit_ = tab.allowedEdit, privilegedTouched_ = tab.privilegedTouched;
@@ -937,7 +938,7 @@ void AssistantPanel::dispatch(const PanelContext& context, const std::string& qu
   std::vector<Message> messages = buildMessages(systemPrompt(), history, turn, provider->contextTokens, reserve, &droppedTurns_);
   chat_.messages.back().attached = attachedNote;
   turnText_ = turn;
-  agentSteps_ = 0, nudged_ = false, blockRetries_ = 0, callCounts_.clear(), lastResults_.clear(), noMoreTools_ = false, pendingEditActive_ = false, pendingEditFromChat_ = false, pendingRun_.clear(), waitingBuild_ = false;
+  agentSteps_ = 0, nudged_ = false, blockRetries_ = 0, proposalRejects_ = 0, callCounts_.clear(), lastResults_.clear(), noMoreTools_ = false, pendingEditActive_ = false, pendingEditFromChat_ = false, pendingRun_.clear(), waitingBuild_ = false;
   lastRequest_ = chatRequestBody(*provider, messages);
   {
     int files = (attachments.fileText.empty() ? 0 : 1) + (int)attachments.extraFiles.size();
@@ -1262,6 +1263,22 @@ void AssistantPanel::handleToolCall(const PanelContext& context, const ToolCall&
       addToolResult(context, describeCall(call), result.text, true);
       continueAgent(context);
       return;
+    }
+    if (context.kb && proposalRejects_ < 2 && !result.edit.created) {
+      // before the user is asked to look at it: a mistake the checks can tell goes back to the model, with what is wrong and the fix
+      std::string request;
+      for (size_t i = chat_.messages.size(); i-- > 0;)
+        if (chat_.messages[i].role == "user" && chat_.messages[i].kind.empty()) {
+          request = chat_.messages[i].english.empty() ? chat_.messages[i].content : chat_.messages[i].english;
+          break;
+        }
+      std::string problems = proposalProblems(request, result.edit.before, result.edit.after, *context.kb, [this](const std::string& word) { return index_.knows(word); }, context.grounding.batariBasic);
+      if (!problems.empty()) {
+        proposalRejects_++;
+        addToolResult(context, describeCall(call), "The change was NOT shown to the user, because:\n" + problems + "Fix it and call edit_file again.", true);
+        continueAgent(context);
+        return;
+      }
     }
     pendingEdit_ = result.edit;
     pendingEditActive_ = true;

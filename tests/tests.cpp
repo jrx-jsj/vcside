@@ -44,6 +44,7 @@
 #include "assistant/embeddings.h"
 #include "assistant/context_items.h"
 #include "assistant/edits.h"
+#include "assistant/domain_checks.h"
 #include "assistant/validate.h"
 #include "assistant/first_pass.h"
 #include "assistant/mask.h"
@@ -3483,6 +3484,22 @@ static std::string chunk(const std::string& data) {
 static void testAgentTools(const KnowledgeBase& kb) {
   namespace fs = std::filesystem;
   using namespace vcs::assistant;
+  {  // checks of a proposed change, with no model
+    auto knows = [](const std::string& word) { return word == "playercontrols" || word == "player_animation"; };
+    std::string before = "PandaControls\n  lda SWCHA\n  rts\n";
+    std::string viaPort = "PandaControls\n  lda SWCHA\n  and #%00000001  ; fire button\n  beq .Pressed\n  rts\n";
+    auto wrong = proposalProblems("el oso debe saltar cuando se pulse el botón del joystick", before, viaPort, kb, knows, false);
+    CHECK(wrong.find("INPT4") != std::string::npos && wrong.find("SWCHA") != std::string::npos);
+    std::string viaFire = "PandaControls\n  lda SWCHA\n  lda INPT4\n  bmi .Skip\n.Skip\n  rts\n";
+    CHECK(proposalProblems("el oso debe saltar cuando se pulse el botón del joystick", before, viaFire, kb, knows, false).empty());
+    CHECK(proposalProblems("mueve el oso a la izquierda", before, viaPort, kb, knows, false).find("INPT4") == std::string::npos);  // not about the button
+    std::string invented = "PandaControls\n  lda SWCHA\n  lda #JUMP_ANIMATION\n  sta PLAYER_ANIMATION\n  rts\n";
+    auto unknown = proposalProblems("haz que salte", before, invented, kb, knows, false);
+    CHECK(unknown.find("JUMP_ANIMATION") != std::string::npos && unknown.find("PLAYER_ANIMATION") == std::string::npos);
+    std::string defined = "JUMP_ANIMATION EQU 3\nPandaControls\n  lda SWCHA\n  lda #JUMP_ANIMATION\n  rts\n";
+    CHECK(proposalProblems("haz que salte", before, defined, kb, knows, false).empty());
+    CHECK(addedLines("a\nb\n", "a\nc\nb\n") == "c\n");
+  }
   fs::path root = fs::temp_directory_path() / "vcside_agent_test";
   fs::remove_all(root);
   fs::create_directories(root / "sub");
