@@ -6,7 +6,7 @@ A 4K DASM game from VCSIDE's game example: a title screen with a menu (PLAY, TV:
 - The TV system is chosen at run time (`System`: 0 NTSC, 1 PAL60, 2 PAL): 262, 262 or 312 lines. The blank lines are timed by `TIM64T` with `VblankTime` (43, 43, 73) and `OverscanTime` (36, 36, 65); the vertical blank's work must end before its timer, or the frame grows. It is the tight one (PAL colours are slow): `Animate` runs in the overscan for that reason.
 - Colours are written for NTSC and turned into PAL ones by `ConvertColour` (slow): never call it between `WSYNC`s inside a kernel; precompute in the blank lines.
 - `GameKernel`: two lines per pass; the enemies take turns on player 1 (30 Hz flicker, `Shown`).
-- `TitleKernel`: "VCSIDE" is an asymmetric playfield (PF0-PF2 rewritten at cycles 28, 39 and 50); "THE GAME" (`Text48`) is 48-pixel text with its last writes at cycles 45, 48, 51 and 54, players at x 56 and 64, `VDELP0`/`VDELP1` on. Count cycles before changing either.
+- `TitleKernel`: the cartridge (`Cartridge`) is an asymmetric playfield with a colour per row (COLUPF, PF0-PF2 and PF0-PF2 again at cycles 7-51) and the missiles as the label's grey sides (pixels 36 and 116); "THE GAME" (`Text48`) is 48-pixel text with its last writes at cycles 44, 47, 50 and 53, players on pixels 55 and 63, `VDELP0`/`VDELP1` on. Count cycles before changing either.
 - `HMOVE` once a frame, in the vertical blank, after `PosObject`.
 
 ## Where things live

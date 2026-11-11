@@ -3,38 +3,235 @@
  "sprites": [],
  "playfields": [
   {
-   "name": "logo",
-   "line_height": 4,
-   "pf": 42,
+   "name": "cart",
+   "line_height": 2,
+   "pf": 6,
    "bk": 0,
    "rows": [
     {
-     "bits": "..X...X..XXXX..XXXX.XXXXX.XXXX..XXXXX...",
-     "mode": "repeat"
+     "bits": "...........XXXXXXXXXXXXXXXXX............",
+     "mode": "repeat",
+     "pf": 4
     },
     {
-     "bits": "..X...X.X.....X.......X...X...X.X.......",
-     "mode": "repeat"
+     "bits": ".........XXXXXXXXXXXXXXXXXXXXX..........",
+     "mode": "repeat",
+     "pf": 6
     },
     {
-     "bits": "..X...X.X.....X.......X...X...X.X.......",
-     "mode": "repeat"
+     "bits": ".........XXXXXXXXXXXXXXXXXXXXX..........",
+     "mode": "repeat",
+     "pf": 6
     },
     {
-     "bits": "..X...X.X......XXX....X...X...X.XXXX....",
-     "mode": "repeat"
+     "bits": "..........XXXXXXXXXXXXXXXXXXX...........",
+     "mode": "repeat",
+     "pf": 42
     },
     {
-     "bits": "..X...X.X.........X...X...X...X.X.......",
-     "mode": "repeat"
+     "bits": "..........XXXXXXXXXXXXXXXXXXX...........",
+     "mode": "repeat",
+     "pf": 42
     },
     {
-     "bits": "...X.X..X.........X...X...X...X.X.......",
-     "mode": "repeat"
+     "bits": "..........X.XXX.XX...XXX....X...........",
+     "mode": "repeat",
+     "pf": 42
     },
     {
-     "bits": "....X....XXXX.XXXX..XXXXX.XXXX..XXXXX...",
-     "mode": "repeat"
+     "bits": "..........X.XXX.XX...XXX....X...........",
+     "mode": "repeat",
+     "pf": 42
+    },
+    {
+     "bits": "..........X.XXX.X.XXX.X.XXXXX...........",
+     "mode": "repeat",
+     "pf": 42
+    },
+    {
+     "bits": "..........X.XXX.X.XXX.X.XXXXX...........",
+     "mode": "repeat",
+     "pf": 42
+    },
+    {
+     "bits": "..........X.XXX.X.XXXXX.XXXXX...........",
+     "mode": "repeat",
+     "pf": 42
+    },
+    {
+     "bits": "..........X.XXX.X.XXXXX.XXXXX...........",
+     "mode": "repeat",
+     "pf": 42
+    },
+    {
+     "bits": "..........X.XXX.X.XXXXXX...XX...........",
+     "mode": "repeat",
+     "pf": 42
+    },
+    {
+     "bits": "..........X.XXX.X.XXXXXX...XX...........",
+     "mode": "repeat",
+     "pf": 42
+    },
+    {
+     "bits": "..........XX.X.XX.XXXXXXXXX.X...........",
+     "mode": "repeat",
+     "pf": 42
+    },
+    {
+     "bits": "..........XX.X.XX.XXXXXXXXX.X...........",
+     "mode": "repeat",
+     "pf": 42
+    },
+    {
+     "bits": "..........XX.X.XX.XXX.XXXXX.X...........",
+     "mode": "repeat",
+     "pf": 42
+    },
+    {
+     "bits": "..........XX.X.XX.XXX.XXXXX.X...........",
+     "mode": "repeat",
+     "pf": 42
+    },
+    {
+     "bits": "..........XXX.XXXX...XX....XX...........",
+     "mode": "repeat",
+     "pf": 42
+    },
+    {
+     "bits": "..........XXX.XXXX...XX....XX...........",
+     "mode": "repeat",
+     "pf": 42
+    },
+    {
+     "bits": "..........XXXXXXXXXXXXXXXXXXX...........",
+     "mode": "repeat",
+     "pf": 42
+    },
+    {
+     "bits": "..........XXXXXXXXXXXXXXXXXXX...........",
+     "mode": "repeat",
+     "pf": 42
+    },
+    {
+     "bits": ".........XXXXXXXXXXXXXXXXXXXXX..........",
+     "mode": "repeat",
+     "pf": 6
+    },
+    {
+     "bits": ".........XXXXXXXXXXXXXXXXXXXXX..........",
+     "mode": "repeat",
+     "pf": 6
+    },
+    {
+     "bits": ".........X...................X..........",
+     "mode": "repeat",
+     "pf": 6
+    },
+    {
+     "bits": ".........X...................X..........",
+     "mode": "repeat",
+     "pf": 6
+    },
+    {
+     "bits": ".........XXXXXXXXXXXXXXXXXXXXX..........",
+     "mode": "repeat",
+     "pf": 6
+    },
+    {
+     "bits": ".........X...XXX.XXX..XXXX...X..........",
+     "mode": "repeat",
+     "pf": 6
+    },
+    {
+     "bits": ".........X...XXX.XXX..XXXX...X..........",
+     "mode": "repeat",
+     "pf": 6
+    },
+    {
+     "bits": ".........XXXXXXXXXXXXXXXXXXXXX..........",
+     "mode": "repeat",
+     "pf": 6
+    },
+    {
+     "bits": ".........X....X..X..X.X......X..........",
+     "mode": "repeat",
+     "pf": 6
+    },
+    {
+     "bits": ".........X....X..X..X.X......X..........",
+     "mode": "repeat",
+     "pf": 6
+    },
+    {
+     "bits": ".........XXXXXXXXXXXXXXXXXXXXX..........",
+     "mode": "repeat",
+     "pf": 6
+    },
+    {
+     "bits": ".........X....X..X..X.XXX....X..........",
+     "mode": "repeat",
+     "pf": 6
+    },
+    {
+     "bits": ".........X....X..X..X.XXX....X..........",
+     "mode": "repeat",
+     "pf": 6
+    },
+    {
+     "bits": ".........XXXXXXXXXXXXXXXXXXXXX..........",
+     "mode": "repeat",
+     "pf": 6
+    },
+    {
+     "bits": ".........X....X..X..X.X......X..........",
+     "mode": "repeat",
+     "pf": 6
+    },
+    {
+     "bits": ".........X....X..X..X.X......X..........",
+     "mode": "repeat",
+     "pf": 6
+    },
+    {
+     "bits": ".........XXXXXXXXXXXXXXXXXXXXX..........",
+     "mode": "repeat",
+     "pf": 6
+    },
+    {
+     "bits": ".........X...XXX.XXX..XXXX...X..........",
+     "mode": "repeat",
+     "pf": 6
+    },
+    {
+     "bits": ".........X...XXX.XXX..XXXX...X..........",
+     "mode": "repeat",
+     "pf": 6
+    },
+    {
+     "bits": ".........XXXXXXXXXXXXXXXXXXXXX..........",
+     "mode": "repeat",
+     "pf": 6
+    },
+    {
+     "bits": ".........X...................X..........",
+     "mode": "repeat",
+     "pf": 6
+    },
+    {
+     "bits": ".........X...................X..........",
+     "mode": "repeat",
+     "pf": 6
+    },
+    {
+     "bits": ".........XXXXXXXXXXXXXXXXXXXXX..........",
+     "mode": "repeat",
+     "pf": 6
+    },
+    {
+     "bits": ".........XXXXXXXXXXXXXXXXXXXXX..........",
+     "mode": "repeat",
+     "pf": 6
     }
    ]
   },

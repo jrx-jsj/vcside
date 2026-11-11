@@ -12,7 +12,8 @@
 ;   hero.vcsgfx   the hero (P0) and its animations, idle and walk
 ;   enemy.vcsgfx  the enemy (P1), one colour (its first row's)
 ;   room.vcsgfx   the room's playfield: 22 rows of 8 lines, mirrored
-;   title.vcsgfx  the title's VCSIDE and the menu's texts, as playfields
+;   title.vcsgfx  the title's cartridge (VCSIDE's icon) and the menu's texts,
+;                 as playfields
 ; THE GAME is written in main.asm (TheGame0-5), six columns of 8 pixels.
 ; Music and sound: theme.vcsmusic (saving it writes theme.music.asm) is the song,
 ; played on both screens, and three effects: shot, hit and lose.
@@ -84,8 +85,8 @@ LivesRows ds 5          ; the lives' digit
 Temp      ds 2          ; scratch: pointers and the score's digits
 Temp2     ds 1
 EnemyColour ds 1        ; COLUP1 for the shown enemy, for the TV system
-LogoColour  ds 1        ; the title's colours, and the lives' in the game,
-TextColour  ds 1        ; worked out in the vertical blank (not between WSYNCs)
+TextColour  ds 1        ; THE GAME's colour, and the lives' in the game, worked
+                        ; out in the vertical blank (not between WSYNCs)
 ColourKeep  ds 1        ; ConvertColour's own two bytes
 ColourLum   ds 1
 MusicRam  ds 19         ; the music player's
@@ -210,10 +211,7 @@ TitleLogic SUBROUTINE
 .play   jsr ButtonPress
         bcc .place
         jmp StartGame
-.place  lda #logo_COLUPF        ; the colours for the TV system
-        jsr ConvertColour
-        sta LogoColour
-        lda #$9C                ; THE GAME: light blue
+.place  lda #$9C                ; THE GAME: light blue, for the TV system
         jsr ConvertColour
         sta TextColour
         ; THE GAME: players 0 and 1, three close copies each, 8 pixels apart
@@ -229,6 +227,13 @@ TitleLogic SUBROUTINE
         lda #TEXT48_X+8
         ldx #1
         jsr PosObject
+        ; the cartridge label's sides: the missiles, on its edge columns (9 and 29)
+        lda #CART_LEFT
+        ldx #2
+        jsr PosObject
+        lda #CART_RIGHT
+        ldx #3
+        jsr PosObject
         sta WSYNC
         sta HMOVE
         rts
@@ -242,25 +247,37 @@ NextSystem SUBROUTINE
         sta System
 .ok     rts
 
-; ---- TitleKernel: 192 lines: VCSIDE (playfield), THE GAME (48 pixels of
-; players), PLAY and the TV system. The selected row is white, the other grey.
+; ---- TitleKernel: 192 lines: VCSIDE's cartridge (playfield and missiles),
+; THE GAME (48 pixels of players), PLAY and the TV system. The selected row is
+; white, the other grey.
 TitleKernel SUBROUTINE
         lda #0
         sta ENAM0
+        sta ENAM1
         sta CTRLPF              ; the texts are not mirrored
         sta COLUBK
-        ldx #24
+        sta GRP0                ; no players (with VDELP0/1 on, each one twice)
+        sta GRP1
+        sta GRP0
+        lda #CART_SIDES         ; the missiles: the label's grey sides, 4 clocks wide
+        sta COLUP0
+        sta COLUP1
+        lda #$20
+        sta NUSIZ0
+        sta NUSIZ1
+        ldx #10
         jsr BlankLines
-        lda LogoColour
-        sta COLUPF
-        DRAW_TEXT logo
-        ldx #8
-        jsr BlankLines
+        jsr Cartridge
+        lda #$03                ; the players for THE GAME: three close copies each
+        sta NUSIZ0
+        sta NUSIZ1
         lda TextColour
         sta COLUP0
         sta COLUP1
+        ldx #8
+        jsr BlankLines
         jsr Text48
-        ldx #40
+        ldx #16
         jsr BlankLines
         ldy #$0E                ; white when selected
         lda MenuRow
@@ -269,7 +286,7 @@ TitleKernel SUBROUTINE
 .playColour
         sty COLUPF
         DRAW_TEXT play
-        ldx #10
+        ldx #8
         jsr BlankLines
         ldy #$0E
         lda MenuRow
@@ -286,39 +303,87 @@ TitleKernel SUBROUTINE
 .ntsc   DRAW_TEXT ntsc
         jmp .rest
 .pal60  DRAW_TEXT pal60
-.rest   ldx #192-24-[logo_ROWS*logo_LINES+1]-8-[TEXT48_LINES+1]-40-[play_ROWS*play_LINES+1]-10-[ntsc_ROWS*ntsc_LINES+1]
+.rest   ldx #192-10-[cart_ROWS*cart_LINES+1]-8-[TEXT48_LINES+1]-16-[play_ROWS*play_LINES+1]-8-[ntsc_ROWS*ntsc_LINES+1]
         jmp BlankLines
+
+; ---- Cartridge: the cartridge of VCSIDE's icon. The cart playfield of
+; title.vcsgfx gives the bits and a colour for each row (cart_COLUPF_ROWS): a
+; dark top lip, the grey body, the orange label with VCS cut out of it and the
+; grip's black bands around IDE. A playfield line has one colour, so the
+; label's grey sides are the two missiles; they are turned on at the end of the
+; first row (after the lip) and stay on: on the grey rows they fall on grey.
+; Grey (hue 0) and this orange (hue 2) are the same in PAL: no ConvertColour.
+CART_SIDES  = $06               ; the body's grey in title.vcsgfx
+CART_LEFT   = 34                ; PosObject's x for the missiles over columns 9 and 29
+CART_RIGHT  = 114               ; (pixels 36 and 116): it puts a missile 2 pixels right
+Cartridge SUBROUTINE
+        ldy #cart_ROWS-1        ; the tables are bottom row first
+.row    ldx #cart_LINES
+.line   sta WSYNC
+        lda cart_COLUPF_ROWS,y  ; 4  4
+        sta COLUPF              ; 3  7
+        lda cart_PF0,y          ; 4 11
+        sta PF0                 ; 3 14
+        lda cart_PF1,y          ; 4 18
+        sta PF1                 ; 3 21
+        lda cart_PF2,y          ; 4 25
+        sta PF2                 ; 3 28
+        lda cart_PF0R,y         ; 4 32
+        sta PF0                 ; 3 35  the right PF0: from cycle 28 to 49
+        lda cart_PF1R,y         ; 4 39
+        sta PF1                 ; 3 42  the right PF1: from cycle 39 to 54
+        lda cart_PF2R,y         ; 4 46
+        nop                     ; 2 48
+        sta PF2                 ; 3 51  the right PF2: from cycle 50 to 65
+        dex                     ; 2 53
+        bne .line               ; 2 55
+        lda #2                  ; 2 57  the missiles from the next row on (too late
+        sta ENAM0               ; 3 60  to show on this line: they are at cycles
+        sta ENAM1               ; 3 63  34 and 61)
+        dey                     ; 2 65
+        bpl .row                ; 3 68
+        sta WSYNC
+        lda #0
+        sta ENAM0
+        sta ENAM1
+        sta PF0
+        sta PF1
+        sta PF2
+        rts
 
 ; ---- Text48: THE GAME, 48 pixels wide. Players 0 and 1 have three copies
 ; each, 16 pixels apart, and P1 starts 8 pixels after P0: six columns of 8.
 ; With VDELP0 and VDELP1 each player shows the value its register had when the
 ; other one was last written, so the line writes the first three columns
-; early and the last three just as the beam reaches them (cycles 45, 48, 51
-; and 54). The 48-pixel technique of Activision's six-digit scores.
-TEXT48_X     = 56               ; P0's place: the text from x = 56 to 103
+; early and the last three just as the beam reaches them (cycles 44, 47, 50
+; and 53). The 48-pixel technique of Activision's six-digit scores.
+; The text is 47 pixels wide (the last column's last pixel is blank): from
+; pixel 55 to 101, centred like the cartridge and the menu (pixels 36-119).
+TEXT48_X     = 52               ; PosObject's x for P0: it lands on pixel 55
 TEXT48_LINES = 14
 Text48 SUBROUTINE
-        lda #TEXT48_LINES-1
-        sta Temp2               ; the line, from the top (the tables are bottom first)
+        ldy #TEXT48_LINES-1     ; the line, from the top (the tables are bottom first)
+        sty Temp2
 .line   sta WSYNC
-        ldy Temp2               ; 3  3
-        lda TheGame0,y          ; 4  7
-        sta GRP0                ; 3 10  column 1 (waits in the delayed GRP0)
-        lda TheGame1,y          ; 4 14
-        sta GRP1                ; 3 17  column 2; column 1 shows
-        lda TheGame2,y          ; 4 21
-        sta GRP0                ; 3 24  column 3; column 2 shows
-        lda TheGame3,y          ; 4 28
-        sta Temp                ; 3 31
-        ldx TheGame4,y          ; 4 35
-        lda TheGame5,y          ; 4 39
-        ldy Temp                ; 3 42
-        sty GRP1                ; 3 45  column 4; column 3 shows
-        stx GRP0                ; 3 48  column 5; column 4 shows
-        sta GRP1                ; 3 51  column 6; column 5 shows
-        sta GRP0                ; 3 54  column 6 shows
-        dec Temp2               ; 5 59
-        bpl .line               ; 3 62
+        nop                     ; 2  2
+        lda TheGame0,y          ; 4  6
+        sta GRP0                ; 3  9  column 1 (waits in the delayed GRP0)
+        lda TheGame1,y          ; 4 13
+        sta GRP1                ; 3 16  column 2; column 1 shows
+        lda TheGame2,y          ; 4 20
+        sta GRP0                ; 3 23  column 3; column 2 shows
+        lda TheGame3,y          ; 4 27
+        sta Temp                ; 3 30
+        ldx TheGame4,y          ; 4 34
+        lda TheGame5,y          ; 4 38
+        ldy Temp                ; 3 41
+        sty GRP1                ; 3 44  column 4; column 3 shows
+        stx GRP0                ; 3 47  column 5; column 4 shows
+        sta GRP1                ; 3 50  column 6; column 5 shows
+        sta GRP0                ; 3 53  column 6 shows
+        dec Temp2               ; 5 58
+        ldy Temp2               ; 3 61
+        bpl .line               ; 3 64
         sta WSYNC
         lda #0
         sta GRP0
