@@ -271,6 +271,7 @@
     "Controllers": "Mandos",
     "Copied": "Copiado",
     "Copy all": "Copiar todo",
+    "Chat is available once the model has loaded.": "El chat estará disponible cuando termine de cargar el modelo.",
     "Apply all ({0})": "Aplicar todo ({0})",
     "Applies every change of this answer that fits its file, one after another. Undo everything this conversation changed brings the files back.": "Aplica, una tras otra, todas las modificaciones de esta respuesta que encajan en su archivo. «Deshacer todo lo que cambió esta conversación» devuelve los archivos a como estaban.",
     "Applied {0} changes. \"{1}\" brings the files back.": "Aplicados {0} cambios. «{1}» devuelve los archivos a como estaban.",

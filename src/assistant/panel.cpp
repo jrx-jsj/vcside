@@ -397,11 +397,18 @@ void AssistantPanel::modelCombo(Provider& provider, const char* label, float wid
   }
 }
 
+// Loading the model takes as long as it takes (the file, the memory): a bar that keeps moving, like the download's, without a size.
+static void loadingBar(const std::string& label) {
+  ImGui::TextUnformatted(label.c_str());
+  ImGui::ProgressBar(-1.0f * (float)ImGui::GetTime(), ImVec2(-theme::em(90), 0), "");
+  ImGui::TextDisabled("%s", T("Chat is available once the model has loaded."));
+}
+
 void AssistantPanel::builtinCard(Provider& provider) {
   if (std::string own = ownModelFile(provider); !own.empty()) {
     if (!fileExists(own)) ImGui::TextColored(theme::colv(theme::Role::MsgWarning), "%s", F("The model file is missing: {0}", {own}).c_str());
     else if (engine_.state() == Engine::State::Failed) ImGui::TextColored(theme::colv(theme::Role::MsgError), "%s", engine_.error().c_str());
-    else ImGui::TextUnformatted(F("Loading {0}...", {std::filesystem::path(own).filename().string()}).c_str());
+    else loadingBar(F("Loading {0}...", {std::filesystem::path(own).filename().string()}));
     return;
   }
   const CatalogModel* model = catalogModel(provider.model);
@@ -445,7 +452,7 @@ void AssistantPanel::builtinCard(Provider& provider) {
     return;
   }
   switch (engine_.state()) {
-    case Engine::State::Starting: ImGui::TextUnformatted(F("Loading {0}...", {model->name}).c_str()); break;
+    case Engine::State::Starting: loadingBar(F("Loading {0}...", {model->name})); break;
     case Engine::State::Failed:
       ImGui::TextColored(theme::colv(theme::Role::MsgError), "%s", T("The built-in model could not start."));
       ImGui::TextWrapped("%s", engine_.error().c_str());
