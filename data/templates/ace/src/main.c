@@ -19,7 +19,8 @@
 #include "theme.music.h"
 
 static int lines = {{VISIBLE_LINES}};    /* visible lines: the frame's lines - 63 of overblank */
-static uint8_t swcha, swchb;     /* joysticks and console switches, read after the kernel */
+static uint8_t swcha = 0xFF, swchb = 0xFF;  /* joysticks and console switches, read after the kernel
+                                            (0xFF: nothing pressed until the first frame reads them) */
 static uint8_t inpt4, last_inpt4 = 0x80;  /* fire button 0 (bit 7: 0 pressed) */
 static int bar = 90, frame;
 
@@ -90,7 +91,7 @@ int main(void)
         frame++;
         /* the frame's music: samples for the kernel's lines and for the overblank's */
         music_frame(lines + MUSIC_OVERBLANK_LINES);
-        if (frame > 1 && !(swchb & 0x01)) {               /* RESET: back to the menu */
+        if (!(swchb & 0x01)) {               /* RESET: back to the menu */
             leave();
             return 1;
         }

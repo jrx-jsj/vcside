@@ -138,8 +138,16 @@ void ace_wsync(void)
 
 void ace_nops(int count)
 {
+    while (count-- > 0) {
+        room(1);
+        feed(0xEA);
+    }
+}
+
+void ace_code(const uint8_t* bytes, int count)
+{
     room(count);
-    while (count-- > 0) feed(0xEA);
+    while (count-- > 0) feed(*bytes++);
 }
 
 uint8_t ace_read(uint16_t address)

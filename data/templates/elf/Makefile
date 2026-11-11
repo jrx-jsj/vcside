@@ -5,6 +5,9 @@
 #   make chameleon   build/{{NAME}}-chameleon.elf: the game linked with the Chameleon Cart
 #                    firmware, to flash with an ST-Link. Needs the firmware objects of the
 #                    Chameleon's ELF template (not included): CHAMELEON_FW=<its chameleon_cart folder>.
+#   make ace         build/{{NAME}}.ace: the same game as an ACE file for the PlusCart and the
+#                    UnoCart (ACE-UF00), with vcsLib written on the ACE bus library (ace/), and
+#                    build/ACE_debugging.elf for Gopher2600's debugger. Runs in Gopher2600.
 #
 # Needs the Arm GNU toolchain (arm-none-eabi-gcc) in PATH.
 
@@ -65,10 +68,46 @@ $(GAME_CC): $(GAME) chameleon/support.c
 		-o $@ -mcpu=cortex-m0plus -mthumb -nostdlib -static -L$(OUT)/nolibc -T $(OUT)/chameleon.ld \
 		-Wl,--gc-sections,--print-memory-usage
 
+# ACE (PlusCart and UnoCart): the game compiled for their Cortex-M4 and linked with ace/,
+# which takes the 6507 over and gives elf_main the vcsLib functions. The program runs from
+# the cartridge's SRAM (ace/ace.ld). ACE_SYSTEM: the TV system elf_main is given.
+ACE_SYSTEM ?= {{ACE_SYSTEM}}
+ACE_OUT    = build/ace
+ACE_GAME   = build/$(NAME).ace
+ACE_DEBUG  = build/ACE_debugging.elf
+ACE_CFLAGS = -mcpu=cortex-m4 -mthumb -mfpu=fpv4-sp-d16 -mfloat-abi=hard -O2 -gdwarf-4 -gstrict-dwarf -std=c11 \
+             -Wall -Wextra -ffreestanding -fno-builtin -fno-common -ffunction-sections -fdata-sections \
+             -fno-tree-loop-distribute-patterns -Iinclude -Iace -DACE_SYSTEM=$(ACE_SYSTEM)
+ACE_OBJS   = $(SOURCES:src/%.c=$(ACE_OUT)/game/%.o) $(patsubst ace/%.c,$(ACE_OUT)/%.o,$(wildcard ace/*.c)) $(ACE_OUT)/start.o
+
+ace: $(ACE_GAME)
+
+$(ACE_OUT)/game/%.o: src/%.c $(wildcard include/*.h src/*.h) | $(ACE_OUT)
+	$(CC) $(ACE_CFLAGS) -c $< -o $@
+
+$(ACE_OUT)/%.o: ace/%.c $(wildcard ace/*.h) | $(ACE_OUT)
+	$(CC) $(ACE_CFLAGS) -c $< -o $@
+
+$(ACE_OUT)/start.o: ace/start.S | $(ACE_OUT)
+	$(CC) $(ACE_CFLAGS) -c $< -o $@
+
+$(ACE_DEBUG): $(ACE_OBJS) ace/ace.ld
+	$(CC) $(ACE_CFLAGS) -nostdlib -T ace/ace.ld -Wl,--gc-sections -Wl,-Map=build/$(NAME)-ace.map \
+		-Wl,--print-memory-usage -Wl,--no-warn-rwx-segments -o $@ $(ACE_OBJS) -lgcc
+	@# The start code must follow the 40-byte header: the firmware's entry is an offset.
+	@if [ "$$(arm-none-eabi-nm $@ | awk '$$3 == "ace_entry" {print $$1}')" != "08020028" ]; then \
+		echo "$@: error: the start code must follow the 40-byte header (ace/ace.ld)"; rm -f $@; exit 1; fi
+
+$(ACE_GAME): $(ACE_DEBUG)
+	arm-none-eabi-objcopy -O binary $< $@
+
+$(ACE_OUT):
+	mkdir -p $@/game
+
 $(OUT):
 	mkdir -p $@
 
 clean:
 	rm -rf build
 
-.PHONY: all chameleon clean
+.PHONY: all chameleon ace clean

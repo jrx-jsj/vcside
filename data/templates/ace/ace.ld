@@ -28,6 +28,7 @@ SECTIONS
     {
         __image_start = .;
         *(.text .text.*)
+        *(.RamFunc .RamFunc.*)    /* an ELF game's RAM_FUNC code (make ace in an ELF project) */
         . = ALIGN(4);
     } > sram AT > file
 

@@ -26,9 +26,10 @@
 #define LINES_PER_ROW 2          /* each row of the sprite is drawn on two lines */
 
 static int lines = {{VISIBLE_LINES}};    /* visible lines: the frame's lines - 63 of overblank */
-static uint8_t swcha, swchb;     /* joysticks and console switches, read after the kernel */
+static uint8_t swcha = 0xFF, swchb = 0xFF;  /* joysticks and console switches, read after the kernel
+                                            (0xFF: nothing pressed until the first frame reads them) */
 static uint8_t inpt4, last_inpt4 = 0x80;  /* fire button 0 (bit 7: 0 pressed) */
-static int hero_x = 76, hero_y = 90, facing_left, frame;
+static int hero_x = 76, hero_y = 90, facing_left;
 static int hero_frame;           /* the frame the kernel draws */
 static vcsgfx_player hero;       /* the animation that is playing and where it is */
 
@@ -130,10 +131,9 @@ int main(void)
         last_inpt4 = inpt4;
         vcsgfx_play(&hero, moving ? &hero_walk : &hero_idle);
         hero_frame = vcsgfx_animate(&hero);
-        frame++;
         /* the frame's music: samples for the kernel's lines and for the overblank's */
         music_frame(lines + MUSIC_OVERBLANK_LINES);
-        if (frame > 1 && !(swchb & 0x01)) {               /* RESET: back to the menu */
+        if (!(swchb & 0x01)) {               /* RESET: back to the menu */
             leave();
             return 1;
         }

@@ -122,6 +122,9 @@ void ace_sta(uint8_t address);                /* STA address: A to a TIA registe
 void ace_write(uint8_t address, uint8_t value); /* LDA #value, STA address (5) */
 void ace_wsync(void);                         /* STA WSYNC (3): the 6507 waits for the line's end */
 void ace_nops(int count);                     /* NOP, count times (2 each) */
+void ace_code(const uint8_t* bytes, int count); /* any instruction: its bytes, in order
+                                                 (no jumps or branches: the library must
+                                                 know where the 6507 fetches next) */
 void ace_jmp(void);                           /* JMP $1000 (3): call once a line, or the library
                                                  does it when the 6507 nears the end of its 4 KB */
 uint8_t ace_read(uint16_t address);           /* LDA address, STA $1FF0 (7, or 8 above $FF):

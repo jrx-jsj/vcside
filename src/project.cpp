@@ -642,6 +642,8 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
     std::string templateName = ace ? "ace" : "elf";
     std::string aceName = (projName + std::string(16, ' ')).substr(0, 16);
     std::string visibleLines = std::to_string((tvIs50Hz(tvStandard) ? 312 : 262) - 63);
+    // the vcsLib system type an ELF game gets in its ACE build: ST_NTSC_2600, ST_PAL_2600, ST_PAL60_2600
+    std::string aceSystem = tvStandard == "PAL" ? "1" : tvStandard == "PAL60" ? "2" : "0";
     fs::path templateDir = fs::path(dataDir()) / "templates" / templateName;
     fs::path exampleDir = fs::path(dataDir()) / "templates" / (templateName + "-" + example);
     if (!fs::exists(templateDir / "Makefile") || (!example.empty() && !fs::exists(exampleDir / "src" / "main.c"))) {
@@ -660,8 +662,26 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
         replaceAll(text, "{{NAME}}", projName);
         replaceAll(text, "{{ACE_NAME}}", aceName);
         replaceAll(text, "{{VISIBLE_LINES}}", visibleLines);
+        replaceAll(text, "{{ACE_SYSTEM}}", aceSystem);
         std::ofstream(destination, std::ios::binary) << text;
       }
+    // ELF: make ace builds the same game as an ACE file, with the ACE template's bus
+    // library, start code and linker script in ace/ (next to the template's vcslib_ace.c)
+    if (!ace) {
+      fs::path aceTemplate = fs::path(dataDir()) / "templates" / "ace";
+      const std::pair<const char*, const char*> aceFiles[] = {{"include/ace.h", "ace/ace.h"}, {"src/ace.c", "ace/ace.c"},
+                                                              {"src/start.S", "ace/start.S"}, {"src/memory.c", "ace/memory.c"},
+                                                              {"ace.ld", "ace/ace.ld"}};
+      for (auto& [from, to] : aceFiles) {
+        fs::path destination = fs::path(newProject.dir) / to;
+        if (fs::exists(destination) || !fs::exists(aceTemplate / from)) continue;
+        fs::create_directories(destination.parent_path(), errorCode);
+        std::string text = readFile((aceTemplate / from).string());
+        replaceAll(text, "{{NAME}}", projName);
+        replaceAll(text, "{{ACE_NAME}}", aceName);
+        std::ofstream(destination, std::ios::binary) << text;
+      }
+    }
     writeGfxIncludes(fs::path(newProject.dir) / "src", true);
     writeMusicIncludes(fs::path(newProject.dir) / "src", tvStandard);
     newProject.main = "src/main.c";

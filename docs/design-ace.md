@@ -1,6 +1,6 @@
 # ACE cartridges — design proposal
 
-Status: proposal (2026-11-10). Phases 1 (knowledge and running ACE files), 2 (the proof of concept, `tools/ace_poc`), 3 (the template) and 4 (the space report) are done, except for real hardware. Sources are at the end and in [sources.md](sources.md#ace-cartridges-read-2026-11-10).
+Status: proposal (2026-11-10). Phases 1 to 5 (knowledge, proof of concept, template, space report and `make ace` for ELF games) are done, except for real hardware. Sources are at the end and in [sources.md](sources.md#ace-cartridges-read-2026-11-10).
 
 ## What ACE is
 
@@ -179,6 +179,19 @@ The Makefile fails if the start code does not follow the 40-byte header, since t
   - the SRAM **Gopher2600** gives the file: 128,000 bytes below 64,000 bytes of file, 256,000 below 192,000, 512,000 below 448,000 and 64,000 from there up (`ace/memory.go`). Only a warning: the program may still run on the cart.
 - **No cart choice.** For `ACE-UF00` the firmware does the same on both carts: the same size check, the same flash area and the same buffer, and the register pointers hide the different pins. A PlusCart / UnoCart setting would change nothing, so there is none.
 
+## ELF games as ACE files (`make ace`, phase 5)
+
+A new ELF project also builds as an ACE file: `make ace` writes `build/<name>.ace` and `build/ACE_debugging.elf` from the same `src/`, unchanged. A double click on the `.ace` in the project tree runs it in Gopher2600.
+
+- **`ace/`** in the project holds the ACE template's bus library, start code, `memcpy`/`memset` and linker script (VCSIDE copies them from `data/templates/ace` when it creates the project, so the repository has one copy), plus two files of the ELF template:
+  - `vcslib_ace.c`: every vcsLib function the ELF template declares, each feeding the same 6507 instructions as an ELF loader. The exception is `vcsRead4`: it is `lda` plus `sta $1FF0` (7 or 8 cycles instead of 4), the bus library's way of reading. The library gained `ace_code` (any instruction's bytes) for `ldx`, `ldy`, `stx`, `sty`, `sta abs` and `vcsWrite6`.
+  - `main_ace.c`: takes the 6507 over and calls `elf_main` with `MP_SYSTEM_TYPE` (the Makefile's `ACE_SYSTEM`, set from the project's TV standard when it is created), the ARM clock and `FF_MULTI_CART`. When `elf_main` returns, it points the 6507 at the reset vector and returns 1, so the firmware goes back to its menu.
+- **Compiled for the Cortex-M4**, with hard float, `-gstrict-dwarf` and no C library, as the ACE template. `RAM_FUNC` code goes into `.text` (everything runs from SRAM anyway). The `#pragma long_calls` in `vcsLib.h` are harmless there.
+- **The overblank program** is the ACE template's. It writes AUDV0 itself, so the ELF games' check for `sta $2d` at `$86`-`$87` finds something else and leaves it alone.
+- **Checked in Gopher2600:** the ELF template and its animated sprite example draw, move, play the music (15-16 levels in a WAV recording) and keep 262 stable lines; the debugger finds the C source (49 and 52 functions).
+- **Found on the way:** the ELF templates started with `swcha` and `swchb` at 0, which read as RESET pressed until the first kernel had read them. On a multicart (`FF_MULTI_CART`) the game went back to the menu on its first frame. As ACE in Gopher2600 it restarted forever. They now start at `0xFF` in all four templates.
+- **Projects created before** have no `ace/` folder: creating a new ELF project and copying its `ace/` folder and the Makefile's `ace` section is enough.
+
 ## Phased plan
 
 1. **Knowledge (small) — done 2026-11-10.**
@@ -189,7 +202,7 @@ The Makefile fails if the start code does not follow the 40-byte header, since t
 2. **Finish the proof of concept — done 2026-11-10, except real hardware.** The picture checked with a Gopher2600 macro. The debugger reads `ACE_debugging.elf` (DWARF 4, linked at `0x08020000`). Wolf3D's failure explained (Gopher2600's SRAM for big files and an unmapped flash register). The UnoCart's data layout handled by the firmware's pointers. Missing: running it on a real PlusCart or UnoCart.
 3. **Template — done 2026-11-11, except real hardware.** `data/templates/ace` and the `ace-animation` example, as above: the program runs from SRAM, its own bus library and overblank program, the music player unchanged. Language "C for ACE" in *New project*, Gopher2600 at 168 MHz, tests that build both.
 4. **Space report — done 2026-11-11.** The file, the SRAM and Gopher2600's SRAM, as above, in the *Space* panel, the status bar and the build's diagnostics. The cart choice was dropped: for `ACE-UF00` both carts have the same limits.
-5. **Shared C.** Write vcsLib on top of the bus library, so an ELF project can add an ACE target (`make ace`) without changing its game.
+5. **Shared C — done 2026-11-11.** `make ace` in an ELF project, as described in "ELF games as ACE files" above.
 6. **Hardware.** Send the file to the PlusCart, once that route exists (pending idea in `design.md`).
 
 ## Open questions

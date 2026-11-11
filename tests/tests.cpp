@@ -1009,6 +1009,24 @@ static void testElfSpace() {
     CHECK(std::system(command.c_str()) == 0 && fs::exists(elfDir / "build" / "walker.bin"));
     command = "cd \"" + dir.string() + "\" && \"" + make + "\" > make.log 2>&1";  // the template without an example
     CHECK(std::system(command.c_str()) == 0 && fs::exists(dir / "build" / "rainbow.bin"));
+    // make ace: the same games as ACE files, with vcsLib on the ACE bus library
+    for (auto& [projectDir, aceName] : {std::pair{elfDir, "walker.ace"}, std::pair{dir, "rainbow.ace"}}) {
+      command = "cd \"" + projectDir.string() + "\" && \"" + make + "\" ace > make-ace.log 2>&1";
+      CHECK(std::system(command.c_str()) == 0 && romFormat((projectDir / "build" / aceName).string()) == "ACE");
+    }
+  }
+  // the ACE files an ELF project gets for make ace, and its TV system
+  for (auto fileName : {"ace/ace.h", "ace/ace.c", "ace/start.S", "ace/memory.c", "ace/ace.ld", "ace/vcslib_ace.c", "ace/main_ace.c"})
+    CHECK(fs::exists(elfDir / fileName));
+  {
+    std::ifstream elfMakefile(elfDir / "Makefile"), elfStart(elfDir / "ace" / "start.S");
+    std::string makefileText((std::istreambuf_iterator<char>(elfMakefile)), {}), startText((std::istreambuf_iterator<char>(elfStart)), {});
+    CHECK(makefileText.find("ACE_SYSTEM ?= 0\n") != std::string::npos && startText.find("\"walker          \"") != std::string::npos);
+    fs::path palElf = dir / "pal-elf";
+    CHECK(Project::create(palElf.string(), "palgame", Language::ElfC, "PAL", &project, &error));
+    std::ifstream palMakefile(palElf / "Makefile");
+    std::string palText((std::istreambuf_iterator<char>(palMakefile)), {});
+    CHECK(palText.find("ACE_SYSTEM ?= 1\n") != std::string::npos);
   }
   CHECK(!Project::create((dir / "none-elf").string(), "x", Language::ElfC, "NTSC", &project, &error, "nope") && !error.empty());
   // the ACE template: Gopher2600 at the STM32F407's clock, the header's 16-character name,
