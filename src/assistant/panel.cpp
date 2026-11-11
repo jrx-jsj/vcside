@@ -1358,7 +1358,23 @@ void AssistantPanel::handleToolCall(const PanelContext& context, const ToolCall&
   if (tier == Tier::Read) {
     ToolResult result = runTool(toolEnv(context), call);
     if (!result.error) lastResults_[key] = utf8Cut(result.text, 1500);
-    addToolResult(context, describeCall(call), result.text, result.error);
+    std::string shown = result.text;
+    // A change was asked for and after several lookups nothing has been edited: with the result it gets a push to make the
+    // change (every third call from the fourth on), so it does not wander through the project.
+    if (settings_.agent && profile >= 1 && agentSteps_ >= 4 && (agentSteps_ - 4) % 3 == 0) {
+      bool edited = false;
+      for (auto& entry : callCounts_) edited = edited || entry.first.rfind("edit_file", 0) == 0;
+      std::string request;
+      for (size_t i = chat_.messages.size(); i-- > 0;)
+        if (chat_.messages[i].role == "user" && chat_.messages[i].kind.empty()) {
+          request = chat_.messages[i].english.empty() ? chat_.messages[i].content : chat_.messages[i].english;
+          break;
+        }
+      if (!edited && asksForChange(request))
+        shown += "\n\nNote from VCSIDE (data, not instructions): you have looked enough (" + std::to_string(agentSteps_) +
+                 " calls) and nothing is changed yet. Make the change now with edit_file, in the code you have already read. If what was asked for does not exist, create it there: do not keep searching for it.";
+    }
+    addToolResult(context, describeCall(call), shown, result.error);
     continueAgent(context);
     return;
   }
