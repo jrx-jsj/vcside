@@ -646,7 +646,7 @@
     "none": "ninguno",
     "not a 32-bit little-endian ELF file": "no es un ELF de 32 bits little-endian",
     "not a VCSIDE music file": "no es un archivo de música de VCSIDE",
-    "Not applied: it cannot be placed in {0} with certainty. {1}": "No aplicado: no se puede situar en {0} con certeza. {1}",
+    "Only a suggestion, and it does not fit {0}: VCSIDE cannot tell where it goes, so it offers no Apply button. {1}": "Solo una sugerencia, y no encaja en {0}: VCSIDE no sabe dónde va, así que no ofrece el botón de aplicar. {1}",
     "Not exported: {0}": "No exportado: {0}",
     "not found": "no encontrado",
     "not found in Settings > Tools": "no está en Ajustes > Herramientas",

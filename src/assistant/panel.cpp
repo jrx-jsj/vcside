@@ -1522,7 +1522,7 @@ void AssistantPanel::drawEditBlock(const PanelContext& context, const EditBlock&
   }
   if (!placement.ok) {
     ImGui::PushStyleColor(ImGuiCol_Text, theme::colv(theme::Role::MsgWarning));
-    ImGui::TextWrapped("%s", F("Not applied: it cannot be placed in {0} with certainty. {1}", {block.path, placement.problem}).c_str());
+    ImGui::TextWrapped("%s", F("Only a suggestion, and it does not fit {0}: VCSIDE cannot tell where it goes, so it offers no Apply button. {1}", {block.path, placement.problem}).c_str());
     ImGui::PopStyleColor();
     return;
   }
