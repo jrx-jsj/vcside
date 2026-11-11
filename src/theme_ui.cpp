@@ -81,26 +81,38 @@ bool beginPanel(const char* name, bool* open, ImGuiWindowFlags flags) {
 
 namespace {
 constexpr int kMenuStyleVars = 5;
+// Whole pixels: with a fractional display scale, fractional spacing could make the
+// contents a hair taller than the window, and a scrollbar would appear.
+float wholePixels(float px) { return std::round(em(px)); }
 void pushMenuStyle() {
-  ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(em(12), em(8)));
-  ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(em(12), em(9)));
-  ImGui::PushStyleVar(ImGuiStyleVar_PopupRounding, em(6));
+  ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(wholePixels(12), wholePixels(8)));
+  ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(wholePixels(12), wholePixels(9)));
+  ImGui::PushStyleVar(ImGuiStyleVar_PopupRounding, wholePixels(6));
   ImGui::PushStyleVar(ImGuiStyleVar_PopupBorderSize, 1.0f);
-  ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, em(4));
-  ImGui::SetNextWindowSizeConstraints(ImVec2(em(200), 0), ImVec2(FLT_MAX, FLT_MAX));
+  ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, wholePixels(4));
+  ImGui::SetNextWindowSizeConstraints(ImVec2(wholePixels(200), 0), ImVec2(FLT_MAX, FLT_MAX));
 }
+// the menus fit their contents: never a scrollbar
+constexpr ImGuiWindowFlags kMenuFlags = ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoSavedSettings |
+                                        ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
 }  // namespace
 
 bool beginContextMenu(const char* id) {
+  // as ImGui::BeginPopupContextItem (right click on the last item), with the flags above
+  ImGuiWindow* window = ImGui::GetCurrentWindow();
+  if (window->SkipItems) return false;
+  ImGuiID popupId = window->GetID(id);
+  if (ImGui::IsMouseReleased(ImGuiMouseButton_Right) && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenBlockedByPopup))
+    ImGui::OpenPopupEx(popupId, ImGuiPopupFlags_MouseButtonRight);
   pushMenuStyle();
-  if (ImGui::BeginPopupContextItem(id)) return true;
+  if (ImGui::BeginPopupEx(popupId, kMenuFlags)) return true;
   ImGui::PopStyleVar(kMenuStyleVars);
   return false;
 }
 
 bool beginMenuPopup(const char* id) {
   pushMenuStyle();
-  if (ImGui::BeginPopup(id)) return true;
+  if (ImGui::BeginPopupEx(ImGui::GetID(id), kMenuFlags)) return true;
   ImGui::PopStyleVar(kMenuStyleVars);
   return false;
 }
