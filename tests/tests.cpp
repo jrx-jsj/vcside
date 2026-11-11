@@ -3507,6 +3507,7 @@ static void testAgentTools(const KnowledgeBase& kb) {
     CHECK(proposalProblems("quita la animación", wide, thrown, kb, knows, false).find("deletes") == std::string::npos);  // asked to remove
     std::string fine = "FireWas DS 1\nAnimate\n  inc FRAME\n  lda ANIM\n  cmp #3\n  bne .Done\n  lda #1\n  sta ANIM\n  lda INPT4\n  bpl .Pressed\n  jsr Jump\n.Pressed\n  lda FireWas\n.Done\n  rts\nJump\n  rts\n";
     CHECK(proposalProblems("el oso debe saltar cuando se pulse el botón", wide, fine, kb, knows, false).empty());
+    CHECK(proposalProblems("haz que salte", before, "PandaControls\n  lda SWCHA\n  bra .Skip\n.Skip\n  stz X\n  rts\n", kb, knows, false).find("no bra, stz instruction") != std::string::npos);
     std::string inverted = "PandaControls\n  lda SWCHA\n  lda INPT4\n  bmi .FireButtonPressed\n  jmp .NoJump\n.FireButtonPressed\n.NoJump\n  rts\n";
     CHECK(proposalProblems("el oso debe saltar al pulsar el botón", before, inverted, kb, knows, false).find("bmi branches when the button is NOT pressed") != std::string::npos);
     std::string right = "PandaControls\n  lda SWCHA\n  lda INPT4\n  bpl .FireButtonPressed\n  jmp .NoJump\n.FireButtonPressed\n.NoJump\n  rts\n";
@@ -4334,6 +4335,16 @@ static void testEditBlocks() {
   write(root / "done.asm", "Start\n  lda #7\n  rts\n");
   auto already = locate("edit done.asm", "<<<<<<< SEARCH\n  lda #1\n=======\n  lda #7\n>>>>>>> REPLACE");
   CHECK(already.error && already.text.find("already in the file (line 2)") != std::string::npos);
+  // the model names lines but leaves some out: the change is made on the real lines, and the lines it left out stay
+  {
+    write(root / "rebase.asm", "\t\t\tjsr SFX_TRIGGER\t\t\t\n.AddMovement\n\t\t\t; Check right\n\t\t\tlda PLAYER_DIRECTION\n\t\t\tcmp #RIGHT\n\t\t\tbne .RightDone\n\t\t\t; Moving to the right\n");
+    auto skipped = locate("edit rebase.asm", "<<<<<<< SEARCH\n\t\t\tjsr SFX_TRIGGER\n\t\t\tlda PLAYER_DIRECTION\n\t\t\tcmp #RIGHT\n\t\t\tbne .RightDone\n=======\n\t\t\tjsr SFX_TRIGGER\n\t\t\tlda INPT4\n\t\t\tbpl .Fire\n.Fire\n\t\t\tlda PLAYER_DIRECTION\n\t\t\tcmp #RIGHT\n\t\t\tbne .RightDone\n>>>>>>> REPLACE");
+    CHECK(skipped.proposed && skipped.edit.after == "\t\t\tjsr SFX_TRIGGER\t\t\t\n.AddMovement\n\t\t\t; Check right\n\t\t\tlda INPT4\n\t\t\tbpl .Fire\n.Fire\n\t\t\tlda PLAYER_DIRECTION\n\t\t\tcmp #RIGHT\n\t\t\tbne .RightDone\n\t\t\t; Moving to the right\n");
+    CHECK(!locate("edit rebase.asm", "<<<<<<< SEARCH\n\t\t\tjsr SFX_TRIGGER\n\t\t\tlda NOTHING_LIKE_IT\n=======\nx\n>>>>>>> REPLACE").proposed);  // a named line that is not there: no guess
+    write(root / "twice.asm", "a\nx\nb\nc\na\ny\nb\n");
+    CHECK(!locate("edit twice.asm", "<<<<<<< SEARCH\na\nb\n=======\na\nnew\nb\n>>>>>>> REPLACE").proposed);  // two places that fit: no guess either
+    fs::remove(root / "rebase.asm"), fs::remove(root / "twice.asm");
+  }
   // a path a little off ("src/main.asm" for the "main.asm" it was shown) finds the only file with that name
   fs::create_directories(root / "docs");
   write(root / "docs" / "notes.txt", "notes\n");

@@ -963,6 +963,100 @@ std::string lineList(const std::vector<int>& lines) {
 }
 }  // namespace
 
+// The model quotes the lines it wants to change but leaves some out ("jsr X" and the lines after the label that follows it): the
+// lines it names do exist, in this order, with a few others between them. The change is then made on the real lines: the new lines
+// go where the model put them relative to the lines it named, the lines it dropped from its text stay as they are, and a line it
+// named and left out of the new text is removed. One place only; at least two named lines; the user sees the result as a diff.
+static bool rebaseEdit(const std::string& current, const std::string& search, const std::string& replace, bool crlf, std::string* out) {
+  auto split = [](const std::string& source) {
+    std::vector<std::string> lines;
+    size_t from = 0;
+    while (from <= source.size()) {
+      size_t newline = source.find('\n', from);
+      std::string line = source.substr(from, (newline == std::string::npos ? source.size() : newline) - from);
+      if (!line.empty() && line.back() == '\r') line.pop_back();
+      lines.push_back(line);
+      if (newline == std::string::npos) break;
+      from = newline + 1;
+    }
+    return lines;
+  };
+  auto trimmed = [](const std::string& line) {
+    size_t a = line.find_first_not_of(" \t"), b = line.find_last_not_of(" \t");
+    return a == std::string::npos ? std::string() : line.substr(a, b - a + 1);
+  };
+  std::vector<std::string> file = split(current), wantedAll = split(search), put = split(replace), wanted;
+  for (auto& line : wantedAll)
+    if (!trimmed(line).empty()) wanted.push_back(line);
+  if (wanted.size() < 2) return false;
+  // where the named lines are, in order, with a few other lines between them: exactly one way
+  std::vector<std::vector<int>> found;
+  for (size_t start = 0; start < file.size(); start++) {
+    if (trimmed(file[start]) != trimmed(wanted[0])) continue;
+    std::vector<int> rows = {(int)start};
+    int skipped = 0;
+    bool all = true;
+    for (size_t k = 1; k < wanted.size() && all; k++) {
+      int row = rows.back() + 1, gap = 0;
+      while (row < (int)file.size() && trimmed(file[row]) != trimmed(wanted[k]) && gap <= 4) row++, gap++;
+      if (row >= (int)file.size() || trimmed(file[row]) != trimmed(wanted[k]) || gap > 4) all = false;
+      else rows.push_back(row), skipped += gap;
+    }
+    if (all && skipped <= 8) found.push_back(rows);
+  }
+  if (found.size() != 1) return false;
+  const std::vector<int>& rows = found[0];
+  // what the model keeps, drops and adds: the longest common run of its search and replace lines
+  size_t W = wanted.size(), P = put.size();
+  std::vector<std::vector<int>> lcs(W + 1, std::vector<int>(P + 1, 0));
+  for (size_t a = W; a-- > 0;)
+    for (size_t b = P; b-- > 0;) lcs[a][b] = trimmed(wanted[a]) == trimmed(put[b]) ? lcs[a + 1][b + 1] + 1 : std::max(lcs[a + 1][b], lcs[a][b + 1]);
+  std::vector<int> pairOfWanted(W, -1);
+  std::vector<bool> keptPut(P, false);
+  for (size_t a = 0, b = 0; a < W && b < P;) {
+    if (trimmed(wanted[a]) == trimmed(put[b]) && lcs[a][b] == lcs[a + 1][b + 1] + 1) pairOfWanted[a] = (int)b, keptPut[b] = true, a++, b++;
+    else if (lcs[a + 1][b] >= lcs[a][b + 1]) a++;
+    else b++;
+  }
+  bool anyKept = false;
+  for (int pair : pairOfWanted) anyKept = anyKept || pair >= 0;
+  if (!anyKept) return false;  // nothing to anchor the new lines to
+  std::vector<std::string> region;
+  size_t previousPut = 0;  // the next replace line not yet written
+  size_t k = 0;
+  for (int row = rows.front(); row <= rows.back(); row++) {
+    if (k < W && row == rows[k]) {
+      if (pairOfWanted[k] >= 0) {
+        for (size_t b = previousPut; b < (size_t)pairOfWanted[k]; b++)
+          if (!keptPut[b]) region.push_back(put[b]);
+        previousPut = pairOfWanted[k] + 1;
+        region.push_back(file[row]);
+      }  // else: a line it named and dropped from the new text
+      k++;
+    } else {
+      region.push_back(file[row]);  // a line the model did not mention: it stays
+    }
+  }
+  for (size_t b = previousPut; b < P; b++)
+    if (!keptPut[b]) region.push_back(put[b]);
+  // the text before the first row and after the last, and the region in the file's own line ends
+  std::string eol = crlf ? "\r\n" : "\n";
+  size_t offset = 0, startOffset = 0, endOffset = 0;
+  for (size_t row = 0; row < file.size(); row++) {
+    if ((int)row == rows.front()) startOffset = offset;
+    size_t lineEnd = offset + file[row].size() + (crlf ? 2 : 1);
+    if ((int)row == rows.back()) {
+      endOffset = std::min(current.size(), offset + file[row].size() + (crlf && offset + file[row].size() < current.size() ? 2 : (offset + file[row].size() < current.size() ? 1 : 0)));
+      break;
+    }
+    offset = lineEnd;
+  }
+  std::string joined;
+  for (size_t i = 0; i < region.size(); i++) joined += region[i] + (i + 1 < region.size() || endOffset > startOffset && current[endOffset - 1] == '\n' ? eol : "");
+  *out = current.substr(0, startOffset) + joined + current.substr(endOffset);
+  return true;
+}
+
 bool applySearchReplace(const std::string& text, const json& edits, std::string* result, std::string* error) {
   std::string current = text;
   // a file with Windows line ends keeps them: what is put in is written with them too
@@ -1020,6 +1114,13 @@ bool applySearchReplace(const std::string& text, const json& edits, std::string*
     if (loose.lines.size() > 1) {
       if (error) *error = "edit " + std::to_string(number) + ": the search text occurs more than once (lines " + lineList(loose.lines) + "); include more lines around it so it is unique";
       return false;
+    }
+    {
+      std::string rebased;
+      if (rebaseEdit(current, search, replace, crlf, &rebased)) {
+        current = rebased;
+        continue;
+      }
     }
     std::string near = missHint(current, search, replace);
     if (near.empty()) {

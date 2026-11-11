@@ -156,6 +156,23 @@ std::string proposalProblems(const std::string& request, const std::string& befo
   if (aboutFire && readsPort && !readsFire && !batariBasic)
     problems += "- The fire button is not in SWCHA (that port has only the four directions of each joystick). Read it from INPT4 (player 0) or INPT5 (player 1): "
                 "bit 7 is 0 while the button is pressed (lda INPT4 / bmi NotPressed). To act once per press, keep the previous state in a RAM byte.\n";
+  if (!batariBasic) {  // instructions of the 65C02 that the 2600's 6507 does not have
+    static const std::set<std::string> only65c02 = {"bra", "phx", "phy", "plx", "ply", "stz", "trb", "tsb", "wai", "stp"};
+    std::istringstream in(added);
+    std::string line;
+    std::set<std::string> seen;
+    std::string list;
+    while (std::getline(in, line)) {
+      std::istringstream words(withoutComment(line));
+      std::string first;
+      words >> first;
+      if (!first.empty() && (line[0] == ' ' || line[0] == '\t') == false) words >> first;  // a label first
+      std::string op = lowered(first);
+      if (only65c02.count(op) && seen.insert(op).second) list += (list.empty() ? "" : ", ") + op;
+    }
+    if (!list.empty())
+      problems += "- The 2600's 6507 is a 6502: it has no " + list + " instruction (those are 65C02). Use jmp for bra, and the 6502 way for the others.\n";
+  }
   if (readsFire && !batariBasic) {
     // INPT4/INPT5 bit 7 is 0 while pressed: bmi branches when the button is RELEASED, bpl when it is PRESSED. A label that says the opposite is a sign of the mix-up.
     std::istringstream in(added);
