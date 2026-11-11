@@ -1024,6 +1024,23 @@ static void testElfSpace() {
     }
   }
   CHECK(!Project::create((dir / "none").string(), "x", Language::Dasm, "NTSC", &project, &error, "nope") && !error.empty());
+  // every template gives VCSIDE.md, the notes for the assistant, with the project's name
+  {
+    const std::vector<std::pair<Language, std::string>> notedTemplates = {
+        {Language::Dasm, ""},  {Language::Dasm, "animation"}, {Language::Dasm, "game"},   {Language::Dasm, "cdfj"},
+        {Language::BatariBasic, ""}, {Language::ElfC, ""},   {Language::ElfC, "animation"}, {Language::AceC, ""},
+        {Language::AceC, "animation"}, {Language::AceC, "vcslib"}};
+    int notesIndex = 0;
+    for (auto& [language, example] : notedTemplates) {
+      fs::path notedDir = dir / ("notes-" + std::to_string(notesIndex++));
+      CHECK(Project::create(notedDir.string(), "noted", language, "NTSC", &project, &error, example));
+      std::ifstream notesFile(notedDir / "VCSIDE.md");
+      std::string notesText((std::istreambuf_iterator<char>(notesFile)), {});
+      CHECK(notesText.find("# noted: notes for the assistant") == 0 && notesText.find("{{") == std::string::npos &&
+            notesText.find("## Kernel rules") != std::string::npos && notesText.find("## Do not touch") != std::string::npos);
+      CHECK(notesText.size() <= 4000);  // what the assistant reads of it
+    }
+  }
   // the DPC+ example: the driver copied from batari Basic (here a stand-in, through $bB),
   // the song exported in three parts, and a 32K image
   {

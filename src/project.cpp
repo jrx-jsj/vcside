@@ -517,6 +517,21 @@ static bool copySharedFiles(const fs::path& templateDir, const fs::path& project
   return true;
 }
 
+// VCSIDE.md: the project's notes for the assistant (kernel rules, where things live, how it
+// builds, what not to touch), the example's own or else the template's, with the name in it.
+// C templates are copied whole, so theirs comes with the rest.
+static void copyProjectNotes(const std::vector<fs::path>& from, const fs::path& projectDir, const std::string& projName) {
+  fs::path destination = projectDir / "VCSIDE.md";
+  if (fs::exists(destination)) return;
+  for (const fs::path& dir : from) {
+    std::string text = readFile((dir / "VCSIDE.md").string());
+    if (text.empty()) continue;
+    replaceAll(text, "{{NAME}}", projName);
+    std::ofstream(destination, std::ios::binary) << text;
+    return;
+  }
+}
+
 std::vector<std::pair<std::string, const char*>> Project::examples(Language language) {
   if (language == Language::Dasm) return {{"game", N_("Example: a small game with a title menu")}, {"animation", N_("Example: an animated sprite")}, {"dpcplus", N_("Example: music on a DPC+ cartridge")},
             {"cdfj", N_("Example: C and music on a CDFJ cartridge")}};
@@ -654,6 +669,7 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
     }
     writeGfxIncludes(newProject.dir, false);
     writeMusicIncludes(newProject.dir, tvStandard);
+    copyProjectNotes({exampleDir, templateDir}, newProject.dir, projName);
     newProject.main = "main.asm";
   } else if (projectLanguage == Language::BatariBasic) {
     newProject.main = "main.bas";
@@ -673,6 +689,7 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
     // its music (shared.json), and the player and tables it includes
     if (!copySharedFiles(templateDir.parent_path(), newProject.dir, {}, error)) return false;
     writeMusicIncludes(newProject.dir, tvStandard);
+    copyProjectNotes({templateDir.parent_path()}, newProject.dir, projName);
   } else if (isC(projectLanguage)) {
     bool ace = projectLanguage == Language::AceC;
     if (projName.find_first_of(" \t") != std::string::npos) {
