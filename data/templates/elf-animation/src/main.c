@@ -28,7 +28,7 @@ static int lines = 199;          /* visible lines: 262 - 63 of overblank (NTSC, 
 static int multicart;            /* started from a menu (PlusCart, UnoCart): can go back */
 static uint8_t swcha = 0xFF, swchb = 0xFF;  /* joysticks and console switches, read after the kernel
                                             (0xFF: nothing pressed until the first frame reads them) */
-static uint8_t inpt4, last_inpt4 = 0x80;  /* fire button 0 (bit 7: 0 pressed) */
+static uint8_t inpt4 = 0x80, last_inpt4 = 0x80;  /* fire button 0 (bit 7: 0 pressed; released until read) */
 static int hero_x = 76, hero_y = 90, facing_left;
 static int hero_frame;           /* the frame the kernel draws */
 static vcsgfx_player hero;       /* the animation that is playing and where it is */
