@@ -1095,18 +1095,19 @@ static void pruneOldResults(std::vector<ChatMessage>& history, size_t windowToke
   }
 }
 
-// Does the request ask to change the project (and is not a question about how something works)?
+// In Agent mode a request is a task unless it is plainly a question: "el oso debe saltar con el botón" has no verb of
+// change, and still asks for one. A question starts with a question word or has a question mark; a thanks or a greeting is short.
 static bool asksForChange(const std::string& request) {
   std::string text = request;
   for (auto& c : text) c = (char)std::tolower((unsigned char)c);
   size_t first = text.find_first_not_of(" \n\t");
   if (first == std::string::npos) return false;
   text = text.substr(first);
-  for (const char* question : {"how ", "what ", "why ", "which ", "where ", "explain", "cómo", "como ", "qué", "por qué", "explica", "cuál", "dónde"})
+  if (text.size() < 14) return false;
+  if (text.find('?') != std::string::npos) return false;
+  for (const char* question : {"how ", "what ", "why ", "which ", "where ", "when ", "who ", "can you explain", "does ", "is ", "are ", "explain", "cómo", "como ", "qué", "que ", "por qué", "explica", "cuál", "cual ", "dónde", "donde ", "cuándo", "cuando ", "quién", "por que", "dime ", "tell me"})
     if (text.rfind(question, 0) == 0) return false;
-  for (const char* verb : {"implement", "add ", "añade", "agrega", "change", "cambia", "modif", "fix", "arregla", "corrige", "create", "crea ", "write", "escribe", "make ", "haz ", "remove", "elimina", "quita", "refactor", "edit", "update", "actualiza", "replace", "sustituye"})
-    if (text.find(verb) != std::string::npos) return true;
-  return false;
+  return true;
 }
 
 void AssistantPanel::continueAgent(const PanelContext& /*context*/) {  // the history is in chat_; the context is not needed to ask again
