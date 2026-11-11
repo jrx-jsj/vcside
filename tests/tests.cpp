@@ -3499,6 +3499,14 @@ static void testAgentTools(const KnowledgeBase& kb) {
     std::string defined = "JUMP_ANIMATION EQU 3\nPandaControls\n  lda SWCHA\n  lda #JUMP_ANIMATION\n  rts\n";
     CHECK(proposalProblems("haz que salte", before, defined, kb, knows, false).empty());
     CHECK(addedLines("a\nb\n", "a\nc\nb\n") == "c\n");
+    // an addition that throws away existing code, and labels that nothing defines (mixed case ones)
+    std::string wide = "Animate\n  inc FRAME\n  lda ANIM\n  cmp #3\n  bne .Done\n  lda #1\n  sta ANIM\n.Done\n  rts\n";
+    std::string thrown = "Animate\n  inc FRAME\n  lda INPT4\n  bpl .Pressed\n  jsr Jump\n.Pressed\n  lda FireWas\n.Done\n  rts\n";
+    auto both = proposalProblems("el oso debe saltar cuando se pulse el botón", wide, thrown, kb, knows, false);
+    CHECK(both.find("deletes 5 lines") != std::string::npos && both.find("Jump") != std::string::npos && both.find("FireWas") != std::string::npos && both.find(".Pressed") == std::string::npos);
+    CHECK(proposalProblems("quita la animación", wide, thrown, kb, knows, false).find("deletes") == std::string::npos);  // asked to remove
+    std::string fine = "FireWas DS 1\nAnimate\n  inc FRAME\n  lda ANIM\n  cmp #3\n  bne .Done\n  lda #1\n  sta ANIM\n  lda INPT4\n  bpl .Pressed\n  jsr Jump\n.Pressed\n  lda FireWas\n.Done\n  rts\nJump\n  rts\n";
+    CHECK(proposalProblems("el oso debe saltar cuando se pulse el botón", wide, fine, kb, knows, false).empty());
     std::string inverted = "PandaControls\n  lda SWCHA\n  lda INPT4\n  bmi .FireButtonPressed\n  jmp .NoJump\n.FireButtonPressed\n.NoJump\n  rts\n";
     CHECK(proposalProblems("el oso debe saltar al pulsar el botón", before, inverted, kb, knows, false).find("bmi branches when the button is NOT pressed") != std::string::npos);
     std::string right = "PandaControls\n  lda SWCHA\n  lda INPT4\n  bpl .FireButtonPressed\n  jmp .NoJump\n.FireButtonPressed\n.NoJump\n  rts\n";
