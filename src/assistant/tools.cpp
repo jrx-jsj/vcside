@@ -20,7 +20,8 @@ namespace vcs::assistant {
 namespace fs = std::filesystem;
 using nlohmann::json;
 
-static std::string uniqueByName(const std::string& projectDir, const std::string& relative);
+static std::string uniqueByName(const std::string& projectDir, const std::string& relative, int* matches = nullptr);
+static std::string uniqueByContent(const ToolEnv& env, const json& edits);
 
 namespace {
 
@@ -282,7 +283,9 @@ ToolResult editFile(const ToolEnv& env, const json& args) {
     std::string direct;
     std::error_code exists;
     if (!resolveInProject(env.projectDir, relative, &direct, &error) || !fs::is_regular_file(direct, exists)) {
-      std::string named = uniqueByName(env.projectDir, relative);
+      int sameName = 0;
+      std::string named = uniqueByName(env.projectDir, relative, &sameName);
+      if (named.empty() && sameName == 0 && args.contains("edits")) named = uniqueByContent(env, args["edits"]);
       if (!named.empty()) relative = named;
     }
     error.clear();
@@ -641,7 +644,7 @@ bool isBuildFile(const std::string& fileName) {
 
 // A model writes "src/main.asm" for the "main.asm" it was shown: when the path names no file but exactly one file of the
 // project has that name, that is the one. Hidden folders, build/ and secrets are not looked into.
-static std::string uniqueByName(const std::string& projectDir, const std::string& relative) {
+static std::string uniqueByName(const std::string& projectDir, const std::string& relative, int* matches) {
   std::string name = fs::path(relative).filename().string();
   if (name.empty() || isSecretFile(name)) return "";
   std::error_code ec;
@@ -656,6 +659,39 @@ static std::string uniqueByName(const std::string& projectDir, const std::string
       continue;
     }
     if (current == name && it->is_regular_file(ec)) found = fs::relative(it->path(), projectDir, ec).generic_string(), count++;
+  }
+  if (matches) *matches = count;
+  return count == 1 ? found : "";
+}
+
+// A model that names a file that does not exist ("src/main.asm" for "osito.asm") still quotes the text it wants to change:
+// when exactly one text file of the project holds every text it searches for, that is the file it meant.
+static std::string uniqueByContent(const ToolEnv& env, const json& edits) {
+  if (!edits.is_array() || edits.empty()) return "";
+  std::vector<std::string> wanted;
+  for (auto& edit : edits) {
+    if (!edit.is_object() || !edit.contains("search") || !edit["search"].is_string()) return "";
+    std::string text = edit["search"].get<std::string>();
+    if (text.find_first_not_of(" \t\r\n") == std::string::npos) return "";
+    wanted.push_back(text);
+  }
+  std::error_code ec;
+  std::string found;
+  int count = 0;
+  fs::recursive_directory_iterator it(env.projectDir, fs::directory_options::skip_permission_denied, ec), end;
+  for (; it != end && count < 2; it.increment(ec)) {
+    if (ec) break;
+    std::string current = it->path().filename().string();
+    if (it->is_directory(ec)) {
+      if (hidden(current) || current == "build") it.disable_recursion_pending();
+      continue;
+    }
+    if (!it->is_regular_file(ec) || isSecretFile(current) || !isTextFileName(current)) continue;
+    std::string relative = fs::relative(it->path(), env.projectDir, ec).generic_string(), content;
+    if (!(env.openFileText && env.openFileText(relative, &content)) && !readText(it->path().string(), &content)) continue;
+    bool every = true;
+    for (auto& text : wanted) every = every && content.find(text) != std::string::npos;
+    if (every) found = relative, count++;
   }
   return count == 1 ? found : "";
 }

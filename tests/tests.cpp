@@ -4091,6 +4091,12 @@ static void testEditBlocks() {
   CHECK(!locate("edit src/main.asm", "<<<<<<< SEARCH\nLoop\n=======\nx\n>>>>>>> REPLACE").proposed);
   CHECK(locate("edit docs/notes.txt", "<<<<<<< SEARCH\nnotes\n=======\nmore\n>>>>>>> REPLACE").proposed);
   fs::remove(root / "docs" / "main.asm");
+  // a file that does not exist, but only one file holds the text to change: that one
+  write(root / "only.asm", "UniqueMarker\n  lda INPT4\n");
+  auto byText = locate("edit src/ghost.asm", "<<<<<<< SEARCH\nUniqueMarker\n=======\nUniqueMarker\n  nop\n>>>>>>> REPLACE");
+  CHECK(byText.proposed && byText.edit.relative == "only.asm");
+  CHECK(!locate("edit src/ghost.asm", "<<<<<<< SEARCH\nNowhereToBeFound\n=======\nx\n>>>>>>> REPLACE").proposed);
+  fs::remove(root / "only.asm");
   // nothing was written by any of them
   std::ifstream after(root / "main.asm");
   std::string disk((std::istreambuf_iterator<char>(after)), {});
