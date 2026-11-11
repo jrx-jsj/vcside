@@ -298,6 +298,8 @@ Principles already visible: Qwen-lineage and gpt-oss models are the most likely 
   1. **macOS Keychain** and **Windows Credential Manager**, through the system APIs (no dependency).
   2. **Linux Secret Service** (GNOME Keyring, KWallet) through `libsecret`, loaded at run time only when a remote key is saved. If there is no keyring, VCSIDE does **not** fall back to a plain file: the key can be given by an **environment variable** (the setting stores only the variable's name) or kept **for the session only**, in memory, asked again next time.
   3. In every case an environment variable name is accepted instead of a saved key.
+  4. **A file only the user can read, by choice (2026-11-11).** The system store asks the user before an app it does not recognise reads a key, and an app signed ad hoc is a new app after every build. For those who would rather not be asked, a setting keeps every key in `keys.json` in VCSIDE's settings folder, created with mode 0600 (on Windows, in the user's own profile folder). Choosing it moves the saved keys there, and going back moves them to the system store. It is off by default and the settings window says what it costs: any program run by that account can read the file.
+- **Keys are read when they are needed:** to send a message, or when the list of a service's models is asked for (its combo opens, the refresh button, the settings window), never at start-up.
 
   The `.vcsproj` can say *which* provider a project prefers, never a key or a URL with credentials in it. Keys are redacted from any text VCSIDE logs, and the settings window shows only the last four characters.
 - **Excluded files** are never sent (see the sandbox). A project-level list lets the user add more.
@@ -344,7 +346,7 @@ The release number is not set; this looks like a 0.3.0 feature once phases 1–5
 
 1. **Local models first.** No remote vendor is preferred; the two dialects stay.
 2. **TLS: each system's own** (NSURLSession, WinHTTP, the system OpenSSL on Linux), no TLS library shipped.
-3. **Secrets: the safest option.** OS secret stores; no plain-file fallback; environment variable or session-only where there is no keyring.
+3. **Secrets: the safest option by default.** OS secret stores; no silent plain-file fallback; environment variable or session-only where there is no keyring; a 0600 file only when the user chooses it.
 4. **Approvals like a coding agent's:** allow once, or allow for this session. Build-affecting files are never covered by a session grant.
 5. **Conversations are saved per project, with Delete and Archive**, in `.vcsai/chats/`.
 6. **A project state file and everything else in `.vcsai/`** (`STATE.md`, chats, ignore list).

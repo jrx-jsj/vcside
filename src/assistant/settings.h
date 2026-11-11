@@ -21,6 +21,7 @@ struct Settings {
   bool workInEnglish = true;         // translate the question to English and the answer back, code and names untouched
   bool smartSearch = false;          // search the project by meaning too (embeddings; downloads a small model)
   std::string embeddingModel = "qwen3-embedding-0.6b";
+  bool keysInFile = false;  // API keys in a file only the user can read, instead of the system's secret store
   int budgetTokens = 0;  // remote models: stop asking after this many tokens in a session (0 = no limit)
   int toolProfile = 2;  // what the agent may use: 0 read only, 1 + propose edits, 2 + build and run (each asked)
   std::vector<Provider> providers;

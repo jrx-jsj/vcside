@@ -57,7 +57,7 @@ class AssistantPanel {
  public:
   AssistantPanel();
   ~AssistantPanel();
-  void load(const nlohmann::json& settings) { settings_ = Settings::fromJson(settings); }
+  void load(const nlohmann::json& settings);
   nlohmann::json save() const { return settings_.toJson(); }
   // True once after the settings changed and the App should save them.
   bool takeChanged() { bool changed = changed_; changed_ = false; return changed; }
@@ -225,6 +225,7 @@ class AssistantPanel {
   void saveChat(const PanelContext& context);
   bool overBudget(const Provider& provider);
   void keyControls(Provider& provider);
+  void keyStoreChoice(float wrapWidth);
   ToolEnv toolEnv(const PanelContext& context) const;
   void continueAgent(const PanelContext& context);
   void handleToolCall(const PanelContext& context, const ToolCall& call);

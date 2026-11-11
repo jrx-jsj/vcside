@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 Juan Sánchez Jurado
-// Where an API key lives (docs/design-assistant.md, "Privacy and secrets"): only in the
-// operating system's secret store, never in a file of VCSIDE or of a project. Where there
-// is no store yet the key is kept in memory for the session and asked again next time.
+// Where an API key lives (docs/design-assistant.md, "Privacy and secrets"): by default in the
+// operating system's secret store. The user may choose instead a file of VCSIDE's settings
+// that only their account can read (0600): no question from the system, less protection.
+// Never in a project. Without either the key is kept in memory for the session.
 #pragma once
 #include <string>
+#include <vector>
 
 namespace vcs::assistant {
 
@@ -18,6 +20,13 @@ struct SecretBackend {
 void setSecretBackend(const SecretBackend* backend);
 bool secretsPersistent();           // a system store is registered
 const char* secretStoreName();      // its name, or "this session only"
+
+// The file store: where it is, and whether keys go there instead of the system's store.
+void setSecretFile(const std::string& path);
+void useSecretFile(bool on);
+bool usingSecretFile();
+// Moves the keys of these accounts to the store now chosen (from the other one).
+void moveSecrets(const std::vector<std::string>& accounts, bool toFile);
 
 bool loadSecret(const std::string& account, std::string* secret);
 bool saveSecret(const std::string& account, const std::string& secret);

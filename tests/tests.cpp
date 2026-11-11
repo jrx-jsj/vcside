@@ -3513,6 +3513,31 @@ static void testRemote() {
   CHECK(removeSecret("TestProvider"));
   std::string none;
   CHECK(!loadSecret("TestProvider", &none));
+  {  // the file store: chosen by the user, 0600, keys moved across both ways
+    namespace fs = std::filesystem;
+    fs::path folder = fs::temp_directory_path() / ("vcside-keys-" + std::to_string(::getpid()));
+    fs::remove_all(folder);
+    setSecretFile((folder / "keys.json").string());
+    CHECK(saveSecret("Moved", "sk-moved-1234567890") && !usingSecretFile());
+    moveSecrets({"Moved", "Missing"}, true);
+    useSecretFile(true);
+    std::string moved;
+    CHECK(usingSecretFile() && secretsPersistent() && std::string(secretStoreName()) == "a file only you can read");
+    CHECK(loadSecret("Moved", &moved) && moved == "sk-moved-1234567890");
+    CHECK(saveSecret("Second", "sk-second-123456789") && loadSecret("Second", &moved) && moved == "sk-second-123456789");
+#ifndef _WIN32
+    CHECK((fs::status(folder / "keys.json").permissions() & (fs::perms::group_all | fs::perms::others_all)) == fs::perms::none);
+#endif
+    CHECK(removeSecret("Second") && !loadSecret("Second", &moved));
+    useSecretFile(false);
+    CHECK(!loadSecret("Moved", &moved));  // the move took it out of the other store
+    moveSecrets({"Moved"}, false);
+    CHECK(loadSecret("Moved", &moved) && moved == "sk-moved-1234567890" && removeSecret("Moved"));
+    useSecretFile(true);
+    CHECK(!loadSecret("Moved", &moved));
+    useSecretFile(false), setSecretFile("");
+    fs::remove_all(folder);
+  }
   // an https address with no TLS backend is refused clearly, not tried in the clear
   HttpRequest request;
   request.url = "https://example.invalid/v1";

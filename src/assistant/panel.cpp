@@ -377,6 +377,12 @@ void AssistantPanel::storeActiveTab() {
   tab.chat = chat_, tab.originals = originals_, tab.allowedRun = allowedRun_, tab.allowedEdit = allowedEdit_, tab.privilegedTouched = privilegedTouched_;
 }
 
+void AssistantPanel::load(const nlohmann::json& settings) {
+  settings_ = Settings::fromJson(settings);
+  setSecretFile((std::filesystem::path(configDir()) / "keys.json").string());
+  useSecretFile(settings_.keysInFile);
+}
+
 void AssistantPanel::loadTab(int index) {
   request_.cancel();
   firstPass_.cancel(), firstPassPending_ = false;
@@ -633,7 +639,7 @@ void AssistantPanel::modelPicker(Provider& provider, const char* label, float wi
   const ModelLists::Entry& entry = modelLists_.of(provider);
   std::string shown = provider.model.empty() ? std::string(T("(choose a model)")) : provider.model;
   if (beginFittedCombo(label, shown, width, theme::em(380))) {
-    if (ImGui::IsWindowAppearing()) modelFilter_.clear(), ImGui::SetKeyboardFocusHere();
+    if (ImGui::IsWindowAppearing()) modelFilter_.clear(), ImGui::SetKeyboardFocusHere(), modelLists_.request(provider);
     ImGui::SetNextItemWidth(-1);
     ImGui::InputTextWithHint("##modelfilter", T("Type to filter, or the name of a model"), &modelFilter_);
     std::string needle;
@@ -1693,7 +1699,7 @@ void AssistantPanel::draw(const PanelContext& context, ImFont* mono, bool* open)
   modelLists_.poll();
   bool builtinReady = true;
   if (provider->builtin) builtinReady = prepareBuiltin(*provider);
-  else modelLists_.request(*provider);
+  // a remote service's list is asked for when its combo opens: reading its key at start-up would make the system ask for it
 
   // the open conversations
   bool busyNow = busyWithModel() || pendingEditActive_ || !pendingRun_.empty() || waitingBuild_;
@@ -1931,6 +1937,7 @@ void AssistantPanel::firstStartDialog() {
 
 // The key goes to the system's secret store; the window shows only its last four characters.
 void AssistantPanel::keyControls(Provider& provider) {
+  (void)N_("a file only you can read");  // a name secretStoreName() gives, translated where it is shown
   // asked of the secret store every couple of seconds, not every frame
   double now = ImGui::GetTime();
   KeyMask& cached = keyMasks_[provider.name];
@@ -1956,6 +1963,25 @@ void AssistantPanel::keyControls(Provider& provider) {
     ImGui::SameLine();
     if (theme::dialogButton(T("Remove key"), ImVec2(0, 0), true)) removeSecret(provider.name), keyMasks_.clear(), modelLists_.forgetKeys();
   }
+}
+
+// Where every key is kept: the system's secret store (the default) or a file of VCSIDE's settings that only this account
+// can read. Changing it moves the saved keys across.
+void AssistantPanel::keyStoreChoice(float wrapWidth) {
+  bool inFile = settings_.keysInFile;
+  if (wrappedCheckbox(T("Keep API keys in a file only you can read, not in the system's secret store"), &inFile, wrapWidth)) {
+    std::vector<std::string> accounts;
+    for (auto& provider : settings_.providers)
+      if (!provider.builtin) accounts.push_back(provider.name);
+    if (!inFile) useSecretFile(false);  // the move reads the file and writes to the system's store
+    moveSecrets(accounts, inFile);
+    useSecretFile(inFile);
+    settings_.keysInFile = inFile, changed_ = true;
+    keyMasks_.clear(), modelLists_.forgetKeys();
+  }
+  ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + wrapWidth);
+  ImGui::TextDisabled("%s", T("The system never asks for a key in that file, but any program you run can read it."));
+  ImGui::PopTextWrapPos();
 }
 
 void AssistantPanel::settingsDialog() {
@@ -2099,6 +2125,7 @@ void AssistantPanel::settingsDialog() {
     changed_ = true;
   }
   ImGui::Separator();
+  keyStoreChoice(wrapWidth);
   if (!knownLoaded_) known_ = loadKnownProviders(dataDir() + "/assistant/providers.json"), knownLoaded_ = true;
   if (theme::dialogButton(T("Add a service..."))) ImGui::OpenPopup("##addservice");
   if (ImGui::BeginPopup("##addservice")) {
