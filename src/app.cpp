@@ -2501,6 +2501,13 @@ void App::closeDialogs() {
   }
 }
 
+// Never throws: the project's folder may be gone (moved, deleted) while the window is open.
+static std::string relativeToProject(const std::string& projectDir, const std::string& path) {
+  std::error_code ignored;
+  fs::path relative = fs::relative(path, projectDir, ignored);
+  return ignored || relative.empty() ? path : relative.generic_string();
+}
+
 void App::assistantPanel() {
   if (!assistant_.enabled() || !showAssistant_) return;
   assistant::PanelContext context;
@@ -2517,7 +2524,7 @@ void App::assistantPanel() {
       !files_[activeFile_]->music && !files_[activeFile_]->image && !files_[activeFile_]->form) {
     OpenFile* active = files_[activeFile_].get();
     context.fileName = fs::path(active->path).filename().string();
-    if (project_) context.fileRelative = fs::relative(active->path, project_->dir).generic_string();
+    if (project_) context.fileRelative = relativeToProject(project_->dir, active->path);
     context.fileText = active->editor.text();
     context.cursorLine = active->editor.cursor().line + 1;
     context.selection = active->editor.selectedText();
@@ -2528,7 +2535,7 @@ void App::assistantPanel() {
     if (!project_) return false;
     for (auto& openedFile : files_)
       if (!openedFile->gfx && !openedFile->music && !openedFile->image && !openedFile->form && !openedFile->path.empty() &&
-          fs::relative(openedFile->path, project_->dir).generic_string() == relative) {
+          relativeToProject(project_->dir, openedFile->path) == relative) {
         *text = openedFile->editor.text();
         return true;
       }
@@ -2545,7 +2552,7 @@ void App::assistantPanel() {
   context.buildStatus = lastStatus_;
   if (space_) context.spaceReport = space_->summary();
   for (auto& [name, live] : liveSymbols_) {
-    std::string relativeFile = project_ ? fs::relative(live.file, project_->dir).generic_string() : live.file;
+    std::string relativeFile = project_ ? relativeToProject(project_->dir, live.file) : live.file;
     context.symbols += name + " " + relativeFile + ":" + std::to_string(live.symbol.line + 1) + "\n";
   }
   context.startBuild = [this] { build(0); };
