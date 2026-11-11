@@ -34,6 +34,8 @@
     "<name>.music.h for the ARM code. Define MUSIC_CDFJ_WAVE(voice, samples) and MUSIC_CDFJ_NOTE(voice, frequency, restart) first:": "<nombre>.music.h para el código ARM. Define antes MUSIC_CDFJ_WAVE(voice, samples) y MUSIC_CDFJ_NOTE(voice, frequency, restart):",
     "@ adds a file or a folder": "@ añade un archivo o una carpeta",
     "Addresses instead of cycles": "Direcciones en lugar de ciclos",
+    "{0} cycles, {1}": "{0} ciclos, {1}",
+    "Cycles unknown": "Ciclos desconocidos",
     "Bits": "Bits",
     "Meaning": "Significado",
     "Recipes": "Recetas",

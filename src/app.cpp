@@ -402,7 +402,7 @@ OpenFile* App::openFile(const std::string& pathIn, int line) {
       editorHooks.gutter = [this, self, cycles = editorHooks.gutter](int line, const std::string& text) {
         return columnAddresses_ ? addressColumn(self->path, line) : cycles(line, text);
       };
-      editorHooks.lineInfo = [this, self](int line) { return columnAddresses_ ? addressInfo(self->path, line) : std::string(); };
+      editorHooks.lineInfo = [this, self](int line) { return lineDetails(*self, line); };
       editorHooks.gutterClick = [this] { switchCycleColumn(); };
     }
     newFile->editor.setHooks(editorHooks);
@@ -930,6 +930,27 @@ std::string App::addressColumn(const std::string& path, int line) {
   auto found = file->second.find(line);
   if (found == file->second.end()) return {};
   return hexAddress(found->second->cpu) + " " + std::to_string(found->second->bytes);
+}
+
+std::string App::lineDetails(const OpenFile& file, int line) const {
+  const auto& lines = file.editor.lines();
+  if (line < 0 || line >= (int)lines.size()) return {};
+  LineCycles cycles = countLine(kb_, lines[line], [this](const std::string& name) { return lookupSymbol(name); });
+  if (!cycles.isCode && addresses_.empty()) return {};
+  std::string details;
+  if (cycles.isCode) {
+    if (cycles.known) {
+      std::string count = std::to_string(cycles.min) + (cycles.max != cycles.min ? "-" + std::to_string(cycles.max) : "");
+      details = F("{0} cycles, {1}", {count, cycles.mode});
+      if (cycles.guessed) details += " " + Ts("(zero page/absolute guessed: unknown symbol, build to resolve)");
+    } else {
+      details = T("Cycles unknown");
+    }
+    details += "\n";
+  }
+  std::string where = addressInfo(file.path, line);
+  if (!cycles.isCode && where == T("No bytes for this line in the last build.")) return {};  // a comment, a label...
+  return details + where;
 }
 
 std::string App::addressInfo(const std::string& path, int line) const {

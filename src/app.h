@@ -172,6 +172,8 @@ class App {
   // From the last build's listing: what clicking a line's cycles shows (its address) and
   // the rules where a new 6502 page starts.
   std::string addressInfo(const std::string& path, int line) const;
+  // The cycle column's tooltip: the line's cycles, then where its bytes are.
+  std::string lineDetails(const OpenFile& file, int line) const;
   // "$F6F0 2": where a line's bytes start and how many there are; empty if it has none.
   std::string addressColumn(const std::string& path, int line);
   int gutterChars(const OpenFile& file) const;
