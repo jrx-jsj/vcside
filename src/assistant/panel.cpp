@@ -1194,6 +1194,28 @@ void AssistantPanel::handleToolCall(const PanelContext& context, const ToolCall&
     continueAgent(context);
     return;
   }
+  if (call.name == "edit_file" && call.args.is_object() && call.args.contains("content") && !call.args.contains("edits") && call.args.contains("path") && call.args["path"].is_string() && !context.fileRelative.empty()) {
+    // A new file when the user asked for a change to what they have: the model made one up ("main.asm") beside the file it was given.
+    std::string request;
+    for (size_t i = chat_.messages.size(); i-- > 0;)
+      if (chat_.messages[i].role == "user" && chat_.messages[i].kind.empty()) {
+        request = chat_.messages[i].english.empty() ? chat_.messages[i].content : chat_.messages[i].english;
+        break;
+      }
+    for (auto& c : request) c = (char)std::tolower((unsigned char)c);
+    bool newFileAsked = false;
+    for (const char* word : {"new file", "nuevo archivo", "nuevo fichero", "nueva carpeta", "create a file", "crea un archivo", "crea un fichero", "crea el archivo", "crea el fichero", "create the file", "new .", "split"})
+      newFileAsked = newFileAsked || request.find(word) != std::string::npos;
+    std::string absolute, problem;
+    std::error_code exists;
+    bool already = resolveInProject(context.projectDir, call.args["path"].get<std::string>(), &absolute, &problem) && std::filesystem::is_regular_file(absolute, exists);
+    if (!newFileAsked && !already && call.args["path"].get<std::string>() != context.fileRelative) {
+      addToolResult(context, describeCall(call), "Error: " + call.args["path"].get<std::string>() + " does not exist and the user did not ask for a new file. The change belongs in the file the user is working on: " + context.fileRelative +
+                                                  ". Read it, then use edit_file on it with \"edits\" (search and replace), adding your code where it belongs.", true);
+      continueAgent(context);
+      return;
+    }
+  }
   if ((tier == Tier::Propose && profile < 1) || (tier == Tier::Run && profile < 2)) {
     addToolResult(context, call.name, "this tool is not available", true);
     continueAgent(context);
