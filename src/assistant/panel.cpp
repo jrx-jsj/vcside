@@ -2153,7 +2153,7 @@ void AssistantPanel::remoteDialog() {
   if (wantRemote_) ImGui::OpenPopup("###assistant_remote"), wantRemote_ = false;
   char title[96];
   snprintf(title, sizeof title, "%s###assistant_remote", T("Send to a remote server?"));
-  if (!theme::beginModal(title)) return;
+  if (!theme::beginModal(title, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) return;  // as big as its text and buttons
   ImGui::PushTextWrapPos(theme::em(460));
   ImGui::TextUnformatted(F("This model runs on {0}, not on this computer. Your messages, and the file, selection, build output and parts of your project that go with them, will be sent there.", {pendingRemote_}).c_str());
   ImGui::PopTextWrapPos();
