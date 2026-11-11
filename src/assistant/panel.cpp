@@ -157,7 +157,7 @@ int AssistantPanel::toolSet() const { return smallModel() ? 1 : 2; }
 bool AssistantPanel::smallModel() const {
   if (settings_.providers.empty()) return false;
   const Provider& provider = settings_.providers[std::clamp(settings_.active, 0, (int)settings_.providers.size() - 1)];
-  if (provider.builtin || provider.isLocal()) return true;
+  if (provider.builtin) return true;  // the built-in catalogue is small models; a local server may run any model: its name says how big it is
   std::string id = provider.model;
   for (size_t at = 0; at < id.size(); at++)
     if (std::isdigit((unsigned char)id[at]) && (at == 0 || !std::isalnum((unsigned char)id[at - 1]) || id[at - 1] == '-')) {
@@ -2363,7 +2363,7 @@ void AssistantPanel::settingsDialog() {
     ImGui::SetNextItemWidth(fitWidth(theme::em(120), T("Context tokens")));
     changed_ |= ImGui::InputInt(T("Context tokens"), &provider.contextTokens, 1024, 8192);
     provider.contextTokens = std::clamp(provider.contextTokens, 1024, 1 << 20);
-    if (wrappedCheckbox(T("Allow Agent mode with this model, even if it looks small (a local server, or a name under 14B): small models work in Ask mode only"), &provider.agentAnyway, wrapWidth)) changed_ = true;
+    if (wrappedCheckbox(T("Allow Agent mode with this model, even if its name says it is small (14B or less): small models work in Ask mode only"), &provider.agentAnyway, wrapWidth)) changed_ = true;
     if (!provider.isLocal()) {
       ImGui::TextColored(theme::colv(theme::Role::MsgWarning), "%s", T("Remote: your messages and attached code leave this computer."));
       bool ask = !provider.trusted;
