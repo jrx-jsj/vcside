@@ -976,7 +976,29 @@ static void testElfSpace() {
   }
 
   // the DASM example: its graphics, the tables they give, and a program that assembles
-  CHECK(Project::examples(Language::Dasm).size() == 3 && Project::examples(Language::BatariBasic).empty());
+  CHECK(Project::examples(Language::Dasm).size() == 4 && Project::examples(Language::Dasm)[0].first == "game" &&
+        Project::examples(Language::BatariBasic).empty());
+  // the DASM game: the shared graphics and song, the menu's first TV system from the
+  // project's standard, and a 4K program that assembles
+  for (const char* tvStandard : {"NTSC", "PAL", "PAL60", "AUTO"}) {
+    fs::path gameDir = dir / (std::string("game-") + tvStandard);
+    CHECK(Project::create(gameDir.string(), "my game", Language::Dasm, tvStandard, &project, &error, "game"));
+    for (auto fileName : {"main.asm", "2600.h", "hero.vcsgfx", "enemy.vcsgfx", "room.vcsgfx", "title.vcsgfx", "hero.gfx.asm",
+                          "enemy.gfx.asm", "room.gfx.asm", "title.gfx.asm", "theme.vcsmusic", "theme.music.asm"})
+      CHECK(fs::exists(gameDir / fileName));
+    std::ifstream sourceFile(gameDir / "main.asm");
+    std::string sourceText((std::istreambuf_iterator<char>(sourceFile)), {});
+    const std::string expectedSystem = std::string(tvStandard) == "PAL60" ? "1" : std::string(tvStandard) == "PAL" ? "2" : "0";
+    CHECK(sourceText.find("DEFAULT_SYSTEM = " + expectedSystem) != std::string::npos && sourceText.find("{{") == std::string::npos);
+    std::ifstream musicFile(gameDir / "theme.music.asm");
+    std::string musicText((std::istreambuf_iterator<char>(musicFile)), {});
+    CHECK(musicText.find("MUSIC_EFFECT_SHOT") != std::string::npos && musicText.find("MUSIC_EFFECT_LOSE") != std::string::npos);
+    std::string dasm = findInPath("dasm");
+    if (!dasm.empty()) {
+      std::string command = "cd \"" + gameDir.string() + "\" && \"" + dasm + "\" main.asm -f3 -ogame.bin > dasm.log 2>&1";
+      CHECK(std::system(command.c_str()) == 0 && fs::file_size(gameDir / "game.bin", errorCode) == 4096);
+    }
+  }
   for (const char* tvStandard : {"NTSC", "PAL", "AUTO"}) {
     fs::path animationDir = dir / (std::string("anim-") + tvStandard);
     CHECK(Project::create(animationDir.string(), "walker", Language::Dasm, tvStandard, &project, &error, "animation"));
@@ -4555,6 +4577,9 @@ static void testAssistant(const KnowledgeBase& kb) {
     attachments.errors = "main.asm:3: error";
     std::string turn = userTurn("why?", attachments);
     CHECK(turn.find("main.asm (data)") != std::string::npos && turn.find("Build errors (data)") != std::string::npos && turn.substr(turn.size() - 4) == "why?");
+    attachments.projectNotes = "The kernel does sta HMOVE on every line.";
+    std::string noted = userTurn("why?", attachments);
+    CHECK(noted.find("VCSIDE.md") != std::string::npos && noted.find("sta HMOVE on every line") != std::string::npos && noted.find("sta HMOVE") < noted.find("main.asm (data)") && turn.find("VCSIDE.md") == std::string::npos);
     std::vector<ChatMessage> history;
     for (int i = 0; i < 20; i++) history.push_back({i % 2 ? "assistant" : "user", std::string(2000, 'x'), {}});
     int dropped = 0;

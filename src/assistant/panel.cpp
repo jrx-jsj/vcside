@@ -859,6 +859,10 @@ void AssistantPanel::dispatch(const PanelContext& context, const std::string& qu
   if (!provider) return;
   Attachments attachments;
   attachments.projectInfo = context.projectInfo;
+  {  // VCSIDE.md at the top of the project: written by its author for the assistant
+    std::string notes, ignored;
+    if (!context.projectDir.empty() && readProjectFile(context.projectDir, "VCSIDE.md", &notes, &ignored, 8192)) attachments.projectNotes = notes;
+  }
   std::string modelQuestion = english.empty() ? question : english;
   auto chips = contextSet_.chips(T("Build errors"));
   std::string skipFile;  // the open file is attached whole: its chunks are not offered again as excerpts
@@ -898,7 +902,7 @@ void AssistantPanel::dispatch(const PanelContext& context, const std::string& qu
   historyTokens = std::min(historyTokens, window / 4);
   // Code and hex take more tokens than prose (about 2.8 characters each, not 3.5): the estimates are raised by a quarter.
   exampleFile_ = context.fileRelative.empty() ? "game.asm" : context.fileRelative;  // the example of the prompt names a file the model really has
-  int fixedTokens = (estimateTokens(systemPrompt()) + estimateTokens(attachments.projectInfo + attachments.projectMap + attachments.excerpts + attachments.grounding + modelQuestion)) * 5 / 4 + historyTokens;
+  int fixedTokens = (estimateTokens(systemPrompt()) + estimateTokens(attachments.projectInfo + attachments.projectNotes.substr(0, 4000) + attachments.projectMap + attachments.excerpts + attachments.grounding + modelQuestion)) * 5 / 4 + historyTokens;
   size_t chipChars = (size_t)std::clamp((window - reserve - fixedTokens) * 14 / 5, 1200, window * 2);
   // In Agent mode the open file goes as the part around the cursor: the agent reads the rest with its tools when it needs it, and
   // the whole file would travel again with every step.

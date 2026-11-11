@@ -24,6 +24,7 @@ int estimateTokens(const std::string& text);
 
 struct Attachments {
   std::string projectInfo;   // a few lines: language, format, TV, main file
+  std::string projectNotes;  // VCSIDE.md of the project: what its author knows and the model cannot see in the code
   std::string fileName, fileText;  // the open file (empty = not attached)
   std::string selection, selectionLabel;  // the selected code and where it is ("main.asm:12-20")
   std::vector<std::pair<std::string, std::string>> extraFiles;  // files added by hand: path, text

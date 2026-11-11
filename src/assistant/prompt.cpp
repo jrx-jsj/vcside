@@ -60,6 +60,7 @@ std::string limited(const std::string& text, size_t limit) {
 std::string userTurn(const std::string& question, const Attachments& attachments) {
   std::string turn;
   if (!attachments.projectInfo.empty()) turn += "Project: " + attachments.projectInfo + "\n\n";
+  if (!attachments.projectNotes.empty()) turn += "Notes from the author of this project (the file VCSIDE.md: rules and facts of this project that the code does not show; follow them):\n" + limited(attachments.projectNotes, 4000) + "\n\n";
   if (!attachments.projectMap.empty()) turn += "Project files and the names they define (data):\n" + attachments.projectMap + "\n";
   if (!attachments.grounding.empty()) turn += attachments.grounding + "\n";
   if (!attachments.excerpts.empty()) turn += "Parts of the project that match your question (data, found by searching its files):\n" + attachments.excerpts + "\n";

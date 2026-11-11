@@ -606,3 +606,13 @@ A run in Agent mode went badly: `find_code` failed with "needs a query", `read_f
 - **Small models get a small kit.** A model that runs here, or whose name says 14 billion parameters or fewer, gets seven tools (read a file or a folder, search, find code, the reference, edit, build), a short prompt with a worked example and the rule that code written only in the chat is not saved, and a request that could be a question or a task is a task. Large models keep all the tools and a one-line rule. The mode ("Agent" or "Ask") is said in every request, so nothing that shortens the history can lose it.
 - **Answers are sized to the window.** A read gives back at most 40% of the window in characters (12,000 at the most), lines longer than 240 characters are clipped, a search 20 lines on an 8K window, and every cut says what is left: `[showing lines 1-80 of 230; ask for the next lines with from=81]`.
 - **Not built:** compaction of a long conversation into a summary when the window fills (the oldest turns are still dropped whole), and a permission layer for modes beyond the tools that are offered (in Ask there are no tools).
+
+## Project notes: VCSIDE.md (2026-11-11)
+
+- A file named `VCSIDE.md` at the top of the project is read for every question and put at the start of the first message, before the
+  files, as "notes from the author of this project" (at most 4,000 characters; the file may be up to 8 KB). It is for what the code does not
+  show and a model cannot guess: rules of the kernel (for example "HMOVE on every line"), which routine plays sound, where the input is read,
+  what the build target is. The author writes it; VCSIDE never writes it.
+- Why: in a real test a frontier model made the jump work in 5 tool calls and then broke a rule of the kernel it had read only in part. A rule
+  written once in the project is cheaper and surer than the model finding it each time.
+- The templates of new projects carry a short `VCSIDE.md` to fill in.
