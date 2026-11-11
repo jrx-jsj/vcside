@@ -34,8 +34,10 @@ struct EditorHooks {
   std::function<std::vector<Token>(const std::string&)> tokenize;
   // Text shown in the gutter for a line (e.g. "3" or "4/5" cycles); empty = nothing.
   std::function<std::string(int line, const std::string&)> gutter;
-  // What clicking the gutter's cycle column shows for a line (e.g. its address); empty = nothing.
+  // Tooltip over the gutter's cycle column for a line (e.g. where its bytes are); empty = none.
   std::function<std::string(int line)> lineInfo;
+  // Clicking the cycle column (e.g. switches what every editor shows in it).
+  std::function<void()> gutterClick;
   // Help for the word under the mouse; empty = no tooltip.
   std::function<std::string(const std::string& word, const std::string& line)> hover;
   // Completion candidates for a prefix.
@@ -191,7 +193,6 @@ class TextEditor {
   EditorHooks hooks_;
   std::map<int, std::pair<bool, std::string>> markers_;
   std::map<int, std::string> separators_;
-  std::string lineInfoText_;  // the cycle column's popup
   std::set<int> bps_;
   std::vector<std::string> bpBase_;  // text the breakpoint lines refer to
   size_t bpVersion_ = 0;

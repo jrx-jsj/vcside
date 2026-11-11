@@ -99,6 +99,7 @@ void App::loadSettings() {
   themes_.load(dataDir() + "/themes", configDir() + "themes");
   useTheme(settings.value("theme", std::string("dark")), false);
   showCycles_ = settings.value("show_cycles", true);
+  columnAddresses_ = settings.value("cycle_column_addresses", false);
   showPages_ = settings.value("show_pages", true);
   zoom_ = std::clamp(settings.value("zoom", settings.value("editor_zoom", 1.0f)), 0.5f, 3.0f);
   tools_.loadSettings(settings.value("tools", std::map<std::string, std::string>{}));
@@ -114,6 +115,7 @@ void App::saveSettings() {
   json settings = {{"language", currentLanguage()},
             {"recent", recent_},
             {"show_cycles", showCycles_},
+            {"cycle_column_addresses", columnAddresses_},
             {"show_pages", showPages_},
             {"zoom", zoom_},
             {"theme", themeId_},
@@ -136,12 +138,13 @@ void App::syncSettings() {
   if (!settings.is_object()) return;
   recent_ = settings.value("recent", recent_);
   showCycles_ = settings.value("show_cycles", showCycles_);
+  columnAddresses_ = settings.value("cycle_column_addresses", columnAddresses_);
   showPages_ = settings.value("show_pages", showPages_);
   zoom_ = std::clamp(settings.value("zoom", zoom_), 0.5f, 3.0f);
   themes_.load(dataDir() + "/themes", configDir() + "themes");
   useTheme(settings.value("theme", themeId_), false);  // this window's ImGui style
   tools_.loadSettings(settings.value("tools", std::map<std::string, std::string>{}));
-  for (auto& file : files_) file->editor.setGutterWidthChars(showCycles_ && file->asmSyntax ? 5 : 0);
+  for (auto& file : files_) file->editor.setGutterWidthChars(gutterChars(*file));
   for (auto& file : files_) updatePageSeparators(*file);
 }
 
@@ -370,7 +373,7 @@ OpenFile* App::openFile(const std::string& pathIn, int line) {
   }
   newFile->asmSyntax = isAsmFile(path);
   newFile->editor.setText(readFile(path));
-  newFile->editor.setGutterWidthChars(showCycles_ && newFile->asmSyntax ? 5 : 0);
+  newFile->editor.setGutterWidthChars(gutterChars(*newFile));
   std::string ext = lower(fs::path(path).extension().string());
   bool cLike = ext == ".c" || ext == ".cpp" || ext == ".hpp" || (ext == ".h" && project_ && isC(project_->language));
   if (cLike) newFile->asmSyntax = false;
@@ -394,7 +397,14 @@ OpenFile* App::openFile(const std::string& pathIn, int line) {
       return findDefinition(word, self->path, line, path, foundLine);
     };
     }
-    if (newFile->asmSyntax) editorHooks.lineInfo = [this, self](int line) { return addressInfo(self->path, line); };
+    if (newFile->asmSyntax) {
+      // the cycle column: cycles, or (a click switches every editor) where each line's bytes are
+      editorHooks.gutter = [this, self, cycles = editorHooks.gutter](int line, const std::string& text) {
+        return columnAddresses_ ? addressColumn(self->path, line) : cycles(line, text);
+      };
+      editorHooks.lineInfo = [this, self](int line) { return columnAddresses_ ? addressInfo(self->path, line) : std::string(); };
+      editorHooks.gutterClick = [this] { switchCycleColumn(); };
+    }
     newFile->editor.setHooks(editorHooks);
   }
   updatePageSeparators(*newFile);
@@ -876,6 +886,7 @@ void App::loadSymbols() {
     }
   }
   addresses_ = AddressMap();
+  addressColumns_.clear();
   std::string listingPath = project_->stem() + ".lst";
   bool basic = project_->language == Language::BatariBasic;
   if ((project_->language == Language::Dasm || basic) && fs::exists(listingPath, errorCode)) {
@@ -895,6 +906,30 @@ static std::string hexAddress(long address) {
   char text[16];
   snprintf(text, sizeof text, "$%04lX", address);
   return text;
+}
+
+void App::switchCycleColumn() {
+  columnAddresses_ = !columnAddresses_;
+  for (auto& file : files_) file->editor.setGutterWidthChars(gutterChars(*file));
+  saveSettings();
+}
+
+int App::gutterChars(const OpenFile& file) const {
+  if (!showCycles_ || !file.asmSyntax) return 0;
+  return columnAddresses_ ? 9 : 5;  // "$F6F0 256"
+}
+
+std::string App::addressColumn(const std::string& path, int line) {
+  if (addresses_.empty()) return {};
+  auto file = addressColumns_.find(path);
+  if (file == addressColumns_.end()) {
+    file = addressColumns_.emplace(path, std::map<int, const ListedLine*>{}).first;
+    for (const ListedLine* listed : addresses_.linesIn(path))
+      if (listed->bytes > 0) file->second.emplace(listed->line - 1, listed);
+  }
+  auto found = file->second.find(line);
+  if (found == file->second.end()) return {};
+  return hexAddress(found->second->cpu) + " " + std::to_string(found->second->bytes);
 }
 
 std::string App::addressInfo(const std::string& path, int line) const {
@@ -1746,6 +1781,7 @@ void App::frame() {
   aboutDialog();
   missingToolDialog();
   closeDialogs();
+  fileDialogs();
   goToAddressDialog();
   emulatorOptionsDialog();
 }
@@ -1781,7 +1817,6 @@ MenuBar App::buildMenuBar(bool native) {
     langs.push_back(languageItem);
   }
   std::vector<MenuItem> settings = {item(native ? T("Tools...") : T("Tools"), native ? "Ctrl+," : "", [this] { showTools_ = true; }),
-  fileDialogs();
                                     item(T("Assistant..."), "", [this] { assistant_.openSettings(); }),
                                     sub(T("Language"), langs)};
   if (native) bar.push_back(sub("VCSIDE", settings));
@@ -1978,9 +2013,10 @@ MenuBar App::buildMenuBar(bool native) {
   bar.push_back(sub(T("View"), {
       item(T("Show cycle column"), "", [this] {
         showCycles_ = !showCycles_;
-        for (auto& openedFile : files_) openedFile->editor.setGutterWidthChars(showCycles_ && openedFile->asmSyntax ? 5 : 0);
+        for (auto& openedFile : files_) openedFile->editor.setGutterWidthChars(gutterChars(*openedFile));
         saveSettings();
       }, true, showCycles_),
+      item(T("Addresses instead of cycles"), "", [this] { switchCycleColumn(); }, showCycles_, columnAddresses_),
       item(T("Show 6502 page separators"), "", [this] {
         showPages_ = !showPages_;
         for (auto& openedFile : files_) updatePageSeparators(*openedFile);
@@ -2170,6 +2206,37 @@ void App::projectPanel() {
     ImGui::PushID(id.c_str());
     bool clicked = ImGui::InvisibleButton("row", ImVec2(std::max(1.0f, right - rowOrigin.x), rowH));
     bool hover = ImGui::IsItemHovered();
+    if (ImGui::BeginPopupContextItem("##rowmenu")) {  // right click: what is usually done to a file or a folder
+      bool isRoot = depth == 0;
+      fs::path where(id);
+      std::string inFolder = dir ? id : where.parent_path().string();
+      if (!dir && ImGui::MenuItem(T("Open"))) openFile(id);
+      if (!dir) ImGui::Separator();
+      if (ImGui::MenuItem(T("New file..."))) startFileOp(FileOp::NewFile, inFolder);
+      if (ImGui::MenuItem(T("New folder..."))) startFileOp(FileOp::NewFolder, inFolder);
+      if (!isRoot) {
+        ImGui::Separator();
+        if (ImGui::MenuItem(T("Rename..."))) startFileOp(FileOp::Rename, id, where.filename().string());
+        if (ImGui::MenuItem(T("Duplicate"))) {
+          std::string copy, error;
+          if (fileops::duplicate(id, &copy, &error)) {
+            if (!dir) openFile(copy);
+          } else {
+            startFileOp(FileOp::Message, id), fileOp_.error = error;
+          }
+        }
+        if (ImGui::MenuItem(T("Delete..."))) startFileOp(FileOp::Delete, id, where.filename().string());
+      }
+      ImGui::Separator();
+      if (ImGui::MenuItem(T("Copy path"))) ImGui::SetClipboardText(fs::absolute(where).string().c_str());
+      if (!isRoot && ImGui::MenuItem(T("Copy relative path"))) {
+        std::error_code relativeError;
+        fs::path relative = fs::relative(where, folder_, relativeError);
+        ImGui::SetClipboardText((relativeError ? where : relative).generic_string().c_str());
+      }
+      if (ImGui::MenuItem(T("Show in the file manager"))) SDL_OpenURL(("file://" + fs::absolute(fs::path(inFolder)).string()).c_str());
+      ImGui::EndPopup();
+    }
     ImGui::PopID();
     if (active) drawList->AddRectFilled(ImVec2(left, rowOrigin.y), ImVec2(right, rowOrigin.y + rowH), theme::col(theme::Role::FilesRowSelected));
     else if (hover) drawList->AddRectFilled(ImVec2(left, rowOrigin.y), ImVec2(right, rowOrigin.y + rowH), theme::col(theme::Role::FilesRowHover));
@@ -2206,37 +2273,6 @@ void App::projectPanel() {
     std::vector<fs::directory_entry> entries;
     std::error_code errorCode;
     for (auto& entry : fs::directory_iterator(dir, errorCode)) {
-    if (ImGui::BeginPopupContextItem("##rowmenu")) {  // right click: what is usually done to a file or a folder
-      bool isRoot = depth == 0;
-      fs::path where(id);
-      std::string inFolder = dir ? id : where.parent_path().string();
-      if (!dir && ImGui::MenuItem(T("Open"))) openFile(id);
-      if (!dir) ImGui::Separator();
-      if (ImGui::MenuItem(T("New file..."))) startFileOp(FileOp::NewFile, inFolder);
-      if (ImGui::MenuItem(T("New folder..."))) startFileOp(FileOp::NewFolder, inFolder);
-      if (!isRoot) {
-        ImGui::Separator();
-        if (ImGui::MenuItem(T("Rename..."))) startFileOp(FileOp::Rename, id, where.filename().string());
-        if (ImGui::MenuItem(T("Duplicate"))) {
-          std::string copy, error;
-          if (fileops::duplicate(id, &copy, &error)) {
-            if (!dir) openFile(copy);
-          } else {
-            startFileOp(FileOp::Message, id), fileOp_.error = error;
-          }
-        }
-        if (ImGui::MenuItem(T("Delete..."))) startFileOp(FileOp::Delete, id, where.filename().string());
-      }
-      ImGui::Separator();
-      if (ImGui::MenuItem(T("Copy path"))) ImGui::SetClipboardText(fs::absolute(where).string().c_str());
-      if (!isRoot && ImGui::MenuItem(T("Copy relative path"))) {
-        std::error_code relativeError;
-        fs::path relative = fs::relative(where, folder_, relativeError);
-        ImGui::SetClipboardText((relativeError ? where : relative).generic_string().c_str());
-      }
-      if (ImGui::MenuItem(T("Show in the file manager"))) SDL_OpenURL(("file://" + fs::absolute(fs::path(inFolder)).string()).c_str());
-      ImGui::EndPopup();
-    }
       std::string name = entry.path().filename().string();
       if (name.empty() || name == ".git") continue;  // every file shows, but not Git's own folder
       entries.push_back(entry);
@@ -2480,42 +2516,6 @@ void App::editorsPanel() {
   theme::endPanel();
 }
 
-void App::closeDialogs() {
-  if (closeRequest_ >= 0 && closeRequest_ < (int)files_.size()) {
-    if (!files_[closeRequest_]->dirty()) {
-      files_.erase(files_.begin() + closeRequest_);
-      activeFile_ = std::min(activeFile_, (int)files_.size() - 1);
-      closeRequest_ = -1;
-    } else {
-      ImGui::OpenPopup("###unsaved");
-    }
-  }
-  char title[96];
-  snprintf(title, sizeof title, "%s###unsaved", T("Unsaved changes"));
-  if (theme::beginModal(title, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-    ImGui::TextUnformatted(T("Save changes before closing?"));
-    if (closeRequest_ >= 0) ImGui::TextDisabled("%s", files_[closeRequest_]->path.c_str());
-    int action = 0;
-    if (theme::primaryButton(T("Save"))) action = 1;
-    ImGui::SameLine();
-    if (theme::dialogButton(T("Don't save"))) action = 2;
-    ImGui::SameLine();
-    if (theme::dialogButton(T("Cancel")) || theme::dialogEscape()) action = 3;
-    if (action) {
-      if (closeRequest_ >= 0) {
-        if (action == 1) saveFile(*files_[closeRequest_]);
-        if (action != 3) {
-          files_.erase(files_.begin() + closeRequest_);
-          activeFile_ = std::min(activeFile_, (int)files_.size() - 1);
-        }
-      }
-      closeRequest_ = -1;
-      ImGui::CloseCurrentPopup();
-    }
-    ImGui::EndPopup();
-  }
-  if (quitConfirm_) ImGui::OpenPopup("###quit");
-  snprintf(title, sizeof title, "%s###quit", T("Unsaved changes"));
 void App::startFileOp(FileOp::Kind kind, const std::string& target, const std::string& name) {
   fileOp_ = FileOp();
   fileOp_.kind = kind, fileOp_.target = target, fileOp_.name = name;
@@ -2615,6 +2615,42 @@ void App::fileDialogs() {
   ImGui::EndPopup();
 }
 
+void App::closeDialogs() {
+  if (closeRequest_ >= 0 && closeRequest_ < (int)files_.size()) {
+    if (!files_[closeRequest_]->dirty()) {
+      files_.erase(files_.begin() + closeRequest_);
+      activeFile_ = std::min(activeFile_, (int)files_.size() - 1);
+      closeRequest_ = -1;
+    } else {
+      ImGui::OpenPopup("###unsaved");
+    }
+  }
+  char title[96];
+  snprintf(title, sizeof title, "%s###unsaved", T("Unsaved changes"));
+  if (theme::beginModal(title, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+    ImGui::TextUnformatted(T("Save changes before closing?"));
+    if (closeRequest_ >= 0) ImGui::TextDisabled("%s", files_[closeRequest_]->path.c_str());
+    int action = 0;
+    if (theme::primaryButton(T("Save"))) action = 1;
+    ImGui::SameLine();
+    if (theme::dialogButton(T("Don't save"))) action = 2;
+    ImGui::SameLine();
+    if (theme::dialogButton(T("Cancel")) || theme::dialogEscape()) action = 3;
+    if (action) {
+      if (closeRequest_ >= 0) {
+        if (action == 1) saveFile(*files_[closeRequest_]);
+        if (action != 3) {
+          files_.erase(files_.begin() + closeRequest_);
+          activeFile_ = std::min(activeFile_, (int)files_.size() - 1);
+        }
+      }
+      closeRequest_ = -1;
+      ImGui::CloseCurrentPopup();
+    }
+    ImGui::EndPopup();
+  }
+  if (quitConfirm_) ImGui::OpenPopup("###quit");
+  snprintf(title, sizeof title, "%s###quit", T("Unsaved changes"));
   if (theme::beginModal(title, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
     quitConfirm_ = false;
     ImGui::TextUnformatted(T("Save changes before closing?"));

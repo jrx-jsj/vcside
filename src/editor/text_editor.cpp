@@ -1038,13 +1038,16 @@ bool TextEditor::render(const char* id, ImFont* font) {
   float foldX = ImGui::GetWindowPos().x + bpW + numW + cycW;
   bool inMargin = io.MousePos.x < ImGui::GetWindowPos().x + bpW + numW;
   bool inFolds = foldW > 0 && io.MousePos.x >= foldX && io.MousePos.x < foldX + foldW + charW_ * 0.5f;
-  bool inCycles = cycW > 0 && hooks_.lineInfo && !inMargin && io.MousePos.x < foldX;
-  if (hovered && inCycles) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+  bool inCycles = cycW > 0 && (hooks_.lineInfo || hooks_.gutterClick) && !inMargin && io.MousePos.x < foldX;
+  if (hovered && inCycles && hooks_.gutterClick) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+  if (hovered && inCycles && hooks_.lineInfo && !ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+    std::string info = hooks_.lineInfo(lineAtY(io.MousePos.y));
+    if (!info.empty()) ImGui::SetTooltip("%s", info.c_str());
+  }
   if (hovered && inMargin && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
     toggleBreakpoint(lineAtY(io.MousePos.y));
-  } else if (hovered && inCycles && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
-    lineInfoText_ = hooks_.lineInfo(lineAtY(io.MousePos.y));
-    if (!lineInfoText_.empty()) ImGui::OpenPopup("##lineInfo");
+  } else if (hovered && inCycles && hooks_.gutterClick && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+    hooks_.gutterClick();
   } else if (hovered && inFolds && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
     int line = lineAtY(io.MousePos.y);
     if (regionAt(line)) {
@@ -1257,15 +1260,6 @@ bool TextEditor::render(const char* id, ImFont* font) {
   drawList->AddLine(ImVec2(gx + gutterW - charW_ * 0.5f, winPos.y), ImVec2(gx + gutterW - charW_ * 0.5f, winPos.y + viewH), col(Role::EdGutterBorder));
   // offset the gutter by the horizontal scroll so it stays on screen
   (void)scrollX;
-
-  if (ImGui::BeginPopup("##lineInfo")) {
-    ImGui::TextUnformatted(lineInfoText_.c_str());
-    if (ImGui::SmallButton(T("Copy"))) {
-      ImGui::SetClipboardText(lineInfoText_.c_str());
-      ImGui::CloseCurrentPopup();
-    }
-    ImGui::EndPopup();
-  }
 
   // cursor
   if (focused) {

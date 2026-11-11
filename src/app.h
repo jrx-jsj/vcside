@@ -172,6 +172,11 @@ class App {
   // From the last build's listing: what clicking a line's cycles shows (its address) and
   // the rules where a new 6502 page starts.
   std::string addressInfo(const std::string& path, int line) const;
+  // "$F6F0 2": where a line's bytes start and how many there are; empty if it has none.
+  std::string addressColumn(const std::string& path, int line);
+  int gutterChars(const OpenFile& file) const;
+  void switchCycleColumn();
+  std::map<std::string, std::map<int, const ListedLine*>> addressColumns_;  // by file, first listed line of each line
   void updatePageSeparators(OpenFile& file);
   // breakpoints: per file (absolute path, 0-based lines), kept in <project>.vcsproj.user
   void loadUserState();
@@ -228,11 +233,6 @@ class App {
   std::vector<std::unique_ptr<OpenFile>> files_;
   int activeFile_ = -1;
   int closeRequest_ = -1;
-
-  // build state
-  Job job_;
-  bool building_ = false;
-  int runAfterBuild_ = 0;
   // what the project explorer's context menu is doing: a dialog asks for a name or a confirmation
   struct FileOp {
     enum Kind { None, NewFile, NewFolder, Rename, Delete, Message } kind = None;
@@ -244,6 +244,11 @@ class App {
   void fileDialogs();
   void pathsMoved(const std::string& from, const std::string& to);  // open files and folders follow a rename
   void pathsGone(const std::string& path);                          // open files under a deleted path are closed
+
+  // build state
+  Job job_;
+  bool building_ = false;
+  int runAfterBuild_ = 0;
   std::string output_;
   bool outputScroll_ = false;
   std::vector<Diagnostic> diagnostics_;
@@ -331,6 +336,7 @@ class App {
   // settings
   std::vector<std::string> recent_;
   bool showCycles_ = true;
+  bool columnAddresses_ = false;  // the cycle column shows each line's address and bytes instead
   bool showPages_ = true;  // 6502 page separators in assembly files
   bool resetLayout_ = false;
   // themes
