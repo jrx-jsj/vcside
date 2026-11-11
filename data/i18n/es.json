@@ -349,7 +349,7 @@
     "Duplicate": "Duplicar",
     "Duplicate lines": "Duplicar líneas",
     "Duty (of 32)": "Ciclo de trabajo (de 32)",
-    "Each part of your project is turned into numbers on this computer; the numbers stay in the project's .vcsai/index folder, which git ignores.": "Cada parte de tu proyecto se convierte en números en este ordenador; los números se quedan en la carpeta .vcsai/index del proyecto, que git ignora.",
+    "Each part of your project is turned into numbers on this computer; the numbers stay in the application's data folder, not in your project.": "Cada parte de tu proyecto se convierte en números en este ordenador; los números se quedan en la carpeta de datos de la aplicación, no en tu proyecto.",
     "Each row has its own mode (M mirror, R repeat), an A when its right half is drawn on its own, and its colours. Drawing on the right half of a symmetric row makes it asymmetric.": "Cada fila tiene su modo (M espejo, R repetido), una A cuando su mitad derecha se dibuja aparte, y sus colores. Dibujar en la mitad derecha de una fila simétrica la vuelve asimétrica.",
     "Edit": "Editar",
     "Edit themes...": "Editar temas...",

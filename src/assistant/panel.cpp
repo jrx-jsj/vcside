@@ -780,14 +780,9 @@ const CatalogModel* AssistantPanel::embedModel() {
 }
 
 namespace {
-std::string embeddingCachePath(const std::string& projectDir, const std::string& modelId) { return (std::filesystem::path(projectDir) / ".vcsai" / "index" / (modelId + ".vec")).string(); }
-
-// The vectors are derived data: they stay out of git like the chats do.
-void keepOutOfGit(const std::string& projectDir) {
-  std::filesystem::path ignore = std::filesystem::path(projectDir) / ".vcsai" / ".gitignore";
-  std::string text;
-  if (std::ifstream in{ignore}) text.assign(std::istreambuf_iterator<char>(in), {});
-  if (text.find("index/") == std::string::npos) std::ofstream(ignore, std::ios::app) << (text.empty() || text.back() == '\n' ? "" : "\n") << "index/\n";
+// The vectors are derived data: they live in the application's data folder, beside the chats, not in the project.
+std::string embeddingCachePath(const std::string& projectDir, const std::string& modelId) {
+  return (std::filesystem::path(configDir()) / "index" / ChatStore::folderKey(projectDir) / (modelId + ".vec")).string();
 }
 }  // namespace
 
@@ -837,8 +832,7 @@ void AssistantPanel::updateEmbeddings(const PanelContext& context) {
     }
     embedNote_ = embedWorker_.error();
     embedCache_.keepOnly(index_.keysInUse());  // what no chunk uses any more is dropped
-    embedCache_.save(embeddingCachePath(context.projectDir, model->id));  // creates .vcsai/index
-    keepOutOfGit(context.projectDir);
+    embedCache_.save(embeddingCachePath(context.projectDir, model->id));
   }
 }
 
@@ -2364,7 +2358,7 @@ void AssistantPanel::settingsDialog() {
   if (ImGui::IsItemHovered())
     ImGui::SetTooltip("%s", T("The reference, the project index and most models work best in English. Your question goes to the model in English and its answer comes back in your language; code, registers, labels and file names are never translated. Each translation takes a few seconds."));
   if (wrappedCheckbox(T("Search the project by meaning (a small model, downloaded once)"), &settings_.smartSearch, wrapWidth)) changed_ = true;
-  if (settings_.smartSearch) ImGui::TextDisabled("%s", T("Each part of your project is turned into numbers on this computer; the numbers stay in the project's .vcsai/index folder, which git ignores."));
+  if (settings_.smartSearch) ImGui::TextDisabled("%s", T("Each part of your project is turned into numbers on this computer; the numbers stay in the application's data folder, not in your project."));
   ImGui::SetNextItemWidth(fitWidth(theme::em(140), T("Token budget for remote models (0 = none)")));
   if (ImGui::InputInt(T("Token budget for remote models (0 = none)"), &settings_.budgetTokens, 10000, 100000)) settings_.budgetTokens = std::max(0, settings_.budgetTokens), changed_ = true;
   if (settings_.budgetTokens > 0) ImGui::TextDisabled("%s", F("Used in this session: {0}", {std::to_string(spentTokens_)}).c_str());
