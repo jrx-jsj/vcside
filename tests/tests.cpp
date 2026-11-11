@@ -3331,6 +3331,14 @@ static void testAgentTools(const KnowledgeBase& kb) {
   CHECK(call("kb_lookup", {{"id", "RESP0"}}).text.find("RESP0") != std::string::npos);
   CHECK(call("kb_search", {{"query", "how do I make a tone"}}).text.find("AUDC") != std::string::npos);
   CHECK(call("nonsense", {}).error);
+  // the same argument under other names, or under none when there is only one text
+  CHECK(call("kb_search", {{"q", "how do I make a tone"}}).text.find("AUDC") != std::string::npos);
+  CHECK(call("kb_search", {{"topic_words", "how do I make a tone"}}).text.find("AUDC") != std::string::npos);
+  CHECK(call("kb_lookup", {{"register", "RESP0"}}).text.find("RESP0") != std::string::npos);
+  CHECK(call("search", {{"keyword", "wsync"}}).text.find("main.asm:3:") != std::string::npos);
+  CHECK(call("read_file", {{"file", "main.asm"}, {"from", 2}, {"to", 2}}).text.find("2: Start") == 0);
+  CHECK(call("find_code", {}).error && call("find_code", {{"a", "x"}, {"b", "y"}}).error);  // nothing, or two texts and no way to tell: refused with a reason
+  CHECK(call("find_code", {}).text.find("query") != std::string::npos);
 
   // edits are proposals; nothing is written
   auto edit = call("edit_file", {{"path", "main.asm"}, {"edits", {{{"search", "  jmp Start"}, {"replace", "  jmp Start ; loop"}}}}});
@@ -3389,6 +3397,24 @@ static void testAgentTools(const KnowledgeBase& kb) {
 
   fs::remove_all(root);
   fs::remove_all(root.parent_path() / "vcside_agent_outside");
+}
+
+static void testBusyServiceMessages() {
+  using namespace vcs::assistant;
+  // Google answers an error as a list: [{"error": {"message": ...}}]
+  std::string body = R"([{"error":{"code":400,"message":"API key not valid. Please pass a valid API key.","status":"INVALID_ARGUMENT"}}])";
+  MockServer server("HTTP/1.1 400 Bad Request\r\nContent-Length: " + std::to_string(body.size()) + "\r\n\r\n" + body);
+  Provider provider;
+  provider.baseUrl = server.url(), provider.model = "m";
+  ChatRequest request;
+  request.start(provider, {{"user", "hi"}});
+  std::string error;
+  for (int i = 0; i < 300 && error.empty(); i++) {
+    usleep(10000);
+    for (auto& event : request.poll())
+      if (event.kind == Event::Error) error = event.text;
+  }
+  CHECK(error == "HTTP 400: API key not valid. Please pass a valid API key.");
 }
 
 static void testLengthStops() {
@@ -4432,6 +4458,7 @@ int main() {
   testUnknownNames(kb);
   testFirstPass();
   testLengthStops();
+  testBusyServiceMessages();
   testMasking(kb);
   testKnownProviders();
   std::printf("%d checks, %d failures\n", checks, failures);

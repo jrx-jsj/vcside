@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Juan Sánchez Jurado
 #include "assistant/provider.h"
 
+#include <chrono>
 #include <cstdlib>
 #include <fstream>
 
@@ -148,6 +149,7 @@ std::string describeFailure(const HttpResult& result) {
   std::string message = result.error;
   if (message.empty()) message = "HTTP " + std::to_string(result.status);
   json body = json::parse(result.errorBody, nullptr, false);
+  if (body.is_array() && !body.empty()) body = body[0];  // Google's services answer an error as [{"error": {...}}]
   if (body.is_object() && body.contains("error")) {
     const json& error = body["error"];
     if (error.is_object() && error.contains("message") && error["message"].is_string()) message += ": " + error["message"].get<std::string>();
@@ -194,23 +196,37 @@ void ChatRequest::run(Provider provider, std::vector<Message> messages) {
   request.headers = headersFor(provider, true);
   bool anthropic = provider.dialect == "anthropic";
   request.body = chatRequestBody(provider, messages);
-  SseParser parser;
+  // A busy service (429, 500, 502, 503, 504) before it has said anything is tried again, twice, after a pause: "This model is
+  // currently experiencing high demand" is usually over in seconds.
+  static const int pauses[] = {2, 5};
+  HttpResult result;
   bool done = false;
-  HttpResult result = httpRequest(
-      request,
-      [&](const char* bytes, size_t size) {
-        for (auto& data : parser.feed(bytes, size)) {
-          std::vector<Event> events;
-          if (anthropic) parseAnthropicStreamData(data, events);
-          else parseOpenAiStreamData(data, events);
-          for (auto& event : events) {
-            if (event.kind == Event::Done) done = true;
-            push(std::move(event));
+  for (int attempt = 0;; attempt++) {
+    SseParser parser;
+    bool delivered = false;
+    done = false;
+    result = httpRequest(
+        request,
+        [&](const char* bytes, size_t size) {
+          for (auto& data : parser.feed(bytes, size)) {
+            std::vector<Event> events;
+            if (anthropic) parseAnthropicStreamData(data, events);
+            else parseOpenAiStreamData(data, events);
+            for (auto& event : events) {
+              if (event.kind == Event::Done) done = true;
+              delivered = true;
+              push(std::move(event));
+            }
           }
-        }
-        return !cancel_;
-      },
-      cancel_);
+          return !cancel_;
+        },
+        cancel_);
+    bool busy = result.status == 429 || result.status == 500 || result.status == 502 || result.status == 503 || result.status == 504;
+    if (cancel_ || delivered || !busy || attempt >= 2) break;
+    push({Event::Retry, "", result.status, pauses[attempt]});
+    for (int waited = 0; waited < pauses[attempt] * 10 && !cancel_; waited++) std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    if (cancel_) break;
+  }
   if (cancel_) {
     push({Event::Done, "cancelled", 0, 0});
   } else if (result.status / 100 != 2 || !result.error.empty()) {

@@ -1503,6 +1503,10 @@ void AssistantPanel::poll(const PanelContext& context) {
         break;
       case Event::Error: error_ = event.text, finishAnswer(context, ""); break;
       case Event::Length: answerCut_ = true; break;
+      case Event::Retry:
+        waitingText_ = F("The service is busy ({0}). Trying again in {1} s...", {std::to_string(event.promptTokens), std::to_string(event.completionTokens)});
+        requestStartedAt_ = ImGui::GetTime();
+        break;
       case Event::Done: finishAnswer(context, event.text == "cancelled" ? "stopped" : ""); break;
     }
   }
@@ -1513,6 +1517,14 @@ void AssistantPanel::drawMessage(const ChatMessage& message, const std::string& 
   if (message.kind == "result") {  // what a tool answered: one dim line, the model got all of it
     std::string first = message.content.substr(0, message.content.find('\n'));
     size_t lines = (size_t)std::count(message.content.begin(), message.content.end(), '\n');
+    bool failed = first.rfind("Tool ", 0) == 0 && first.find(" failed") != std::string::npos;
+    if (failed) {  // a failure says why: the model's call went wrong, and the user can see how
+      std::string reason = oneLine(message.content.substr(std::min(message.content.size(), first.size() + 1)), 220);
+      ImGui::PushStyleColor(ImGuiCol_Text, theme::colv(theme::Role::MsgWarning));
+      ImGui::TextWrapped("  %s", (oneLine(first.substr(0, first.find(" (data")), 90) + ": " + reason).c_str());
+      ImGui::PopStyleColor();
+      return;
+    }
     ImGui::PushStyleColor(ImGuiCol_Text, theme::colv(theme::Role::UiTextDim));
     ImGui::TextWrapped("  %s", (oneLine(first, 90) + (lines > 1 ? "  (" + std::to_string(lines - 1) + " " + T("lines") + ")" : "")).c_str());
     ImGui::PopStyleColor();

@@ -106,6 +106,7 @@
     "arm-none-eabi-gcc, for C games on ELF cartridges with vcsLib.": "arm-none-eabi-gcc, para juegos en C en cartuchos ELF con vcsLib.",
     "Ask": "Preguntar",
     "Ask about your code, the TIA, the 6502 or the cartridge formats. The names VCSIDE knows in your question and in what you attach are looked up in its knowledge base and shown to the model.": "Pregunta sobre tu código, el TIA, el 6502 o los formatos de cartucho. Los nombres que VCSIDE conoce, en tu pregunta y en lo que adjuntes, se buscan en su base de conocimiento y se muestran al modelo.",
+    "Ask before sending to it": "Preguntar antes de enviarle nada",
     "Ask the service for its models again": "Volver a pedirle los modelos al servicio",
     "Ask: answers your question and proposes changes in the chat, which you review and apply.": "Preguntar: responde a tu pregunta y propone cambios en el chat, que tú revisas y aplicas.",
     "Asking the service for its models...": "Pidiéndole los modelos al servicio...",
@@ -313,6 +314,7 @@
     "Discard": "Descartar",
     "Documentation": "Documentación",
     "does not run it": "no lo ejecuta",
+    "Don't ask again for this server": "No volver a preguntar para este servidor",
     "Don't save": "No guardar",
     "Double click to run it.": "Doble clic para ejecutarla.",
     "Download ({0})": "Descargar ({0})",
@@ -800,8 +802,6 @@
     "Send": "Enviar",
     "Send to a remote server?": "¿Enviar a un servidor remoto?",
     "Send to it": "Enviar ahí",
-    "Don't ask again for this server": "No volver a preguntar para este servidor",
-    "Ask before sending to it": "Preguntar antes de enviarle nada",
     "Sent with: {0}": "Enviado con: {0}",
     "Services": "Servicios",
     "Settings": "Ajustes",
@@ -930,6 +930,7 @@
     "The same interval on every note: each frame gets the AUDF that comes closest, note by note.": "El mismo intervalo en todas las notas: cada cuadro usa el AUDF que más se acerca, nota a nota.",
     "The selected lines of {0}": "Las líneas seleccionadas de {0}",
     "The service has no list of models at this address; type the name of the model.": "El servicio no tiene lista de modelos en esta dirección; escribe el nombre del modelo.",
+    "The service is busy ({0}). Trying again in {1} s...": "El servicio está ocupado ({0}). Reintentando en {1} s...",
     "The service lists no models.": "El servicio no lista ningún modelo.",
     "The service refused the key: check it, or save it again.": "El servicio rechazó la clave: compruébala o guárdala de nuevo.",
     "The song has more than 254 patterns in its order list: it cannot be exported until it is shorter.": "La canción tiene más de 254 patrones en su orden: no se puede exportar hasta que sea más corta.",
@@ -1171,5 +1172,5 @@
     "{0}:{1}: no listing to place the breakpoint: build first.": "{0}:{1}: no hay listado para situar el punto de ruptura: compila antes.",
     "±{0}": "±{0}"
   },
-  "total": 1166
+  "total": 1169
 }

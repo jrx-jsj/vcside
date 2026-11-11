@@ -116,6 +116,21 @@ std::string stringArg(const json& args, const char* key) {
   return "";
 }
 
+// The first of these names the call has, or when it names none of them but has exactly one text, that text: models call the
+// same argument "query", "q", "text" or "search".
+std::string textArg(const json& args, std::initializer_list<const char*> names) {
+  for (const char* name : names) {
+    std::string value = stringArg(args, name);
+    if (!value.empty()) return value;
+  }
+  if (!args.is_object()) return "";
+  std::string only;
+  int strings = 0;
+  for (auto it = args.begin(); it != args.end(); ++it)
+    if (it.value().is_string() && !it.value().get<std::string>().empty()) only = it.value().get<std::string>(), strings++;
+  return strings == 1 ? only : "";
+}
+
 int intArg(const json& args, const char* key, int fallback) {
   if (args.is_object() && args.contains(key)) {
     if (args[key].is_number_integer()) return args[key].get<int>();
@@ -158,7 +173,7 @@ ToolResult listFiles(const ToolEnv& env, const json& args) {
 
 ToolResult readFile(const ToolEnv& env, const json& args) {
   std::string absolute, error;
-  std::string wanted = stringArg(args, "path");
+  std::string wanted = textArg(args, {"path", "file", "filename", "filepath", "name"});
   {
     std::string direct;
     std::error_code exists;
@@ -192,8 +207,7 @@ ToolResult readFile(const ToolEnv& env, const json& args) {
 }
 
 ToolResult searchProject(const ToolEnv& env, const json& args) {
-  std::string needle = stringArg(args, "text");
-  if (needle.empty()) needle = stringArg(args, "query");
+  std::string needle = textArg(args, {"text", "query", "q", "search", "term", "keyword", "pattern"});
   if (needle.empty()) return fail("search needs a \"text\"");
   std::string lowered = lower(needle);
   std::error_code ec;
@@ -241,8 +255,7 @@ ToolResult symbolsTool(const ToolEnv& env, const json& args) {
 
 ToolResult kbLookup(const ToolEnv& env, const json& args) {
   if (!env.kb) return fail("no knowledge base");
-  std::string id = stringArg(args, "id");
-  if (id.empty()) id = stringArg(args, "name");
+  std::string id = textArg(args, {"id", "name", "register", "instruction", "symbol", "query"});
   if (id.empty()) return fail("kb_lookup needs an \"id\"");
   auto entries = groundText(*env.kb, "", id, env.grounding, 2, 2400);
   if (entries.empty()) return ok("no entry named " + id + " (try kb_search)\n");
@@ -251,8 +264,7 @@ ToolResult kbLookup(const ToolEnv& env, const json& args) {
 
 ToolResult kbSearch(const ToolEnv& env, const json& args) {
   if (!env.kb) return fail("no knowledge base");
-  std::string query = stringArg(args, "query");
-  if (query.empty()) query = stringArg(args, "text");
+  std::string query = textArg(args, {"query", "text", "q", "search", "topic", "question"});
   if (query.empty()) return fail("kb_search needs a \"query\"");
   auto entries = groundText(*env.kb, query, "", env.grounding, 4, 3000);
   if (entries.empty()) return ok("no reference entries for that\n");
@@ -747,9 +759,8 @@ ToolResult runTool(const ToolEnv& env, const ToolCall& call) {
   if (name == "search") return searchProject(env, call.args);
   if (name == "symbols") return symbolsTool(env, call.args);
   if (name == "find_code") {
-    std::string query = stringArg(call.args, "query");
-    if (query.empty()) query = stringArg(call.args, "text");
-    if (query.empty()) return fail("find_code needs a \"query\"");
+    std::string query = textArg(call.args, {"query", "text", "q", "search", "description", "question", "topic"});
+    if (query.empty()) return fail("find_code needs a \"query\" (what the code does, or names in it)");
     if (!env.findCode) return fail("the project index is not available");
     std::string found = env.findCode(query);
     return ok(found.empty() ? std::string("nothing in the project matches that\n") : found);
