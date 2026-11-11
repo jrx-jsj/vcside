@@ -281,6 +281,7 @@ class App {
   std::optional<SpaceReport> space_;
   std::optional<ElfSpace> elfSpace_;  // ELF projects
   void measureElf();
+  void measureAce();
   bool finishBasicBuild();
   void measureBasic(long romSize);
   std::string spaceNote_;      // why there is no report (ELF, custom build...)

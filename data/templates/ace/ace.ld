@@ -15,7 +15,7 @@ ENTRY(ace_entry)
 
 MEMORY
 {
-    file (rx)  : ORIGIN = 0x08020000, LENGTH = 448K
+    file (rx)  : ORIGIN = 0x08020000, LENGTH = 896K   /* the firmware's limit */
     sram (rwx) : ORIGIN = 0x20000100, LENGTH = 96K - 0x100
 }
 
@@ -28,6 +28,11 @@ SECTIONS
     {
         __image_start = .;
         *(.text .text.*)
+        . = ALIGN(4);
+    } > sram AT > file
+
+    .rodata : ALIGN(4)
+    {
         *(.rodata .rodata.*)
         . = ALIGN(4);
     } > sram AT > file

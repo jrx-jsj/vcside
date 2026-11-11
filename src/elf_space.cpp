@@ -132,7 +132,54 @@ ElfSpace analyzeElfSpace(const ElfFile& rom, long fileSize, const ElfFile* chame
   return elfSpace;
 }
 
+long gopherAceSram(long fileSize) {
+  if (fileSize < 128000 - 64000) return 128000;
+  if (fileSize < 256000 - 64000) return 256000;
+  if (fileSize < 512000 - 64000) return 512000;
+  return 64000;
+}
+
+ElfSpace analyzeAceSpace(const ElfFile& debugElf, long fileSize, int warnPercent) {
+  enum : uint32_t { WRITE = 1, ALLOC = 2, EXEC = 4, NOBITS = 8 };
+  ElfSpace aceSpace;
+  aceSpace.fileSize = fileSize;
+  aceSpace.cartridge = ElfCartridge::Ace;
+  long sramEnd = 0;  // bytes from the start of SRAM: the firmware's arguments are below the program
+  for (auto& section : debugElf.sections) {
+    if (!(section.flags & ALLOC) || section.size == 0) continue;
+    bool inSram = section.addr >= kAceSramStart && section.addr < kAceSramStart + 0x100000;
+    if (!inSram) aceSpace.startCode += section.size;
+    else if (section.flags & EXEC) aceSpace.code += section.size;
+    else if (section.type == NOBITS) aceSpace.bss += section.size;
+    else if (section.flags & WRITE) aceSpace.data += section.size;
+    else aceSpace.constants += section.size;
+    if (inSram) sramEnd = std::max(sramEnd, (long)(section.addr - kAceSramStart) + (long)section.size);
+  }
+  aceSpace.flash = {T("File"), fileSize, kAceFileLimit};
+  aceSpace.ram = {T("SRAM"), sramEnd, kPlusCartBuffer};
+  aceSpace.emulatorRam = {T("Gopher2600 SRAM"), sramEnd, gopherAceSram(fileSize)};
+  for (auto* area : {&aceSpace.flash, &aceSpace.ram}) {
+    int usedPercent = percent(area->used, area->size);
+    std::string name = F("PlusCart/UnoCart {0}", {area->name});
+    if (area->used > area->size)
+      aceSpace.diagnostics.push_back({Diagnostic::Error, "", 0,
+                                      F("{0}: {1} bytes of {2}, it does not fit ({3} too many).",
+                                        {name, std::to_string(area->used), std::to_string(area->size), std::to_string(area->used - area->size)})});
+    else if (usedPercent >= warnPercent)
+      aceSpace.diagnostics.push_back({Diagnostic::Warning, "", 0,
+                                      F("{0} is {1} % full ({2} of {3} bytes).",
+                                        {name, std::to_string(usedPercent), std::to_string(area->used), std::to_string(area->size)})});
+  }
+  if (sramEnd > aceSpace.emulatorRam.size)
+    aceSpace.diagnostics.push_back({Diagnostic::Warning, "", 0,
+                                    F("Gopher2600 gives a file of {0} bytes only {1} bytes of SRAM, and the program needs {2}: it will not run there, though it may on the cartridge.",
+                                      {std::to_string(fileSize), std::to_string(aceSpace.emulatorRam.size), std::to_string(sramEnd)})});
+  return aceSpace;
+}
+
 std::string ElfSpace::summary() const {
+  if (cartridge == ElfCartridge::Ace)
+    return F("ACE file {0}/{1}  ·  SRAM {2}/{3}", {std::to_string(flash.used), std::to_string(flash.size), std::to_string(ram.used), std::to_string(ram.size)});
   if (cartridge == ElfCartridge::PlusCart)
     return F("PlusCart/UnoCart RAM {0}/{1}  ·  CCM RAM {2}/{3}",
              {std::to_string(ram.used), std::to_string(ram.size), std::to_string(ccm.used), std::to_string(ccm.size)});

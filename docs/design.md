@@ -106,6 +106,7 @@ Checked with Stella 7.0 and Gopher2600 v0.56.1, by reading their source code and
 
 - **Template** (`data/templates/ace`, CC0) and the `ace-animation` example: C for the PlusCart's and UnoCart's Cortex-M4, run in Gopher2600 at 168 MHz. The program runs from SRAM (copied by the start code after the console reboots into the cartridge), with its own bus library and overblank program; the C music player is the ELF one. Design and measurements in [design-ace.md](design-ace.md#the-ace-template-datatemplatesace-cc0-phase-3).
 - **Debug:** `build/ACE_debugging.elf` (`-gdwarf-4 -gstrict-dwarf`) gives Gopher2600's source-level debugger; VCSIDE does not pass breakpoints.
+- **Space:** from `build/ACE_debugging.elf`: the file against the firmware's 896 KB, what runs in SRAM against the 96 KB buffer, and a warning when Gopher2600 gives the file less SRAM than the program needs (64,000 bytes from 448,000 bytes of file up).
 
 ## batari Basic projects
 

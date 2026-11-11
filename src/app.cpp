@@ -610,7 +610,8 @@ void App::pollBuild() {
     auto size = fs::file_size(project_->outputPath(), errorCode);
     if (!errorCode) output_ += F("{0}: {1} bytes", {project_->outputPath(), std::to_string(size)}) + "\n";
     loadSymbols();
-    if (project_->language == Language::ElfC) measureElf();
+    if (isC(project_->language) && (project_->language == Language::AceC || project_->format == "ACE")) measureAce();
+    else if (project_->language == Language::ElfC) measureElf();
     else if (basic) measureBasic(errorCode ? 0 : (long)size);
     else startSpace();
   }
@@ -685,6 +686,27 @@ void App::measureElf() {
                       fs::last_write_time(chameleonPath, errorCode) >= fs::last_write_time(rom, errorCode) &&
                       readElf(readFile(chameleonPath), chameleonElf, &error) && chameleonElf.type == 2;
   elfSpace_ = analyzeElfSpace(romElf, (long)fs::file_size(rom, errorCode), useChameleon ? &chameleonElf : nullptr, limits, project_->spaceWarnPercent);
+  for (auto diagnostic : elfSpace_->diagnostics) {
+    diagnostic.message = T("Space") + std::string(": ") + diagnostic.message;
+    diagnostics_.push_back(diagnostic);
+  }
+  output_ += elfSpace_->summary() + "\n";
+}
+
+// ACE: the debug ELF the Makefile writes next to the file (build/ACE_debugging.elf), when
+// it is not older than the file.
+void App::measureAce() {
+  std::string file = project_->outputPath();
+  fs::path debugPath = fs::path(file).parent_path() / "ACE_debugging.elf";
+  std::error_code errorCode;
+  ElfFile debugElf;
+  std::string error;
+  if (!fs::exists(debugPath, errorCode) || fs::last_write_time(debugPath, errorCode) < fs::last_write_time(file, errorCode) ||
+      !readElf(readFile(debugPath.string()), debugElf, &error) || debugElf.type != 2) {
+    spaceNote_ = F("Cannot measure {0}: the space comes from {1}, which the Makefile writes with it.", {file, debugPath.string()});
+    return;
+  }
+  elfSpace_ = analyzeAceSpace(debugElf, (long)fs::file_size(file, errorCode), project_->spaceWarnPercent);
   for (auto diagnostic : elfSpace_->diagnostics) {
     diagnostic.message = T("Space") + std::string(": ") + diagnostic.message;
     diagnostics_.push_back(diagnostic);
@@ -2797,9 +2819,12 @@ void App::spacePanel() {
       int warnPercent = project_ ? project_->spaceWarnPercent : 90;
       auto& elfReport = *elfSpace_;
       ImGui::SeparatorText(F("ROM ({0} bytes)", {std::to_string(elfReport.fileSize)}).c_str());
-      const std::pair<const char*, long> parts[] = {{N_("Code"), elfReport.code}, {N_("Code in RAM (.RamFunc)"), elfReport.ramCode},
-                                                    {N_("Constants"), elfReport.constants}, {N_("Variables with a value"), elfReport.data},
-                                                    {N_("Zeroed variables"), elfReport.bss}};
+      bool ace = elfReport.cartridge == ElfCartridge::Ace;
+      // ACE: the header and start code, which stay in the file; ELF: the code that runs in RAM
+      std::pair<const char*, long> parts[] = {{N_("Code"), elfReport.code}, {N_("Code in RAM (.RamFunc)"), elfReport.ramCode},
+                                              {N_("Constants"), elfReport.constants}, {N_("Variables with a value"), elfReport.data},
+                                              {N_("Zeroed variables"), elfReport.bss}};
+      if (ace) parts[0] = {N_("Header and start code"), elfReport.startCode}, parts[1] = {N_("Code"), elfReport.code};
       if (ImGui::BeginTable("elfparts", 2, ImGuiTableFlags_SizingFixedFit)) {
         for (auto& [name, byteCount] : parts) {
           ImGui::TableNextRow();
@@ -2814,7 +2839,16 @@ void App::spacePanel() {
         SpaceReport::Area shown{area.name, area.used, area.size, true, ""};
         spaceBar(shown, warnPercent);
       };
-      if (elfReport.cartridge == ElfCartridge::PlusCart) {
+      if (ace) {
+        ImGui::SeparatorText(T("PlusCart / UnoCart"));
+        bar(elfReport.flash);
+        bar(elfReport.ram);
+        ImGui::PushTextWrapPos(0);
+        ImGui::TextDisabled("%s", T("The firmware copies the file to flash (up to 896 KB; on the PlusCart, the ROMs stored offline take part of it). The template's start code copies the code, the constants and the variables to SRAM, into the 96 KB the firmware used as its download buffer, after its arguments."));
+        ImGui::SeparatorText(T("Gopher2600"));
+        bar(elfReport.emulatorRam);
+        ImGui::TextDisabled("%s", T("Gopher2600 gives an ACE file 128,000 bytes of SRAM, or 256,000 or 512,000 as the file grows, but only 64,000 from 448,000 bytes of file up."));
+      } else if (elfReport.cartridge == ElfCartridge::PlusCart) {
         ImGui::SeparatorText(T("PlusCart / UnoCart"));
         bar(elfReport.ram);
         bar(elfReport.ccm);
@@ -2839,7 +2873,7 @@ void App::spacePanel() {
                                         .c_str());
         ImGui::TextDisabled("%s", T("The 512 KB Chameleon Cart (STM32G0B0RE) has 512 KB of flash and 144 KB of RAM: set them in the project settings."));
       }
-      ImGui::TextDisabled("%s", T("Stella and Gopher2600 load the whole ROM into RAM."));
+      if (!ace) ImGui::TextDisabled("%s", T("Stella and Gopher2600 load the whole ROM into RAM."));
       ImGui::PopTextWrapPos();
     } else if (!space_) {
       if (!spaceRunning_ && spaceNote_.empty()) ImGui::TextDisabled("%s", T("Build the project (F7) to see the space used."));

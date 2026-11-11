@@ -739,6 +739,26 @@ static void testElfSpace() {
   CHECK(elfSpace.diagnostics.size() == 1 && elfSpace.diagnostics[0].severity == Diagnostic::Error);
   CHECK(!readElf("not an elf", romElf, &error) && !error.empty());
 
+  // ACE: the debug ELF's sections by address: the file's header and start code, then the
+  // program in SRAM after the firmware's arguments (0x100), against the 96 KB buffer
+  ElfFile aceElf;
+  aceElf.type = 2;
+  aceElf.sections = {{".ace_header", 1, 2, 0x08020000, 40}, {".ace_start", 1, 6, 0x08020028, 60}, {".text", 1, 6, 0x20000100, 3000},
+                     {".rodata", 1, 2, 0x20000CB8, 800}, {".data", 1, 3, 0x20000FD8, 40}, {".bss", 8, 3, 0x20001000, 1200},
+                     {".debug_info", 1, 0, 0, 9000}};
+  ElfSpace aceSpace = analyzeAceSpace(aceElf, 3940, 90);
+  CHECK(aceSpace.cartridge == ElfCartridge::Ace && aceSpace.startCode == 100 && aceSpace.code == 3000 && aceSpace.constants == 800);
+  CHECK(aceSpace.data == 40 && aceSpace.bss == 1200 && aceSpace.ram.used == 0x1000 + 1200 && aceSpace.ram.size == kPlusCartBuffer);
+  CHECK(aceSpace.flash.used == 3940 && aceSpace.flash.size == kAceFileLimit && aceSpace.emulatorRam.size == 128000);
+  CHECK(aceSpace.diagnostics.empty() && aceSpace.summary().find("ACE") != std::string::npos);
+  CHECK(gopherAceSram(63999) == 128000 && gopherAceSram(64000) == 256000 && gopherAceSram(447999) == 512000 && gopherAceSram(448000) == 64000);
+  // a big file: Gopher2600 gives it 64,000 bytes of SRAM (a warning); 90 KB of SRAM is 93 % of the buffer
+  aceElf.sections[5].size = 90 * 1024 - 0x1000;
+  aceSpace = analyzeAceSpace(aceElf, 500000, 90);
+  CHECK(aceSpace.diagnostics.size() == 2 && aceSpace.diagnostics[0].severity == Diagnostic::Warning && aceSpace.diagnostics[1].message.find("Gopher2600") != std::string::npos);
+  aceSpace = analyzeAceSpace(aceElf, 1000 * 1024, 90);  // over the firmware's 896 KB
+  CHECK(aceSpace.diagnostics[0].severity == Diagnostic::Error);
+
   // a new ELF project from the template
   namespace fs = std::filesystem;
   fs::path dir = fs::temp_directory_path() / "vcside-test-elf";
@@ -1006,6 +1026,15 @@ static void testElfSpace() {
   if (!gcc.empty() && !make.empty()) {
     std::string command = "cd \"" + aceDir.string() + "\" && \"" + make + "\" > make.log 2>&1";
     CHECK(std::system(command.c_str()) == 0 && romFormat((aceDir / "build" / "beam.ace").string()) == "ACE" && fs::exists(aceDir / "build" / "ACE_debugging.elf"));
+    // its space: the header and start code in the file, code and constants apart, all of it well inside the buffer
+    std::ifstream debugFile(aceDir / "build" / "ACE_debugging.elf", std::ios::binary);
+    std::string debugBytes((std::istreambuf_iterator<char>(debugFile)), {});
+    ElfFile builtElf;
+    CHECK(readElf(debugBytes, builtElf, &error) && builtElf.type == 2);
+    long aceFileSize = (long)fs::file_size(aceDir / "build" / "beam.ace", errorCode);
+    ElfSpace builtSpace = analyzeAceSpace(builtElf, aceFileSize, 90);
+    CHECK(builtSpace.startCode > 40 && builtSpace.code > 1000 && builtSpace.constants > 0 && builtSpace.bss > 0 && builtSpace.diagnostics.empty());
+    CHECK(aceFileSize == builtSpace.startCode + builtSpace.code + builtSpace.constants + builtSpace.data);  // the file: all but .bss
   }
   // the ACE example: the animated sprite, its graphics' tables, NTSC lines
   CHECK(Project::examples(Language::AceC).size() == 1 && Project::examples(Language::AceC)[0].first == "animation");

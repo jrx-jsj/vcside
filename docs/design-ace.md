@@ -1,6 +1,6 @@
 # ACE cartridges — design proposal
 
-Status: proposal (2026-11-10). Phases 1 (knowledge and running ACE files), 2 (the proof of concept, `tools/ace_poc`) and 3 (the template) are done, except for real hardware. Sources are at the end and in [sources.md](sources.md#ace-cartridges-read-2026-11-10).
+Status: proposal (2026-11-10). Phases 1 (knowledge and running ACE files), 2 (the proof of concept, `tools/ace_poc`), 3 (the template) and 4 (the space report) are done, except for real hardware. Sources are at the end and in [sources.md](sources.md#ace-cartridges-read-2026-11-10).
 
 ## What ACE is
 
@@ -149,7 +149,7 @@ data/templates/ace/
 data/templates/ace-animation/src/   main.c and hero.vcsgfx: the animated sprite
 ```
 
-**Position independence: the program runs from SRAM.** The firmware copies the file to flash at an address that depends on the cart and its free sectors, so code linked for one flash address cannot hold pointers to its own constants. The template links everything but the header and the start code at `0x20000100`, after the argument block, and the start code copies it there. C then works as usual (pointers to tables, switch tables, function pointers), with no GOT and no checks. The cost is SRAM: the code and constants count against the 96 KB buffer (a program larger than about 90 KB would need a different scheme, phase 4 can report it).
+**Position independence: the program runs from SRAM.** The firmware copies the file to flash at an address that depends on the cart and its free sectors, so code linked for one flash address cannot hold pointers to its own constants. The template links everything but the header and the start code at `0x20000100`, after the argument block, and the start code copies it there. C then works as usual (pointers to tables, switch tables, function pointers), with no GOT and no checks. The cost is SRAM: the code and constants count against the 96 KB buffer (a program larger than about 90 KB would need a different scheme; the space report warns before that).
 
 **The start code** (`start.S`, position-independent assembly, the entry at offset 40):
 
@@ -173,7 +173,11 @@ The Makefile fails if the start code does not follow the 40-byte header, since t
 **DWARF:** Gopher2600 reads version 4 only and none of GCC's extensions. With `-O2`, GCC writes `DW_OP_GNU_entry_value` (`0xF3`) even with `-gdwarf-4`, and Gopher2600 then shows its "unsupported DWARF" notice; `-gstrict-dwarf` removes it.
 
 - **Debug:** breakpoints in C are not passed on (VCSIDE says so when running); Gopher2600's own debugger shows the source from `build/ACE_debugging.elf`.
-- **Space report:** not yet (phase 4); the Makefile prints the linker's memory use.
+- **Space report (phase 4):** after each build VCSIDE reads `build/ACE_debugging.elf` (`analyzeAceSpace`). The file's header and start code are in flash; code, constants (`.rodata`, its own section in `ace.ld` so it can be told apart), variables with a value and zeroed variables are in SRAM. Three limits:
+  - the **file** against 896 KB: the firmware rejects a header whose size is bigger (`get_ace_type`). On the PlusCart the ROMs stored offline take part of that flash, from sector 5 to the end of its 1 MB;
+  - the **SRAM** the program reaches (from `0x20000000`, with the arguments) against the 96 KB download buffer (`BUFFER_SIZE` in `main.h`); the rest of the SRAM is the firmware's, with the stack;
+  - the SRAM **Gopher2600** gives the file: 128,000 bytes below 64,000 bytes of file, 256,000 below 192,000, 512,000 below 448,000 and 64,000 from there up (`ace/memory.go`). Only a warning: the program may still run on the cart.
+- **No cart choice.** For `ACE-UF00` the firmware does the same on both carts: the same size check, the same flash area and the same buffer, and the register pointers hide the different pins. A PlusCart / UnoCart setting would change nothing, so there is none.
 
 ## Phased plan
 
@@ -184,7 +188,7 @@ The Makefile fails if the start code does not follow the 40-byte header, since t
    - A double click on any ROM in the project tree runs it with the project's emulator and options. The format comes from its header (`romFormat`: ACE), from the project for its own ROM, or AUTO for the rest. An ACE ROM goes to Gopher2600 even in a Stella project, with a note.
 2. **Finish the proof of concept — done 2026-11-10, except real hardware.** The picture checked with a Gopher2600 macro. The debugger reads `ACE_debugging.elf` (DWARF 4, linked at `0x08020000`). Wolf3D's failure explained (Gopher2600's SRAM for big files and an unmapped flash register). The UnoCart's data layout handled by the firmware's pointers. Missing: running it on a real PlusCart or UnoCart.
 3. **Template — done 2026-11-11, except real hardware.** `data/templates/ace` and the `ace-animation` example, as above: the program runs from SRAM, its own bus library and overblank program, the music player unchanged. Language "C for ACE" in *New project*, Gopher2600 at 168 MHz, tests that build both.
-4. **Space report** for ACE, and the cart choice (UnoCart / PlusCart) in project settings.
+4. **Space report — done 2026-11-11.** The file, the SRAM and Gopher2600's SRAM, as above, in the *Space* panel, the status bar and the build's diagnostics. The cart choice was dropped: for `ACE-UF00` both carts have the same limits.
 5. **Shared C.** Write vcsLib on top of the bus library, so an ELF project can add an ACE target (`make ace`) without changing its game.
 6. **Hardware.** Send the file to the PlusCart, once that route exists (pending idea in `design.md`).
 
