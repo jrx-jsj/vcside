@@ -21,6 +21,8 @@
 - (void)URLSession:(NSURLSession*)session dataTask:(NSURLSessionDataTask*)task didReceiveResponse:(NSURLResponse*)response completionHandler:(void (^)(NSURLSessionResponseDisposition))handler {
   self.result->status = (int)[(NSHTTPURLResponse*)response statusCode];
   self.success = self.result->status / 100 == 2;
+  NSString* retryAfter = [(NSHTTPURLResponse*)response valueForHTTPHeaderField:@"Retry-After"];
+  if (retryAfter) self.result->retryAfterSeconds = [retryAfter doubleValue];
   handler(NSURLSessionResponseAllow);
 }
 - (void)URLSession:(NSURLSession*)session dataTask:(NSURLSessionDataTask*)task didReceiveData:(NSData*)data {

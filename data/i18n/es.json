@@ -930,6 +930,7 @@
     "The same interval on every note: each frame gets the AUDF that comes closest, note by note.": "El mismo intervalo en todas las notas: cada cuadro usa el AUDF que más se acerca, nota a nota.",
     "The selected lines of {0}": "Las líneas seleccionadas de {0}",
     "The service has no list of models at this address; type the name of the model.": "El servicio no tiene lista de modelos en esta dirección; escribe el nombre del modelo.",
+    "The service was busy ({0}). Trying again now...": "El servicio estaba ocupado ({0}). Reintentando ahora...",
     "The service is busy ({0}). Trying again in {1} s...": "El servicio está ocupado ({0}). Reintentando en {1} s...",
     "The service lists no models.": "El servicio no lista ningún modelo.",
     "The service refused the key: check it, or save it again.": "El servicio rechazó la clave: compruébala o guárdala de nuevo.",

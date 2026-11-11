@@ -280,6 +280,8 @@ HttpResult httpRequest(const HttpRequest& request, const std::function<bool(cons
       result.status = std::atoi(header.c_str() + header.find(' ') + 1);
       std::string lowered = lower(header);
       chunked = lowered.find("transfer-encoding: chunked") != std::string::npos;
+      size_t ra = lowered.find("\r\nretry-after:");
+      if (ra != std::string::npos) result.retryAfterSeconds = std::atof(lowered.c_str() + ra + 14);
       size_t cl = lowered.find("\r\ncontent-length:");
       if (cl != std::string::npos) contentLength = std::atoll(lowered.c_str() + cl + 17);
       leftover = std::move(rest);

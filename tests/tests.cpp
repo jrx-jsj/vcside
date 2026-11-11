@@ -3429,6 +3429,25 @@ static void testAgentTools(const KnowledgeBase& kb) {
   CHECK(!findToolCall("Use ```asm\nlda #0\n``` here", &parsed));
   CHECK(!findToolCall("```tool\n{\"tool\": \"rm_rf\"}\n```", &parsed));
   CHECK(!findToolCall("The JSON {\"tool\":\"read_file\"} is an example", &parsed));  // not at the start
+  {  // a busy service says when to try again: the pause is that, not a guess
+    HttpResult busy;
+    busy.status = 429;
+    busy.errorBody = R"([{"error": {"code": 429, "details": [{"@type": "x.RetryInfo", "retryDelay": "28s"}]}}])";
+    CHECK(retryDelaySeconds(busy) == 28 && pauseBeforeRetry(busy, 0) == 29);
+    busy.errorBody = R"({"error": {"message": "Rate limit reached. Please try again in 250ms."}})";
+    CHECK(retryDelaySeconds(busy) == 0.25);
+    busy.errorBody = "Please retry in 28.9s.";
+    CHECK(retryDelaySeconds(busy) > 28.8 && retryDelaySeconds(busy) < 29);
+    busy.errorBody = "", busy.retryAfterSeconds = 7;
+    CHECK(retryDelaySeconds(busy) == 7);
+    busy.retryAfterSeconds = 0;
+    CHECK(pauseBeforeRetry(busy, 0) == 2 && pauseBeforeRetry(busy, 1) == 5 && pauseBeforeRetry(busy, 2) == 10 && pauseBeforeRetry(busy, 3) < 0);  // no hint: 2, 5, 10 s, then give up
+    busy.retryAfterSeconds = 3600;
+    CHECK(pauseBeforeRetry(busy, 0) < 0);  // a daily quota is not waited for
+    HttpResult refused;
+    refused.status = 400;
+    CHECK(pauseBeforeRetry(refused, 0) < 0);
+  }
   CHECK(toolNames(0).size() == 12 && toolNames(1).size() == 13 && toolNames(2).size() == 15);
   CHECK(toolPrompt(0).find("edit_file") == std::string::npos && toolPrompt(2).find("run_emulator") != std::string::npos);
   CHECK(estimateTokens(toolPrompt(2)) < 1100);  // the design budget for the tool descriptions

@@ -2,6 +2,9 @@
 // Copyright (C) 2026 Juan Sánchez Jurado
 #include "assistant/one_shot.h"
 
+#include <chrono>
+#include <thread>
+
 #include <nlohmann/json.hpp>
 
 #include "assistant/http.h"
@@ -46,7 +49,15 @@ void OneShotRequest::start(const Provider& provider, const std::string& system, 
       http.connectSeconds = 3;
       http.idleSeconds = idleSeconds;
       std::string answer;
-      HttpResult sent = httpRequest(http, [&](const char* bytes, size_t size) { return answer.append(bytes, size), answer.size() < (4u << 20); }, cancel_);
+      HttpResult sent;
+      for (int attempt = 0;; attempt++) {  // a busy service (429, 5xx) is tried again after the pause it asked for
+        answer.clear();
+        sent = httpRequest(http, [&](const char* bytes, size_t size) { return answer.append(bytes, size), answer.size() < (4u << 20); }, cancel_);
+        double pause = cancel_ ? -1 : pauseBeforeRetry(sent, attempt);
+        if (pause < 0) break;
+        for (int waited = 0; waited < pause * 10 && !cancel_; waited++) std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        if (cancel_) break;
+      }
       if (sent.status / 100 == 2 && sent.error.empty()) {
         json reply = json::parse(answer, nullptr, false);
         if (reply.is_object() && reply.contains("choices") && reply["choices"].is_array() && !reply["choices"].empty() && reply["choices"][0].contains("message") &&

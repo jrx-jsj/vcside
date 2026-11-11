@@ -1664,7 +1664,8 @@ void AssistantPanel::poll(const PanelContext& context) {
         break;
       }
       case Event::Retry:
-        waitingText_ = F("The service is busy ({0}). Trying again in {1} s...", {std::to_string(event.promptTokens), std::to_string(event.completionTokens)});
+        waitingText_ = event.completionTokens > 0 ? F("The service is busy ({0}). Trying again in {1} s...", {std::to_string(event.promptTokens), std::to_string(event.completionTokens)})
+                                                  : F("The service was busy ({0}). Trying again now...", {std::to_string(event.promptTokens)});
         requestStartedAt_ = ImGui::GetTime();
         break;
       case Event::Done: finishAnswer(context, event.text == "cancelled" ? "stopped" : ""); break;

@@ -3,7 +3,9 @@
 #include "assistant/provider.h"
 
 #include <chrono>
+#include <cmath>
 #include <cstdlib>
+#include <cstring>
 #include <fstream>
 
 #include "assistant/secrets.h"
@@ -204,7 +206,45 @@ std::string describeFailure(const HttpResult& result) {
   }
   return message;
 }
+
+// "28s", "28.9s", "250ms": a number and its unit; 0 when it is not one.
+double secondsIn(const std::string& text, size_t from) {
+  char* end = nullptr;
+  double value = std::strtod(text.c_str() + from, &end);
+  if (end == text.c_str() + from || value < 0) return 0;
+  return std::strncmp(end, "ms", 2) == 0 ? value / 1000.0 : value;
+}
 }  // namespace
+
+double retryDelaySeconds(const HttpResult& result) {
+  if (result.retryAfterSeconds > 0) return result.retryAfterSeconds;
+  json body = json::parse(result.errorBody, nullptr, false);
+  if (body.is_array() && !body.empty()) body = body[0];
+  if (body.is_object() && body.contains("error") && body["error"].is_object() && body["error"].contains("details") && body["error"]["details"].is_array())
+    for (auto& detail : body["error"]["details"])
+      if (detail.is_object() && detail.contains("retryDelay") && detail["retryDelay"].is_string()) {
+        double seconds = secondsIn(detail["retryDelay"].get<std::string>(), 0);
+        if (seconds > 0) return seconds;
+      }
+  for (const char* phrase : {"retry in ", "try again in "}) {
+    size_t at = result.errorBody.find(phrase);
+    if (at != std::string::npos) {
+      double seconds = secondsIn(result.errorBody, at + std::strlen(phrase));
+      if (seconds > 0) return seconds;
+    }
+  }
+  return 0;
+}
+
+double pauseBeforeRetry(const HttpResult& result, int attempt) {
+  static const double pauses[] = {2, 5, 10};
+  static const double longestPause = 120;
+  bool busy = result.status == 429 || result.status == 500 || result.status == 502 || result.status == 503 || result.status == 504;
+  if (!busy || attempt < 0 || attempt >= 3) return -1;
+  double asked = retryDelaySeconds(result);
+  if (asked > longestPause) return -1;
+  return asked > 0 ? asked + 1 : pauses[attempt];  // a second more than asked: the clocks differ
+}
 
 ChatRequest::~ChatRequest() {
   cancel_ = true;
@@ -243,9 +283,9 @@ void ChatRequest::run(Provider provider, std::vector<Message> messages, nlohmann
   bool anthropic = provider.dialect == "anthropic";
   bool withTools = tools.is_array() && !tools.empty();
   request.body = chatRequestBody(provider, messages, withTools ? &tools : nullptr);
-  // A busy service (429, 500, 502, 503, 504) before it has said anything is tried again, twice, after a pause: "This model is
-  // currently experiencing high demand" is usually over in seconds.
-  static const int pauses[] = {2, 5};
+  // A busy service (429, 500, 502, 503, 504) before it has said anything is tried again, up to three times, after a pause: "This
+  // model is currently experiencing high demand" is usually over in seconds. When the service says how long to wait (Retry-After,
+  // Google's retryDelay) that is the pause (pauseBeforeRetry).
   HttpResult result;
   bool done = false;
   for (int attempt = 0;; attempt++) {
@@ -278,11 +318,12 @@ void ChatRequest::run(Provider provider, std::vector<Message> messages, nlohmann
       attempt--;
       continue;
     }
-    bool busy = result.status == 429 || result.status == 500 || result.status == 502 || result.status == 503 || result.status == 504;
-    if (cancel_ || delivered || !busy || attempt >= 2) break;
-    push({Event::Retry, "", result.status, pauses[attempt]});
-    for (int waited = 0; waited < pauses[attempt] * 10 && !cancel_; waited++) std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    double pause = delivered || cancel_ ? -1 : pauseBeforeRetry(result, attempt);
+    if (pause < 0) break;
+    push({Event::Retry, "", result.status, (int)std::ceil(pause)});
+    for (int waited = 0; waited < pause * 10 && !cancel_; waited++) std::this_thread::sleep_for(std::chrono::milliseconds(100));
     if (cancel_) break;
+    push({Event::Retry, "", result.status, 0});  // the pause is over: the panel says the new try is under way
   }
   if (cancel_) {
     push({Event::Done, "cancelled", 0, 0});
@@ -307,6 +348,11 @@ std::vector<std::string> listModels(const Provider& provider, std::string* error
   std::string body;
   std::atomic<bool> never{false};
   HttpResult result = httpRequest(request, [&](const char* bytes, size_t size) { return body.append(bytes, size), body.size() < (1 << 20); }, never);
+  if (double pause = pauseBeforeRetry(result, 0); pause >= 0 && pause <= 15) {  // busy: once more, if the wait is short
+    std::this_thread::sleep_for(std::chrono::milliseconds((int)(pause * 1000)));
+    body.clear();
+    result = httpRequest(request, [&](const char* bytes, size_t size) { return body.append(bytes, size), body.size() < (1 << 20); }, never);
+  }
   if (result.status / 100 != 2 || !result.error.empty()) {
     if (error) *error = describeFailure(result);
     return ids;

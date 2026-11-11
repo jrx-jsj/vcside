@@ -39,6 +39,14 @@ struct Provider {
   bool isLocal() const;                           // loopback host
 };
 
+// How long a busy service asked to wait before the next try, in seconds: its Retry-After header, Google's "retryDelay": "28s"
+// in the error details, or the words "Please retry in 28.9s" / "try again in 250ms" (OpenAI). 0 when it did not say.
+double retryDelaySeconds(const HttpResult& result);
+// The pause before try number attempt+2 of a request that failed with `result`: -1 when it is not worth trying again (not a
+// busy service, already three retries, or a wait longer than two minutes, as for a daily quota), else seconds: what the service asked
+// plus a second, or 2, 5 and 10 s when it did not say.
+double pauseBeforeRetry(const HttpResult& result, int attempt);
+
 // What a worker reports to the UI thread.
 struct Event {
   enum Kind { Text, Usage, Error, Done, Length, Retry, ToolCall, NoNativeTools } kind = Text;  // ToolCall: the model called a tool through the API (text = its name, arguments = the JSON); NoNativeTools: the service refused the tool definitions and the request went again without them  // Retry: the service was busy; promptTokens = the HTTP status, completionTokens = seconds until the next try  // Length: the answer stopped because the window was full

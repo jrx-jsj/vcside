@@ -33,6 +33,7 @@ struct HttpResult {
   int status = 0;       // 0: no response
   std::string error;    // transport problem, or a refusal (https, bad URL)
   std::string errorBody;  // the body of a non-2xx answer, up to 4 KB
+  double retryAfterSeconds = 0;  // the Retry-After header of the answer, in seconds (0: none)
 };
 
 // Sends the request and calls onBody for each piece of the response body (chunked
