@@ -2,6 +2,8 @@
 // Copyright (C) 2026 Juan Sánchez Jurado
 #include "assistant/tools.h"
 
+#include "assistant/tool_schema.h"
+
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
@@ -430,26 +432,40 @@ ToolResult musicDescribe(const ToolEnv& env, const json& args) {
 // An object that names a tool, from the shapes models write.
 bool callFromJson(const json& value, ToolCall* call) {
   if (!value.is_object()) return false;
+  const json* body = &value;
+  // the native shape: {"type": "function", "function": {"name": ..., "arguments": ...}}
+  if (value.contains("function") && value["function"].is_object()) body = &value["function"];
   std::string name;
-  for (const char* key : {"tool", "name", "function"})
-    if (value.contains(key) && value[key].is_string()) {
-      name = value[key].get<std::string>();
+  for (const char* key : {"tool", "name", "function", "tool_name", "tool_call"})
+    if (body->contains(key) && (*body)[key].is_string()) {
+      name = (*body)[key].get<std::string>();
       break;
     }
   if (name.empty()) return false;
-  Tier tier;
-  if (!toolTier(name, &tier)) return false;
-  call->name = name;
+  std::string real = resolveToolName(name);
+  if (real.empty()) return false;
+  call->name = real;
   call->args = json::object();
-  for (const char* key : {"args", "arguments", "parameters", "input"})
-    if (value.contains(key)) {
-      if (value[key].is_object()) call->args = value[key];
-      else if (value[key].is_string()) {
-        json parsed = json::parse(value[key].get<std::string>(), nullptr, false);
+  static const char* nested[] = {"args", "arguments", "parameters", "input", "params"};
+  bool found = false;
+  for (const char* key : nested)
+    if (body->contains(key)) {
+      const json& item = (*body)[key];
+      if (item.is_object()) call->args = item;
+      else if (item.is_string()) {
+        json parsed = json::parse(item.get<std::string>(), nullptr, false);
         if (parsed.is_object()) call->args = parsed;
       }
+      found = true;
       break;
     }
+  if (!found) {  // flat: {"tool": "read_file", "path": "main.asm"}: everything beside the name is an argument
+    for (auto it = body->begin(); it != body->end(); ++it) {
+      const std::string& key = it.key();
+      if (key == "tool" || key == "name" || key == "function" || key == "tool_name" || key == "tool_call" || key == "type" || key == "id" || key == "call_id") continue;
+      call->args[key] = it.value();
+    }
+  }
   return true;
 }
 
@@ -486,6 +502,16 @@ bool toolTier(const std::string& name, Tier* tier) {
       return true;
     }
   return false;
+}
+
+std::string toolDescription(const std::string& name) {
+  for (auto& info : kTools)
+    if (name == info.name) {
+      std::string line = info.line;
+      size_t colon = line.find(" : ");
+      return colon == std::string::npos ? line : line.substr(colon + 3);
+    }
+  return "";
 }
 
 std::vector<std::string> toolNames(int profile) {
@@ -531,9 +557,8 @@ bool findToolCall(const std::string& answer, ToolCall* call, std::string* before
       std::string word, name;
       while (words >> word)
         if (word != "tool" && word != "json") name = word;
-      Tier tier;
-      if (value.is_object() && !name.empty() && toolTier(name, &tier)) {
-        call->name = name, call->args = value;
+      if (value.is_object() && !name.empty() && !resolveToolName(name).empty()) {
+        call->name = resolveToolName(name), call->args = value;
         if (before) *before = answer.substr(0, pos);
         return true;
       }
@@ -751,7 +776,23 @@ bool readProjectFile(const std::string& projectDir, const std::string& relative,
   return true;
 }
 
-ToolResult runTool(const ToolEnv& env, const ToolCall& call) {
+static ToolResult runChecked(const ToolEnv& env, const ToolCall& call);
+
+ToolResult runTool(const ToolEnv& env, const ToolCall& original) {
+  // what a model sent is repaired where that is unambiguous and refused, with the reason, where it is not
+  ToolCall call = original;
+  CallCheck check = repairCall(&call);
+  if (!check.ok) return fail(check.message);
+  ToolResult result = runChecked(env, call);
+  if (!check.notes.empty() && !result.error) {
+    std::string note = "(Note: ";
+    for (size_t i = 0; i < check.notes.size(); i++) note += (i ? "; " : "") + check.notes[i];
+    result.text = note + ")\n" + result.text;
+  }
+  return result;
+}
+
+static ToolResult runChecked(const ToolEnv& env, const ToolCall& call) {
   const std::string& name = call.name;
   if (name == "project_info") return ok((env.projectInfo.empty() ? std::string("no project open") : env.projectInfo) + "\n");
   if (name == "list_files") return listFiles(env, call.args);

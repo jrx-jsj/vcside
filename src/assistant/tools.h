@@ -57,6 +57,8 @@ struct ToolResult {
 // The names the model may use, with their tier. profile: 0 read only, 1 read + edit, 2 all.
 bool toolTier(const std::string& name, Tier* tier);
 std::vector<std::string> toolNames(int profile);
+// What a tool does, in a sentence (the text after the signature in its line).
+std::string toolDescription(const std::string& name);
 // The tool section of the system prompt: how to write a call, and each tool in one line.
 std::string toolPrompt(int profile);
 

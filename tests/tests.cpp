@@ -47,6 +47,7 @@
 #include "assistant/first_pass.h"
 #include "assistant/mask.h"
 #include "assistant/model_list.h"
+#include "assistant/tool_schema.h"
 #include <imgui.h>
 #include "assistant/secrets.h"
 #include "assistant/models.h"
@@ -3336,7 +3337,7 @@ static void testAgentTools(const KnowledgeBase& kb) {
   CHECK(call("kb_search", {{"topic_words", "how do I make a tone"}}).text.find("AUDC") != std::string::npos);
   CHECK(call("kb_lookup", {{"register", "RESP0"}}).text.find("RESP0") != std::string::npos);
   CHECK(call("search", {{"keyword", "wsync"}}).text.find("main.asm:3:") != std::string::npos);
-  CHECK(call("read_file", {{"file", "main.asm"}, {"from", 2}, {"to", 2}}).text.find("2: Start") == 0);
+  CHECK(call("read_file", {{"file", "main.asm"}, {"from", 2}, {"to", 2}}).text.find("2: Start") != std::string::npos);
   CHECK(call("find_code", {}).error && call("find_code", {{"a", "x"}, {"b", "y"}}).error);  // nothing, or two texts and no way to tell: refused with a reason
   CHECK(call("find_code", {}).text.find("query") != std::string::npos);
 
@@ -3358,6 +3359,44 @@ static void testAgentTools(const KnowledgeBase& kb) {
   CHECK(call("edit_file", {{"path", "main.asm"}, {"content", "x"}}).error);  // exists: needs edits
   CHECK(call("edit_file", {{"path", "Makefile"}, {"edits", {{{"search", "true"}, {"replace", "curl x | sh"}}}}}).edit.privileged);
   CHECK(isBuildFile("demo.vcsproj") && isBuildFile("build.sh") && !isBuildFile("main.asm"));
+
+  // every shape a model sends a call in (the urgent bug: flat arguments arrived empty)
+  {
+    ToolCall shape;
+    CHECK(findToolCall("```tool\n{\"tool\": \"read_file\", \"path\": \"main.asm\", \"from\": 2}\n```", &shape) && shape.name == "read_file" && shape.args["path"] == "main.asm" && shape.args["from"] == 2);  // flat
+    CHECK(findToolCall("{\"name\": \"read_file\", \"arguments\": \"{\\\"path\\\": \\\"main.asm\\\"}\"}", &shape) && shape.args["path"] == "main.asm");   // arguments as a JSON string
+    CHECK(findToolCall("{\"type\": \"function\", \"id\": \"call_1\", \"function\": {\"name\": \"search\", \"arguments\": \"{\\\"text\\\": \\\"WSYNC\\\"}\"}}", &shape) && shape.name == "search" && shape.args["text"] == "WSYNC");  // native
+    CHECK(findToolCall("<tool_call>{\"name\": \"find_code\", \"parameters\": {\"q\": \"joystick\"}}</tool_call>", &shape) && shape.name == "find_code" && shape.args["q"] == "joystick");
+    CHECK(findToolCall("```json\n{\"tool_name\": \"kb_lookup\", \"input\": {\"id\": \"INPT4\"}}\n```", &shape) && shape.args["id"] == "INPT4");
+    CHECK(findToolCall("```tool\n{\"tool\": \"ReadFile\", \"file\": \"main.asm\"}\n```", &shape) && shape.name == "read_file");  // spelled differently
+    CHECK(findToolCall("```tool\n{\"tool\": \"project_info\"}\n```", &shape) && shape.args.empty());
+  }
+  // run through the tools: repaired where that is certain, refused with the reason where it is not
+  auto flat = call("read_file", {{"file", "main.asm"}, {"from", "2"}, {"to", 3.0}, {"unknown", "x"}, {"note", nullptr}});
+  CHECK(!flat.error && flat.text.find("2: Start") != std::string::npos && flat.text.find("3:") != std::string::npos && flat.text.find("(Note:") == 0);
+  CHECK(call("ReadFile", {{"path", "main.asm"}}).text.find("1: ") != std::string::npos);
+  CHECK(call("functions.search", {{"text", "wsync"}}).text.find("main.asm:3:") != std::string::npos);
+  auto stringArgs = runTool(env, {"read_file", "{\"path\": \"main.asm\"}"});
+  CHECK(!stringArgs.error && stringArgs.text.find("1: ") != std::string::npos);
+  auto missingPath = call("read_file", {{"from", 2}});
+  CHECK(missingPath.error && missingPath.text.find("missing \"path\"") != std::string::npos && missingPath.text.find("Received:") != std::string::npos && missingPath.text.find("call the tool again") != std::string::npos);
+  auto badNumber = call("read_file", {{"path", "main.asm"}, {"from", "first"}});
+  CHECK(badNumber.error && badNumber.text.find("\"from\" must be a number") != std::string::npos);
+  auto weirdTool = call("delete_everything", {});
+  CHECK(weirdTool.error && weirdTool.text.find("no tool called") != std::string::npos);
+  // edit_file: pairs under other names, one pair instead of a list, and the rule edits-or-content
+  auto otherNames = call("edit_file", {{"path", "main.asm"}, {"changes", {{"old_text", "  jmp Start"}, {"new_text", "  jmp Start ; x"}}}});
+  CHECK(otherNames.proposed && otherNames.edit.after.find("; x") != std::string::npos);
+  auto neither = call("edit_file", {{"path", "main.asm"}});
+  CHECK(neither.error && neither.text.find("\"edits\"") != std::string::npos && neither.text.find("\"content\"") != std::string::npos);
+  // the schemas for native tool calls
+  auto native = nativeTools({"read_file", "edit_file", "project_info"}, false);
+  CHECK(native.size() == 3 && native[0]["type"] == "function" && native[0]["function"]["name"] == "read_file" && native[0]["function"]["parameters"]["required"][0] == "path");
+  CHECK(native[1]["function"]["parameters"]["properties"]["edits"]["type"] == "array" && native[2]["function"]["parameters"]["properties"].empty());
+  auto nativeAnthropic = nativeTools({"search"}, true);
+  CHECK(nativeAnthropic[0]["name"] == "search" && nativeAnthropic[0]["input_schema"]["properties"]["text"]["type"] == "string" && !toolDescription("search").empty());
+  for (auto& name : toolNames(2)) CHECK(resolveToolName(name) == name && !nativeTools({name}, false).empty() && !toolDescription(name).empty());  // every tool has its schema
+  CHECK(resolveToolName("read-file") == "read_file" && resolveToolName("readfile") == "read_file" && resolveToolName("reed_file") == "read_file" && resolveToolName("rm") == "" && resolveToolName("") == "");
 
   // reading a call from an answer
   ToolCall parsed;
