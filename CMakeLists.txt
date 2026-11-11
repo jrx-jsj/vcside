@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 cmake_minimum_required(VERSION 3.24)
-project(vcside VERSION 0.1.0 LANGUAGES C CXX)
+project(vcside VERSION 0.2.0 LANGUAGES C CXX)
 if(APPLE)
   # before SDL3 is fetched: enabled later, CMake cannot generate a build that also builds SDL3
   enable_language(OBJC OBJCXX)
