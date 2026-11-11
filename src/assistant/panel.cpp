@@ -250,6 +250,16 @@ void AssistantPanel::loadTab(int index) {
   chatLanguage_.clear();
   ChatTabState& tab = tabs_[index];
   chat_ = tab.chat;
+  // each chat keeps the service and model it was talking to: opening or switching to it selects them again (a new chat has none:
+  // it goes on with the ones of the chat before, which are still selected)
+  if (!chat_.provider.empty())
+    for (size_t i = 0; i < settings_.providers.size(); i++)
+      if (settings_.providers[i].name == chat_.provider) {
+        if (settings_.active != (int)i) settings_.active = (int)i, changed_ = true;
+        if (!chat_.model.empty() && !settings_.providers[i].builtin && settings_.providers[i].model != chat_.model) settings_.providers[i].model = chat_.model, changed_ = true;
+        else if (!chat_.model.empty() && settings_.providers[i].builtin && settings_.providers[i].model != chat_.model && catalogModel(chat_.model)) settings_.providers[i].model = chat_.model, changed_ = true;
+        break;
+      }
   selectingIndex_ = -1;
   streaming_.clear(), error_.clear(), lastRequest_.clear();
   promptTokens_ = completionTokens_ = droppedTurns_ = 0;
@@ -873,6 +883,7 @@ void AssistantPanel::embedCard() {
 void AssistantPanel::saveChat(const PanelContext& context) {
   if (context.projectDir.empty() || chat_.messages.empty()) return;
   try {
+    if (const Provider* active = settings_.provider()) chat_.provider = active->name, chat_.model = active->model;  // what it talks to now
     chatStore(context.projectDir).save(chat_);
     saveOpenTabs();
   } catch (const std::exception&) {  // a chat that cannot be saved must never end the program
