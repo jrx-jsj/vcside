@@ -33,6 +33,13 @@ std::string withoutComment(const std::string& line) {
 }
 }  // namespace
 
+bool asksForNewFile(const std::string& request) {
+  std::string text = lowered(request);
+  for (const char* word : {"new file", "nuevo archivo", "nuevo fichero", "nueva carpeta", "create a file", "crea un archivo", "crea un fichero", "crea el archivo", "crea el fichero", "create the file", "split", "separate file", "archivo aparte", "fichero aparte"})
+    if (text.find(word) != std::string::npos) return true;
+  return false;
+}
+
 std::string addedLines(const std::string& before, const std::string& after) {
   std::multiset<std::string> had;
   std::istringstream old(before);

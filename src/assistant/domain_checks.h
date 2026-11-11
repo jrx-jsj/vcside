@@ -14,6 +14,9 @@ namespace vcs::assistant {
 // The lines `after` has and `before` has not.
 std::string addedLines(const std::string& before, const std::string& after);
 
+// Did the user ask for a new file (or folder)?
+bool asksForNewFile(const std::string& request);
+
 // What is wrong with the change (empty if nothing the checks can tell): `request` is what the user asked, `before` and `after` the file.
 std::string proposalProblems(const std::string& request, const std::string& before, const std::string& after, const KnowledgeBase& kb,
                              const std::function<bool(const std::string& lowerCaseWord)>& inProject, bool batariBasic);

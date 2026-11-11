@@ -994,6 +994,18 @@ void AssistantPanel::finishAnswer(const PanelContext& context, const std::string
       std::string why;
       if (!block.code || parseEditBlock(block.language, block.text, &edit, &why) != EditParse::Edit) continue;
       ToolResult found = runTool(toolEnv(context), {"edit_file", editArguments(edit)});
+      if (found.proposed && found.edit.created && !context.fileRelative.empty()) {  // a new file nobody asked for: the code belongs in the file the user works on
+        std::string request;
+        for (size_t i = chat_.messages.size(); i-- > 0;)
+          if (chat_.messages[i].role == "user" && chat_.messages[i].kind.empty()) {
+            request = chat_.messages[i].english.empty() ? chat_.messages[i].content : chat_.messages[i].english;
+            break;
+          }
+        if (!asksForNewFile(request)) {
+          problems += "- " + edit.path + " would be a new file, and the user did not ask for one. The code belongs in " + context.fileRelative + ": write the block for that file, with a SEARCH text copied exactly from it.\n";
+          continue;
+        }
+      }
       if (found.proposed) {  // it fits the file: but is it right? (the same checks as for edit_file)
         if (context.kb && !found.edit.created) {
           std::string request;
@@ -1015,7 +1027,8 @@ void AssistantPanel::finishAnswer(const PanelContext& context, const std::string
         every = every && !section.search.empty();
       }
       alreadyThere = every && runTool(toolEnv(context), {"edit_file", editArguments(reversed)}).proposed;
-      if (!alreadyThere) problems += "- " + edit.path + ": " + (found.text.rfind("Error: ", 0) == 0 ? found.text.substr(7) : found.text) + "\n";
+      if (!alreadyThere) problems += "- " + edit.path + ": " + (found.text.rfind("Error: ", 0) == 0 ? found.text.substr(7) : found.text) +
+                              (found.text.find("no such file") != std::string::npos && !context.fileRelative.empty() ? " (the file the user works on is " + context.fileRelative + ")" : std::string()) + "\n";
     }
     if (!problems.empty()) {
       blockRetries_++;
@@ -1226,10 +1239,7 @@ void AssistantPanel::handleToolCall(const PanelContext& context, const ToolCall&
         request = chat_.messages[i].english.empty() ? chat_.messages[i].content : chat_.messages[i].english;
         break;
       }
-    for (auto& c : request) c = (char)std::tolower((unsigned char)c);
-    bool newFileAsked = false;
-    for (const char* word : {"new file", "nuevo archivo", "nuevo fichero", "nueva carpeta", "create a file", "crea un archivo", "crea un fichero", "crea el archivo", "crea el fichero", "create the file", "new .", "split"})
-      newFileAsked = newFileAsked || request.find(word) != std::string::npos;
+    bool newFileAsked = asksForNewFile(request);
     std::string absolute, problem;
     std::error_code exists;
     bool already = resolveInProject(context.projectDir, call.args["path"].get<std::string>(), &absolute, &problem) && std::filesystem::is_regular_file(absolute, exists);
