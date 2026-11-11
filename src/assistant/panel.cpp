@@ -1331,7 +1331,7 @@ void AssistantPanel::drawEditBlock(const PanelContext& context, const EditBlock&
   ImGui::TextUnformatted(F("Change to {0}", {block.path}).c_str());
   ImGui::PopStyleColor();
   const Placement* placed = finished ? &placementOf(context, key, block) : nullptr;
-  bool exact = placed && placed->ok;  // the real lines of the real file, with their numbers, instead of what the model wrote
+  bool exact = placed && placed->ok && block.sections.size() == 1;  // several sections far apart would show the lines between them  // the real lines of the real file, with their numbers, instead of what the model wrote
   size_t lines = 0;
   if (exact) lines = drawDiff(placed->edit.before, placed->edit.after, true);
   else
