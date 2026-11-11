@@ -6,6 +6,7 @@
 #include "assistant/tool_schema.h"
 
 #include <algorithm>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <regex>
@@ -51,7 +52,19 @@ const ToolInfo kTools[] = {
 
 constexpr size_t kMaxListEntries = 150;
 
-bool hidden(const std::string& name) { return name == ".git" || name == ".vcsai" || name == ".DS_Store"; }
+// Not looked into by the search, the listings or the guessing of a path: version control, VCSIDE's own folder, and what a build
+// or an editor leaves (listings, symbols, binaries): the old listings of a build match every name and bury the sources.
+bool hidden(const std::string& name) {
+  return name == ".git" || name == ".vcsai" || name == ".DS_Store" || name == ".claude" || name == "bin" || name == "obj" || name == "out" || name == "dist" || name == "node_modules";
+}
+
+bool buildOutputFile(const std::string& name) {
+  std::string lowered;
+  for (char c : name) lowered += (char)std::tolower((unsigned char)c);
+  for (const char* extension : {".lst", ".sym", ".map", ".o", ".a", ".elf", ".bin", ".rom", ".pro"})
+    if (lowered.size() > strlen(extension) && lowered.compare(lowered.size() - strlen(extension), strlen(extension), extension) == 0) return true;
+  return false;
+}
 
 std::string lower(std::string text) {
   std::transform(text.begin(), text.end(), text.begin(), [](unsigned char c) { return (char)std::tolower(c); });
@@ -225,7 +238,7 @@ ToolResult searchProject(const ToolEnv& env, const json& args) {
       if (it->is_directory(ec)) it.disable_recursion_pending();
       continue;
     }
-    if (!it->is_regular_file(ec) || isSecretFile(name) || !isTextFileName(name) || it->file_size(ec) > (1 << 20)) continue;
+    if (!it->is_regular_file(ec) || isSecretFile(name) || buildOutputFile(name) || !isTextFileName(name) || it->file_size(ec) > (1 << 20)) continue;
     std::string text;
     if (!readText(it->path().string(), &text) || looksBinary(text)) continue;
     auto lines = splitLines(text);

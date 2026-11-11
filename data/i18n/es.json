@@ -1108,7 +1108,7 @@
     "Window title": "Título de las ventanas",
     "With the kernel option background the table of colours goes to the background: the playfield keeps one colour.": "Con la opción de kernel background, la tabla de colores va al fondo: el playfield se queda con un solo color.",
     "Word": "Palabra",
-    "Work in English: translate my questions and the answers (code and names are not translated)": "Trabajar en inglés: traducir mis preguntas y las respuestas (el código y los nombres no se traducen)",
+    "Work in English: translate my questions and the answers (code and names are not translated). Only for small and local models": "Trabajar en inglés: traducir mis preguntas y las respuestas (el código y los nombres no se traducen). Solo con modelos pequeños y locales",
     "Worst note {0} cents, average {1}": "Peor nota {0} cents, media {1}",
     "write": "escritura",
     "Writes {0}. Its settings (main source, ROM, format...) can be changed afterwards in Build > Project settings...": "Escribe {0}. Sus ajustes (fuente principal, ROM, formato...) se pueden cambiar después en Compilar > Ajustes del proyecto...",

@@ -3669,6 +3669,16 @@ static void testNativeToolCalls() {
   provider.dialect = "anthropic";
   auto anthropicTools = nativeTools({"read_file"}, true);
   CHECK(nlohmann::json::parse(chatRequestBody(provider, {{"user", "hi"}}, &anthropicTools))["tools"][0]["input_schema"]["required"][0] == "path");
+  // Claude models get cache breakpoints (system text, last message); other models and services get none
+  Provider claude;
+  claude.dialect = "openai", claude.baseUrl = "https://openrouter.ai/api/v1", claude.model = "anthropic/claude-sonnet-5.5";
+  auto cached = nlohmann::json::parse(chatRequestBody(claude, {{"system", "rules"}, {"user", "one"}, {"assistant", "two"}, {"user", "three"}}));
+  CHECK(cached["messages"][0]["content"][0]["cache_control"]["type"] == "ephemeral" && cached["messages"][3]["content"][0]["text"] == "three" && cached["messages"][3]["content"][0].contains("cache_control") && cached["messages"][1]["content"].is_string());
+  claude.model = "openai/gpt-5";
+  CHECK(chatRequestBody(claude, {{"system", "rules"}, {"user", "three"}}).find("cache_control") == std::string::npos);
+  claude.dialect = "anthropic", claude.baseUrl = "https://api.anthropic.com/v1", claude.model = "claude-sonnet-5-5";
+  auto direct = nlohmann::json::parse(chatRequestBody(claude, {{"system", "rules"}, {"user", "one"}, {"assistant", "two"}, {"user", "three"}}));
+  CHECK(direct["system"][0]["cache_control"]["type"] == "ephemeral" && direct["messages"].back()["content"].back().contains("cache_control"));
 
   // OpenAI shape: a name, then the arguments in pieces, then the end
   {

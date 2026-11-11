@@ -57,8 +57,42 @@ std::string anthropicRequestBody(const Provider& provider, const std::vector<Mes
   return body.dump(-1, ' ', false, json::error_handler_t::replace);
 }
 
+namespace {
+// Prompt caching for Claude models: every request of an agent run repeats the system prompt, the attached files and all the
+// tool results before it, and a service charges a fraction of the price for text it has just seen. A breakpoint on the system
+// text and one on the last message make the whole earlier conversation a cache hit on the next request.
+void markCacheBreak(json& content) {
+  if (content.is_string()) {
+    std::string text = content.get<std::string>();
+    content = json::array({json{{"type", "text"}, {"text", text}, {"cache_control", {{"type", "ephemeral"}}}}});
+  } else if (content.is_array() && !content.empty() && content.back().is_object()) {
+    content.back()["cache_control"] = {{"type", "ephemeral"}};
+  }
+}
+
+std::string withCacheBreaks(const std::string& body, bool anthropicDialect) {
+  json request = json::parse(body, nullptr, false);
+  if (!request.is_object() || !request.contains("messages") || !request["messages"].is_array() || request["messages"].empty()) return body;
+  json& messages = request["messages"];
+  if (anthropicDialect) {
+    if (request.contains("system")) markCacheBreak(request["system"]);
+  } else if (messages[0].is_object() && messages[0].value("role", std::string()) == "system" && messages[0].contains("content")) {
+    markCacheBreak(messages[0]["content"]);
+  }
+  json& last = messages.back();
+  if (last.is_object() && last.contains("content") && !last["content"].is_null() && messages.size() > 1) markCacheBreak(last["content"]);
+  return request.dump();
+}
+
+bool cachesClaude(const Provider& provider) {
+  if (provider.dialect == "anthropic") return true;
+  return provider.baseUrl.find("openrouter.ai") != std::string::npos && provider.model.rfind("anthropic/", 0) == 0;
+}
+}  // namespace
+
 std::string chatRequestBody(const Provider& provider, const std::vector<Message>& messages, const nlohmann::json* tools) {
-  return provider.dialect == "anthropic" ? anthropicRequestBody(provider, messages, 4096, tools) : openAiRequestBody(provider, messages, tools);
+  std::string body = provider.dialect == "anthropic" ? anthropicRequestBody(provider, messages, 4096, tools) : openAiRequestBody(provider, messages, tools);
+  return cachesClaude(provider) ? withCacheBreaks(body, provider.dialect == "anthropic") : body;
 }
 
 void ToolCallAssembler::addOpenAi(const json& toolCalls) {

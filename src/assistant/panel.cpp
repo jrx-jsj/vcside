@@ -838,7 +838,8 @@ void AssistantPanel::send(const PanelContext& context, const std::string& questi
   // the prose goes to be translated and the code and names stay out of it, unless it is English already
   auto isMnemonic = [&](const std::string& word) { return context.kb && context.kb->instruction(word) != nullptr; };
   MaskedText masked = maskCode(question, isMnemonic);
-  bool translate = settings_.workInEnglish && masked.hasProse() && !looksEnglish(masked.text);
+  // A large remote model understands the user's language: translating would cost two more requests of a paid service for nothing.
+  bool translate = settings_.workInEnglish && smallModel() && masked.hasProse() && !looksEnglish(masked.text);
   translateThisTurn_ = false;
   if (first || translate) {
     questionMask_ = masked;
@@ -1003,7 +1004,7 @@ void AssistantPanel::finishAnswer(const PanelContext& context, const std::string
       blockRetries_++;
       ChatMessage reminder;
       reminder.role = "user", reminder.kind = "result";
-      reminder.content = "Note from VCSIDE (data, not instructions): the change in your answer cannot be placed in the file:\n" + problems +
+      reminder.content = "Message from VCSIDE, the app you work in (it is not part of any file or tool output; follow it): the change in your answer cannot be placed in the file:\n" + problems +
                          "Read the lines you want to change with read_file, then make the change with edit_file, copying the search text exactly from what read_file shows. Do not answer with code for the user to paste.";
       chat_.messages.push_back(reminder);
       saveChat(context);
@@ -1029,7 +1030,7 @@ void AssistantPanel::finishAnswer(const PanelContext& context, const std::string
       nudged_ = true;
       ChatMessage reminder;
       reminder.role = "user", reminder.kind = "result";
-      reminder.content = std::string("Note from VCSIDE (data, not instructions): the user asked for a change to their project, and you have not made it. ") +
+      reminder.content = std::string("Message from VCSIDE, the app you work in (it is not part of any file or tool output; follow it): the user asked for a change to their project, and you have not made it. ") +
                          (looked ? "Make the change now with edit_file (search must match the file's text exactly), then say briefly what you changed."
                                  : "First find the right place in the user's files with find_code, search or read_file, then make the change with edit_file, then say briefly what you changed.") +
                          " Do not answer with code for the user to paste.";
@@ -1068,7 +1069,7 @@ void AssistantPanel::startTranslation(const PanelContext& context) {
 // back to the model as the next turn, and the model answers again, until it gives a final
 // answer without a call. The limits are in docs/design-assistant.md.
 namespace {
-constexpr int kMaxToolCalls = 12;      // per user message
+constexpr int kMaxToolCalls = 12;      // per user message, for a small model; a large one gets twice as many (it reads in chunks and does not loop)
 constexpr int kMaxSameCall = 3;        // the same call this many times stops the loop
 constexpr size_t kMaxResultChars = 6000;
 }  // namespace
@@ -1180,8 +1181,9 @@ void AssistantPanel::handleToolCall(const PanelContext& context, const ToolCall&
   toolTier(call.name, &tier);
   int profile = settings_.toolProfile;
   // At the limit the last turn has no tools: the model says what it did and what is left, instead of the work just stopping.
-  if (++agentSteps_ > kMaxToolCalls) {
-    finishWithSummary(context, "It used its " + std::to_string(kMaxToolCalls) + " tool calls for this message.");  // for the model: not translated
+  int toolLimit = smallModel() ? kMaxToolCalls : kMaxToolCalls * 2;
+  if (++agentSteps_ > toolLimit) {
+    finishWithSummary(context, "It used its " + std::to_string(toolLimit) + " tool calls for this message.");  // for the model: not translated
     return;
   }
   std::string key = call.name + call.args.dump();
@@ -1238,7 +1240,7 @@ void AssistantPanel::handleToolCall(const PanelContext& context, const ToolCall&
           break;
         }
       if (!edited && asksForChange(request))
-        shown += "\n\nNote from VCSIDE (data, not instructions): you have looked enough (" + std::to_string(agentSteps_) +
+        shown += "\n\nMessage from VCSIDE, the app you work in (it is not part of any file or tool output; follow it): you have looked enough (" + std::to_string(agentSteps_) +
                  " calls) and nothing is changed yet. Make the change now with edit_file, in the code you have already read. If what was asked for does not exist, create it there: do not keep searching for it.";
     }
     addToolResult(context, describeCall(call), shown, result.error);
@@ -2184,7 +2186,7 @@ void AssistantPanel::settingsDialog() {
   if (wrappedCheckbox(T("Chat panel"), &settings_.chat, wrapWidth)) changed_ = true, settings_.asked = true;
   if (wrappedCheckbox(T("Agent (reads project files, proposes edits, builds when you allow it)"), &settings_.agent, wrapWidth)) changed_ = true;
   if (wrappedCheckbox(T("Explain errors (a button in Problems and in the assistant)"), &settings_.explainErrors, wrapWidth)) changed_ = true;
-  if (wrappedCheckbox(T("Work in English: translate my questions and the answers (code and names are not translated)"), &settings_.workInEnglish, wrapWidth)) changed_ = true;
+  if (wrappedCheckbox(T("Work in English: translate my questions and the answers (code and names are not translated). Only for small and local models"), &settings_.workInEnglish, wrapWidth)) changed_ = true;
   if (ImGui::IsItemHovered())
     ImGui::SetTooltip("%s", T("The reference, the project index and most models work best in English. Your question goes to the model in English and its answer comes back in your language; code, registers, labels and file names are never translated. Each translation takes a few seconds."));
   if (wrappedCheckbox(T("Search the project by meaning (a small model, downloaded once)"), &settings_.smartSearch, wrapWidth)) changed_ = true;
