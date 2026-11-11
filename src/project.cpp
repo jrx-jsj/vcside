@@ -27,6 +27,7 @@ const char* languageId(Language language) {
     case Language::Dasm: return "dasm";
     case Language::BatariBasic: return "batari-basic";
     case Language::ElfC: return "elf-c";
+    case Language::AceC: return "ace-c";
     default: return "unknown";
   }
 }
@@ -34,6 +35,7 @@ Language languageFromId(const std::string& id) {
   if (id == "dasm") return Language::Dasm;
   if (id == "batari-basic") return Language::BatariBasic;
   if (id == "elf-c") return Language::ElfC;
+  if (id == "ace-c") return Language::AceC;
   return Language::Unknown;
 }
 const char* illegalId(IllegalOpcodes policy) {
@@ -189,7 +191,7 @@ std::vector<std::string> Project::rasArgs(Toolchain& toolchain) const {
 
 std::vector<std::string> Project::buildTools(Toolchain& toolchain) const {
   if (!buildCommand.empty()) {
-    if (language != Language::ElfC) return {};
+    if (!isC(language)) return {};
     std::vector<std::string> tools = {"arm-gcc"};
     auto words = splitCommand(buildCommand);
     if (!words.empty() && fs::path(words[0]).stem().string().find("make") != std::string::npos) tools.push_back("make");
@@ -287,7 +289,8 @@ std::vector<std::string> Project::buildArgs(Toolchain& toolchain, std::string* e
 #endif
     }
     case Language::ElfC:
-      if (error) *error = T("ELF-VCS projects build with their Makefile: set \"build_command\" (e.g. \"make\") in the project.");
+    case Language::AceC:
+      if (error) *error = T("C projects build with their Makefile: set \"build_command\" (e.g. \"make\") in the project.");
       return {};
     default:
       if (error) *error = T("Unknown project language.");
@@ -372,7 +375,7 @@ bool Project::detect(const std::string& dirIn, Project* result) {
 
   if (command.empty()) {
     // no build of its own: VCSIDE builds it with DASM or batari Basic (C needs a Makefile)
-    if (found.language == Language::ElfC || found.main.empty()) return false;
+    if (isC(found.language) || found.main.empty()) return false;
     found.format = "AUTO";  // the emulators tell the format from the ROM
     if (found.language == Language::Dasm) {
       found.output = "build/" + fs::path(found.main).stem().string() + ".bin";
@@ -398,7 +401,10 @@ bool Project::detect(const std::string& dirIn, Project* result) {
     found.output = romName;
     break;
   }
-  if (fs::path(found.output).extension() == ".ace") found.format = "ACE", found.emulator = "gopher2600";  // only Gopher2600 runs ACE
+  if (fs::path(found.output).extension() == ".ace") {  // only Gopher2600 runs ACE
+    found.format = "ACE", found.emulator = "gopher2600";
+    if (found.language == Language::ElfC) found.language = Language::AceC;
+  }
   if (found.output == Project().output) found.output = fs::path(found.main).stem().string() + ".bin";
   *result = found;
   return true;
@@ -412,7 +418,7 @@ const std::vector<std::string>& tvStandardIds() {
 std::string tvLabel(const std::string& tv) { return tv == "AUTO" ? std::string(T("Multiple (in the code)")) : tv; }
 
 std::vector<std::string> tvStandardsFor(Language language) {
-  if (language == Language::BatariBasic || language == Language::ElfC) return {"NTSC", "PAL", "PAL60"};
+  if (language == Language::BatariBasic || isC(language)) return {"NTSC", "PAL", "PAL60"};
   std::vector<std::string> result;
   for (auto& standard : tvStandardIds())
     if (standard != "AUTO") result.push_back(standard);
@@ -473,7 +479,7 @@ static void replaceAll(std::string& text, const std::string& search, const std::
 std::vector<std::pair<std::string, const char*>> Project::examples(Language language) {
   if (language == Language::Dasm) return {{"animation", N_("Example: an animated sprite")}, {"dpcplus", N_("Example: music on a DPC+ cartridge")},
             {"cdfj", N_("Example: C and music on a CDFJ cartridge")}};
-  if (language == Language::ElfC) return {{"animation", N_("Example: an animated sprite")}};
+  if (language == Language::ElfC || language == Language::AceC) return {{"animation", N_("Example: an animated sprite")}};
   return {};
 }
 
@@ -624,15 +630,20 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
       if (entry.path().extension() == ".vcsmusic" && !fs::exists(fs::path(newProject.dir) / entry.path().filename()))
         fs::copy_file(entry.path(), fs::path(newProject.dir) / entry.path().filename(), errorCode);
     writeMusicIncludes(newProject.dir, tvStandard);
-  } else if (projectLanguage == Language::ElfC) {
+  } else if (isC(projectLanguage)) {
+    bool ace = projectLanguage == Language::AceC;
     if (projName.find_first_of(" \t") != std::string::npos) {
-      if (error) *error = T("ELF projects build with make, which does not take spaces in file names: choose a name without spaces.");
+      if (error) *error = T("C projects build with make, which does not take spaces in file names: choose a name without spaces.");
       return false;
     }
-    // data/templates/elf, copied whole, with an example's files over it; {{NAME}} in the
-    // Makefile and main.c
-    fs::path templateDir = fs::path(dataDir()) / "templates" / "elf";
-    fs::path exampleDir = fs::path(dataDir()) / "templates" / ("elf-" + example);
+    // data/templates/elf (or ace), copied whole, with an example's files over it; {{NAME}}
+    // in the Makefile and the sources. ACE: the header's 16-character name and the visible
+    // lines (the frame's, less the 63 of the overblank program).
+    std::string templateName = ace ? "ace" : "elf";
+    std::string aceName = (projName + std::string(16, ' ')).substr(0, 16);
+    std::string visibleLines = std::to_string((tvIs50Hz(tvStandard) ? 312 : 262) - 63);
+    fs::path templateDir = fs::path(dataDir()) / "templates" / templateName;
+    fs::path exampleDir = fs::path(dataDir()) / "templates" / (templateName + "-" + example);
     if (!fs::exists(templateDir / "Makefile") || (!example.empty() && !fs::exists(exampleDir / "src" / "main.c"))) {
       if (error) *error = F("Template not found in {0}", {(example.empty() ? templateDir : exampleDir).string()});
       return false;
@@ -647,13 +658,20 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
         fs::create_directories(destination.parent_path(), errorCode);
         std::string text = readFile(entry.path().string());
         replaceAll(text, "{{NAME}}", projName);
+        replaceAll(text, "{{ACE_NAME}}", aceName);
+        replaceAll(text, "{{VISIBLE_LINES}}", visibleLines);
         std::ofstream(destination, std::ios::binary) << text;
       }
     writeGfxIncludes(fs::path(newProject.dir) / "src", true);
     writeMusicIncludes(fs::path(newProject.dir) / "src", tvStandard);
     newProject.main = "src/main.c";
     newProject.buildCommand = "make";
-    newProject.format = "ELF";
+    newProject.format = ace ? "ACE" : "ELF";
+    if (ace) {
+      newProject.output = "build/" + projName + ".ace";
+      newProject.emulator = "gopher2600";                         // the only one that runs ACE
+      newProject.emulatorOptions["gopher2600"]["armClock"] = "168";  // the STM32F407's MHz
+    }
   }
   if (!newProject.save(error)) return false;
   if (result) *result = newProject;

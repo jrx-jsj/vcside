@@ -1,6 +1,6 @@
 # ACE cartridges — design proposal
 
-Status: proposal (2026-11-10). Phase 1 (knowledge and running ACE files) is done, and phase 2 (the proof of concept, `tools/ace_poc`) except for real hardware. Sources are at the end and in [sources.md](sources.md#ace-cartridges-read-2026-11-10).
+Status: proposal (2026-11-10). Phases 1 (knowledge and running ACE files), 2 (the proof of concept, `tools/ace_poc`) and 3 (the template) are done, except for real hardware. Sources are at the end and in [sources.md](sources.md#ace-cartridges-read-2026-11-10).
 
 ## What ACE is
 
@@ -133,29 +133,47 @@ Two conditions found by trying:
 
 Still to do: a real PlusCart or UnoCart.
 
-## What an ACE project would look like in VCSIDE
+## The ACE template (`data/templates/ace`, CC0, phase 3)
 
-Language: **C for ARM**. `elf-c` already builds with a Makefile; ACE reuses that path with another template and `format: "ACE"`.
+Language **C for ACE** (`ace-c`), offered in *New project* next to C for ELF, with the same example (the animated sprite). It builds with its Makefile, like ELF; the project gets `format: "ACE"`, `build/<name>.ace`, Gopher2600 and its ARM clock at 168 MHz (the `armClock` option, Gopher2600's `hardware.arm7.clock`).
 
 ```
-data/templates/ace/          (CC0, written for VCSIDE)
-  Makefile                   cortex-m4, -mthumb, -mfpu=fpv4-sp-d16 -mfloat-abi=hard; link at 0, objcopy
-  ace.ld                     header first, code, constants; .data/.bss in SRAM after the argument block
-  src/header.S               the 40-byte ACE-UF00 header (size from the linker, entry with bit 0)
-  src/start.c                entry: reads the argument block, copies .data, clears .bss, calls main()
-  include/ace_bus.h          the bus registers taken from the argument block, read address / put byte / release
-  include/vcsLib.h           the same API as the ELF template ...
-  src/vcslib_ace.c           ... implemented on ace_bus (byte queue, overblank, joystick)
-  src/main.c                 the ELF template's rainbow and bar, unchanged
+data/templates/ace/
+  Makefile         cortex-m4, hard float, -O2 -gdwarf-4 -gstrict-dwarf, no C library; checks the entry
+  ace.ld           header and start code in the file (at 0x08020000); the program runs from SRAM
+  include/ace.h    the argument block, TIA and RIOT names, the bus library's API
+  src/start.S      the ACE-UF00 header and the start code
+  src/ace.c        the bus library and the overblank program
+  src/memory.c     memcpy and memset (the Arm toolchain may come without newlib)
+  src/main.c       the rainbow, the joystick bar and the music, as in the ELF template
+data/templates/ace-animation/src/   main.c and hero.vcsgfx: the animated sprite
 ```
 
-- **Position independence:** variables in SRAM have fixed addresses, which is fine. The trap is pointers to constants in flash, because the file can move. The PoC's offset trick works for a handful of tables but not for C in general. The choices are `-fpic -msingle-pic-base` with a GOT that `start.c` fixes up, or a linker check that rejects absolute flash pointers. This is to be chosen in phase 3.
-- **Build:** `make` writes `build/<name>.ace` and `build/ACE_debugging.elf`. The size comes from a linker symbol and the checksum stays 0, so no extra tool is needed.
-- **Errors:** the ELF Makefile's errors are parsed already (gcc, ld, the checks). Add a check that the header is 40 bytes and the entry is odd.
-- **Space report:** like ELF's, from `ACE_debugging.elf`'s program headers against the cart's limits (896 KB of file; SRAM and CCM free amounts to be measured).
-- **Run:** Gopher2600 only, with `-mapping ACE` and `hardware.arm7.clock = 168` through its portable-mode preferences (already supported). Stella is disabled for ACE projects, with the reason given, like the TV standards an emulator lacks.
-- **Debug:** breakpoints in C are not passed on today (same as ELF), but `ACE_debugging.elf` (linked at `0x08020000`, `-gdwarf-4`) gives Gopher2600's own source-level debugger.
-- **Knowledge base:** an `ACE` entry in `formats.json` (category `arm`, Gopher2600 `ACE`, no Stella id, detection by magic, the header and argument tables above), `.ace` recognised as a ROM in the project tree, and the credits in the editor help.
+**Position independence: the program runs from SRAM.** The firmware copies the file to flash at an address that depends on the cart and its free sectors, so code linked for one flash address cannot hold pointers to its own constants. The template links everything but the header and the start code at `0x20000100`, after the argument block, and the start code copies it there. C then works as usual (pointers to tables, switch tables, function pointers), with no GOT and no checks. The cost is SRAM: the code and constants count against the 96 KB buffer (a program larger than about 90 KB would need a different scheme, phase 4 can report it).
+
+**The start code** (`start.S`, position-independent assembly, the entry at offset 40):
+
+1. calls `reboot_into_cartridge` (word 2 of the argument block) first: the firmware serves its own menu banks from the SRAM buffer while the console reboots, so copying into SRAM must come after it;
+2. copies the image from the file (word 0, the file's address, plus the linker's `__image_offset`) to SRAM and clears `.bss`;
+3. calls `main()`. If it returns non-zero, it calls `emulate_firmware_cartridge` (word 3: back to the cart's menu) and returns its result to the firmware.
+
+The Makefile fails if the start code does not follow the 40-byte header, since the header's entry is an offset.
+
+**The bus library** (`ace.c`, our own; names `ace_*`, not vcsLib's): the 6507 fetches one byte per cycle from increasing addresses, so the library keeps the address of the next fetch and waits for it. When the 6507 puts that address on the bus, the ARM drives the byte; on a TIA, RIOT or RAM address it lets go of the data bus. An address counts once it reads the same twice in a row (the firmware does the same).
+
+- **Taking over the 6507** (`ace_start`): it may be anywhere after the reboot. Every cartridge read gets `$24`; `BIT $24` takes opcode, operand and a TIA read, so once the 6507 runs it, a cartridge read right after a non-cartridge one is an opcode fetch, and that one gets `JMP $1000`. The reset vector also leads to `$1000`.
+- **Instructions:** `ace_lda`, `ace_sta`, `ace_write` (LDA #, STA), `ace_wsync`, `ace_nops`, `ace_jmp` (once a line, or by itself near `$1F00`).
+- **Reading** (`ace_read`): `LDA` of the address, then `STA $1FF0`; during the write cycle the ARM samples the data bus until the address changes and keeps the sample before the last.
+- **Leaving** (`ace_leave`): `JMP ($FFFC)`, so the 6507 reads the reset vector, which the firmware's menu answers once `main()` has returned non-zero. In Gopher2600 the callbacks are stubs, and the program starts again.
+
+**The overblank program** (our own, 44 bytes at `$80`-`$AB` of the 6507's RAM): 63 lines with VSYNC on the first three. It plays a 4-bit sample per line to AUDV0 from `$E0`-`$FE` (low nibble, then high) and jumps back to `$1000`. The ARM is free for the game logic meanwhile. Its layout is the one the ELF loaders' program uses, so VCSIDE's C music player (`theme.music.h`: `music_level`, `music_nibbles`, `music_tia`, 63 overblank lines) is used unchanged; the kernel writes a sample at the start of each visible line and the 31 nibble bytes during the first lines.
+
+**Checked in Gopher2600 `07d8de5`** (macros with `SCREENSHOT`, `FRAMEINFO`, joystick commands, `-wav`): the template draws the rainbow and moves the bar, 312 lines in PAL and 262 in NTSC, stable, VSYNC of 3 lines. RESET leaves and the program starts again. The recording has 16 sample levels all through. The example's hero walks to both edges with the frame stable. The debugger lists the C files, 31 functions and their local variables.
+
+**DWARF:** Gopher2600 reads version 4 only and none of GCC's extensions. With `-O2`, GCC writes `DW_OP_GNU_entry_value` (`0xF3`) even with `-gdwarf-4`, and Gopher2600 then shows its "unsupported DWARF" notice; `-gstrict-dwarf` removes it.
+
+- **Debug:** breakpoints in C are not passed on (VCSIDE says so when running); Gopher2600's own debugger shows the source from `build/ACE_debugging.elf`.
+- **Space report:** not yet (phase 4); the Makefile prints the linker's memory use.
 
 ## Phased plan
 
@@ -165,9 +183,9 @@ data/templates/ace/          (CC0, written for VCSIDE)
    - `.ace` files are ROMs: cartridge icon, a Makefile that names one is detected as an ACE project (format ACE, Gopher2600), and the assistant treats them as binary.
    - A double click on any ROM in the project tree runs it with the project's emulator and options. The format comes from its header (`romFormat`: ACE), from the project for its own ROM, or AUTO for the rest. An ACE ROM goes to Gopher2600 even in a Stella project, with a note.
 2. **Finish the proof of concept — done 2026-11-10, except real hardware.** The picture checked with a Gopher2600 macro. The debugger reads `ACE_debugging.elf` (DWARF 4, linked at `0x08020000`). Wolf3D's failure explained (Gopher2600's SRAM for big files and an unmapped flash register). The UnoCart's data layout handled by the firmware's pointers. Missing: running it on a real PlusCart or UnoCart.
-3. **Template.** Build `data/templates/ace` as above, choosing how to handle position independence. Port the animated sprite example and the music export's C player to it.
+3. **Template — done 2026-11-11, except real hardware.** `data/templates/ace` and the `ace-animation` example, as above: the program runs from SRAM, its own bus library and overblank program, the music player unchanged. Language "C for ACE" in *New project*, Gopher2600 at 168 MHz, tests that build both.
 4. **Space report** for ACE, and the cart choice (UnoCart / PlusCart) in project settings.
-5. **Shared C.** Write vcsLib on ACE, so an ELF project can add an ACE target (`make ace`) without changing its game.
+5. **Shared C.** Write vcsLib on top of the bus library, so an ELF project can add an ACE target (`make ace`) without changing its game.
 6. **Hardware.** Send the file to the PlusCart, once that route exists (pending idea in `design.md`).
 
 ## Open questions

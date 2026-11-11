@@ -2094,6 +2094,25 @@
      }
     },
     {
+     "id": "armClock",
+     "group": "ARM (DPC+, CDFJ, ELF)",
+     "label": "ARM clock (MHz)",
+     "description": "Speed of the emulated ARM: 70 (the default, Harmony and Melody), 168 for ACE files (the PlusCart's and UnoCart's STM32F407).",
+     "type": "int",
+     "sources": [
+      "gopher2600-0.56.1"
+     ],
+     "pref": "hardware.arm7.clock",
+     "min": 10,
+     "max": 500,
+     "i18n": {
+      "es": {
+       "label": "Reloj del ARM (MHz)",
+       "description": "Velocidad del ARM emulado: 70 (por defecto, Harmony y Melody), 168 para archivos ACE (el STM32F407 del PlusCart y el UnoCart)."
+      }
+     }
+    },
+    {
      "id": "tia.grp0.latevdel",
      "group": "TIA chip",
      "label": "GRP0: late VDEL",

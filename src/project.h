@@ -11,7 +11,9 @@
 
 namespace vcs {
 
-enum class Language { Dasm, BatariBasic, ElfC, Unknown };
+enum class Language { Dasm, BatariBasic, ElfC, AceC, Unknown };
+// C on a cartridge's ARM (ELF or ACE): built with the project's Makefile and arm-none-eabi-gcc.
+inline bool isC(Language language) { return language == Language::ElfC || language == Language::AceC; }
 enum class IllegalOpcodes { Allow, StableOnly, Warn, Forbid };
 
 struct Project {

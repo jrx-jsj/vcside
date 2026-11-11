@@ -991,6 +991,35 @@ static void testElfSpace() {
     CHECK(std::system(command.c_str()) == 0 && fs::exists(dir / "build" / "rainbow.bin"));
   }
   CHECK(!Project::create((dir / "none-elf").string(), "x", Language::ElfC, "NTSC", &project, &error, "nope") && !error.empty());
+  // the ACE template: Gopher2600 at the STM32F407's clock, the header's 16-character name,
+  // the visible lines for the TV standard, and a file that starts with the ACE header
+  fs::path aceDir = dir / "ace";
+  CHECK(Project::create(aceDir.string(), "beam", Language::AceC, "PAL", &project, &error));
+  CHECK(project.format == "ACE" && project.output == "build/beam.ace" && project.emulator == "gopher2600" && project.buildCommand == "make");
+  CHECK(project.emulatorOptions["gopher2600"]["armClock"] == "168" && languageFromId(languageId(Language::AceC)) == Language::AceC);
+  for (auto fileName : {"Makefile", "ace.ld", "include/ace.h", "src/ace.c", "src/start.S", "src/main.c", "src/theme.vcsmusic", "src/theme.music.h"})
+    CHECK(fs::exists(aceDir / fileName));
+  std::ifstream aceStart(aceDir / "src" / "start.S"), aceMain(aceDir / "src" / "main.c");
+  std::string aceStartText((std::istreambuf_iterator<char>(aceStart)), {}), aceMainText((std::istreambuf_iterator<char>(aceMain)), {});
+  CHECK(aceStartText.find("\"beam            \"") != std::string::npos && aceMainText.find("lines = 249;") != std::string::npos);
+  CHECK(tvStandardsFor(Language::AceC) == tvStandardsFor(Language::ElfC) && isC(Language::AceC) && !isC(Language::Dasm));
+  if (!gcc.empty() && !make.empty()) {
+    std::string command = "cd \"" + aceDir.string() + "\" && \"" + make + "\" > make.log 2>&1";
+    CHECK(std::system(command.c_str()) == 0 && romFormat((aceDir / "build" / "beam.ace").string()) == "ACE" && fs::exists(aceDir / "build" / "ACE_debugging.elf"));
+  }
+  // the ACE example: the animated sprite, its graphics' tables, NTSC lines
+  CHECK(Project::examples(Language::AceC).size() == 1 && Project::examples(Language::AceC)[0].first == "animation");
+  fs::path aceAnimationDir = dir / "ace-animation";
+  CHECK(Project::create(aceAnimationDir.string(), "walker", Language::AceC, "NTSC", &project, &error, "animation"));
+  for (auto fileName : {"src/hero.vcsgfx", "src/hero.gfx.h", "src/theme.music.h", "src/ace.c", "src/start.S"})
+    CHECK(fs::exists(aceAnimationDir / fileName));
+  std::ifstream aceAnimationMain(aceAnimationDir / "src" / "main.c");
+  std::string aceAnimationText((std::istreambuf_iterator<char>(aceAnimationMain)), {});
+  CHECK(aceAnimationText.find("hero.gfx.h") != std::string::npos && aceAnimationText.find("lines = 199;") != std::string::npos);
+  if (!gcc.empty() && !make.empty()) {
+    std::string command = "cd \"" + aceAnimationDir.string() + "\" && \"" + make + "\" > make.log 2>&1";
+    CHECK(std::system(command.c_str()) == 0 && romFormat((aceAnimationDir / "build" / "walker.ace").string()) == "ACE");
+  }
   if (!std::getenv("VCSIDE_TEST_KEEP")) fs::remove_all(dir, errorCode);
 }
 

@@ -102,6 +102,11 @@ Checked with Stella 7.0 and Gopher2600 v0.56.1, by reading their source code and
 - **Errors:** besides `file:line:`, messages without a line (the checks, `arm-none-eabi-gcc: error:`), those from ld (`main.c:(.text+0x1c): undefined reference`, with the function; overflowed region) and the make ones that do not repeat another error. Files that ld gives without a folder are looked up in the project.
 - **Space:** VCSIDE reads the ELF directly. From the ROM (relocatable): code, `.RamFunc`, constants, initialised and zeroed variables. If there is a `build/<rom>-chameleon.elf` newer than the ROM, its program headers give the exact flash (what is stored from `0x0800_0000`) and RAM (what lives at `0x2000_0000`); otherwise it is estimated from what the template's firmware of 2025-10-23 takes up, measured: about 10,100 bytes of flash and 6,000 of RAM (the Abadía estimate ends up 41 bytes from the real one). STM32G070RB limits: 128 KB and 36 KB.
 
+## ACE projects
+
+- **Template** (`data/templates/ace`, CC0) and the `ace-animation` example: C for the PlusCart's and UnoCart's Cortex-M4, run in Gopher2600 at 168 MHz. The program runs from SRAM (copied by the start code after the console reboots into the cartridge), with its own bus library and overblank program; the C music player is the ELF one. Design and measurements in [design-ace.md](design-ace.md#the-ace-template-datatemplatesace-cc0-phase-3).
+- **Debug:** `build/ACE_debugging.elf` (`-gdwarf-4 -gstrict-dwarf`) gives Gopher2600's source-level debugger; VCSIDE does not pass breakpoints.
+
 ## batari Basic projects
 
 - **Compiler:** batari Basic 1.9 in WebAssembly (GPL-2), run with wasmtime. It is looked up in *Settings → Tools* or at `<VCSIDE config>/tools/bb/2600basic.sh`. The script runs in the `.bas` folder (wasmtime only lets it see `.`), with the `bB` variable pointing to its folder and wasmtime's folder in front of the `PATH`, because an application opened from the Finder does not have the terminal's `PATH`.

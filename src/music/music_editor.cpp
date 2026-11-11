@@ -1290,6 +1290,7 @@ void MusicEditor::tuningPanel() {
     ImGui::TextWrapped("%s", T("Played as samples, every note is exact: the ARM keeps a 32-bit phase for each voice (direct digital synthesis), so nothing needs tuning."));
     ImGui::PushStyleColor(ImGuiCol_Text, theme::col(theme::Role::UiTextDim));
     ImGui::TextWrapped("%s", T("Playing 4-bit samples by writing AUDV with AUDC = 0 is an old 2600 technique; who did it first is still to be found. The mix goes through Chris Brenner's formula of the TIA's output, in Thomas Jentzsch's form. On the overblank's lines the samples are played by the ELF loader's own overblank program (United Carts of Atari firmware, Stella, Gopher2600), whose write to $2D becomes a write to AUDV0."));
+    ImGui::TextWrapped("%s", T("In ACE projects the template has its own overblank program, with the same layout ($E0-$FE, 63 lines). Running the overblank from the 6507's RAM while the ARM works comes from ZackAttack's Strong-ARM framework (StartOverblank in vcsLib)."));
     ImGui::PopStyleColor();
     ImGui::SetNextItemWidth(em(110));
     int transpose = song_.tuning.transpose;

@@ -161,7 +161,7 @@ void ProjectForm::render(TextEditor& text, ImFont* mono, const KnowledgeBase& kb
     row(T("Programming language"), nullptr);
     {
       std::string languageValue = languageId(project_.language);
-      combo("##lang", languageValue, {{"dasm", T("Assembler (DASM)")}, {"batari-basic", T("batari Basic")}, {"elf-c", T("C for ELF (vcsLib)")}}, languageValue);
+      combo("##lang", languageValue, {{"dasm", T("Assembler (DASM)")}, {"batari-basic", T("batari Basic")}, {"elf-c", T("C for ELF (vcsLib)")}, {"ace-c", T("C for ACE (PlusCart, UnoCart)")}}, languageValue);
       project_.language = languageFromId(languageValue);
     }
     row(T("Main source"), T("The file the build starts from, relative to the project."));
@@ -211,8 +211,8 @@ void ProjectForm::render(TextEditor& text, ImFont* mono, const KnowledgeBase& kb
 
     section(T("Build"));
     row(T("Build command"), T("A command of the project's own, run in its folder (make, sh build.sh...). With &&, | or ; the system's shell runs it. Empty: VCSIDE runs the tool."));
-    text1("##cmd", project_.buildCommand, project_.language == Language::BatariBasic ? T("(batari Basic)") : project_.language == Language::ElfC ? "make" : T("(DASM)"));
-    if (project_.buildCommand.empty() && project_.language != Language::ElfC) {
+    text1("##cmd", project_.buildCommand, project_.language == Language::BatariBasic ? T("(batari Basic)") : isC(project_.language) ? "make" : T("(DASM)"));
+    if (project_.buildCommand.empty() && !isC(project_.language)) {
       const char* id = project_.language == Language::BatariBasic ? "bb" : "dasm";
       Tool* tool = toolchain.get(id);
       std::string label = F("{0} of the project", {tool ? tool->name : id});

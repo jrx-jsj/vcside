@@ -33,9 +33,9 @@ using nlohmann::json;
 namespace vcs {
 
 static const int kLayoutVersion = 2;  // bump when a docked panel is added
-static const char* kLangIds[] = {"dasm", "batari-basic", "elf-c"};
+static const char* kLangIds[] = {"dasm", "batari-basic", "elf-c", "ace-c"};
 static const char* kTvMultipleHelp = N_("The program runs on more than one system and handles it in its code: the DASM template chooses with -DPAL=1, batari Basic with set tv, C detects it when it starts. The emulator is not told one: it detects it from the frame.");
-static const char* kLangNames[] = {N_("Assembler (DASM)"), N_("batari Basic"), N_("C for ELF (vcsLib)")};
+static const char* kLangNames[] = {N_("Assembler (DASM)"), N_("batari Basic"), N_("C for ELF (vcsLib)"), N_("C for ACE (PlusCart, UnoCart)")};
 
 // The language's name for people, as the New project dialog shows it.
 static std::string languageName(Language language) {
@@ -371,7 +371,7 @@ OpenFile* App::openFile(const std::string& pathIn, int line) {
   newFile->editor.setText(readFile(path));
   newFile->editor.setGutterWidthChars(showCycles_ && newFile->asmSyntax ? 5 : 0);
   std::string ext = lower(fs::path(path).extension().string());
-  bool cLike = ext == ".c" || ext == ".cpp" || ext == ".hpp" || (ext == ".h" && project_ && project_->language == Language::ElfC);
+  bool cLike = ext == ".c" || ext == ".cpp" || ext == ".hpp" || (ext == ".h" && project_ && isC(project_->language));
   if (cLike) newFile->asmSyntax = false;
   newFile->editor.setCommentPrefix(cLike ? "//" : ext == ".bas" ? "rem" : ";");
   newFile->editor.setFoldSyntax(cLike ? FoldSyntax::C : ext == ".bas" ? FoldSyntax::Basic : newFile->asmSyntax ? FoldSyntax::Asm : FoldSyntax::None);
@@ -409,7 +409,7 @@ OpenFile* App::openFile(const std::string& pathIn, int line) {
 gfx::Profile App::gfxProfile() {
   if (!project_ || project_->language != Language::BatariBasic) {
     gfx::Profile profile;
-    profile.usesC = project_ && project_->language == Language::ElfC;
+    profile.usesC = project_ && isC(project_->language);
     return profile;
   }
   std::string main = project_->abs(project_->main);
@@ -588,7 +588,7 @@ void App::pollBuild() {
   if (job_.running()) return;
   building_ = false;
   output_ = job_.output();
-  bool gcc = project_ && (project_->language == Language::ElfC || !project_->buildCommand.empty());
+  bool gcc = project_ && (isC(project_->language) || !project_->buildCommand.empty());
   bool basic = project_ && project_->language == Language::BatariBasic && project_->buildCommand.empty();
   // the first line repeats the command ("> make ..."): only what it printed is parsed
   std::string printed = output_.rfind("> ", 0) == 0 && output_.find('\n') != std::string::npos ? output_.substr(output_.find('\n') + 1) : output_;
@@ -964,10 +964,13 @@ std::string App::sessionPath() const {
 std::vector<std::string> App::debugArgs(const std::string& emulator) {
   for (auto& openedFile : files_)
     if (!openedFile->editor.breakpoints().empty() || breakpoints_.count(openedFile->path)) breakpoints_[openedFile->path] = openedFile->editor.breakpoints();
-  if (project_->language == Language::ElfC) {
-    // C on the ARM: the emulators have no breakpoints by source line for it
+  if (isC(project_->language)) {
+    // C on the ARM: VCSIDE has no way to give the emulators a breakpoint on a line of C
     bool any = std::any_of(breakpoints_.begin(), breakpoints_.end(), [](auto& breakpoint) { return !breakpoint.second.empty(); });
-    if (any) output_ += std::string(T("Breakpoints are not passed for ELF projects: the emulators cannot stop on a line of C.")) + "\n";
+    if (any && project_->language == Language::AceC)
+      output_ += std::string(T("Breakpoints are not passed for ACE projects: set them in Gopher2600's debugger, which shows the C source (build/ACE_debugging.elf).")) + "\n";
+    else if (any)
+      output_ += std::string(T("Breakpoints are not passed for ELF projects: the emulators cannot stop on a line of C.")) + "\n";
     return {};
   }
   std::vector<Breakpoint> placed;
@@ -1082,7 +1085,7 @@ void App::refreshLiveSymbols(bool force) {
   // the other sources of the folder, read again only when their date changes
   if ((!folder_.empty() || !builtFiles_.empty()) && (force || now - diskTicks_ > 3000)) {
     diskTicks_ = now;
-    bool cHeaders = project_ && project_->language == Language::ElfC;
+    bool cHeaders = project_ && isC(project_->language);
     std::map<std::string, ScannedFile> seen;
     std::error_code errorCode;
     if (!folder_.empty()) {
@@ -2443,7 +2446,7 @@ void App::assistantPanel() {
   context.kb = &kb_;
   if (project_) {
     context.projectDir = project_->dir;
-    const char* language = project_->language == Language::BatariBasic ? "batari Basic" : project_->language == Language::ElfC ? "C for ELF" : "DASM";
+    const char* language = project_->language == Language::BatariBasic ? "batari Basic" : project_->language == Language::ElfC ? "C for ELF" : project_->language == Language::AceC ? "C for ACE" : "DASM";
     context.projectInfo = std::string(language) + ", " + project_->format + ", " + project_->tv + ", " + project_->main;
     context.grounding.format = project_->format;
     context.grounding.tv = project_->tv;
@@ -3177,9 +3180,10 @@ void App::newProjectDialog() {
     ImGui::SameLine();
     if (theme::dialogButton(T("Choose...")))
       SDL_ShowOpenFolderDialog(dialogCallback, new DialogCtx{this, "newdir"}, window_, npDir_.c_str(), false);
-    const char* langNames[3] = {T(kLangNames[0]), T(kLangNames[1]), T(kLangNames[2])};
+    const char* langNames[std::size(kLangNames)];
+    for (size_t i = 0; i < std::size(kLangNames); i++) langNames[i] = T(kLangNames[i]);
     row(T("Programming language"));
-    ImGui::Combo("##lang", &npLang_, langNames, 3);
+    ImGui::Combo("##lang", &npLang_, langNames, (int)std::size(kLangNames));
     {
       // only the standards this language can build for; the choice stays if the new list has it
       auto ids = tvStandardsFor(languageFromId(kLangIds[npLang_]));
