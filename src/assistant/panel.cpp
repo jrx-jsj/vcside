@@ -197,6 +197,7 @@ void AssistantPanel::newChat() {
   firstPass_.cancel(), firstPassPending_ = false;
   translation_.cancel(), translating_ = false, translateThisTurn_ = false, chatLanguage_.clear();
   chat_ = Chat();
+  selectingIndex_ = -1;
   streaming_.clear(), error_.clear(), lastRequest_.clear();
   promptTokens_ = completionTokens_ = droppedTurns_ = 0;
   agentSteps_ = 0, nudged_ = false, callCounts_.clear(), turnText_.clear();
@@ -232,6 +233,7 @@ void AssistantPanel::loadTab(int index) {
   chatLanguage_.clear();
   ChatTabState& tab = tabs_[index];
   chat_ = tab.chat;
+  selectingIndex_ = -1;
   streaming_.clear(), error_.clear(), lastRequest_.clear();
   promptTokens_ = completionTokens_ = droppedTurns_ = 0;
   agentSteps_ = 0, nudged_ = false, callCounts_.clear(), turnText_.clear();
@@ -1490,7 +1492,67 @@ void AssistantPanel::poll(const PanelContext& context) {
   }
 }
 
+// Every message can be copied whole or selected in part: right click it. Selecting shows the text in a read-only box,
+// wrapped to the panel's width, where the mouse and the keyboard select and copy as in any text field.
 void AssistantPanel::drawMessage(const ChatMessage& message, const std::string& text, const PanelContext& context, ImFont* mono, int index) {
+  if (message.kind == "result" || message.kind == "call" || index == 9999) {  // tool traffic and the answer still arriving
+    drawMessageContent(message, text, context, mono, index);
+    return;
+  }
+  ImGui::PushID(index + 500000);
+  if (selectingIndex_ == index) {
+    float width = ImGui::GetContentRegionAvail().x - ImGui::GetFontSize() * 0.9f;
+    std::string wrapped;
+    {
+      ImFont* font = ImGui::GetFont();
+      float size = ImGui::GetFontSize(), room = std::max(40.0f, width - ImGui::GetStyle().FramePadding.x * 2 - 4.0f);
+      size_t start = 0;
+      while (start <= text.size()) {
+        size_t end = text.find('\n', start);
+        if (end == std::string::npos) end = text.size();
+        const char* lineBegin = text.c_str() + start;
+        const char* lineEnd = text.c_str() + end;
+        while (lineBegin < lineEnd) {
+          const char* cut = font->CalcWordWrapPositionA(1.0f, lineBegin, lineEnd, room);
+          if (cut <= lineBegin) cut = lineEnd;
+          wrapped.append(lineBegin, cut);
+          if (cut < lineEnd) wrapped += '\n';
+          while (cut < lineEnd && *cut == ' ') cut++;
+          lineBegin = cut;
+        }
+        if (end < text.size()) wrapped += '\n';
+        start = end + 1;
+      }
+      (void)size;
+    }
+    float lines = 1;
+    for (char c : wrapped) lines += c == '\n';
+    float height = std::min(lines, 30.0f) * ImGui::GetTextLineHeight() + ImGui::GetStyle().FramePadding.y * 2 + 4.0f;
+    ImGui::PushFont(mono);
+    ImGui::InputTextMultiline("##select", const_cast<char*>(wrapped.c_str()), wrapped.size() + 1, ImVec2(width, height), ImGuiInputTextFlags_ReadOnly);
+    ImGui::PopFont();
+    if (theme::dialogButton(T("Copy all"))) ImGui::SetClipboardText(text.c_str());
+    ImGui::SameLine();
+    if (theme::dialogButton(T("Done"))) selectingIndex_ = -1;
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::PopID();
+    return;
+  }
+  ImVec2 top = ImGui::GetCursorScreenPos();
+  drawMessageContent(message, text, context, mono, index);
+  ImVec2 bottom = ImGui::GetCursorScreenPos();
+  ImVec2 high(top.x + ImGui::GetContentRegionAvail().x, bottom.y);
+  if (ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows) && ImGui::IsMouseHoveringRect(top, high) && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) ImGui::OpenPopup("message_menu");
+  if (ImGui::BeginPopup("message_menu")) {
+    if (ImGui::MenuItem(T("Copy"))) ImGui::SetClipboardText(text.c_str());
+    if (ImGui::MenuItem(T("Select text"))) selectingIndex_ = index;
+    ImGui::EndPopup();
+  }
+  ImGui::PopID();
+}
+
+void AssistantPanel::drawMessageContent(const ChatMessage& message, const std::string& text, const PanelContext& context, ImFont* mono, int index) {
   bool user = message.role == "user";
   if (message.kind == "result") {  // what a tool answered: one dim line, the model got all of it
     std::string first = message.content.substr(0, message.content.find('\n'));

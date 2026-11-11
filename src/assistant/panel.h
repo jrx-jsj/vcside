@@ -258,6 +258,8 @@ class AssistantPanel {
   void remoteDialog();
   void historyDialog();
   void drawMessage(const ChatMessage& message, const std::string& text, const PanelContext& context, ImFont* mono, int index);
+  void drawMessageContent(const ChatMessage& message, const std::string& text, const PanelContext& context, ImFont* mono, int index);
+  int selectingIndex_ = -1;                            // the message shown as selectable text (right click > Select text)
 };
 
 }  // namespace vcs::assistant
