@@ -53,8 +53,7 @@ struct Chat {
 // One JSON file per chat, archived ones in archive/. Where: with a `chatsBase` (the application's own data folder) in
 // <chatsBase>/<project name>-<hash of its path>/, so conversations (which hold code and tool results) never land in a project
 // folder or in git; without one, as before, in <project>/.vcsai/chats (and .vcsai/.gitignore keeps them out of git).
-// The first time a project's chats are asked for in the new place, the ones the project folder had are copied there (the
-// originals are left alone). Which chats were open in the tabs is kept too, so the next session shows them again.
+// (Chats an older version left in a project's .vcsai/chats are not brought across: the feature is in beta.) Which chats were open in the tabs is kept too, so the next session shows them again.
 class ChatStore {
  public:
   explicit ChatStore(std::string projectDir, std::string chatsBase = "") : projectDir_(std::move(projectDir)), chatsBase_(std::move(chatsBase)) {}

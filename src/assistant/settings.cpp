@@ -100,19 +100,9 @@ std::string ChatStore::chatsDir() const {
 
 bool ChatStore::ensureFolders() const {
   std::error_code error;
-  bool firstTime = !chatsBase_.empty() && !fs::exists(chatsDir(), error);
   fs::create_directories(fs::path(chatsDir()) / "archive", error);
   if (error) return false;
   if (!chatsBase_.empty()) {
-    if (firstTime) {  // the chats the project folder had come along (copied: the originals stay where they are)
-      fs::path legacy = fs::path(projectDir_) / ".vcsai" / "chats";
-      for (bool archived : {false, true}) {
-        fs::path from = archived ? legacy / "archive" : legacy, to = archived ? fs::path(chatsDir()) / "archive" : fs::path(chatsDir());
-        std::error_code listing;
-        for (auto& entry : fs::directory_iterator(from, listing))
-          if (entry.is_regular_file() && entry.path().extension() == ".json") fs::copy_file(entry.path(), to / entry.path().filename(), fs::copy_options::skip_existing, listing);
-      }
-    }
     return true;
   }
   // Conversations hold code and tool results: they must not reach git by accident, so the
@@ -127,7 +117,6 @@ bool ChatStore::ensureFolders() const {
 ChatStore::OpenTabs ChatStore::loadOpenTabs() const {
   OpenTabs tabs;
   if (chatsBase_.empty()) return tabs;
-  ensureFolders();  // the first time, this is what brings the old chats along
   std::ifstream in(fs::path(chatsDir()) / "open.tabs");
   std::string line;
   while (std::getline(in, line)) {

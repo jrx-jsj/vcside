@@ -621,7 +621,6 @@ A run in Agent mode went badly: `find_code` failed with "needs a query", `read_f
 
 - Chats are kept in the application's own data folder, `<data folder>/chats/<project name>-<hash of its path>/` (the folder that also holds
   `settings.json`: the platform's own place, `~/Library/Application Support/vcside/VCSIDE/` on macOS), not in the project: they hold code and tool
-  results and should not travel with a project folder or reach git. The first time a project's chats are asked for there, the ones its
-  `.vcsai/chats` folder had are copied across (the originals stay). The project's search index stays in `.vcsai/index`: it is a cache.
+  results and should not travel with a project folder or reach git. Chats that an older version left in a project's `.vcsai/chats` are not brought across (beta). The project's search index stays in `.vcsai/index`: it is a cache.
 - Which chats were open, and which one was in front, is kept per project in `open.tabs` in that folder; opening the project shows them again, as it does the files.
 - In Ask mode the assistant gives code as plain blocks and no diff; the chat's reference entries ("From the knowledge base: ...") are links to their cards.
