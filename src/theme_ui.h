@@ -44,6 +44,11 @@ bool dialogButton(const char* label, const ImVec2& size = ImVec2(0, 0), bool sma
 bool dialogEscape();
 // A heading inside a dialog: a dark band as wide as the content, with a line under it.
 void dialogHeading(const char* text);
+// A menu that pops up (right click on the last item, or opened with OpenPopup): roomy rows,
+// rounded corners and a margin around the separators. End it with endMenuPopup when true.
+bool beginContextMenu(const char* id);
+bool beginMenuPopup(const char* id);
+void endMenuPopup();
 
 class Editor {
  public:

@@ -1770,10 +1770,10 @@ void AssistantPanel::drawMessage(const ChatMessage& message, const std::string& 
   ImVec2 bottom = ImGui::GetCursorScreenPos();
   ImVec2 high(top.x + ImGui::GetContentRegionAvail().x, bottom.y);
   if (ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows) && ImGui::IsMouseHoveringRect(top, high) && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) ImGui::OpenPopup("message_menu");
-  if (ImGui::BeginPopup("message_menu")) {
+  if (theme::beginMenuPopup("message_menu")) {
     if (ImGui::MenuItem(T("Copy"))) ImGui::SetClipboardText(text.c_str());
     if (ImGui::MenuItem(T("Select text"))) selectingIndex_ = index;
-    ImGui::EndPopup();
+    theme::endMenuPopup();
   }
   ImGui::PopID();
 }

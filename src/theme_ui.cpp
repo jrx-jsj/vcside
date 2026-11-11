@@ -79,6 +79,37 @@ bool beginPanel(const char* name, bool* open, ImGuiWindowFlags flags) {
   return shown;
 }
 
+namespace {
+constexpr int kMenuStyleVars = 5;
+void pushMenuStyle() {
+  ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(em(12), em(8)));
+  ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(em(12), em(9)));
+  ImGui::PushStyleVar(ImGuiStyleVar_PopupRounding, em(6));
+  ImGui::PushStyleVar(ImGuiStyleVar_PopupBorderSize, 1.0f);
+  ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, em(4));
+  ImGui::SetNextWindowSizeConstraints(ImVec2(em(200), 0), ImVec2(FLT_MAX, FLT_MAX));
+}
+}  // namespace
+
+bool beginContextMenu(const char* id) {
+  pushMenuStyle();
+  if (ImGui::BeginPopupContextItem(id)) return true;
+  ImGui::PopStyleVar(kMenuStyleVars);
+  return false;
+}
+
+bool beginMenuPopup(const char* id) {
+  pushMenuStyle();
+  if (ImGui::BeginPopup(id)) return true;
+  ImGui::PopStyleVar(kMenuStyleVars);
+  return false;
+}
+
+void endMenuPopup() {
+  ImGui::EndPopup();
+  ImGui::PopStyleVar(kMenuStyleVars);
+}
+
 void endPanel() {
   // the stripes beside the title: in the title band of a floating window, between the
   // title and the close button; docked, in the tab row, after the tabs

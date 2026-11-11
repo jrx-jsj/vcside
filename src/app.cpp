@@ -2206,7 +2206,7 @@ void App::projectPanel() {
     ImGui::PushID(id.c_str());
     bool clicked = ImGui::InvisibleButton("row", ImVec2(std::max(1.0f, right - rowOrigin.x), rowH));
     bool hover = ImGui::IsItemHovered();
-    if (ImGui::BeginPopupContextItem("##rowmenu")) {  // right click: what is usually done to a file or a folder
+    if (theme::beginContextMenu("##rowmenu")) {  // right click: what is usually done to a file or a folder
       bool isRoot = depth == 0;
       fs::path where(id);
       std::string inFolder = dir ? id : where.parent_path().string();
@@ -2235,7 +2235,7 @@ void App::projectPanel() {
         ImGui::SetClipboardText((relativeError ? where : relative).generic_string().c_str());
       }
       if (ImGui::MenuItem(T("Show in the file manager"))) SDL_OpenURL(("file://" + fs::absolute(fs::path(inFolder)).string()).c_str());
-      ImGui::EndPopup();
+      theme::endMenuPopup();
     }
     ImGui::PopID();
     if (active) drawList->AddRectFilled(ImVec2(left, rowOrigin.y), ImVec2(right, rowOrigin.y + rowH), theme::col(theme::Role::FilesRowSelected));
@@ -2776,13 +2776,13 @@ void App::problemsPanel() {
         bool clicked = ImGui::Selectable(diagnostic.severity == Diagnostic::Error ? T("error") : diagnostic.severity == Diagnostic::Warning ? T("warning") : T("info"), false,
                                          ImGuiSelectableFlags_SpanAllColumns);
         ImGui::PopStyleColor();
-        if (assistant_.explainEnabled() && ImGui::BeginPopupContextItem("explain")) {
+        if (assistant_.explainEnabled() && theme::beginContextMenu("explain")) {
           if (ImGui::MenuItem(T("Explain this error"))) {
             showAssistant_ = true;
             assistant_.explain("Explain this build error and how to fix it:\n" + fs::path(diagnostic.file).filename().string() +
                                (diagnostic.line ? ":" + std::to_string(diagnostic.line) : "") + ": " + diagnostic.message);
           }
-          ImGui::EndPopup();
+          theme::endMenuPopup();
         }
         ImGui::PopID();
         ImGui::TableNextColumn();
