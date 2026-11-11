@@ -60,6 +60,22 @@ Step      ds 1          ; step of the animation
 Timer     ds 1          ; frames into the step
 GfxPtr    ds 2          ; the hero's frame
 ColPtr    ds 2          ; its colours (HeroColours)
+HeroColours ds hero_P0_HEIGHT   ; the hero frame's colours, for the TV system
+Temp      ds 2          ; scratch: pointers and the score's digits
+Temp2     ds 1
+TextColour  ds 1        ; THE GAME's colour, and the lives' in the game, worked
+                        ; out in the vertical blank (not between WSYNCs)
+ColourKeep  ds 1        ; ConvertColour's own
+SidesColour ds 1        ; the cartridge label's sides, for the TV system
+MusicRam  ds 19         ; the music player's
+MUSIC_RAM = MusicRam
+
+; The title and the game use the rest of the RAM for different things: the
+; title screen does not need the game's state, and StartGame clears it.
+Shared
+CartColours ds cart_ROWS ; the title: the cartridge's row colours, for the TV system
+TitleEnd
+        ORG Shared
 EnemyX    ds 2          ; two enemies
 EnemyY    ds 2
 EnemyDX   ds 2          ; +1 or -1 ($FF)
@@ -79,18 +95,13 @@ CurGfx0   ds 1          ; what the kernel's next pass writes
 CurCol0   ds 1
 CurGfx1   ds 1
 CurShot   ds 1
-HeroColours ds hero_P0_HEIGHT   ; the hero frame's colours, for the TV system
 ScoreRows ds 5          ; the score's two digits, PF1, top row first
 LivesRows ds 5          ; the lives' digit
-Temp      ds 2          ; scratch: pointers and the score's digits
-Temp2     ds 1
 EnemyColour ds 1        ; COLUP1 for the shown enemy, for the TV system
-TextColour  ds 1        ; THE GAME's colour, and the lives' in the game, worked
-                        ; out in the vertical blank (not between WSYNCs)
-ColourKeep  ds 1        ; ConvertColour's own two bytes
-ColourLum   ds 1
-MusicRam  ds 19         ; the music player's
-MUSIC_RAM = MusicRam
+GameEnd
+        IF TitleEnd > $F6 || GameEnd > $F6
+          ERR ; not enough RAM: the stack needs the last 10 bytes
+        ENDIF
 
 ; ---- Code ------------------------------------------------------------------
         SEG Code
@@ -214,6 +225,10 @@ TitleLogic SUBROUTINE
 .place  lda #$9C                ; THE GAME: light blue, for the TV system
         jsr ConvertColour
         sta TextColour
+        lda #CART_SIDES
+        jsr ConvertColour
+        sta SidesColour
+        jsr CartColoursForTv
         ; THE GAME: players 0 and 1, three close copies each, 8 pixels apart
         lda #$03
         sta NUSIZ0
@@ -259,7 +274,7 @@ TitleKernel SUBROUTINE
         sta GRP0                ; no players (with VDELP0/1 on, each one twice)
         sta GRP1
         sta GRP0
-        lda #CART_SIDES         ; the missiles: the label's grey sides, 4 clocks wide
+        lda SidesColour         ; the missiles: the label's grey sides, 4 clocks wide
         sta COLUP0
         sta COLUP1
         lda #$20
@@ -312,7 +327,7 @@ TitleKernel SUBROUTINE
 ; grip's black bands around IDE. A playfield line has one colour, so the
 ; label's grey sides are the two missiles; they are turned on at the end of the
 ; first row (after the lip) and stay on: on the grey rows they fall on grey.
-; Grey (hue 0) and this orange (hue 2) are the same in PAL: no ConvertColour.
+; The row colours come from CartColours, converted for the TV system.
 CART_SIDES  = $06               ; the body's grey in title.vcsgfx
 CART_LEFT   = 34                ; PosObject's x for the missiles over columns 9 and 29
 CART_RIGHT  = 114               ; (pixels 36 and 116): it puts a missile 2 pixels right
@@ -320,7 +335,7 @@ Cartridge SUBROUTINE
         ldy #cart_ROWS-1        ; the tables are bottom row first
 .row    ldx #cart_LINES
 .line   sta WSYNC
-        lda cart_COLUPF_ROWS,y  ; 4  4
+        lda CartColours,y       ; 4  4
         sta COLUPF              ; 3  7
         lda cart_PF0,y          ; 4 11
         sta PF0                 ; 3 14
@@ -349,6 +364,27 @@ Cartridge SUBROUTINE
         sta PF0
         sta PF1
         sta PF2
+        rts
+
+; ---- CartColoursForTv: the cartridge's row colours (cart_COLUPF_ROWS) into
+; CartColours, converted for the TV system: ConvertColour's work, inline for
+; the 45 rows (about 13 lines of the vertical blank in PAL).
+CartColoursForTv SUBROUTINE
+        ldy #cart_ROWS-1
+        lda System
+        bne .pal
+.ntsc   lda cart_COLUPF_ROWS,y  ; NTSC: as they are
+        sta CartColours,y
+        dey
+        bpl .ntsc
+        rts
+.pal    lda cart_COLUPF_ROWS,y
+        lsr
+        tax
+        lda NtscToPal,x
+        sta CartColours,y
+        dey
+        bpl .pal
         rts
 
 ; ---- Text48: THE GAME, 48 pixels wide. Players 0 and 1 have three copies
@@ -430,13 +466,15 @@ Text48 SUBROUTINE
 ; ============================================================================
 
 StartGame SUBROUTINE
+        lda #0                  ; the game's state from zero (the title used
+        ldx #GameEnd-Shared-1   ; its RAM for the cartridge's colours)
+.clear  sta Shared,x
+        dex
+        bpl .clear
         lda #1
         sta Mode
         lda #LIVES
         sta Lives
-        lda #0
-        sta Score
-        sta ShotPair
         jsr PlaceHero
         jmp NewWave
 
@@ -1045,31 +1083,41 @@ AnimTicksHi     .byte >hero_idle_TICKS, >hero_walk_TICKS
 AnimSteps       .byte hero_idle_STEPS, hero_walk_STEPS
 AnimLoop        .byte hero_idle_LOOP, hero_walk_LOOP
 
-; ---- ConvertColour: A = an NTSC colour; returns the colour for the TV system
-; (PAL and PAL60 change the hue, the high nibble). Keeps X and Y.
+; ---- ConvertColour: A = an NTSC colour; returns the colour for the TV system.
+; PAL and PAL60 have other hues and lights: NtscToPal gives the PAL colour that
+; looks closest to each NTSC one. Keeps X and Y.
 ConvertColour SUBROUTINE
-        sta ColourKeep
-        lda System
-        bne .pal
-        lda ColourKeep          ; NTSC: as it is
-        rts
-.pal    lda ColourKeep
-        and #$0F                ; the luminance stays
-        sta ColourLum
-        lda ColourKeep
-        lsr
-        lsr
-        lsr
-        lsr
         stx ColourKeep
+        ldx System
+        beq .done               ; NTSC: as it is
+        lsr                     ; one byte for each colour (bit 0 is not used)
         tax
-        lda PalHues,x
-        ora ColourLum
-        ldx ColourKeep
+        lda NtscToPal,x
+.done   ldx ColourKeep
         rts
-; The PAL hue for each NTSC hue (0-F): the same table as the ELF loaders'
-; ColorLookup, as measured for La Abadia del Crimen 2600.
-PalHues .byte $00,$20,$20,$40,$60,$80,$A0,$C0,$D0,$B0,$90,$70,$50,$30,$20,$20
+
+; The closest PAL colour to each NTSC one, $00 to $FE in steps of 2: worked
+; out from Stella's NTSC and PAL palettes, as the shortest distance in CIELAB
+; (the colour space closest to how the eye tells colours apart). PAL has no
+; match for some NTSC colours, like the brightest yellows: the closest one is
+; a little off. Change an entry to taste: the conversion is all here.
+NtscToPal
+        .byte $00,$04,$06,$08,$0A,$0A,$0C,$0E  ; $00: grey
+        .byte $22,$24,$24,$28,$28,$28,$2A,$2C  ; $10: gold
+        .byte $42,$44,$46,$46,$46,$28,$2A,$2A  ; $20: orange
+        .byte $42,$42,$44,$46,$46,$48,$48,$4A  ; $30: red orange
+        .byte $42,$62,$62,$64,$64,$66,$68,$68  ; $40: pink
+        .byte $82,$82,$84,$84,$86,$86,$88,$88  ; $50: purple
+        .byte $A0,$A2,$A4,$A6,$A6,$A8,$A8,$A8  ; $60: blue purple
+        .byte $C0,$C0,$D4,$D4,$D6,$C8,$C8,$CA  ; $70: blue
+        .byte $D0,$D2,$D4,$D4,$D6,$D6,$D8,$D8  ; $80: blue
+        .byte $B2,$B2,$B4,$B6,$B6,$B8,$BA,$BA  ; $90: light blue
+        .byte $90,$92,$92,$94,$96,$98,$9A,$9A  ; $A0: turquoise
+        .byte $70,$72,$72,$76,$78,$78,$7A,$7C  ; $B0: green blue
+        .byte $30,$50,$32,$56,$58,$58,$5A,$5A  ; $C0: green
+        .byte $30,$50,$32,$56,$58,$3A,$3C,$3C  ; $D0: yellow green
+        .byte $20,$22,$24,$24,$2A,$2A,$2A,$2C  ; $E0: orange green
+        .byte $20,$22,$24,$24,$28,$2A,$2A,$2C  ; $F0: light orange
 
 ; ---- StickPresses: A = the joystick directions pressed on this frame and not
 ; on the last one, as 1 bits (D7 right, D6 left, D5 down, D4 up).
