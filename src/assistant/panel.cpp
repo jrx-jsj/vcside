@@ -2038,13 +2038,30 @@ void AssistantPanel::draw(const PanelContext& context, ImFont* mono, bool* open)
   };
   // Where the text goes, the model and the icons share a row when they fit; in a narrow panel (a big zoom, a big font) the icons
   // get a row of their own, so none of them is pushed out of the window.
-  float labelWidth = ImGui::CalcTextSize(whereText.c_str()).x + gap;
+  float labelWidth = ImGui::CalcTextSize(whereText.c_str()).x + ImGui::GetFrameHeight() + ImGui::GetStyle().FramePadding.x * 2 + gap;
   bool narrow = ImGui::GetContentRegionAvail().x < labelWidth + theme::em(90) + refreshWidth + gap + groupWidth;
   if (narrow) icons();
+  // the service: a combo with the ones set up, so a chat can switch to another without the settings
   ImGui::PushStyleColor(ImGuiCol_Text, theme::colv(local ? theme::Role::MsgInfo : theme::Role::MsgWarning));
-  ImGui::AlignTextToFramePadding();  // on the combo's baseline
-  ImGui::TextUnformatted(whereText.c_str());
+  ImGui::BeginDisabled(busyNow);
+  bool serviceOpen = ImGui::BeginCombo("##service", whereText.c_str(), ImGuiComboFlags_WidthFitPreview | ImGuiComboFlags_HeightLarge);
   ImGui::PopStyleColor();
+  if (serviceOpen) {
+    for (size_t i = 0; i < settings_.providers.size(); i++) {
+      const Provider& candidate = settings_.providers[i];
+      bool candidateLocal = candidate.builtin || candidate.isLocal();
+      std::string name = candidate.name + "  (" + (candidateLocal ? T("local") : T("remote")) + ")###service" + std::to_string(i);
+      if (ImGui::Selectable(name.c_str(), settings_.active == (int)i) && settings_.active != (int)i) {
+        settings_.active = (int)i, changed_ = true;
+        // the chat goes on with it (and opening it again selects it)
+        if (!chat_.messages.empty()) chat_.provider = candidate.name, chat_.model = candidate.model;
+      }
+    }
+    ImGui::Separator();
+    if (ImGui::Selectable(T("Set up services..."))) wantSettings_ = true;
+    ImGui::EndCombo();
+  }
+  ImGui::EndDisabled();
   ImGui::SameLine();
   float comboMax = ImGui::GetContentRegionAvail().x - refreshWidth - (narrow ? 0.0f : groupWidth + gap);
   comboMax = std::max(theme::em(narrow ? 40 : 90), comboMax);
