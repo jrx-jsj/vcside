@@ -58,13 +58,14 @@ struct ToolResult {
 
 // The names the model may use, with their tier. profile: 0 read only, 1 read + edit, 2 all.
 bool toolTier(const std::string& name, Tier* tier);
-// compact: the small set for small models (read a file or a folder, search, find code, the reference, edit, build): fewer
-// tools to choose from.
-std::vector<std::string> toolNames(int profile, bool compact = false);
+// compact: 0 every tool; 1 the small set for small models (read a file or a folder, search, find code, the reference, edit,
+// build); 2 the medium set for large models: everything except project_info and list_files (the open project is already in the
+// context and read_file lists a folder), so there are fewer detours.
+std::vector<std::string> toolNames(int profile, int compact = 0);
 // What a tool does, in a sentence (the text after the signature in its line).
 std::string toolDescription(const std::string& name);
 // The tool section of the system prompt: how to write a call, and each tool in one line.
-std::string toolPrompt(int profile, bool native = false, bool compact = false);
+std::string toolPrompt(int profile, bool native = false, int compact = 0);
 
 // Finds one call in an answer: a ```tool block, a <tool_call> element or a bare JSON object
 // that names a tool. `before` gets the text in front of it. False if there is none.

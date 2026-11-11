@@ -345,11 +345,13 @@ std::string AssistantPanel::providerKey() const {
 
 nlohmann::json AssistantPanel::nativeToolList(const Provider& provider) const {
   if (!useNativeTools()) return nlohmann::json::array();
-  return nativeTools(toolNames(settings_.toolProfile, smallModel()), provider.dialect == "anthropic");
+  return nativeTools(toolNames(settings_.toolProfile, toolSet()), provider.dialect == "anthropic");
 }
 
 // A model that runs on this computer, or whose name says it has 14 billion parameters or fewer ("qwen3-8b"): short prompt, small
 // set of tools, small answers.
+int AssistantPanel::toolSet() const { return smallModel() ? 1 : 2; }
+
 bool AssistantPanel::smallModel() const {
   if (settings_.providers.empty()) return false;
   const Provider& provider = settings_.providers[std::clamp(settings_.active, 0, (int)settings_.providers.size() - 1)];
@@ -384,9 +386,9 @@ std::string AssistantPanel::systemPrompt() const {
   if (file) {
     std::stringstream text;
     text << file.rdbuf();
-    if (!text.str().empty()) return text.str() + (settings_.agent ? "\n" + toolPrompt(settings_.toolProfile, useNativeTools(), smallModel()) + agentRule : askRule) + englishRule;
+    if (!text.str().empty()) return text.str() + (settings_.agent ? "\n" + toolPrompt(settings_.toolProfile, useNativeTools(), toolSet()) + agentRule : askRule) + englishRule;
   }
-  return std::string(kFallbackPrompt) + (settings_.agent ? "\n" + toolPrompt(settings_.toolProfile, useNativeTools(), smallModel()) + agentRule : askRule) + englishRule;
+  return std::string(kFallbackPrompt) + (settings_.agent ? "\n" + toolPrompt(settings_.toolProfile, useNativeTools(), toolSet()) + agentRule : askRule) + englishRule;
 }
 
 void AssistantPanel::newChat() {
