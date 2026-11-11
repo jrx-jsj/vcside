@@ -1854,28 +1854,39 @@ void AssistantPanel::draw(const PanelContext& context, ImFont* mono, bool* open)
 
   // header: where the text goes, the model, and the buttons (icons, with a tooltip each)
   bool local = provider->builtin || provider->isLocal();
+  const std::string whereText = local ? T("local") : (std::string(T("remote")) + ": " + provider->name);
+  float button = ImGui::GetFrameHeight(), gap = ImGui::GetStyle().ItemSpacing.x;
+  float groupWidth = button * 3 + gap * 2, refreshWidth = provider->builtin ? 0.0f : button + gap;
+  auto icons = [&]() {  // at the right edge of the row
+    float rightEdge = ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x;
+    if (rightEdge - groupWidth > ImGui::GetCursorPosX()) ImGui::SetCursorPosX(rightEdge - groupWidth);
+    if (iconButton("##chats", Icon::Chats, T("Saved chats of this project"))) wantHistory_ = true;
+    ImGui::SameLine();
+    if (iconButton("##settings", Icon::Settings, T("Assistant settings"))) wantSettings_ = true;
+    ImGui::SameLine();
+    if (iconButton("##request", Icon::Request, T("View the request sent to the model")) && !lastRequest_.empty()) wantInspector_ = true;
+  };
+  // Where the text goes, the model and the icons share a row when they fit; in a narrow panel (a big zoom, a big font) the icons
+  // get a row of their own, so none of them is pushed out of the window.
+  float labelWidth = ImGui::CalcTextSize(whereText.c_str()).x + gap;
+  bool narrow = ImGui::GetContentRegionAvail().x < labelWidth + theme::em(90) + refreshWidth + gap + groupWidth;
+  if (narrow) icons();
   ImGui::PushStyleColor(ImGuiCol_Text, theme::colv(local ? theme::Role::MsgInfo : theme::Role::MsgWarning));
   ImGui::AlignTextToFramePadding();  // on the combo's baseline
-  ImGui::TextUnformatted(local ? T("local") : (std::string(T("remote")) + ": " + provider->name).c_str());
+  ImGui::TextUnformatted(whereText.c_str());
   ImGui::PopStyleColor();
   ImGui::SameLine();
-  float button = ImGui::GetFrameHeight(), gap = ImGui::GetStyle().ItemSpacing.x;
-  float iconsWidth = button * (provider->builtin ? 2 : 3) + gap * (provider->builtin ? 1 : 2) + (provider->builtin ? 0 : button + gap);
-  float comboMax = std::max(theme::em(90), ImGui::GetContentRegionAvail().x - iconsWidth - gap);
+  float comboMax = ImGui::GetContentRegionAvail().x - refreshWidth - (narrow ? 0.0f : groupWidth + gap);
+  comboMax = std::max(theme::em(narrow ? 40 : 90), comboMax);
   if (provider->builtin) {
     modelCombo(*provider, "##model", comboMax);
   } else {
     modelPicker(*provider, "##model", comboMax, true);
   }
-  ImGui::SameLine();
-  float rightEdge = ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x;
-  float groupWidth = button * 3 + gap * 2;
-  if (rightEdge - groupWidth > ImGui::GetCursorPosX()) ImGui::SetCursorPosX(rightEdge - groupWidth);
-  if (iconButton("##chats", Icon::Chats, T("Saved chats of this project"))) wantHistory_ = true;
-  ImGui::SameLine();
-  if (iconButton("##settings", Icon::Settings, T("Assistant settings"))) wantSettings_ = true;
-  ImGui::SameLine();
-  if (iconButton("##request", Icon::Request, T("View the request sent to the model")) && !lastRequest_.empty()) wantInspector_ = true;
+  if (!narrow) {
+    ImGui::SameLine();
+    icons();
+  }
 
   if (provider->builtin && !builtinReady) {
     builtinCard(*provider);
@@ -2088,6 +2099,12 @@ void AssistantPanel::firstStartDialog() {
   ImGui::EndPopup();
 }
 
+// A box that is em(n) wide, but never wider than what is left of the row once its label is beside it: at any zoom the label stays inside.
+static float fitWidth(float wanted, const char* label) {
+  float room = ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize(label, nullptr, true).x - ImGui::GetStyle().ItemInnerSpacing.x - ImGui::GetStyle().ScrollbarSize;
+  return std::max(theme::em(24), std::min(wanted, room));
+}
+
 // The key goes to the system's secret store; the window shows only its last four characters.
 void AssistantPanel::keyControls(Provider& provider) {
   (void)N_("a file only you can read");  // a name secretStoreName() gives, translated where it is shown
@@ -2101,7 +2118,7 @@ void AssistantPanel::keyControls(Provider& provider) {
   bool has = cached.present;
   if (has) ImGui::TextDisabled("%s", F("Key saved in {0}: {1}", {T(secretStoreName()), cached.mask}).c_str());
   else ImGui::TextDisabled("%s", secretsPersistent() ? T("No key saved.") : T("No key saved (it will be kept for this session only)."));
-  ImGui::SetNextItemWidth(theme::em(260));
+  ImGui::SetNextItemWidth(fitWidth(theme::em(260), T("API key")));
   ImGui::InputText(T("API key"), &keyInput_, ImGuiInputTextFlags_Password);
   // the buttons go under the box, never beside it: at any zoom the row cannot grow past the window
   ImGui::BeginDisabled(keyInput_.empty());
@@ -2149,7 +2166,7 @@ void AssistantPanel::settingsDialog() {
     return;
   }
   // every text in this window wraps to the same width, long labels of checkboxes included
-  const float wrapWidth = theme::em(560);
+  const float wrapWidth = std::max(theme::em(200), std::min(theme::em(560), ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ScrollbarSize - ImGui::GetStyle().WindowPadding.x));
   ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + wrapWidth);
   if (detecting_ && detectFuture_.valid() && detectFuture_.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
     auto found = detectFuture_.get();
@@ -2172,13 +2189,13 @@ void AssistantPanel::settingsDialog() {
     ImGui::SetTooltip("%s", T("The reference, the project index and most models work best in English. Your question goes to the model in English and its answer comes back in your language; code, registers, labels and file names are never translated. Each translation takes a few seconds."));
   if (wrappedCheckbox(T("Search the project by meaning (a small model, downloaded once)"), &settings_.smartSearch, wrapWidth)) changed_ = true;
   if (settings_.smartSearch) ImGui::TextDisabled("%s", T("Each part of your project is turned into numbers on this computer; the numbers stay in the project's .vcsai/index folder, which git ignores."));
-  ImGui::SetNextItemWidth(theme::em(140));
+  ImGui::SetNextItemWidth(fitWidth(theme::em(140), T("Token budget for remote models (0 = none)")));
   if (ImGui::InputInt(T("Token budget for remote models (0 = none)"), &settings_.budgetTokens, 10000, 100000)) settings_.budgetTokens = std::max(0, settings_.budgetTokens), changed_ = true;
   if (settings_.budgetTokens > 0) ImGui::TextDisabled("%s", F("Used in this session: {0}", {std::to_string(spentTokens_)}).c_str());
   if (settings_.agent && wrappedCheckbox(T("Use the model's own tool calls when it has them (otherwise the tools are asked for in text)"), &settings_.nativeTools, wrapWidth)) changed_ = true;
   if (settings_.agent) {
     const char* profiles[] = {T("Read only"), T("Read and propose edits"), T("Also build and run (each time you are asked)")};
-    ImGui::SetNextItemWidth(theme::em(320));
+    ImGui::SetNextItemWidth(fitWidth(theme::em(320), T("Tools")));
     if (ImGui::BeginCombo(T("Tools"), profiles[settings_.toolProfile])) {
       for (int i = 0; i < 3; i++)
         if (ImGui::Selectable(profiles[i], i == settings_.toolProfile)) settings_.toolProfile = i, changed_ = true;
@@ -2224,8 +2241,8 @@ void AssistantPanel::settingsDialog() {
     }
     if (provider.builtin) {
       ImGui::TextWrapped("%s", T("Runs on this computer; no server to set up."));
-      modelCombo(provider, T("Model"), theme::em(320));
-      ImGui::SetNextItemWidth(theme::em(120));
+      modelCombo(provider, T("Model"), fitWidth(theme::em(320), T("Model")));
+      ImGui::SetNextItemWidth(fitWidth(theme::em(120), T("Context tokens")));
       changed_ |= ImGui::InputInt(T("Context tokens"), &provider.contextTokens, 1024, 8192);
       provider.contextTokens = std::clamp(provider.contextTokens, 1024, 1 << 20);
       ImGui::TextDisabled("%s", F("Models are kept in {0}", {modelsDir()}).c_str());
@@ -2239,15 +2256,15 @@ void AssistantPanel::settingsDialog() {
       ImGui::PopID();
       continue;
     }
-    ImGui::SetNextItemWidth(theme::em(200));
+    ImGui::SetNextItemWidth(fitWidth(theme::em(200), T("Name")));
     changed_ |= ImGui::InputText(T("Name"), &provider.name);
-    ImGui::SetNextItemWidth(theme::em(360));
+    ImGui::SetNextItemWidth(fitWidth(theme::em(360), T("Address")));
     changed_ |= ImGui::InputText(T("Address"), &provider.baseUrl);
     modelLists_.request(provider);
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted(T("Model"));
     ImGui::SameLine();
-    modelPicker(provider, "##settingsmodel", theme::em(320), true);
+    modelPicker(provider, "##settingsmodel", fitWidth(theme::em(320), T("Model")) - ImGui::GetFrameHeight() * 2, true);
     {  // how the list is doing, in words
       const ModelLists::Entry& entry = modelLists_.of(provider);
       if (entry.fetching) ImGui::TextDisabled("%s", T("Asking the service for its models..."));
@@ -2255,7 +2272,7 @@ void AssistantPanel::settingsDialog() {
       else if (!entry.error.empty()) ImGui::TextColored(theme::colv(theme::Role::MsgWarning), "%s", listMessage(entry.error).c_str());
       else if (modelLists_.needsKey(provider)) ImGui::TextDisabled("%s", T("Save an API key below and the list of models appears here."));
     }
-    ImGui::SetNextItemWidth(theme::em(160));
+    ImGui::SetNextItemWidth(fitWidth(theme::em(160), T("Protocol")));
     if (ImGui::BeginCombo(T("Protocol"), provider.dialect == "anthropic" ? "Anthropic Messages" : "OpenAI chat completions")) {
       if (ImGui::Selectable("OpenAI chat completions", provider.dialect != "anthropic")) provider.dialect = "openai", changed_ = true;
       if (ImGui::Selectable("Anthropic Messages", provider.dialect == "anthropic")) {
@@ -2272,9 +2289,9 @@ void AssistantPanel::settingsDialog() {
         }
       keyControls(provider);
     }
-    ImGui::SetNextItemWidth(theme::em(200));
+    ImGui::SetNextItemWidth(fitWidth(theme::em(200), T("Key variable")));
     changed_ |= ImGui::InputText(T("Key variable"), &provider.keyEnv);
-    ImGui::SetNextItemWidth(theme::em(120));
+    ImGui::SetNextItemWidth(fitWidth(theme::em(120), T("Context tokens")));
     changed_ |= ImGui::InputInt(T("Context tokens"), &provider.contextTokens, 1024, 8192);
     provider.contextTokens = std::clamp(provider.contextTokens, 1024, 1 << 20);
     if (!provider.isLocal()) {
@@ -2315,7 +2332,11 @@ void AssistantPanel::settingsDialog() {
     }
     ImGui::EndPopup();
   }
-  ImGui::SameLine();
+  {
+    float needed = ImGui::CalcTextSize(T("Add a model server")).x + theme::em(4);  // the button's padding and the gap, with room to spare
+    float rightEdge = ImGui::GetCursorScreenPos().x + ImGui::GetContentRegionAvail().x;  // the row's end (the cursor is at its start)
+    if (rightEdge - ImGui::GetItemRectMax().x - ImGui::GetStyle().ItemSpacing.x > needed) ImGui::SameLine();
+  }
   if (theme::dialogButton(T("Add a model server"))) {
     settings_.providers.push_back(Provider());
     openProvider_ = (int)settings_.providers.size() - 1;
