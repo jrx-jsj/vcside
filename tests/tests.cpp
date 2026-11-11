@@ -44,6 +44,7 @@
 #include "assistant/embeddings.h"
 #include "assistant/context_items.h"
 #include "assistant/edits.h"
+#include "file_operations.h"
 #include "assistant/domain_checks.h"
 #include "assistant/validate.h"
 #include "assistant/first_pass.h"
@@ -4027,6 +4028,33 @@ static void testInvalidUtf8() {
   fs::remove_all(root);
 }
 
+static void testFileOperations() {
+  namespace fs = std::filesystem;
+  using namespace vcs::fileops;
+  fs::path root = fs::temp_directory_path() / "vcside_fileops_test";
+  fs::remove_all(root);
+  fs::create_directories(root / "src");
+  std::string created, error;
+  CHECK(nameProblem("main.asm").empty() && !nameProblem("").empty() && !nameProblem("a/b").empty() && !nameProblem("..").empty() && !nameProblem(" x").empty() && !nameProblem("a:b").empty() && !nameProblem("x.").empty());
+  CHECK(createFile(root.string(), "main.asm", &created, &error) && fs::exists(root / "main.asm") && created == (root / "main.asm").string());
+  CHECK(!createFile(root.string(), "main.asm", &created, &error) && error.find("already exists") != std::string::npos);
+  CHECK(createFolder(root.string(), "gfx", &created, &error) && fs::is_directory(root / "gfx"));
+  CHECK(!createFile((root / "nope").string(), "x", &created, &error));
+  std::ofstream(root / "main.asm") << "hello";
+  std::string renamed;
+  CHECK(rename((root / "main.asm").string(), "game.asm", &renamed, &error) && fs::exists(root / "game.asm") && !fs::exists(root / "main.asm") && renamed == (root / "game.asm").string());
+  CHECK(!rename((root / "game.asm").string(), "gfx", &renamed, &error) && fs::exists(root / "game.asm"));  // the name is taken
+  CHECK(rename((root / "game.asm").string(), "game.asm", &renamed, &error));                            // the same name: nothing to do
+  std::string copy;
+  CHECK(duplicate((root / "game.asm").string(), &copy, &error) && copy == (root / "game copy.asm").string() && fs::exists(copy));
+  CHECK(duplicate((root / "game.asm").string(), &copy, &error) && copy == (root / "game copy 2.asm").string());
+  std::ofstream(root / "gfx" / "a.png") << "x";
+  CHECK(duplicate((root / "gfx").string(), &copy, &error) && copy == (root / "gfx copy").string() && fs::exists(root / "gfx copy" / "a.png"));
+  CHECK(remove((root / "gfx").string(), &error) && !fs::exists(root / "gfx") && fs::exists(root / "gfx copy"));
+  CHECK(!remove((root / "gfx").string(), &error) && !error.empty());
+  fs::remove_all(root);
+}
+
 static void testProjectIndex() {
   namespace fs = std::filesystem;
   using vcs::assistant::ProjectIndex;
@@ -4942,6 +4970,7 @@ int main() {
   testRemote();
   testChatTabs();
   testInvalidUtf8();
+  testFileOperations();
   testProjectIndex();
   testEmbeddings();
   testContextChips();

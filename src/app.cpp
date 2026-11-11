@@ -14,6 +14,7 @@
 #include <SDL3/SDL_opengl.h>
 
 #include "about.h"
+#include "file_operations.h"
 #include "assistant/markdown_view.h"
 #include "doc_markdown.h"
 #include "file_icons.h"
@@ -1780,6 +1781,7 @@ MenuBar App::buildMenuBar(bool native) {
     langs.push_back(languageItem);
   }
   std::vector<MenuItem> settings = {item(native ? T("Tools...") : T("Tools"), native ? "Ctrl+," : "", [this] { showTools_ = true; }),
+  fileDialogs();
                                     item(T("Assistant..."), "", [this] { assistant_.openSettings(); }),
                                     sub(T("Language"), langs)};
   if (native) bar.push_back(sub("VCSIDE", settings));
@@ -2204,6 +2206,37 @@ void App::projectPanel() {
     std::vector<fs::directory_entry> entries;
     std::error_code errorCode;
     for (auto& entry : fs::directory_iterator(dir, errorCode)) {
+    if (ImGui::BeginPopupContextItem("##rowmenu")) {  // right click: what is usually done to a file or a folder
+      bool isRoot = depth == 0;
+      fs::path where(id);
+      std::string inFolder = dir ? id : where.parent_path().string();
+      if (!dir && ImGui::MenuItem(T("Open"))) openFile(id);
+      if (!dir) ImGui::Separator();
+      if (ImGui::MenuItem(T("New file..."))) startFileOp(FileOp::NewFile, inFolder);
+      if (ImGui::MenuItem(T("New folder..."))) startFileOp(FileOp::NewFolder, inFolder);
+      if (!isRoot) {
+        ImGui::Separator();
+        if (ImGui::MenuItem(T("Rename..."))) startFileOp(FileOp::Rename, id, where.filename().string());
+        if (ImGui::MenuItem(T("Duplicate"))) {
+          std::string copy, error;
+          if (fileops::duplicate(id, &copy, &error)) {
+            if (!dir) openFile(copy);
+          } else {
+            startFileOp(FileOp::Message, id), fileOp_.error = error;
+          }
+        }
+        if (ImGui::MenuItem(T("Delete..."))) startFileOp(FileOp::Delete, id, where.filename().string());
+      }
+      ImGui::Separator();
+      if (ImGui::MenuItem(T("Copy path"))) ImGui::SetClipboardText(fs::absolute(where).string().c_str());
+      if (!isRoot && ImGui::MenuItem(T("Copy relative path"))) {
+        std::error_code relativeError;
+        fs::path relative = fs::relative(where, folder_, relativeError);
+        ImGui::SetClipboardText((relativeError ? where : relative).generic_string().c_str());
+      }
+      if (ImGui::MenuItem(T("Show in the file manager"))) SDL_OpenURL(("file://" + fs::absolute(fs::path(inFolder)).string()).c_str());
+      ImGui::EndPopup();
+    }
       std::string name = entry.path().filename().string();
       if (name.empty() || name == ".git") continue;  // every file shows, but not Git's own folder
       entries.push_back(entry);
@@ -2483,6 +2516,105 @@ void App::closeDialogs() {
   }
   if (quitConfirm_) ImGui::OpenPopup("###quit");
   snprintf(title, sizeof title, "%s###quit", T("Unsaved changes"));
+void App::startFileOp(FileOp::Kind kind, const std::string& target, const std::string& name) {
+  fileOp_ = FileOp();
+  fileOp_.kind = kind, fileOp_.target = target, fileOp_.name = name;
+}
+
+// A file or folder was renamed: the open files under it, and the folders opened in the tree, follow it.
+void App::pathsMoved(const std::string& from, const std::string& to) {
+  auto moved = [&](const std::string& path) -> std::string {
+    if (path == from) return to;
+    std::string prefix = from + std::string(1, fs::path::preferred_separator);
+    if (path.rfind(prefix, 0) == 0) return to + path.substr(from.size());
+    return path;
+  };
+  for (auto& file : files_) file->path = moved(file->path);
+  std::set<std::string> toggled;
+  for (auto& path : treeToggled_) toggled.insert(moved(path));
+  treeToggled_ = toggled;
+  if (project_ && project_->file == from) project_->file = to;
+}
+
+// A file or folder was deleted: the files open from it are closed, without asking (the dialog said so).
+void App::pathsGone(const std::string& path) {
+  std::string prefix = path + std::string(1, fs::path::preferred_separator);
+  for (size_t i = files_.size(); i-- > 0;)
+    if (files_[i]->path == path || files_[i]->path.rfind(prefix, 0) == 0) {
+      files_.erase(files_.begin() + i);
+      if (activeFile_ >= (int)i) activeFile_--;
+    }
+  if (activeFile_ < 0 && !files_.empty()) activeFile_ = 0;
+  if (files_.empty()) activeFile_ = -1;
+  for (auto it = treeToggled_.begin(); it != treeToggled_.end();)
+    it = (*it == path || it->rfind(prefix, 0) == 0) ? treeToggled_.erase(it) : std::next(it);
+}
+
+void App::fileDialogs() {
+  if (fileOp_.kind == FileOp::None) return;
+  if (!fileOp_.opened) ImGui::OpenPopup("###fileop"), fileOp_.opened = true;
+  const char* heading = fileOp_.kind == FileOp::NewFile ? T("New file") : fileOp_.kind == FileOp::NewFolder ? T("New folder") : fileOp_.kind == FileOp::Rename ? T("Rename")
+                        : fileOp_.kind == FileOp::Delete ? T("Delete") : T("File");
+  char title[96];
+  snprintf(title, sizeof title, "%s###fileop", heading);
+  if (!theme::beginModal(title, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+    if (!ImGui::IsPopupOpen("###fileop")) fileOp_ = FileOp();  // closed from outside (Escape, another window)
+    return;
+  }
+  bool close = false;
+  auto errorLine = [&] {
+    if (!fileOp_.error.empty()) ImGui::TextColored(theme::colv(theme::Role::MsgError), "%s", fileOp_.error.c_str());
+  };
+  if (fileOp_.kind == FileOp::Delete) {
+    bool isFolder = fs::is_directory(fileOp_.target);
+    ImGui::PushTextWrapPos(theme::em(420));
+    ImGui::TextUnformatted(F(isFolder ? "Delete the folder \"{0}\" and everything in it?" : "Delete \"{0}\"?", {fileOp_.name}).c_str());
+    ImGui::TextDisabled("%s", T("This cannot be undone. Open files in it are closed without saving."));
+    ImGui::PopTextWrapPos();
+    errorLine();
+    if (theme::primaryButton(T("Delete"))) {
+      std::string error;
+      if (fileops::remove(fileOp_.target, &error)) pathsGone(fileOp_.target), close = true;
+      else fileOp_.error = error;
+    }
+    ImGui::SameLine();
+    if (theme::dialogButton(T("Cancel")) || theme::dialogEscape()) close = true;
+  } else if (fileOp_.kind == FileOp::Message) {
+    ImGui::PushTextWrapPos(theme::em(420));
+    errorLine();
+    ImGui::PopTextWrapPos();
+    if (theme::primaryButton(T("OK")) || theme::dialogEscape()) close = true;
+  } else {
+    if (fileOp_.kind != FileOp::Rename) ImGui::TextDisabled("%s", F("In {0}", {fs::path(fileOp_.target).filename().string()}).c_str());
+    ImGui::SetNextItemWidth(theme::em(300));
+    if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
+    bool enter = ImGui::InputText("##name", &fileOp_.name, ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll);
+    errorLine();
+    bool ok = theme::primaryButton(T("OK")) || enter;
+    ImGui::SameLine();
+    if (theme::dialogButton(T("Cancel")) || theme::dialogEscape()) close = true;
+    if (ok && !close) {
+      std::string result, error;
+      bool done = fileOp_.kind == FileOp::NewFile     ? fileops::createFile(fileOp_.target, fileOp_.name, &result, &error)
+                  : fileOp_.kind == FileOp::NewFolder ? fileops::createFolder(fileOp_.target, fileOp_.name, &result, &error)
+                                                      : fileops::rename(fileOp_.target, fileOp_.name, &result, &error);
+      if (done) {
+        if (fileOp_.kind == FileOp::NewFile) openFile(result);
+        else if (fileOp_.kind == FileOp::Rename && result != fileOp_.target) pathsMoved(fileOp_.target, result);
+        if (fileOp_.kind != FileOp::Rename && fileOp_.target != folder_ && !treeToggled_.count(fileOp_.target)) treeToggled_.insert(fileOp_.target);  // the folder it went into shows it open
+        close = true;
+      } else {
+        fileOp_.error = error;
+      }
+    }
+  }
+  if (close) {
+    fileOp_ = FileOp();
+    ImGui::CloseCurrentPopup();
+  }
+  ImGui::EndPopup();
+}
+
   if (theme::beginModal(title, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
     quitConfirm_ = false;
     ImGui::TextUnformatted(T("Save changes before closing?"));

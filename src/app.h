@@ -233,6 +233,17 @@ class App {
   Job job_;
   bool building_ = false;
   int runAfterBuild_ = 0;
+  // what the project explorer's context menu is doing: a dialog asks for a name or a confirmation
+  struct FileOp {
+    enum Kind { None, NewFile, NewFolder, Rename, Delete, Message } kind = None;
+    std::string target;  // the folder to create in, or the file or folder renamed or deleted
+    std::string name, error;
+    bool opened = false;
+  } fileOp_;
+  void startFileOp(FileOp::Kind kind, const std::string& target, const std::string& name = "");
+  void fileDialogs();
+  void pathsMoved(const std::string& from, const std::string& to);  // open files and folders follow a rename
+  void pathsGone(const std::string& path);                          // open files under a deleted path are closed
   std::string output_;
   bool outputScroll_ = false;
   std::vector<Diagnostic> diagnostics_;
