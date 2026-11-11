@@ -618,6 +618,43 @@ std::string toolPrompt(int profile, bool native, int compact) {
   return text;
 }
 
+// A model writes the code of an edit with real tabs and line ends inside the JSON strings, which JSON does not allow: the call is
+// read all the same (the characters become their escapes), instead of being shown as plain text and never run.
+static json parseLenient(const std::string& text) {
+  json value = json::parse(text, nullptr, false);
+  if (!value.is_discarded()) return value;
+  std::string fixed;
+  bool inString = false, escaped = false;
+  for (char c : text) {
+    if (!inString) {
+      if (c == '"') inString = true;
+      fixed += c;
+    } else if (escaped) {
+      escaped = false;
+      fixed += c;
+    } else if (c == '\\') {
+      escaped = true;
+      fixed += c;
+    } else if (c == '"') {
+      inString = false;
+      fixed += c;
+    } else if (c == '\n') {
+      fixed += "\\n";
+    } else if (c == '\r') {
+      fixed += "\\r";
+    } else if (c == '\t') {
+      fixed += "\\t";
+    } else if ((unsigned char)c < 0x20) {
+      char buffer[8];
+      snprintf(buffer, sizeof buffer, "\\u%04x", (unsigned)(unsigned char)c);
+      fixed += buffer;
+    } else {
+      fixed += c;
+    }
+  }
+  return json::parse(fixed, nullptr, false);
+}
+
 bool findToolCall(const std::string& answer, ToolCall* call, std::string* before) {
   auto take = [&](size_t position, const json& value) {
     if (!callFromJson(value, call)) return false;
@@ -631,7 +668,7 @@ bool findToolCall(const std::string& answer, ToolCall* call, std::string* before
     std::string inner = answer.substr(pos + 3, (close == std::string::npos ? answer.size() : close) - pos - 3);
     size_t start, stop;
     if (balancedObject(inner, 0, &start, &stop)) {
-      json value = json::parse(inner.substr(start, stop - start), nullptr, false);
+      json value = parseLenient(inner.substr(start, stop - start));
       if (take(pos, value)) return true;
       // "tool music_describe {args}": the name stands in front of the arguments
       std::istringstream words(inner.substr(0, start));
@@ -651,7 +688,7 @@ bool findToolCall(const std::string& answer, ToolCall* call, std::string* before
   size_t tag = answer.find("<tool_call>");
   if (tag != std::string::npos) {
     size_t start, stop;
-    if (balancedObject(answer, tag, &start, &stop) && take(tag, json::parse(answer.substr(start, stop - start), nullptr, false))) return true;
+    if (balancedObject(answer, tag, &start, &stop) && take(tag, parseLenient(answer.substr(start, stop - start)))) return true;
   }
   // a line "tool {...}" or "tool name {...}" outside any fence (a model that opened and closed its fences around it, or never opened them)
   size_t lineStart = 0;
@@ -663,7 +700,7 @@ bool findToolCall(const std::string& answer, ToolCall* call, std::string* before
       size_t start, stop;
       std::string rest = answer.substr(word + 4);
       if (balancedObject(rest, 0, &start, &stop)) {
-        json value = json::parse(rest.substr(start, stop - start), nullptr, false);
+        json value = parseLenient(rest.substr(start, stop - start));
         if (callFromJson(value, call)) {
           if (before) *before = answer.substr(0, lineStart);
           return true;
@@ -685,7 +722,7 @@ bool findToolCall(const std::string& answer, ToolCall* call, std::string* before
   size_t first = answer.find_first_not_of(" \n\t");
   if (first != std::string::npos && answer[first] == '{') {
     size_t start, stop;
-    if (balancedObject(answer, first, &start, &stop) && take(first, json::parse(answer.substr(start, stop - start), nullptr, false))) return true;
+    if (balancedObject(answer, first, &start, &stop) && take(first, parseLenient(answer.substr(start, stop - start)))) return true;
   }
   return false;
 }
