@@ -3609,8 +3609,8 @@ static void testAgentTools(const KnowledgeBase& kb) {
 
   // graphics and music files: described, and an edit that would not load is refused
   std::string data = VCSIDE_SOURCE_DATA;
-  fs::copy_file(data + "/templates/dasm-animation/hero.vcsgfx", root / "hero.vcsgfx");
-  fs::copy_file(data + "/templates/bb/theme.vcsmusic", root / "theme.vcsmusic");
+  fs::copy_file(data + "/templates/shared/hero.vcsgfx", root / "hero.vcsgfx");
+  fs::copy_file(data + "/templates/shared/theme-tia.vcsmusic", root / "theme.vcsmusic");
   auto gfxText = call("gfx_describe", {{"path", "hero.vcsgfx"}});
   CHECK(!gfxText.error && gfxText.text.find("sprite ") != std::string::npos && gfxText.text.find('#') != std::string::npos && gfxText.text.find("$") != std::string::npos);
   auto musicText = call("music_describe", {{"path", "theme.vcsmusic"}});

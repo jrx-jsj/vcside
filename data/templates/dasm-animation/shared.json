@@ -1,0 +1,11 @@
+{
+ "hero.vcsgfx": {"from": "shared/hero.vcsgfx"},
+ "theme.vcsmusic": {"from": "shared/theme-tia.vcsmusic", "change": {
+  "effects": [
+   {"channel": 1, "instrument": 3, "name": "jump", "note": 72},
+   {"channel": 1, "instrument": 4, "name": "bump", "note": 60}
+  ],
+  "export": {"to": "dasm"},
+  "name": "hero theme"
+ }}
+}

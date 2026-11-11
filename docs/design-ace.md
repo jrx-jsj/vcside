@@ -146,7 +146,8 @@ data/templates/ace/
   src/ace.c        the bus library and the overblank program
   src/memory.c     memcpy and memset (the Arm toolchain may come without newlib)
   src/main.c       the rainbow, the joystick bar and the music, as in the ELF template
-data/templates/ace-animation/src/   main.c and hero.vcsgfx: the animated sprite
+  shared.json      src/theme.vcsmusic, from data/templates/shared (the ELF template's song)
+data/templates/ace-animation/src/   main.c: the animated sprite (hero.vcsgfx and theme.vcsmusic come from data/templates/shared)
 ```
 
 **Position independence: the program runs from SRAM.** The firmware copies the file to flash at an address that depends on the cart and its free sectors, so code linked for one flash address cannot hold pointers to its own constants. The template links everything but the header and the start code at `0x20000100`, after the argument block, and the start code copies it there. C then works as usual (pointers to tables, switch tables, function pointers), with no GOT and no checks. The cost is SRAM: the code and constants count against the 96 KB buffer (a program larger than about 90 KB would need a different scheme; the space report warns before that).
@@ -183,7 +184,7 @@ The Makefile fails if the start code does not follow the 40-byte header, since t
 
 A new ELF project also builds as an ACE file: `make ace` writes `build/<name>.ace` and `build/ACE_debugging.elf` from the same `src/`, unchanged. A double click on the `.ace` in the project tree runs it in Gopher2600.
 
-- **`ace/`** in the project holds the ACE template's bus library, start code, `memcpy`/`memset` and linker script (VCSIDE copies them from `data/templates/ace` when it creates the project, so the repository has one copy), plus two files of the ELF template:
+- **`ace/`** in the project holds the ACE template's bus library, start code, `memcpy`/`memset` and linker script (VCSIDE copies them from `data/templates/ace` when it creates the project, listed in the ELF template's `shared.json`, so the repository has one copy), plus two files of the ELF template:
   - `vcslib_ace.c`: every vcsLib function the ELF template declares, each feeding the same 6507 instructions as an ELF loader. The exception is `vcsRead4`: it is `lda` plus `sta $1FF0` (7 or 8 cycles instead of 4), the bus library's way of reading. The library gained `ace_code` (any instruction's bytes) for `ldx`, `ldy`, `stx`, `sty`, `sta abs` and `vcsWrite6`.
   - `main_ace.c`: takes the 6507 over and calls `elf_main` with `MP_SYSTEM_TYPE` (the Makefile's `ACE_SYSTEM`, set from the project's TV standard when it is created), the ARM clock and `FF_MULTI_CART`. When `elf_main` returns, it points the 6507 at the reset vector and returns 1, so the firmware goes back to its menu.
 - **Compiled for the Cortex-M4**, with hard float, `-gstrict-dwarf` and no C library, as the ACE template. `RAM_FUNC` code goes into `.text` (everything runs from SRAM anyway). The `#pragma long_calls` in `vcsLib.h` are harmless there.

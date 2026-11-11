@@ -1,0 +1,8 @@
+{
+ "ace/ace.c": {"from": "ace/src/ace.c"},
+ "ace/ace.h": {"from": "ace/include/ace.h"},
+ "ace/ace.ld": {"from": "ace/ace.ld"},
+ "ace/memory.c": {"from": "ace/src/memory.c"},
+ "ace/start.S": {"from": "ace/src/start.S"},
+ "src/theme.vcsmusic": {"from": "shared/theme.vcsmusic"}
+}

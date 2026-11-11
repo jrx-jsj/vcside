@@ -476,6 +476,47 @@ static void replaceAll(std::string& text, const std::string& search, const std::
   for (size_t pos = 0; (pos = text.find(search, pos)) != std::string::npos; pos += replacement.size()) text.replace(pos, search.size(), replacement);
 }
 
+// A template's shared.json names the files it takes from elsewhere in data/templates, so
+// that the repository keeps one copy of each: {"<path in the project>": {"from": "<path in
+// data/templates>", "change": {...}}}. "change" (JSON files only) is merged over the file
+// (RFC 7386: an object's keys are replaced one by one, arrays whole), written as VCSIDE's
+// editors save. The text substitutions are applied to every file. A file the project
+// already has is kept.
+static bool copySharedFiles(const fs::path& templateDir, const fs::path& projectDir,
+                            const std::vector<std::pair<std::string, std::string>>& substitutions, std::string* error) {
+  fs::path manifestFile = templateDir / "shared.json";
+  if (!fs::exists(manifestFile)) return true;
+  json manifest = json::parse(readFile(manifestFile.string()), nullptr, false);
+  if (!manifest.is_object()) {
+    if (error) *error = F("Template not found in {0}", {manifestFile.string()});
+    return false;
+  }
+  fs::path templatesDir = fs::path(dataDir()) / "templates";
+  std::error_code errorCode;
+  for (auto& [destinationName, entry] : manifest.items()) {
+    fs::path destination = projectDir / destinationName, source = templatesDir / entry.value("from", std::string());
+    if (fs::exists(destination)) continue;
+    std::string text = readFile(source.string());
+    if (text.empty()) {
+      if (error) *error = F("Template not found in {0}", {source.string()});
+      return false;
+    }
+    if (entry.contains("change")) {
+      json document = json::parse(text, nullptr, false);
+      if (document.is_discarded()) {
+        if (error) *error = F("Template not found in {0}", {source.string()});
+        return false;
+      }
+      document.merge_patch(entry["change"]);
+      text = document.dump(1) + "\n";
+    }
+    for (auto& [search, replacement] : substitutions) replaceAll(text, search, replacement);
+    fs::create_directories(destination.parent_path(), errorCode);
+    std::ofstream(destination, std::ios::binary) << text;
+  }
+  return true;
+}
+
 std::vector<std::pair<std::string, const char*>> Project::examples(Language language) {
   if (language == Language::Dasm) return {{"animation", N_("Example: an animated sprite")}, {"dpcplus", N_("Example: music on a DPC+ cartridge")},
             {"cdfj", N_("Example: C and music on a CDFJ cartridge")}};
@@ -584,10 +625,8 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
     if (!fs::exists(mainFile)) std::ofstream(mainFile) << asmText;
     fs::path headerFile = fs::path(newProject.dir) / "2600.h";
     if (!fs::exists(headerFile)) fs::copy_file(templateDir / "2600.h", headerFile, errorCode);
-    // the example's graphics and music, and the tables they give
-    for (auto& entry : fs::directory_iterator(exampleDir, errorCode))
-      if ((entry.path().extension() == ".vcsgfx" || entry.path().extension() == ".vcsmusic") && !fs::exists(fs::path(newProject.dir) / entry.path().filename()))
-        fs::copy_file(entry.path(), fs::path(newProject.dir) / entry.path().filename(), errorCode);
+    // the example's graphics and music (shared.json), and the tables they give
+    if (!copySharedFiles(exampleDir, newProject.dir, {}, error)) return false;
     // CDFJ: the C code, its linker script and the Makefile that builds both (the driver
     // is not included: the Makefile says where it comes from)
     if (cdfj) {
@@ -625,10 +664,8 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
     if (tvIs50Hz(tvStandard)) replaceAll(text, "  set romsize 4k\n", "  set romsize 4k\n  set tv pal\n");
     fs::path mainFile = fs::path(newProject.dir) / "main.bas";
     if (!fs::exists(mainFile)) std::ofstream(mainFile, std::ios::binary) << text;
-    // its music, and the player and tables it includes
-    for (auto& entry : fs::directory_iterator(templateDir.parent_path(), errorCode))
-      if (entry.path().extension() == ".vcsmusic" && !fs::exists(fs::path(newProject.dir) / entry.path().filename()))
-        fs::copy_file(entry.path(), fs::path(newProject.dir) / entry.path().filename(), errorCode);
+    // its music (shared.json), and the player and tables it includes
+    if (!copySharedFiles(templateDir.parent_path(), newProject.dir, {}, error)) return false;
     writeMusicIncludes(newProject.dir, tvStandard);
   } else if (isC(projectLanguage)) {
     bool ace = projectLanguage == Language::AceC;
@@ -650,37 +687,23 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
       if (error) *error = F("Template not found in {0}", {(example.empty() ? templateDir : exampleDir).string()});
       return false;
     }
+    const std::vector<std::pair<std::string, std::string>> substitutions = {
+        {"{{NAME}}", projName}, {"{{ACE_NAME}}", aceName}, {"{{VISIBLE_LINES}}", visibleLines}, {"{{ACE_SYSTEM}}", aceSystem}};
     std::vector<fs::path> from{templateDir};
     if (!example.empty()) from.insert(from.begin(), exampleDir);  // the first copy of a file wins
-    for (auto& sourceDir : from)
+    for (auto& sourceDir : from) {
       for (auto& entry : fs::recursive_directory_iterator(sourceDir, errorCode)) {
         if (!entry.is_regular_file()) continue;
         fs::path relativePath = fs::relative(entry.path(), sourceDir), destination = fs::path(newProject.dir) / relativePath;
-        if (relativePath == "LICENSE.md" || fs::exists(destination)) continue;
+        if (relativePath == "LICENSE.md" || relativePath == "shared.json" || fs::exists(destination)) continue;
         fs::create_directories(destination.parent_path(), errorCode);
         std::string text = readFile(entry.path().string());
-        replaceAll(text, "{{NAME}}", projName);
-        replaceAll(text, "{{ACE_NAME}}", aceName);
-        replaceAll(text, "{{VISIBLE_LINES}}", visibleLines);
-        replaceAll(text, "{{ACE_SYSTEM}}", aceSystem);
+        for (auto& [search, replacement] : substitutions) replaceAll(text, search, replacement);
         std::ofstream(destination, std::ios::binary) << text;
       }
-    // ELF: make ace builds the same game as an ACE file, with the ACE template's bus
-    // library, start code and linker script in ace/ (next to the template's vcslib_ace.c)
-    if (!ace) {
-      fs::path aceTemplate = fs::path(dataDir()) / "templates" / "ace";
-      const std::pair<const char*, const char*> aceFiles[] = {{"include/ace.h", "ace/ace.h"}, {"src/ace.c", "ace/ace.c"},
-                                                              {"src/start.S", "ace/start.S"}, {"src/memory.c", "ace/memory.c"},
-                                                              {"ace.ld", "ace/ace.ld"}};
-      for (auto& [from, to] : aceFiles) {
-        fs::path destination = fs::path(newProject.dir) / to;
-        if (fs::exists(destination) || !fs::exists(aceTemplate / from)) continue;
-        fs::create_directories(destination.parent_path(), errorCode);
-        std::string text = readFile((aceTemplate / from).string());
-        replaceAll(text, "{{NAME}}", projName);
-        replaceAll(text, "{{ACE_NAME}}", aceName);
-        std::ofstream(destination, std::ios::binary) << text;
-      }
+      // the music, an example's graphics and, in ELF projects, the ACE template's bus
+      // library, start code and linker script in ace/, for make ace (next to vcslib_ace.c)
+      if (!copySharedFiles(sourceDir, newProject.dir, substitutions, error)) return false;
     }
     writeGfxIncludes(fs::path(newProject.dir) / "src", true);
     writeMusicIncludes(fs::path(newProject.dir) / "src", tvStandard);
