@@ -186,6 +186,7 @@ class AssistantPanel {
   std::string pendingQuestion_;
   int agentSteps_ = 0;
   std::map<std::string, int> callCounts_;
+  int blockRetries_ = 0;  // times, in this message, the model was sent back an edit block that does not fit the file
   bool nudged_ = false;  // the model was already reminded, in this message, to use the tools
   std::string turnText_;                               // the user's last turn as sent (with its attachments)
   // a change from a block of the chat's answer, found in the real file, waiting for Apply or Discard

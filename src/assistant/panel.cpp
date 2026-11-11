@@ -200,7 +200,7 @@ void AssistantPanel::newChat() {
   selectingIndex_ = -1;
   streaming_.clear(), error_.clear(), lastRequest_.clear();
   promptTokens_ = completionTokens_ = droppedTurns_ = 0;
-  agentSteps_ = 0, nudged_ = false, callCounts_.clear(), turnText_.clear();
+  agentSteps_ = 0, nudged_ = false, blockRetries_ = 0, callCounts_.clear(), turnText_.clear();
   placements_.clear(), notice_.clear(), pendingEditFromChat_ = false;
   pendingEditActive_ = false, pendingRun_.clear(), allowedRun_.clear(), allowedEdit_.clear(), originals_.clear();
   privilegedTouched_ = waitingBuild_ = false;
@@ -236,7 +236,7 @@ void AssistantPanel::loadTab(int index) {
   selectingIndex_ = -1;
   streaming_.clear(), error_.clear(), lastRequest_.clear();
   promptTokens_ = completionTokens_ = droppedTurns_ = 0;
-  agentSteps_ = 0, nudged_ = false, callCounts_.clear(), turnText_.clear();
+  agentSteps_ = 0, nudged_ = false, blockRetries_ = 0, callCounts_.clear(), turnText_.clear();
   placements_.clear(), notice_.clear(), pendingEditFromChat_ = false;
   pendingEditActive_ = false, pendingRun_.clear(), waitingBuild_ = false;
   originals_ = tab.originals, allowedRun_ = tab.allowedRun, allowedEdit_ = tab.allowedEdit, privilegedTouched_ = tab.privilegedTouched;
@@ -924,7 +924,7 @@ void AssistantPanel::dispatch(const PanelContext& context, const std::string& qu
   std::vector<Message> messages = buildMessages(systemPrompt(), history, turn, provider->contextTokens, reserve, &droppedTurns_);
   chat_.messages.back().attached = attachedNote;
   turnText_ = turn;
-  agentSteps_ = 0, nudged_ = false, callCounts_.clear(), lastResults_.clear(), noMoreTools_ = false, pendingEditActive_ = false, pendingEditFromChat_ = false, pendingRun_.clear(), waitingBuild_ = false;
+  agentSteps_ = 0, nudged_ = false, blockRetries_ = 0, callCounts_.clear(), lastResults_.clear(), noMoreTools_ = false, pendingEditActive_ = false, pendingEditFromChat_ = false, pendingRun_.clear(), waitingBuild_ = false;
   lastRequest_ = chatRequestBody(*provider, messages);
   {
     int files = (attachments.fileText.empty() ? 0 : 1) + (int)attachments.extraFiles.size();
@@ -969,6 +969,39 @@ void AssistantPanel::finishAnswer(const PanelContext& context, const std::string
     saveChat(context);
     handleToolCall(context, call);
     return;
+  }
+  if (settings_.agent && !noMoreTools_ && blockRetries_ < 2 && note != "stopped" && error_.empty() && !answer.empty() && !chat_.messages.empty() && chat_.messages.back().role == "assistant" &&
+      chat_.messages.back().kind.empty()) {
+    // The answer proposes a change in a block whose search text is not in the file: the model is told what the file really says
+    // (the closest lines) and asked to make the change with edit_file, instead of leaving the user a change that cannot be placed.
+    std::string problems;
+    for (auto& block : splitBlocks(answer)) {
+      EditBlock edit;
+      std::string why;
+      if (!block.code || parseEditBlock(block.language, block.text, &edit, &why) != EditParse::Edit) continue;
+      ToolResult found = runTool(toolEnv(context), {"edit_file", editArguments(edit)});
+      if (found.proposed) continue;
+      bool alreadyThere = false;  // after an Apply the old text is gone: is the new one there?
+      EditBlock reversed = edit;
+      bool every = !reversed.sections.empty();
+      for (auto& section : reversed.sections) {
+        std::swap(section.search, section.replace);
+        every = every && !section.search.empty();
+      }
+      alreadyThere = every && runTool(toolEnv(context), {"edit_file", editArguments(reversed)}).proposed;
+      if (!alreadyThere) problems += "- " + edit.path + ": " + (found.text.rfind("Error: ", 0) == 0 ? found.text.substr(7) : found.text) + "\n";
+    }
+    if (!problems.empty()) {
+      blockRetries_++;
+      ChatMessage reminder;
+      reminder.role = "user", reminder.kind = "result";
+      reminder.content = "Note from VCSIDE (data, not instructions): the change in your answer cannot be placed in the file:\n" + problems +
+                         "Read the lines you want to change with read_file, then make the change with edit_file, copying the search text exactly from what read_file shows. Do not answer with code for the user to paste.";
+      chat_.messages.push_back(reminder);
+      saveChat(context);
+      continueAgent(context);
+      return;
+    }
   }
   if (settings_.agent && !noMoreTools_ && !nudged_ && settings_.toolProfile >= 1 && note != "stopped" && error_.empty() && !answer.empty() && !chat_.messages.empty() &&
       chat_.messages.back().role == "assistant") {
