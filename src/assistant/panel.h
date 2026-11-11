@@ -91,6 +91,12 @@ class AssistantPanel {
   std::vector<KnownProvider> known_;
   bool knownLoaded_ = false;
   std::string modelFilter_;
+  struct KeyMask {
+    double at = -1e9;
+    bool present = false;
+    std::string mask;      // "...abcd": never the key
+  };
+  std::map<std::string, KeyMask> keyMasks_;
   bool detecting_ = false;
   std::string detectNote_;
   // the built-in model: the helper that ships with VCSIDE and the model files it runs

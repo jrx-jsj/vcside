@@ -3,6 +3,7 @@
 // The models a service offers, asked of the service itself (GET <address>/models) and kept per provider, so the model box of the
 // settings and of the panel can be a list that is true today. Fetched on a worker thread; the UI polls every frame.
 #pragma once
+#include <chrono>
 #include <future>
 #include <map>
 #include <string>
@@ -25,19 +26,29 @@ class ModelLists {
     std::string error;
     bool fetching = false, fetched = false;
     std::string forKey;  // what the list was asked with: address, protocol and whether there was a key
+    int tries = 0;       // a lost connection or a timeout is tried once more by itself
   };
   // Starts a fetch if there is none for this provider's address and key (or force). Nothing is asked of a remote service without a key.
   void request(const Provider& provider, bool force = false);
   void poll();  // every frame: takes the answers that arrived
   const Entry& of(const Provider& provider) const;
-  bool needsKey(const Provider& provider) const;  // a remote service and no key saved
-  static std::string keyFor(const Provider& provider);
+  bool needsKey(const Provider& provider);  // a remote service and no key saved
+  std::string keyFor(const Provider& provider);
+  // The secret store is asked about a key at most every few seconds, not every frame (a store can be slow, or ask the user).
+  // Call after a key is saved or removed so the answer is asked again at once.
+  void forgetKeys() { keyPresence_.clear(); }
 
  private:
   struct Pending {
     std::future<std::pair<std::vector<std::string>, std::string>> future;
     Provider provider;
   };
+  bool hasKey(const Provider& provider);
+  struct Presence {
+    double at = -1e9;
+    bool present = false;
+  };
+  std::map<std::string, Presence> keyPresence_;
   std::map<std::string, Entry> entries_;
   std::map<std::string, Pending> pending_;
 };

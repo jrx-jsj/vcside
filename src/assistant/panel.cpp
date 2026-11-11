@@ -605,6 +605,20 @@ void AssistantPanel::builtinCard(Provider& provider) {
   }
 }
 
+// A checkbox whose label wraps to `width` (the label of ImGui's own does not), and toggles when clicked.
+static bool wrappedCheckbox(const char* label, bool* value, float width) {
+  ImGui::PushID(label);
+  bool changed = ImGui::Checkbox("##box", value);
+  ImGui::SameLine();
+  float indent = ImGui::GetCursorPosX();
+  ImGui::PushTextWrapPos(indent + std::max(width - ImGui::GetFrameHeight() - ImGui::GetStyle().ItemInnerSpacing.x, ImGui::GetFontSize() * 10));
+  ImGui::TextUnformatted(label);
+  ImGui::PopTextWrapPos();
+  if (ImGui::IsItemClicked()) *value = !*value, changed = true;
+  ImGui::PopID();
+  return changed;
+}
+
 // The few messages the model list gives, in the language of the interface (anything else is shown as the service said it).
 static std::string listMessage(const std::string& message) {
   if (message == "The service refused the key: check it, or save it again.") return T("The service refused the key: check it, or save it again.");
@@ -1846,6 +1860,7 @@ void AssistantPanel::draw(const PanelContext& context, ImFont* mono, bool* open)
 }
 
 void AssistantPanel::dialogs() {
+  modelLists_.poll();  // also when the panel itself is not drawn: the settings window asks for lists too
   download_.poll();
   embedDownload_.poll();
   engine_.poll();
@@ -1902,9 +1917,15 @@ void AssistantPanel::firstStartDialog() {
 
 // The key goes to the system's secret store; the window shows only its last four characters.
 void AssistantPanel::keyControls(Provider& provider) {
-  std::string stored;
-  bool has = loadSecret(provider.name, &stored);
-  if (has) ImGui::TextDisabled("%s", F("Key saved in {0}: {1}", {T(secretStoreName()), maskKey(stored)}).c_str());
+  // asked of the secret store every couple of seconds, not every frame
+  double now = ImGui::GetTime();
+  KeyMask& cached = keyMasks_[provider.name];
+  if (now - cached.at > 2.0) {
+    std::string stored;
+    cached.at = now, cached.present = loadSecret(provider.name, &stored), cached.mask = cached.present ? maskKey(stored) : "";
+  }
+  bool has = cached.present;
+  if (has) ImGui::TextDisabled("%s", F("Key saved in {0}: {1}", {T(secretStoreName()), cached.mask}).c_str());
   else ImGui::TextDisabled("%s", secretsPersistent() ? T("No key saved.") : T("No key saved (it will be kept for this session only)."));
   ImGui::SetNextItemWidth(theme::em(260));
   ImGui::InputText(T("API key"), &keyInput_, ImGuiInputTextFlags_Password);
@@ -1914,11 +1935,12 @@ void AssistantPanel::keyControls(Provider& provider) {
     saveSecret(provider.name, keyInput_);
     std::fill(keyInput_.begin(), keyInput_.end(), '\0');
     keyInput_.clear();
+    keyMasks_.clear(), modelLists_.forgetKeys();  // asked again at once: the list of models can be had now
   }
   ImGui::EndDisabled();
   if (has) {
     ImGui::SameLine();
-    if (theme::dialogButton(T("Remove key"), ImVec2(0, 0), true)) removeSecret(provider.name);
+    if (theme::dialogButton(T("Remove key"), ImVec2(0, 0), true)) removeSecret(provider.name), keyMasks_.clear(), modelLists_.forgetKeys();
   }
 }
 
@@ -1933,6 +1955,9 @@ void AssistantPanel::settingsDialog() {
     if (!open) opened = false;
     return;
   }
+  // every text in this window wraps to the same width, long labels of checkboxes included
+  const float wrapWidth = theme::em(560);
+  ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + wrapWidth);
   if (detecting_ && detectFuture_.valid() && detectFuture_.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
     auto found = detectFuture_.get();
     detecting_ = false;
@@ -1946,13 +1971,13 @@ void AssistantPanel::settingsDialog() {
     changed_ = true;
   }
   theme::dialogHeading(T("Features"));
-  if (ImGui::Checkbox(T("Chat panel"), &settings_.chat)) changed_ = true, settings_.asked = true;
-  if (ImGui::Checkbox(T("Agent (reads project files, proposes edits, builds when you allow it)"), &settings_.agent)) changed_ = true;
-  if (ImGui::Checkbox(T("Explain errors (a button in Problems and in the assistant)"), &settings_.explainErrors)) changed_ = true;
-  if (ImGui::Checkbox(T("Work in English: translate my questions and the answers (code and names are not translated)"), &settings_.workInEnglish)) changed_ = true;
+  if (wrappedCheckbox(T("Chat panel"), &settings_.chat, wrapWidth)) changed_ = true, settings_.asked = true;
+  if (wrappedCheckbox(T("Agent (reads project files, proposes edits, builds when you allow it)"), &settings_.agent, wrapWidth)) changed_ = true;
+  if (wrappedCheckbox(T("Explain errors (a button in Problems and in the assistant)"), &settings_.explainErrors, wrapWidth)) changed_ = true;
+  if (wrappedCheckbox(T("Work in English: translate my questions and the answers (code and names are not translated)"), &settings_.workInEnglish, wrapWidth)) changed_ = true;
   if (ImGui::IsItemHovered())
     ImGui::SetTooltip("%s", T("The reference, the project index and most models work best in English. Your question goes to the model in English and its answer comes back in your language; code, registers, labels and file names are never translated. Each translation takes a few seconds."));
-  if (ImGui::Checkbox(T("Search the project by meaning (a small model, downloaded once)"), &settings_.smartSearch)) changed_ = true;
+  if (wrappedCheckbox(T("Search the project by meaning (a small model, downloaded once)"), &settings_.smartSearch, wrapWidth)) changed_ = true;
   if (settings_.smartSearch) ImGui::TextDisabled("%s", T("Each part of your project is turned into numbers on this computer; the numbers stay in the project's .vcsai/index folder, which git ignores."));
   ImGui::SetNextItemWidth(theme::em(140));
   if (ImGui::InputInt(T("Token budget for remote models (0 = none)"), &settings_.budgetTokens, 10000, 100000)) settings_.budgetTokens = std::max(0, settings_.budgetTokens), changed_ = true;
@@ -2087,6 +2112,7 @@ void AssistantPanel::settingsDialog() {
     opened = false;
     ImGui::CloseCurrentPopup();
   }
+  ImGui::PopTextWrapPos();
   ImGui::EndPopup();
 }
 

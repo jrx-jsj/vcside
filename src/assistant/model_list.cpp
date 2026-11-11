@@ -37,9 +37,16 @@ std::string describeModelListError(const std::string& error) {
   return error;
 }
 
-std::string ModelLists::keyFor(const Provider& provider) { return provider.baseUrl + "|" + provider.dialect + "|" + (keyOf(provider).empty() ? "nokey" : "key"); }
+bool ModelLists::hasKey(const Provider& provider) {
+  double now = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+  Presence& presence = keyPresence_[provider.name + "|" + provider.keyEnv];
+  if (now - presence.at > 3.0) presence.at = now, presence.present = !keyOf(provider).empty();
+  return presence.present;
+}
 
-bool ModelLists::needsKey(const Provider& provider) const { return !provider.builtin && !provider.isLocal() && keyOf(provider).empty(); }
+std::string ModelLists::keyFor(const Provider& provider) { return provider.baseUrl + "|" + provider.dialect + "|" + (hasKey(provider) ? "key" : "nokey"); }
+
+bool ModelLists::needsKey(const Provider& provider) { return !provider.builtin && !provider.isLocal() && !hasKey(provider); }
 
 void ModelLists::request(const Provider& provider, bool force) {
   if (provider.builtin || provider.baseUrl.empty() || needsKey(provider)) return;
@@ -47,7 +54,7 @@ void ModelLists::request(const Provider& provider, bool force) {
   if (pending_.count(key)) return;
   Entry& entry = entries_[key];
   if (!force && entry.fetched && entry.forKey == keyFor(provider)) return;
-  entry.fetching = true, entry.error.clear();
+  entry.fetching = true, entry.error.clear(), entry.tries = 0;
   Provider copy = provider;
   Pending pending;
   pending.provider = provider;
@@ -67,6 +74,24 @@ void ModelLists::poll() {
     }
     auto result = it->second.future.get();
     Entry& entry = entries_[it->first];
+    std::string lowerError = lowered(result.second);
+    bool lost = !result.second.empty() && (lowerError.find("timed out") != std::string::npos || lowerError.find("connection") != std::string::npos || lowerError.find("network") != std::string::npos);
+    if (lost && entry.tries < 2) {  // the first connection of a run may be slow or fail: once more, by itself
+      entry.tries++;
+      Provider provider = it->second.provider;
+      std::string key = it->first;
+      it = pending_.erase(it);
+      Pending again;
+      again.provider = provider;
+      again.future = std::async(std::launch::async, [provider]() {
+        std::string error;
+        auto ids = listModels(provider, &error);
+        return std::make_pair(ids, error);
+      });
+      pending_[key] = std::move(again);
+      continue;
+    }
+    entry.tries = 0;
     entry.fetching = false, entry.fetched = true;
     entry.forKey = keyFor(it->second.provider);
     entry.ids = normaliseModelIds(result.first, it->second.provider);

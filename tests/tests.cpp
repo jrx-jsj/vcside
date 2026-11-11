@@ -4086,6 +4086,23 @@ static void testKnownProviders() {
     for (int i = 0; i < 300 && lists.of(remote).fetching; i++) usleep(10000), lists.poll();
     CHECK(lists.of(remote).fetched && lists.of(remote).ids.empty() && lists.of(remote).error.find("refused the key") != std::string::npos);
   }
+  {  // Google's own shape: {"models": [{"name": "models/..."}]}, and something that is not a list at all
+    std::string body = R"({"models":[{"name":"models/gemini-2.5-flash"},{"name":"models/text-embedding-004"}]})";
+    MockServer server("HTTP/1.1 200 OK\r\nContent-Length: " + std::to_string(body.size()) + "\r\n\r\n" + body);
+    Provider remote;
+    remote.baseUrl = server.url();
+    std::string error;
+    auto ids = listModels(remote, &error);
+    CHECK(ids.size() == 2 && ids[0] == "models/gemini-2.5-flash" && error.empty());
+  }
+  {
+    std::string body = "<html>not a list</html>";
+    MockServer server("HTTP/1.1 200 OK\r\nContent-Length: " + std::to_string(body.size()) + "\r\n\r\n" + body);
+    Provider remote;
+    remote.baseUrl = server.url();
+    std::string error;
+    CHECK(listModels(remote, &error).empty() && error.find("not a list") != std::string::npos);
+  }
   unsetenv("VCSIDE_TEST_KEY");
 }
 

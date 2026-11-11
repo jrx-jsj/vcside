@@ -226,8 +226,11 @@ std::vector<std::string> listModels(const Provider& provider, std::string* error
   HttpRequest request;
   request.url = joinUrl(provider.baseUrl, "models");
   request.headers = headersFor(provider, false);
-  request.connectSeconds = 2;
-  request.idleSeconds = 5;
+  // A server on this computer answers at once. A service on the internet may take several seconds for its first connection
+  // (the first HTTPS request of a run took 4 s to Google): 5 s timed it out and the list never came.
+  bool nearby = provider.isLocal();
+  request.connectSeconds = nearby ? 2 : 15;
+  request.idleSeconds = nearby ? 5 : 30;
   std::string body;
   std::atomic<bool> never{false};
   HttpResult result = httpRequest(request, [&](const char* bytes, size_t size) { return body.append(bytes, size), body.size() < (1 << 20); }, never);
@@ -236,9 +239,21 @@ std::vector<std::string> listModels(const Provider& provider, std::string* error
     return ids;
   }
   json value = json::parse(body, nullptr, false);
-  if (value.is_object() && value.contains("data") && value["data"].is_array())
-    for (auto& item : value["data"])
-      if (item.is_object() && item.contains("id") && item["id"].is_string()) ids.push_back(item["id"].get<std::string>());
+  if (!value.is_object() && !value.is_array()) {
+    if (error) *error = "the service answered something that is not a list of models";
+    return ids;
+  }
+  // {"data": [{"id": ...}]} (OpenAI and the services that copy it), {"models": [{"id" or "name": ...}]} (Google's own), or a bare list
+  const json* list = nullptr;
+  if (value.is_array()) list = &value;
+  else if (value.contains("data") && value["data"].is_array()) list = &value["data"];
+  else if (value.contains("models") && value["models"].is_array()) list = &value["models"];
+  if (list)
+    for (auto& item : *list) {
+      if (item.is_string()) ids.push_back(item.get<std::string>());
+      else if (item.is_object() && item.contains("id") && item["id"].is_string()) ids.push_back(item["id"].get<std::string>());
+      else if (item.is_object() && item.contains("name") && item["name"].is_string()) ids.push_back(item["name"].get<std::string>());
+    }
   return ids;
 }
 
