@@ -3499,6 +3499,10 @@ static void testAgentTools(const KnowledgeBase& kb) {
     std::string defined = "JUMP_ANIMATION EQU 3\nPandaControls\n  lda SWCHA\n  lda #JUMP_ANIMATION\n  rts\n";
     CHECK(proposalProblems("haz que salte", before, defined, kb, knows, false).empty());
     CHECK(addedLines("a\nb\n", "a\nc\nb\n") == "c\n");
+    std::string inverted = "PandaControls\n  lda SWCHA\n  lda INPT4\n  bmi .FireButtonPressed\n  jmp .NoJump\n.FireButtonPressed\n.NoJump\n  rts\n";
+    CHECK(proposalProblems("el oso debe saltar al pulsar el botón", before, inverted, kb, knows, false).find("bmi branches when the button is NOT pressed") != std::string::npos);
+    std::string right = "PandaControls\n  lda SWCHA\n  lda INPT4\n  bpl .FireButtonPressed\n  jmp .NoJump\n.FireButtonPressed\n.NoJump\n  rts\n";
+    CHECK(proposalProblems("el oso debe saltar al pulsar el botón", before, right, kb, knows, false).empty());
     CHECK(proposalProblems("haz que salte", before, "PandaControls\n\tlda SWCHA\n   rts\n", kb, knows, false).find("changes nothing") != std::string::npos);  // only the spaces differ
   }
   fs::path root = fs::temp_directory_path() / "vcside_agent_test";

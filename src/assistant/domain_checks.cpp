@@ -97,6 +97,33 @@ std::string proposalProblems(const std::string& request, const std::string& befo
   if (aboutFire && readsPort && !readsFire && !batariBasic)
     problems += "- The fire button is not in SWCHA (that port has only the four directions of each joystick). Read it from INPT4 (player 0) or INPT5 (player 1): "
                 "bit 7 is 0 while the button is pressed (lda INPT4 / bmi NotPressed). To act once per press, keep the previous state in a RAM byte.\n";
+  if (readsFire && !batariBasic) {
+    // INPT4/INPT5 bit 7 is 0 while pressed: bmi branches when the button is RELEASED, bpl when it is PRESSED. A label that says the opposite is a sign of the mix-up.
+    std::istringstream in(added);
+    std::string line, previous;
+    while (std::getline(in, line)) {
+      std::string code = withoutComment(line);
+      std::istringstream words(code);
+      std::string first, label;
+      words >> first >> label;
+      std::string op = lowered(first);
+      if ((op == "bmi" || op == "bpl") && (hasWord(previous, "INPT4") || hasWord(previous, "INPT5"))) {
+        std::string name = lowered(label);
+        auto has = [&](std::initializer_list<const char*> parts) {
+          for (const char* part : parts)
+            if (name.find(part) != std::string::npos) return true;
+          return false;
+        };
+        bool saysPressed = has({"press", "fire", "jump", "shoot", "pushed", "down"}) && !has({"not", "no", "release", "skip", "idle", "up"});
+        bool saysReleased = has({"release", "notpress", "nofire", "nojump", "skip", "idle"});
+        if (op == "bmi" && saysPressed)
+          problems += "- After lda INPT4, bmi branches when the button is NOT pressed (bit 7 = 1 means released); \"" + label + "\" sounds like the pressed case. Use bpl to branch when it is pressed, or bmi to skip the code.\n";
+        else if (op == "bpl" && saysReleased)
+          problems += "- After lda INPT4, bpl branches when the button IS pressed (bit 7 = 0); \"" + label + "\" sounds like the released case. Use bmi to branch when it is released.\n";
+      }
+      if (!code.empty() && code.find_first_not_of(" \t") != std::string::npos) previous = code;
+    }
+  }
   {
     auto unknown = unknownNames("```\n" + added + "```", kb, inProject, 6, batariBasic);
     if (!unknown.empty()) {
