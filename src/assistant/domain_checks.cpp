@@ -153,8 +153,15 @@ std::string proposalProblems(const std::string& request, const std::string& befo
                         talksAboutFire.find("botón") != std::string::npos || talksAboutFire.find("boton") != std::string::npos;
     for (size_t i = firstAdded > 10 ? firstAdded - 10 : 0; i < firstAdded; i++) readsPort = readsPort || (mentionsFire && hasWord(withoutComment(lines[i]), "SWCHA"));
   }
+  {
+    // a change that deals with the button (it says so in a comment or a label) and reads neither INPT4 nor INPT5 has found the button somewhere it is not
+    std::string addedLower = lowered(added);
+    bool addedMentionsFire = addedLower.find("fire") != std::string::npos || addedLower.find("button") != std::string::npos || addedLower.find("disparo") != std::string::npos ||
+                             addedLower.find("botón") != std::string::npos || addedLower.find("boton") != std::string::npos;
+    readsPort = readsPort || addedMentionsFire;
+  }
   if (aboutFire && readsPort && !readsFire && !batariBasic)
-    problems += "- The fire button is not in SWCHA (that port has only the four directions of each joystick). Read it from INPT4 (player 0) or INPT5 (player 1): "
+    problems += "- The fire button is not in SWCHA or any other register you named (SWCHA has only the four directions of each joystick; there is no SWPHASE or similar). Read it from INPT4 (player 0) or INPT5 (player 1): "
                 "bit 7 is 0 while the button is pressed (lda INPT4 / bmi NotPressed). To act once per press, keep the previous state in a RAM byte.\n";
   if (!batariBasic) {  // instructions of the 65C02 that the 2600's 6507 does not have
     static const std::set<std::string> only65c02 = {"bra", "phx", "phy", "plx", "ply", "stz", "trb", "tsb", "wai", "stp"};
