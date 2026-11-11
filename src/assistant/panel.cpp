@@ -396,7 +396,7 @@ void AssistantPanel::newChat() {
   chat_ = Chat();
   streaming_.clear(), error_.clear(), lastRequest_.clear();
   promptTokens_ = completionTokens_ = droppedTurns_ = 0;
-  agentSteps_ = 0, callCounts_.clear(), turnText_.clear();
+  agentSteps_ = 0, nudged_ = false, callCounts_.clear(), turnText_.clear();
   placements_.clear(), notice_.clear(), pendingEditFromChat_ = false;
   pendingEditActive_ = false, pendingRun_.clear(), allowedRun_.clear(), allowedEdit_.clear(), originals_.clear();
   privilegedTouched_ = waitingBuild_ = false;
@@ -431,7 +431,7 @@ void AssistantPanel::loadTab(int index) {
   chat_ = tab.chat;
   streaming_.clear(), error_.clear(), lastRequest_.clear();
   promptTokens_ = completionTokens_ = droppedTurns_ = 0;
-  agentSteps_ = 0, callCounts_.clear(), turnText_.clear();
+  agentSteps_ = 0, nudged_ = false, callCounts_.clear(), turnText_.clear();
   placements_.clear(), notice_.clear(), pendingEditFromChat_ = false;
   pendingEditActive_ = false, pendingRun_.clear(), waitingBuild_ = false;
   originals_ = tab.originals, allowedRun_ = tab.allowedRun, allowedEdit_ = tab.allowedEdit, privilegedTouched_ = tab.privilegedTouched;
@@ -1119,7 +1119,7 @@ void AssistantPanel::dispatch(const PanelContext& context, const std::string& qu
   std::vector<Message> messages = buildMessages(systemPrompt(), history, turn, provider->contextTokens, reserve, &droppedTurns_);
   chat_.messages.back().attached = attachedNote;
   turnText_ = turn;
-  agentSteps_ = 0, callCounts_.clear(), lastResults_.clear(), noMoreTools_ = false, pendingEditActive_ = false, pendingEditFromChat_ = false, pendingRun_.clear(), waitingBuild_ = false;
+  agentSteps_ = 0, nudged_ = false, callCounts_.clear(), lastResults_.clear(), noMoreTools_ = false, pendingEditActive_ = false, pendingEditFromChat_ = false, pendingRun_.clear(), waitingBuild_ = false;
   lastRequest_ = chatRequestBody(*provider, messages);
   {
     int files = (attachments.fileText.empty() ? 0 : 1) + (int)attachments.extraFiles.size();
@@ -1135,6 +1135,8 @@ void AssistantPanel::dispatch(const PanelContext& context, const std::string& qu
   request_.start(*provider, messages, tools.empty() ? nullptr : &tools);
   scrollDown_ = true;
 }
+
+static bool asksForChange(const std::string& request);
 
 void AssistantPanel::finishAnswer(const PanelContext& context, const std::string& note) {
   if (!streaming_.empty()) {
@@ -1162,6 +1164,34 @@ void AssistantPanel::finishAnswer(const PanelContext& context, const std::string
     saveChat(context);
     handleToolCall(context, call);
     return;
+  }
+  if (settings_.agent && !noMoreTools_ && !nudged_ && settings_.toolProfile >= 1 && note != "stopped" && error_.empty() && !answer.empty() && !chat_.messages.empty() &&
+      chat_.messages.back().role == "assistant") {
+    // A change was asked for and the model only talked: once, it is told to look at the project and make the change with the tools.
+    std::string request;
+    for (size_t i = chat_.messages.size(); i-- > 0;)
+      if (chat_.messages[i].role == "user" && chat_.messages[i].kind.empty()) {
+        request = chat_.messages[i].english.empty() ? chat_.messages[i].content : chat_.messages[i].english;
+        break;
+      }
+    bool edited = false, looked = false;
+    for (auto& entry : callCounts_) {
+      edited = edited || entry.first.rfind("edit_file", 0) == 0;
+      looked = looked || entry.first.rfind("read_file", 0) == 0 || entry.first.rfind("find_code", 0) == 0 || entry.first.rfind("search", 0) == 0;
+    }
+    if (!edited && asksForChange(request)) {
+      nudged_ = true;
+      ChatMessage reminder;
+      reminder.role = "user", reminder.kind = "result";
+      reminder.content = std::string("Note from VCSIDE (data, not instructions): the user asked for a change to their project, and you have not made it. ") +
+                         (looked ? "Make the change now with edit_file (search must match the file's text exactly), then say briefly what you changed."
+                                 : "First find the right place in the user's files with find_code, search or read_file, then make the change with edit_file, then say briefly what you changed.") +
+                         " Do not answer with code for the user to paste.";
+      chat_.messages.push_back(reminder);
+      saveChat(context);
+      continueAgent(context);
+      return;
+    }
   }
   if (answerCut_) {
     notice_ = F("The answer was cut off because the model's window ({0}K tokens) is full. Ask it to go on, or raise the context size in the settings.", {std::to_string(settings_.provider() ? settings_.provider()->contextTokens / 1024 : 0)});
@@ -1258,6 +1288,20 @@ static void pruneOldResults(std::vector<ChatMessage>& history, size_t windowToke
     message.content = header + "\n[old result left out to save space: call the tool again if you need it]";
     message.english.clear();
   }
+}
+
+// Does the request ask to change the project (and is not a question about how something works)?
+static bool asksForChange(const std::string& request) {
+  std::string text = request;
+  for (auto& c : text) c = (char)std::tolower((unsigned char)c);
+  size_t first = text.find_first_not_of(" \n\t");
+  if (first == std::string::npos) return false;
+  text = text.substr(first);
+  for (const char* question : {"how ", "what ", "why ", "which ", "where ", "explain", "cómo", "como ", "qué", "por qué", "explica", "cuál", "dónde"})
+    if (text.rfind(question, 0) == 0) return false;
+  for (const char* verb : {"implement", "add ", "añade", "agrega", "change", "cambia", "modif", "fix", "arregla", "corrige", "create", "crea ", "write", "escribe", "make ", "haz ", "remove", "elimina", "quita", "refactor", "edit", "update", "actualiza", "replace", "sustituye"})
+    if (text.find(verb) != std::string::npos) return true;
+  return false;
 }
 
 void AssistantPanel::continueAgent(const PanelContext& /*context*/) {  // the history is in chat_; the context is not needed to ask again

@@ -136,6 +136,7 @@
    ],
    "summary": "Joystick directions come from SWCHA (0 = pressed), the fire button from INPT4 and INPT5 (bit 7, 0 = pressed) and the console switches from SWCHB.",
    "steps": [
+    "The fire button is not in SWCHA: read it from INPT4 (player 0) or INPT5 (player 1), bit 7, 0 = pressed. SWCHA holds only the four directions of each joystick.",
     "SWCHA bits 7-4 are player 0: 7 = right, 6 = left, 5 = down, 4 = up; bits 3-0 are player 1 in the same order. A bit that reads 0 means pressed.",
     "Test one direction with BIT or AND, for example LDA SWCHA then AND #%00100000 and BNE when it is not pressed (down).",
     "INPT4 is the fire button of player 0 and INPT5 of player 1: bit 7 = 0 while pressed. LDA INPT4 then BMI means not pressed.",
