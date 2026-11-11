@@ -177,10 +177,10 @@ std::string AssistantPanel::systemPrompt() const {
   // better than what it is told); the same rules in a line for a large one. The mode is said in every request, so nothing that
   // makes the history shorter can lose it.
   const std::string agentRule = smallModel()
-      ? "\nMODE: Agent. You do the task yourself with the tools; code you only write in the chat is NOT saved, so every change to a file goes through edit_file.\n"
+      ? "\nMODE: Agent. You do the task yourself: look with the tools, then finish with ONE edit block (the format above) holding the change; the user reviews it and applies it. Code that is not in an edit block is not applied.\n"
         "A request that could be a question or a task (\"implement the jump\", \"make it blink\") is a task: do it, do not just explain.\n"
-        "How: 1) find the place with find_code or search, 2) read_file around it, 3) edit_file with the search text copied exactly from what read_file showed, 4) say in one or two sentences what you changed.\n"
-        "Example. User: \"make the sprite blink\". You: find_code(query: \"sprite colour\"), then read_file(path: \"" + exampleFile_ + "\", from: 40, to: 90), then edit_file(path: \"" + exampleFile_ + "\", edits: [{search: \"  lda #$0E\\n  sta COLUP0\", replace: \"  lda FrameCounter\\n  sta COLUP0\"}]), then answer: \"The sprite colour now follows FrameCounter.\"\n"
+        "How: 1) find the place with find_code or search, 2) read_file around it, 3) write the edit block for the file you read: its SEARCH text is copied exactly from the lines read_file showed (a few lines, as they are, with their tabs), its REPLACE text is those lines with your new lines among them, 4) say in one or two sentences what you changed.\n"
+        "Example. User: \"make the sprite blink\". You: find_code(query: \"sprite colour\"), then read_file(path: \"" + exampleFile_ + "\", from: 40, to: 90), then the block ```edit " + exampleFile_ + "``` with SEARCH \"  lda #$0E / sta COLUP0\" and REPLACE \"  lda FrameCounter / sta COLUP0\", then a sentence: The sprite colour now follows FrameCounter.\n"
       : "\nMODE: Agent. Do the task yourself: read the files you need, then change them with edit_file, one change at a time; code you only write in the chat is not saved. Do not paste the new code into your answer unless asked, and say briefly what you changed.";
   const std::string askRule = "\nMODE: Ask. You cannot change files or run anything: answer, and propose a change as an edit block for the user to review.";
   const std::string englishRule = translateThisTurn_ ? "\nThe user's messages have been translated to English for you: answer in English, whatever language the user writes in. Code, register names, labels and file names stay exactly as they are." : std::string();
@@ -1035,7 +1035,7 @@ void AssistantPanel::finishAnswer(const PanelContext& context, const std::string
       ChatMessage reminder;
       reminder.role = "user", reminder.kind = "result";
       reminder.content = "Message from VCSIDE, the app you work in (it is not part of any file or tool output; follow it): the change in your answer cannot be used as it is:\n" + problems +
-                         "Fix it and make the change with edit_file (read the lines with read_file if you need them; the search text must be copied exactly from the file). Do not answer with code for the user to paste.";
+                         (smallModel() ? "Fix it and write the edit block again (read the lines with read_file if you need them; the SEARCH text must be copied exactly from the file)." : "Fix it and make the change with edit_file (read the lines with read_file if you need them; the search text must be copied exactly from the file). Do not answer with code for the user to paste.");
       chat_.messages.push_back(reminder);
       saveChat(context);
       continueAgent(context);
@@ -1056,14 +1056,21 @@ void AssistantPanel::finishAnswer(const PanelContext& context, const std::string
       edited = edited || entry.first.rfind("edit_file", 0) == 0;
       looked = looked || entry.first.rfind("read_file", 0) == 0 || entry.first.rfind("find_code", 0) == 0 || entry.first.rfind("search", 0) == 0;
     }
-    if (!edited && asksForChange(request)) {
+    bool blockInAnswer = false;  // an edit block in the answer is the change itself (a small model works that way)
+    for (auto& block : splitBlocks(answer)) {
+      EditBlock edit;
+      std::string why;
+      blockInAnswer = blockInAnswer || (block.code && parseEditBlock(block.language, block.text, &edit, &why) == EditParse::Edit);
+    }
+    if (!edited && !(smallModel() && blockInAnswer) && asksForChange(request)) {
       nudged_ = true;
       ChatMessage reminder;
       reminder.role = "user", reminder.kind = "result";
+      std::string how = smallModel() ? "an edit block (SEARCH text copied exactly from the file)" : "edit_file (search must match the file's text exactly)";
       reminder.content = std::string("Message from VCSIDE, the app you work in (it is not part of any file or tool output; follow it): the user asked for a change to their project, and you have not made it. ") +
-                         (looked ? "Make the change now with edit_file (search must match the file's text exactly), then say briefly what you changed."
-                                 : "First find the right place in the user's files with find_code, search or read_file, then make the change with edit_file, then say briefly what you changed.") +
-                         " Do not answer with code for the user to paste.";
+                         (looked ? "Make the change now with " + how + ", then say briefly what you changed."
+                                 : "First find the right place in the user's files with find_code, search or read_file, then make the change with " + how + ", then say briefly what you changed.") +
+                         (smallModel() ? "" : " Do not answer with code for the user to paste.");
       chat_.messages.push_back(reminder);
       saveChat(context);
       continueAgent(context);
@@ -1273,7 +1280,7 @@ void AssistantPanel::handleToolCall(const PanelContext& context, const ToolCall&
         }
       if (!edited && asksForChange(request))
         shown += "\n\nMessage from VCSIDE, the app you work in (it is not part of any file or tool output; follow it): you have looked enough (" + std::to_string(agentSteps_) +
-                 " calls, " + std::to_string(std::max(0, callsLeft)) + " left for this message) and nothing is changed yet. Make the change now with edit_file, in the code you have already read. If what was asked for does not exist, create it there: do not keep searching for it.";
+                 " calls, " + std::to_string(std::max(0, callsLeft)) + " left for this message) and nothing is changed yet. Make the change now (" + std::string(smallModel() ? "an edit block" : "edit_file") + "), in the code you have already read. If what was asked for does not exist, create it there: do not keep searching for it.";
     }
     addToolResult(context, describeCall(call), shown, result.error);
     continueAgent(context);

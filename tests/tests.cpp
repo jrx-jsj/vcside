@@ -3568,7 +3568,7 @@ static void testAgentTools(const KnowledgeBase& kb) {
     auto fewer = runTool(small, {"search", {{"text", "wsync"}}});
     CHECK(fewer.text.find("  3:") != std::string::npos && fewer.text.find("  4:") == std::string::npos && fewer.text.find("1 more lines not shown") != std::string::npos);
   }
-  CHECK(toolNames(2, 2).size() == 13 && [] { auto names = toolNames(2, 2); return std::find(names.begin(), names.end(), "list_files") == names.end() && std::find(names.begin(), names.end(), "project_info") == names.end(); }() && toolNames(2, 1).size() == 7 && toolNames(0, 1).size() == 5 && toolNames(1, 1).size() == 6 && toolNames(2).size() == 15);
+  CHECK(toolNames(2, 2).size() == 13 && [] { auto names = toolNames(2, 2); return std::find(names.begin(), names.end(), "list_files") == names.end() && std::find(names.begin(), names.end(), "project_info") == names.end(); }() && toolNames(2, 1).size() == 6 && toolNames(0, 1).size() == 5 && toolNames(1, 1).size() == 5 && toolNames(2).size() == 15);
   CHECK(toolPrompt(2, false, 1).find("symbols") == std::string::npos && toolPrompt(2, false, false).find("symbols") != std::string::npos && toolPrompt(2, true).find("```tool") == std::string::npos);
   CHECK(call("read_file", {{"path", ".env"}}).error);
   CHECK(call("read_file", {{"path", "game.bin"}}).error);
