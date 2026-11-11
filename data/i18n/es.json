@@ -39,6 +39,7 @@
     "A command of the project's own, run in its folder (make, sh build.sh...). With &&, | or ; the system's shell runs it. Empty: VCSIDE runs the tool.": "Una orden propia del proyecto, que se ejecuta en su carpeta (make, sh build.sh...). Con &&, | o ; la ejecuta el intérprete del sistema. Vacía: VCSIDE ejecuta la herramienta.",
     "A copy of \"{0}\"": "Una copia de «{0}»",
     "A copy of this pattern, to change it without changing the original.": "Una copia de este patrón, para cambiarla sin cambiar el original.",
+    "a file only you can read": "un fichero que solo puedes leer tú",
     "A local server (llama.cpp's llama-server, Ollama, LM Studio) keeps everything on this computer. Keys are never saved: for a service that needs one, give the name of the environment variable that holds it.": "Un servidor local (llama-server de llama.cpp, Ollama, LM Studio) deja todo en este ordenador. Las claves nunca se guardan: para un servicio que la necesite, indica el nombre de la variable de entorno que la contiene.",
     "A model file I already have...": "Un archivo de modelo que ya tengo...",
     "A new empty pattern after this entry.": "Un patrón nuevo vacío tras esta entrada.",
@@ -475,6 +476,7 @@
     "Items of the same group share a generated file.": "Los elementos del mismo grupo comparten archivo generado.",
     "Its launch options: Build > Emulator options...": "Sus opciones de arranque: Compilar > Opciones del emulador...",
     "joystick": "joystick",
+    "Keep API keys in a file only you can read, not in the system's secret store": "Guardar las claves de API en un fichero que solo puedes leer tú, no en el almacén de secretos del sistema",
     "Kernel: the project's ({0})": "Kernel: el del proyecto ({0})",
     "Kernel: {0}": "Kernel: {0}",
     "Key saved in {0}: {1}": "Clave guardada en {0}: {1}",
@@ -802,9 +804,6 @@
     "Send": "Enviar",
     "Send to a remote server?": "¿Enviar a un servidor remoto?",
     "Send to it": "Enviar ahí",
-    "Keep API keys in a file only you can read, not in the system's secret store": "Guardar las claves de API en un fichero que solo puedes leer tú, no en el almacén de secretos del sistema",
-    "The system never asks for a key in that file, but any program you run can read it.": "El sistema nunca pide permiso para una clave de ese fichero, pero cualquier programa que ejecutes puede leerla.",
-    "a file only you can read": "un fichero que solo puedes leer tú",
     "Sent with: {0}": "Enviado con: {0}",
     "Services": "Servicios",
     "Settings": "Ajustes",
@@ -879,9 +878,7 @@
     "The animation {0} needs two batari Basic variables (its counter and its step): choose them in the animation.": "La animación {0} necesita dos variables de batari Basic (su contador y su paso): elígelas en la animación.",
     "The answer could not be translated, so it is shown in English.": "No se pudo traducir la respuesta, así que se muestra en inglés.",
     "The answer was cut off because the model's window ({0}K tokens) is full. Ask it to go on, or raise the context size in the settings.": "La respuesta se cortó porque la ventana del modelo ({0}K tokens) está llena. Pídele que siga, o sube el tamaño del contexto en los ajustes.",
-    "The assistant repeated the same tool call and was stopped.": "El asistente repitió la misma llamada a una herramienta y se detuvo.",
     "The assistant runs a language model on this computer. Download {0} ({1}, licence {2}) from {3}? The file is checked against a fixed checksum, and nothing from your project is sent.": "El asistente ejecuta un modelo de lenguaje en este ordenador. ¿Descargar {0} ({1}, licencia {2}) desde {3}? El archivo se comprueba con una suma de verificación fija y no se envía nada de tu proyecto.",
-    "The assistant used its {0} tool calls for this message. Send another message to let it go on.": "El asistente ha usado sus {0} llamadas a herramientas para este mensaje. Envía otro mensaje para que siga.",
     "The assistant wants to build the project.": "El asistente quiere compilar el proyecto.",
     "The assistant wants to start the game in the emulator.": "El asistente quiere abrir el juego en el emulador.",
     "The Atari 2600: general notes": "La Atari 2600: notas generales",
@@ -945,6 +942,7 @@
     "The space report is only available for DASM projects built by VCSIDE.": "El informe de espacio solo está disponible en proyectos DASM compilados por VCSIDE.",
     "the square: the row's background colour": "el cuadro: color de fondo de la fila",
     "the square: the row's playfield colour": "el cuadro: color del playfield en la fila",
+    "The system never asks for a key in that file, but any program you run can read it.": "El sistema nunca pide permiso para una clave de ese fichero, pero cualquier programa que ejecutes puede leerla.",
     "The system's own": "Las del sistema",
     "The TIA's two channels: AUDC, AUDF and AUDV once per frame. Any cartridge.": "Los dos canales de la TIA: AUDC, AUDF y AUDV una vez por frame. Cualquier cartucho.",
     "The token budget for remote models ({0}) is used up. Raise it in the Assistant settings to go on.": "Se ha agotado el presupuesto de tokens para modelos remotos ({0}). Súbelo en los ajustes del asistente para seguir.",
@@ -1028,6 +1026,7 @@
     "Up to 3 voices; each voice's volume has 15 / voices steps, and noise repeats every 32 steps.": "Hasta 3 voces; el volumen de cada voz tiene 15 / voces escalones y el ruido se repite cada 32 pasos.",
     "Use \"{0}\"": "Usar «{0}»",
     "Use none": "No usar ninguna",
+    "Use the model's own tool calls when it has them (otherwise the tools are asked for in text)": "Usar las llamadas a herramientas propias del modelo cuando las tiene (si no, las herramientas se piden en texto)",
     "Use the selected": "Usar las marcadas",
     "Used by notes with the effect V{0}. Right click: the held note repeats from there.": "La usan las notas con el efecto V{0}. Clic derecho: la nota mantenida se repite desde ahí.",
     "used in phase 1": "usado en la fase 1",
@@ -1175,5 +1174,5 @@
     "{0}:{1}: no listing to place the breakpoint: build first.": "{0}:{1}: no hay listado para situar el punto de ruptura: compila antes.",
     "±{0}": "±{0}"
   },
-  "total": 1169
+  "total": 1171
 }

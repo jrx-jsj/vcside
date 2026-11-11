@@ -24,6 +24,8 @@ struct ToolEnv {
   std::string buildErrors;   // the last build's diagnostics, one per line
   std::string spaceReport;   // ROM and RAM left, as the Space panel shows them
   std::string symbols;       // "name file:line" per line
+  size_t readCapChars = 12000;  // the most a read gives back (smaller for a small window)
+  size_t searchLimit = 40;      // the most lines a search gives back
   std::function<std::string(const std::string& query)> findCode;
   // The text of a file as the editor holds it (unsaved changes included), by its path relative to the project; false if it is not open.
   std::function<bool(const std::string& relative, std::string* text)> openFileText;  // ranked search of the project index
@@ -56,11 +58,13 @@ struct ToolResult {
 
 // The names the model may use, with their tier. profile: 0 read only, 1 read + edit, 2 all.
 bool toolTier(const std::string& name, Tier* tier);
-std::vector<std::string> toolNames(int profile);
+// compact: the small set for small models (read a file or a folder, search, find code, the reference, edit, build): fewer
+// tools to choose from.
+std::vector<std::string> toolNames(int profile, bool compact = false);
 // What a tool does, in a sentence (the text after the signature in its line).
 std::string toolDescription(const std::string& name);
 // The tool section of the system prompt: how to write a call, and each tool in one line.
-std::string toolPrompt(int profile);
+std::string toolPrompt(int profile, bool native = false, bool compact = false);
 
 // Finds one call in an answer: a ```tool block, a <tool_call> element or a bare JSON object
 // that names a tool. `before` gets the text in front of it. False if there is none.

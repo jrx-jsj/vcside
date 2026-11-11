@@ -17,6 +17,7 @@ struct Settings {
   bool chat = false;   // the chat panel
   // Planned features, remembered so the first-start answer is kept as given.
   bool agent = false, completion = false, explainErrors = false;
+  bool nativeTools = true;           // Agent: use the service's own tool calls when it takes them (the text block is the fallback)
   bool contextTuned = false;         // the built-in model's window was raised once for a computer with the memory for it
   bool workInEnglish = true;         // translate the question to English and the answer back, code and names untouched
   bool smartSearch = false;          // search the project by meaning too (embeddings; downloads a small model)

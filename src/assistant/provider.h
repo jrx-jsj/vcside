@@ -6,11 +6,14 @@
 #pragma once
 #include <atomic>
 #include <deque>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
+
+#include <nlohmann/json.hpp>
 
 #include "assistant/http.h"
 #include "assistant/sse.h"
@@ -38,20 +41,36 @@ struct Provider {
 
 // What a worker reports to the UI thread.
 struct Event {
-  enum Kind { Text, Usage, Error, Done, Length, Retry } kind = Text;  // Retry: the service was busy; promptTokens = the HTTP status, completionTokens = seconds until the next try  // Length: the answer stopped because the window was full
+  enum Kind { Text, Usage, Error, Done, Length, Retry, ToolCall, NoNativeTools } kind = Text;  // ToolCall: the model called a tool through the API (text = its name, arguments = the JSON); NoNativeTools: the service refused the tool definitions and the request went again without them  // Retry: the service was busy; promptTokens = the HTTP status, completionTokens = seconds until the next try  // Length: the answer stopped because the window was full
   std::string text;          // Text: a piece of the answer; Error: the message
   int promptTokens = 0, completionTokens = 0;  // Usage
+  std::string arguments = {};
 };
 
 // The request body for the chat completions endpoint.
-std::string openAiRequestBody(const Provider& provider, const std::vector<Message>& messages);
+// tools: native tool definitions (tool_schema.h nativeTools) to send with the request, or nullptr.
+std::string openAiRequestBody(const Provider& provider, const std::vector<Message>& messages, const nlohmann::json* tools = nullptr);
 // Reads one streamed data payload ("[DONE]" included) into events.
-void parseOpenAiStreamData(const std::string& data, std::vector<Event>& events);
+// Tool calls arrive in pieces (a name, then the arguments a few characters at a time); this puts them together and says, once a
+// call is whole, ToolCall.
+class ToolCallAssembler {
+ public:
+  void addOpenAi(const nlohmann::json& toolCalls);                         // delta.tool_calls of a chunk
+  void startAnthropic(int index, const std::string& name);                  // content_block_start of a tool_use
+  void addAnthropic(int index, const std::string& partialJson);            // input_json_delta
+  void finish(std::vector<Event>& events);                                  // every call still open becomes a ToolCall event
+  void finishAnthropic(int index, std::vector<Event>& events);
+ private:
+  struct Partial { std::string name, arguments; };
+  std::map<int, Partial> open_;
+  int nextIndex_ = 0;
+};
+void parseOpenAiStreamData(const std::string& data, std::vector<Event>& events, ToolCallAssembler* tools = nullptr);
 // The body for the provider's dialect (what the request inspector shows: never a key).
-std::string chatRequestBody(const Provider& provider, const std::vector<Message>& messages);
+std::string chatRequestBody(const Provider& provider, const std::vector<Message>& messages, const nlohmann::json* tools = nullptr);
 // The Anthropic Messages API: the system prompt is its own field, not a message.
-std::string anthropicRequestBody(const Provider& provider, const std::vector<Message>& messages, int maxTokens = 4096);
-void parseAnthropicStreamData(const std::string& data, std::vector<Event>& events);
+std::string anthropicRequestBody(const Provider& provider, const std::vector<Message>& messages, int maxTokens = 4096, const nlohmann::json* tools = nullptr);
+void parseAnthropicStreamData(const std::string& data, std::vector<Event>& events, ToolCallAssembler* tools = nullptr);
 // The request's address and headers for the provider's dialect, key included (looked up in
 // the secret store, then in the environment variable the provider names).
 std::string chatUrl(const Provider& provider);
@@ -64,13 +83,13 @@ std::string joinUrl(const std::string& base, const std::string& path);
 class ChatRequest {
  public:
   ~ChatRequest();
-  void start(const Provider& provider, std::vector<Message> messages);
+  void start(const Provider& provider, std::vector<Message> messages, const nlohmann::json* tools = nullptr);
   void cancel() { cancel_ = true; }
   bool running() const { return running_; }
   std::vector<Event> poll();  // takes what arrived since the last call
 
  private:
-  void run(Provider provider, std::vector<Message> messages);
+  void run(Provider provider, std::vector<Message> messages, nlohmann::json tools);
   std::thread thread_;
   std::mutex mutex_;
   std::deque<Event> events_;

@@ -14,6 +14,7 @@
 #include <sstream>
 
 #include "assistant/chat_tabs.h"
+#include "assistant/tool_schema.h"
 #include "assistant/validate.h"
 #include "assistant/http.h"
 #include "assistant/markdown.h"
@@ -337,17 +338,55 @@ AssistantPanel::~AssistantPanel() {
   engine_.stop();
 }
 
+std::string AssistantPanel::providerKey() const {
+  const Provider* provider = settings_.providers.empty() ? nullptr : &settings_.providers[std::clamp(settings_.active, 0, (int)settings_.providers.size() - 1)];
+  return provider ? provider->name + "|" + provider->baseUrl + "|" + provider->model : "";
+}
+
+nlohmann::json AssistantPanel::nativeToolList(const Provider& provider) const {
+  if (!useNativeTools()) return nlohmann::json::array();
+  return nativeTools(toolNames(settings_.toolProfile, smallModel()), provider.dialect == "anthropic");
+}
+
+// A model that runs on this computer, or whose name says it has 14 billion parameters or fewer ("qwen3-8b"): short prompt, small
+// set of tools, small answers.
+bool AssistantPanel::smallModel() const {
+  if (settings_.providers.empty()) return false;
+  const Provider& provider = settings_.providers[std::clamp(settings_.active, 0, (int)settings_.providers.size() - 1)];
+  if (provider.builtin || provider.isLocal()) return true;
+  std::string id = provider.model;
+  for (size_t at = 0; at < id.size(); at++)
+    if (std::isdigit((unsigned char)id[at]) && (at == 0 || !std::isalnum((unsigned char)id[at - 1]) || id[at - 1] == '-')) {
+      size_t end = at;
+      while (end < id.size() && (std::isdigit((unsigned char)id[end]) || id[end] == '.')) end++;
+      if (end < id.size() && (id[end] == 'b' || id[end] == 'B') && (end + 1 >= id.size() || !std::isalpha((unsigned char)id[end + 1])) && std::atof(id.substr(at, end - at).c_str()) <= 14.0) return true;
+    }
+  return false;
+}
+
+// Native tool calls: the service's own mechanism, with a schema per tool, when the user did not turn it off and the service did not refuse it.
+bool AssistantPanel::useNativeTools() const { return settings_.agent && settings_.nativeTools && !nativeOff_.count(providerKey()); }
+
 std::string AssistantPanel::systemPrompt() const {
   // Agent mode: the work is done with the tools. Ask mode: answers, and changes as blocks the user reviews.
-  const std::string agentRule = "\nYou are in Agent mode: do the task yourself. Read the files you need, then change them with edit_file, one change at a time; do not paste the new code into your answer unless asked, and say briefly what you changed.";
+  // Agent mode: the work is done with the tools. A short prompt with an example for a small model (it follows what it is shown
+  // better than what it is told); the same rules in a line for a large one. The mode is said in every request, so nothing that
+  // makes the history shorter can lose it.
+  const std::string agentRule = smallModel()
+      ? "\nMODE: Agent. You do the task yourself with the tools; code you only write in the chat is NOT saved, so every change to a file goes through edit_file.\n"
+        "A request that could be a question or a task (\"implement the jump\", \"make it blink\") is a task: do it, do not just explain.\n"
+        "How: 1) find the place with find_code or search, 2) read_file around it, 3) edit_file with the search text copied exactly from what read_file showed, 4) say in one or two sentences what you changed.\n"
+        "Example. User: \"make the sprite blink\". You: find_code(query: \"sprite colour\"), then read_file(path: \"main.asm\", from: 40, to: 90), then edit_file(path: \"main.asm\", edits: [{search: \"  lda #$0E\\n  sta COLUP0\", replace: \"  lda FrameCounter\\n  sta COLUP0\"}]), then answer: \"The sprite colour now follows FrameCounter.\"\n"
+      : "\nMODE: Agent. Do the task yourself: read the files you need, then change them with edit_file, one change at a time; code you only write in the chat is not saved. Do not paste the new code into your answer unless asked, and say briefly what you changed.";
+  const std::string askRule = "\nMODE: Ask. You cannot change files or run anything: answer, and propose a change as an edit block for the user to review.";
   const std::string englishRule = translateThisTurn_ ? "\nThe user's messages have been translated to English for you: answer in English, whatever language the user writes in. Code, register names, labels and file names stay exactly as they are." : std::string();
   std::ifstream file(dataDir() + "/assistant/system.txt");
   if (file) {
     std::stringstream text;
     text << file.rdbuf();
-    if (!text.str().empty()) return text.str() + (settings_.agent ? "\n" + toolPrompt(settings_.toolProfile) + agentRule : std::string()) + englishRule;
+    if (!text.str().empty()) return text.str() + (settings_.agent ? "\n" + toolPrompt(settings_.toolProfile, useNativeTools(), smallModel()) + agentRule : askRule) + englishRule;
   }
-  return std::string(kFallbackPrompt) + (settings_.agent ? "\n" + toolPrompt(settings_.toolProfile) + agentRule : std::string()) + englishRule;
+  return std::string(kFallbackPrompt) + (settings_.agent ? "\n" + toolPrompt(settings_.toolProfile, useNativeTools(), smallModel()) + agentRule : askRule) + englishRule;
 }
 
 void AssistantPanel::newChat() {
@@ -1076,7 +1115,7 @@ void AssistantPanel::dispatch(const PanelContext& context, const std::string& qu
   std::vector<Message> messages = buildMessages(systemPrompt(), history, turn, provider->contextTokens, reserve, &droppedTurns_);
   chat_.messages.back().attached = attachedNote;
   turnText_ = turn;
-  agentSteps_ = 0, callCounts_.clear(), pendingEditActive_ = false, pendingEditFromChat_ = false, pendingRun_.clear(), waitingBuild_ = false;
+  agentSteps_ = 0, callCounts_.clear(), lastResults_.clear(), noMoreTools_ = false, pendingEditActive_ = false, pendingEditFromChat_ = false, pendingRun_.clear(), waitingBuild_ = false;
   lastRequest_ = chatRequestBody(*provider, messages);
   {
     int files = (attachments.fileText.empty() ? 0 : 1) + (int)attachments.extraFiles.size();
@@ -1086,7 +1125,10 @@ void AssistantPanel::dispatch(const PanelContext& context, const std::string& qu
                                                  : std::string(T("Reading your question"));
     requestStartedAt_ = ImGui::GetTime();
   }
-  request_.start(*provider, messages);
+  nativeCallSeen_ = false;
+  nlohmann::json tools = nativeToolList(*provider);
+  lastRequest_ = chatRequestBody(*provider, messages, tools.empty() ? nullptr : &tools);
+  request_.start(*provider, messages, tools.empty() ? nullptr : &tools);
   scrollDown_ = true;
 }
 
@@ -1104,7 +1146,7 @@ void AssistantPanel::finishAnswer(const PanelContext& context, const std::string
   std::string answer = streaming_;
   streaming_.clear();
   ToolCall call;
-  if (settings_.agent && note != "stopped" && error_.empty() && !chat_.messages.empty() && chat_.messages.back().role == "assistant" && findToolCall(answer, &call)) {
+  if (settings_.agent && !noMoreTools_ && note != "stopped" && error_.empty() && !chat_.messages.empty() && chat_.messages.back().role == "assistant" && findToolCall(answer, &call)) {
     chat_.messages.back().kind = "call";
     saveChat(context);
     handleToolCall(context, call);
@@ -1154,6 +1196,12 @@ ToolEnv AssistantPanel::toolEnv(const PanelContext& context) const {
   env.spaceReport = context.spaceReport;
   env.symbols = context.symbols;
   env.openFileText = context.readOpenFile;
+  if (const Provider* provider = settings_.providers.empty() ? nullptr : &settings_.providers[std::clamp(settings_.active, 0, (int)settings_.providers.size() - 1)]) {
+    // what a tool gives back must leave room in the window: a small window gets small answers
+    int window = provider->contextTokens;
+    env.readCapChars = (size_t)std::clamp(window * 2 / 5, 1500, 12000);
+    env.searchLimit = window <= 8192 ? 20 : 40;
+  }
   if (!context.projectDir.empty())
     env.findCode = [self = const_cast<AssistantPanel*>(this), dir = context.projectDir](const std::string& query) {
       self->index_.update(dir);
@@ -1171,7 +1219,9 @@ ToolEnv AssistantPanel::toolEnv(const PanelContext& context) const {
 }
 
 void AssistantPanel::addToolResult(const PanelContext& context, const std::string& tool, const std::string& text, bool error) {
-  std::string shown = text.size() > kMaxResultChars ? utf8Cut(text, kMaxResultChars) + "\n... (cut)\n" : text;
+  size_t cap = kMaxResultChars;
+  if (const Provider* provider = settings_.provider()) cap = (size_t)std::clamp(provider->contextTokens * 35 / 100, 1500, (int)kMaxResultChars);
+  std::string shown = text.size() > cap ? utf8Cut(text, cap) + "\n[cut: " + std::to_string(text.size() - cap) + " more characters]\n" : text;
   shown = sanitizeUtf8(shown);  // a source file may not be UTF-8 at all
   ChatMessage result;
   result.role = "user";
@@ -1197,7 +1247,10 @@ void AssistantPanel::continueAgent(const PanelContext& /*context*/) {  // the hi
   streaming_.clear();
   waitingText_ = T("Reading the result of the tool");
   requestStartedAt_ = ImGui::GetTime();
-  request_.start(*provider, messages);
+  nativeCallSeen_ = false;
+  nlohmann::json tools = nativeToolList(*provider);
+  lastRequest_ = chatRequestBody(*provider, messages, tools.empty() ? nullptr : &tools);
+  request_.start(*provider, messages, tools.empty() ? nullptr : &tools);
   scrollDown_ = true;
 }
 
@@ -1205,12 +1258,20 @@ void AssistantPanel::handleToolCall(const PanelContext& context, const ToolCall&
   Tier tier = Tier::Read;
   toolTier(call.name, &tier);
   int profile = settings_.toolProfile;
+  // At the limit the last turn has no tools: the model says what it did and what is left, instead of the work just stopping.
   if (++agentSteps_ > kMaxToolCalls) {
-    error_ = F("The assistant used its {0} tool calls for this message. Send another message to let it go on.", {std::to_string(kMaxToolCalls)});
+    finishWithSummary(context, "It used its " + std::to_string(kMaxToolCalls) + " tool calls for this message.");  // for the model: not translated
     return;
   }
-  if (++callCounts_[call.name + call.args.dump()] >= kMaxSameCall) {
-    error_ = T("The assistant repeated the same tool call and was stopped.");
+  std::string key = call.name + call.args.dump();
+  int times = ++callCounts_[key];
+  if (times >= kMaxSameCall) {
+    finishWithSummary(context, "It made the same call again and again.");
+    return;
+  }
+  if (times == 2 && lastResults_.count(key)) {  // the same call twice: it is told, and shown what it got the first time
+    addToolResult(context, describeCall(call), "You already made exactly this call. This is what it gave:\n" + lastResults_[key] + "\nDo not repeat it: use that, or try something different.", false);
+    continueAgent(context);
     return;
   }
   if ((tier == Tier::Propose && profile < 1) || (tier == Tier::Run && profile < 2)) {
@@ -1220,6 +1281,7 @@ void AssistantPanel::handleToolCall(const PanelContext& context, const ToolCall&
   }
   if (tier == Tier::Read) {
     ToolResult result = runTool(toolEnv(context), call);
+    if (!result.error) lastResults_[key] = utf8Cut(result.text, 1500);
     addToolResult(context, describeCall(call), result.text, result.error);
     continueAgent(context);
     return;
@@ -1240,6 +1302,12 @@ void AssistantPanel::handleToolCall(const PanelContext& context, const ToolCall&
   bool granted = allowedRun_.count(call.name) && !(call.name == "build" && privilegedTouched_);
   if (granted) performRun(context, call.name);
   else pendingRun_ = call.name;
+}
+
+void AssistantPanel::finishWithSummary(const PanelContext& context, const std::string& why) {
+  noMoreTools_ = true;
+  addToolResult(context, "tools", why + " Tool calls are not available any more for this message. Say in a few sentences what you did, what is left to do and which files you changed.", false);
+  continueAgent(context);
 }
 
 void AssistantPanel::performRun(const PanelContext& context, const std::string& tool) {
@@ -1509,6 +1577,16 @@ void AssistantPanel::poll(const PanelContext& context) {
         break;
       case Event::Error: error_ = event.text, finishAnswer(context, ""); break;
       case Event::Length: answerCut_ = true; break;
+      case Event::NoNativeTools: nativeOff_.insert(providerKey()); break;  // the service refused the definitions: the text block from now on
+      case Event::ToolCall: {
+        if (nativeCallSeen_) break;  // one call at a time: the next turn can ask for the others again
+        nativeCallSeen_ = true;
+        nlohmann::json arguments = nlohmann::json::parse(event.arguments, nullptr, false);
+        nlohmann::json call = {{"tool", event.text}, {"args", arguments.is_object() ? arguments : nlohmann::json::object()}};
+        streaming_ += (streaming_.empty() ? "" : "\n") + std::string("```tool\n") + call.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace) + "\n```";
+        scrollDown_ = true;
+        break;
+      }
       case Event::Retry:
         waitingText_ = F("The service is busy ({0}). Trying again in {1} s...", {std::to_string(event.promptTokens), std::to_string(event.completionTokens)});
         requestStartedAt_ = ImGui::GetTime();
@@ -2022,6 +2100,7 @@ void AssistantPanel::settingsDialog() {
   ImGui::SetNextItemWidth(theme::em(140));
   if (ImGui::InputInt(T("Token budget for remote models (0 = none)"), &settings_.budgetTokens, 10000, 100000)) settings_.budgetTokens = std::max(0, settings_.budgetTokens), changed_ = true;
   if (settings_.budgetTokens > 0) ImGui::TextDisabled("%s", F("Used in this session: {0}", {std::to_string(spentTokens_)}).c_str());
+  if (settings_.agent && wrappedCheckbox(T("Use the model's own tool calls when it has them (otherwise the tools are asked for in text)"), &settings_.nativeTools, wrapWidth)) changed_ = true;
   if (settings_.agent) {
     const char* profiles[] = {T("Read only"), T("Read and propose edits"), T("Also build and run (each time you are asked)")};
     ImGui::SetNextItemWidth(theme::em(320));

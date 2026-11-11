@@ -196,6 +196,15 @@ class AssistantPanel {
   };
   std::map<std::string, Placement> placements_;
   bool pendingEditFromChat_ = false;
+  std::set<std::string> nativeOff_;                    // services that refused tool definitions: the text block is used for them
+  bool noMoreTools_ = false;                           // the last turn of a message: no tools, a summary
+  std::map<std::string, std::string> lastResults_;     // the answer to each call this message, to show again on a repeat
+  bool smallModel() const;
+  void finishWithSummary(const PanelContext& context, const std::string& why);
+  bool nativeCallSeen_ = false;                        // this answer already holds a native call
+  std::string providerKey() const;
+  bool useNativeTools() const;
+  nlohmann::json nativeToolList(const Provider& provider) const;  // the tool definitions for a request, empty when none go
   bool answerCut_ = false;    // the answer stopped because the window was full
   std::string notice_;        // a line after the conversation: what the last Apply did
   const Placement& placementOf(const PanelContext& context, const std::string& key, const EditBlock& block);

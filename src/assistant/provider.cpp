@@ -26,7 +26,7 @@ std::string joinUrl(const std::string& base, const std::string& path) {
   return left + "/" + right;
 }
 
-std::string openAiRequestBody(const Provider& provider, const std::vector<Message>& messages) {
+std::string openAiRequestBody(const Provider& provider, const std::vector<Message>& messages, const nlohmann::json* tools) {
   json body;
   if (!provider.model.empty()) body["model"] = provider.model;
   body["stream"] = true;
@@ -35,10 +35,11 @@ std::string openAiRequestBody(const Provider& provider, const std::vector<Messag
   body["stream_options"] = {{"include_usage", true}};
   body["messages"] = json::array();
   for (auto& message : messages) body["messages"].push_back({{"role", message.role}, {"content", message.content}});
+  if (tools && tools->is_array() && !tools->empty()) body["tools"] = *tools;
   return body.dump(-1, ' ', false, json::error_handler_t::replace);
 }
 
-std::string anthropicRequestBody(const Provider& provider, const std::vector<Message>& messages, int maxTokens) {
+std::string anthropicRequestBody(const Provider& provider, const std::vector<Message>& messages, int maxTokens, const nlohmann::json* tools) {
   json body;
   body["model"] = provider.model;
   body["max_tokens"] = maxTokens;
@@ -50,19 +51,60 @@ std::string anthropicRequestBody(const Provider& provider, const std::vector<Mes
     else body["messages"].push_back({{"role", message.role}, {"content", message.content}});
   }
   if (!system.empty()) body["system"] = system;
+  if (tools && tools->is_array() && !tools->empty()) body["tools"] = *tools;
   return body.dump(-1, ' ', false, json::error_handler_t::replace);
 }
 
-std::string chatRequestBody(const Provider& provider, const std::vector<Message>& messages) {
-  return provider.dialect == "anthropic" ? anthropicRequestBody(provider, messages) : openAiRequestBody(provider, messages);
+std::string chatRequestBody(const Provider& provider, const std::vector<Message>& messages, const nlohmann::json* tools) {
+  return provider.dialect == "anthropic" ? anthropicRequestBody(provider, messages, 4096, tools) : openAiRequestBody(provider, messages, tools);
 }
 
-void parseAnthropicStreamData(const std::string& data, std::vector<Event>& events) {
+void ToolCallAssembler::addOpenAi(const json& toolCalls) {
+  if (!toolCalls.is_array()) return;
+  for (auto& item : toolCalls) {
+    if (!item.is_object()) continue;
+    // an index when the service gives one (llama.cpp, OpenAI); Google's layer may give none: then a new call is one with a name
+    int index = item.contains("index") && item["index"].is_number_integer() ? item["index"].get<int>() : (item.contains("function") && item["function"].contains("name") ? nextIndex_++ : std::max(0, nextIndex_ - 1));
+    Partial& partial = open_[index];
+    if (item.contains("function") && item["function"].is_object()) {
+      const json& function = item["function"];
+      if (function.contains("name") && function["name"].is_string()) partial.name = function["name"].get<std::string>();
+      if (function.contains("arguments")) {
+        if (function["arguments"].is_string()) partial.arguments += function["arguments"].get<std::string>();
+        else if (function["arguments"].is_object()) partial.arguments = function["arguments"].dump();
+      }
+    }
+    nextIndex_ = std::max(nextIndex_, index + 1);
+  }
+}
+
+void ToolCallAssembler::startAnthropic(int index, const std::string& name) { open_[index].name = name; }
+void ToolCallAssembler::addAnthropic(int index, const std::string& partialJson) { open_[index].arguments += partialJson; }
+
+void ToolCallAssembler::finishAnthropic(int index, std::vector<Event>& events) {
+  auto found = open_.find(index);
+  if (found == open_.end()) return;
+  if (!found->second.name.empty()) events.push_back({Event::ToolCall, found->second.name, 0, 0, found->second.arguments.empty() ? "{}" : found->second.arguments});
+  open_.erase(found);
+}
+
+void ToolCallAssembler::finish(std::vector<Event>& events) {
+  for (auto& item : open_)
+    if (!item.second.name.empty()) events.push_back({Event::ToolCall, item.second.name, 0, 0, item.second.arguments.empty() ? "{}" : item.second.arguments});
+  open_.clear();
+}
+
+void parseAnthropicStreamData(const std::string& data, std::vector<Event>& events, ToolCallAssembler* tools) {
   json value = json::parse(data, nullptr, false);
   if (!value.is_object()) return;
   std::string type = value.value("type", std::string());
-  if (type == "content_block_delta" && value.contains("delta") && value["delta"].is_object()) {
+  if (tools && type == "content_block_start" && value.contains("content_block") && value["content_block"].is_object() && value["content_block"].value("type", std::string()) == "tool_use") {
+    tools->startAnthropic(value.value("index", 0), value["content_block"].value("name", std::string()));
+  } else if (tools && type == "content_block_stop") {
+    tools->finishAnthropic(value.value("index", 0), events);
+  } else if (type == "content_block_delta" && value.contains("delta") && value["delta"].is_object()) {
     const json& delta = value["delta"];
+    if (tools && delta.value("type", std::string()) == "input_json_delta" && delta.contains("partial_json") && delta["partial_json"].is_string()) tools->addAnthropic(value.value("index", 0), delta["partial_json"].get<std::string>());
     if (delta.value("type", std::string()) == "text_delta" && delta.contains("text") && delta["text"].is_string() && !delta["text"].get<std::string>().empty())
       events.push_back({Event::Text, delta["text"].get<std::string>(), 0, 0});
   } else if (type == "message_start" && value.contains("message") && value["message"].is_object() && value["message"].contains("usage")) {
@@ -108,8 +150,9 @@ std::vector<std::pair<std::string, std::string>> chatHeaders(const Provider& pro
   return headers;
 }
 
-void parseOpenAiStreamData(const std::string& data, std::vector<Event>& events) {
+void parseOpenAiStreamData(const std::string& data, std::vector<Event>& events, ToolCallAssembler* tools) {
   if (data == "[DONE]") {
+    if (tools) tools->finish(events);
     events.push_back({Event::Done, "", 0, 0});
     return;
   }
@@ -124,6 +167,8 @@ void parseOpenAiStreamData(const std::string& data, std::vector<Event>& events) 
   if (value.contains("choices") && value["choices"].is_array() && !value["choices"].empty()) {
     const json& choice = value["choices"][0];
     if (choice.contains("finish_reason") && choice["finish_reason"].is_string() && choice["finish_reason"].get<std::string>() == "length") events.push_back({Event::Length, "", 0, 0});
+    if (tools && choice.contains("delta") && choice["delta"].is_object() && choice["delta"].contains("tool_calls")) tools->addOpenAi(choice["delta"]["tool_calls"]);
+    if (tools && choice.contains("finish_reason") && choice["finish_reason"].is_string() && choice["finish_reason"].get<std::string>() != "length") tools->finish(events);  // the calls are whole
     if (choice.contains("delta") && choice["delta"].is_object()) {
       const json& content = choice["delta"]["content"];
       if (content.is_string() && !content.get<std::string>().empty()) events.push_back({Event::Text, content.get<std::string>(), 0, 0});
@@ -178,7 +223,7 @@ std::vector<Event> ChatRequest::poll() {
   return taken;
 }
 
-void ChatRequest::start(const Provider& provider, std::vector<Message> messages) {
+void ChatRequest::start(const Provider& provider, std::vector<Message> messages, const nlohmann::json* tools) {
   if (thread_.joinable()) {
     cancel_ = true;
     thread_.join();
@@ -186,16 +231,18 @@ void ChatRequest::start(const Provider& provider, std::vector<Message> messages)
   cancel_ = false;
   running_ = true;
   events_.clear();
-  thread_ = std::thread([this, provider, messages]() mutable { run(provider, std::move(messages)); });
+  nlohmann::json toolList = tools ? *tools : nlohmann::json::array();
+  thread_ = std::thread([this, provider, messages, toolList]() mutable { run(provider, std::move(messages), std::move(toolList)); });
 }
 
-void ChatRequest::run(Provider provider, std::vector<Message> messages) {
+void ChatRequest::run(Provider provider, std::vector<Message> messages, nlohmann::json tools) {
   HttpRequest request;
   request.method = "POST";
   request.url = chatUrl(provider);
   request.headers = headersFor(provider, true);
   bool anthropic = provider.dialect == "anthropic";
-  request.body = chatRequestBody(provider, messages);
+  bool withTools = tools.is_array() && !tools.empty();
+  request.body = chatRequestBody(provider, messages, withTools ? &tools : nullptr);
   // A busy service (429, 500, 502, 503, 504) before it has said anything is tried again, twice, after a pause: "This model is
   // currently experiencing high demand" is usually over in seconds.
   static const int pauses[] = {2, 5};
@@ -203,6 +250,7 @@ void ChatRequest::run(Provider provider, std::vector<Message> messages) {
   bool done = false;
   for (int attempt = 0;; attempt++) {
     SseParser parser;
+    ToolCallAssembler assembler;
     bool delivered = false;
     done = false;
     result = httpRequest(
@@ -210,8 +258,8 @@ void ChatRequest::run(Provider provider, std::vector<Message> messages) {
         [&](const char* bytes, size_t size) {
           for (auto& data : parser.feed(bytes, size)) {
             std::vector<Event> events;
-            if (anthropic) parseAnthropicStreamData(data, events);
-            else parseOpenAiStreamData(data, events);
+            if (anthropic) parseAnthropicStreamData(data, events, withTools ? &assembler : nullptr);
+            else parseOpenAiStreamData(data, events, withTools ? &assembler : nullptr);
             for (auto& event : events) {
               if (event.kind == Event::Done) done = true;
               delivered = true;
@@ -221,6 +269,15 @@ void ChatRequest::run(Provider provider, std::vector<Message> messages) {
           return !cancel_;
         },
         cancel_);
+    // a service that does not take tool definitions (or this model): the same request again without them, and the panel is told
+    if (withTools && !cancel_ && !delivered && (result.status == 400 || result.status == 404 || result.status == 422 || result.status == 501) &&
+        (result.errorBody.find("tool") != std::string::npos || result.errorBody.find("function") != std::string::npos)) {
+      withTools = false;
+      request.body = chatRequestBody(provider, messages, nullptr);
+      push({Event::NoNativeTools, "", 0, 0});
+      attempt--;
+      continue;
+    }
     bool busy = result.status == 429 || result.status == 500 || result.status == 502 || result.status == 503 || result.status == 504;
     if (cancel_ || delivered || !busy || attempt >= 2) break;
     push({Event::Retry, "", result.status, pauses[attempt]});

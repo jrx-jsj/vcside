@@ -3320,7 +3320,20 @@ static void testAgentTools(const KnowledgeBase& kb) {
   CHECK(!listing.error && listing.text.find("main.asm") != std::string::npos && listing.text.find("sub/util.asm") != std::string::npos);
   CHECK(listing.text.find(".env") == std::string::npos && listing.text.find(".vcsai") == std::string::npos);
   auto read = call("read_file", {{"path", "main.asm"}, {"from", 2}, {"to", 3}});
-  CHECK(read.text == "2: Start\n3:   sta WSYNC\n... (2 more lines)\n");
+  CHECK(read.text == "2: Start\n3:   sta WSYNC\n[showing lines 2-3 of 5; ask for the next lines with from=4]\n");
+  // reading a folder lists it; a small window gets small answers with the marker; very long lines are clipped
+  CHECK(call("read_file", {{"path", "sub"}}).text.find("sub/util.asm") != std::string::npos);
+  {
+    ToolEnv small = env;
+    small.readCapChars = 20;
+    auto capped = runTool(small, {"read_file", {{"path", "main.asm"}}});
+    CHECK(capped.text.find("1:   processor 6502\n") == 0 && capped.text.find("[showing lines 1-1 of 5; ask for the next lines with from=2]") != std::string::npos);
+    small.searchLimit = 1;
+    auto fewer = runTool(small, {"search", {{"text", "wsync"}}});
+    CHECK(fewer.text.find("main.asm:3:") != std::string::npos && fewer.text.find("main.asm:4:") == std::string::npos && fewer.text.find("[showing the first 1 lines") != std::string::npos);
+  }
+  CHECK(toolNames(2, true).size() == 7 && toolNames(0, true).size() == 5 && toolNames(1, true).size() == 6 && toolNames(2).size() == 15);
+  CHECK(toolPrompt(2, false, true).find("symbols") == std::string::npos && toolPrompt(2, false, false).find("symbols") != std::string::npos && toolPrompt(2, true).find("```tool") == std::string::npos);
   CHECK(call("read_file", {{"path", ".env"}}).error);
   CHECK(call("read_file", {{"path", "game.bin"}}).error);
   CHECK(call("read_file", {{"path", "../x"}}).error);
@@ -3454,6 +3467,63 @@ static void testBusyServiceMessages() {
       if (event.kind == Event::Error) error = event.text;
   }
   CHECK(error == "HTTP 400: API key not valid. Please pass a valid API key.");
+}
+
+static void testNativeToolCalls() {
+  using namespace vcs::assistant;
+  // the definitions go in the body, per dialect
+  Provider provider;
+  provider.model = "m";
+  auto tools = nativeTools({"read_file"}, false);
+  auto body = nlohmann::json::parse(chatRequestBody(provider, {{"user", "hi"}}, &tools));
+  CHECK(body["tools"].size() == 1 && body["tools"][0]["function"]["name"] == "read_file" && !nlohmann::json::parse(chatRequestBody(provider, {{"user", "hi"}})).contains("tools"));
+  provider.dialect = "anthropic";
+  auto anthropicTools = nativeTools({"read_file"}, true);
+  CHECK(nlohmann::json::parse(chatRequestBody(provider, {{"user", "hi"}}, &anthropicTools))["tools"][0]["input_schema"]["required"][0] == "path");
+
+  // OpenAI shape: a name, then the arguments in pieces, then the end
+  {
+    ToolCallAssembler assembler;
+    std::vector<Event> events;
+    parseOpenAiStreamData(R"({"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","function":{"name":"read_file","arguments":""}}]}}]})", events, &assembler);
+    parseOpenAiStreamData(R"({"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"path\": \"ma"}}]}}]})", events, &assembler);
+    parseOpenAiStreamData(R"({"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"in.asm\"}"}}]}}]})", events, &assembler);
+    CHECK(events.empty());  // nothing until the call is whole
+    parseOpenAiStreamData(R"({"choices":[{"delta":{},"finish_reason":"tool_calls"}]})", events, &assembler);
+    parseOpenAiStreamData("[DONE]", events, &assembler);
+    CHECK(events.size() == 2 && events[0].kind == Event::ToolCall && events[0].text == "read_file" && nlohmann::json::parse(events[0].arguments)["path"] == "main.asm" && events[1].kind == Event::Done);
+  }
+  // Google's layer: the whole call in one chunk, with no index, and two calls
+  {
+    ToolCallAssembler assembler;
+    std::vector<Event> events;
+    parseOpenAiStreamData(R"({"choices":[{"delta":{"role":"assistant","tool_calls":[{"id":"a","function":{"name":"search","arguments":"{\"text\":\"WSYNC\"}"},"type":"function"},{"id":"b","function":{"name":"find_code","arguments":"{\"query\":\"x\"}"},"type":"function"}]},"finish_reason":"stop"}]})", events, &assembler);
+    CHECK(events.size() == 2 && events[0].text == "search" && events[1].text == "find_code" && nlohmann::json::parse(events[1].arguments)["query"] == "x");
+  }
+  // without the assembler (a plain chat) tool-call chunks are ignored and text still comes through
+  {
+    std::vector<Event> events;
+    parseOpenAiStreamData(R"({"choices":[{"delta":{"content":"hi","tool_calls":[{"index":0,"function":{"name":"x"}}]}}]})", events);
+    CHECK(events.size() == 1 && events[0].kind == Event::Text);
+  }
+  // Anthropic shape
+  {
+    ToolCallAssembler assembler;
+    std::vector<Event> events;
+    parseAnthropicStreamData(R"({"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"t1","name":"read_file","input":{}}})", events, &assembler);
+    parseAnthropicStreamData(R"({"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"path\":"}})", events, &assembler);
+    parseAnthropicStreamData(R"({"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":" \"main.asm\"}"}})", events, &assembler);
+    parseAnthropicStreamData(R"({"type":"content_block_stop","index":1})", events, &assembler);
+    CHECK(events.size() == 1 && events[0].kind == Event::ToolCall && events[0].text == "read_file" && nlohmann::json::parse(events[0].arguments)["path"] == "main.asm");
+    std::vector<Event> noArguments;
+    ToolCallAssembler second;
+    parseAnthropicStreamData(R"({"type":"content_block_start","index":0,"content_block":{"type":"tool_use","name":"project_info"}})", noArguments, &second);
+    parseAnthropicStreamData(R"({"type":"content_block_stop","index":0})", noArguments, &second);
+    CHECK(noArguments.size() == 1 && noArguments[0].arguments == "{}");
+  }
+  // a call the model made natively reads like one it wrote as text
+  ToolCall call;
+  CHECK(findToolCall("```tool\n{\"tool\": \"read_file\", \"args\": {\"path\": \"main.asm\"}}\n```", &call) && call.name == "read_file");
 }
 
 static void testLengthStops() {
@@ -3976,6 +4046,18 @@ static void testEditBlocks() {
   CHECK(locate("edit fresh.asm", "<<<<<<< SEARCH\n=======\n  nop\n>>>>>>> REPLACE").edit.created);
   CHECK(!locate("edit ../outside.asm", "<<<<<<< SEARCH\nx\n=======\ny\n>>>>>>> REPLACE").proposed);
   CHECK(!locate("edit .env", "<<<<<<< SEARCH\n=======\nTOKEN=1\n>>>>>>> REPLACE").proposed);
+  // the tiers and the hints of a search that is not there
+  write(root / "typo.asm", "Hello\n  lda #\xE2\x80\x9C" "1\xE2\x80\x9D ; \xE2\x80\x93 note\n  rts\n");
+  auto typography = locate("edit typo.asm", "<<<<<<< SEARCH\n  lda #\"1\" ; - note\n=======\n  lda #2\n>>>>>>> REPLACE");
+  CHECK(typography.proposed && typography.edit.after.find("lda #2") != std::string::npos && typography.edit.after.find("Hello") == 0);  // curly quotes and a long dash match plain ones
+  write(root / "crlf.asm", "One\r\n\tlda #1\r\n\trts\r\n");
+  auto windows = locate("edit crlf.asm", "<<<<<<< SEARCH\n  lda #1\n=======\n  lda #1\n  nop\n>>>>>>> REPLACE");
+  CHECK(windows.proposed && windows.edit.after == "One\r\n  lda #1\r\n  nop\r\n\trts\r\n");  // the lines are the file's, the new ones have its line ends
+  auto near = locate("edit main.asm", "<<<<<<< SEARCH\nLoop\n\tlda #9\n\tsta COLUBK\n=======\nx\n>>>>>>> REPLACE");
+  CHECK(near.error && near.text.find("closest lines in the file are 5-8") != std::string::npos && near.text.find("6: \tlda #2") != std::string::npos);  // two of its three lines vote for line 5
+  write(root / "done.asm", "Start\n  lda #7\n  rts\n");
+  auto already = locate("edit done.asm", "<<<<<<< SEARCH\n  lda #1\n=======\n  lda #7\n>>>>>>> REPLACE");
+  CHECK(already.error && already.text.find("already in the file (line 2)") != std::string::npos);
   // a path a little off ("src/main.asm" for the "main.asm" it was shown) finds the only file with that name
   fs::create_directories(root / "docs");
   write(root / "docs" / "notes.txt", "notes\n");
@@ -4522,6 +4604,7 @@ int main() {
   testUnknownNames(kb);
   testFirstPass();
   testLengthStops();
+  testNativeToolCalls();
   testBusyServiceMessages();
   testMasking(kb);
   testKnownProviders();
