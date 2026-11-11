@@ -1,0 +1,154 @@
+{
+ "vcsgfx": 1,
+ "sprites": [],
+ "playfields": [
+  {
+   "name": "logo",
+   "line_height": 4,
+   "pf": 42,
+   "bk": 0,
+   "rows": [
+    {
+     "bits": "..X...X..XXXX..XXXX.XXXXX.XXXX..XXXXX...",
+     "mode": "repeat"
+    },
+    {
+     "bits": "..X...X.X.....X.......X...X...X.X.......",
+     "mode": "repeat"
+    },
+    {
+     "bits": "..X...X.X.....X.......X...X...X.X.......",
+     "mode": "repeat"
+    },
+    {
+     "bits": "..X...X.X......XXX....X...X...X.XXXX....",
+     "mode": "repeat"
+    },
+    {
+     "bits": "..X...X.X.........X...X...X...X.X.......",
+     "mode": "repeat"
+    },
+    {
+     "bits": "...X.X..X.........X...X...X...X.X.......",
+     "mode": "repeat"
+    },
+    {
+     "bits": "....X....XXXX.XXXX..XXXXX.XXXX..XXXXX...",
+     "mode": "repeat"
+    }
+   ]
+  },
+  {
+   "name": "play",
+   "line_height": 3,
+   "pf": 14,
+   "bk": 0,
+   "rows": [
+    {
+     "bits": "............XXX.X...XXX.X.X.............",
+     "mode": "repeat"
+    },
+    {
+     "bits": "............X.X.X...X.X.X.X.............",
+     "mode": "repeat"
+    },
+    {
+     "bits": "............XXX.X...XXX.XXX.............",
+     "mode": "repeat"
+    },
+    {
+     "bits": "............X...X...X.X..X..............",
+     "mode": "repeat"
+    },
+    {
+     "bits": "............X...XXX.X.X..X..............",
+     "mode": "repeat"
+    }
+   ]
+  },
+  {
+   "name": "ntsc",
+   "line_height": 3,
+   "pf": 14,
+   "bk": 0,
+   "rows": [
+    {
+     "bits": "......XXX.X.X.....XXX.XXX.XXX.XXX.......",
+     "mode": "repeat"
+    },
+    {
+     "bits": ".......X..X.X.....X.X..X..X...X.........",
+     "mode": "repeat"
+    },
+    {
+     "bits": ".......X..X.X.....X.X..X..XXX.X.........",
+     "mode": "repeat"
+    },
+    {
+     "bits": ".......X..X.X.....X.X..X....X.X.........",
+     "mode": "repeat"
+    },
+    {
+     "bits": ".......X...X......X.X..X..XXX.XXX.......",
+     "mode": "repeat"
+    }
+   ]
+  },
+  {
+   "name": "pal60",
+   "line_height": 3,
+   "pf": 14,
+   "bk": 0,
+   "rows": [
+    {
+     "bits": "....XXX.X.X.....XXX.XXX.X...XXX.XXX.....",
+     "mode": "repeat"
+    },
+    {
+     "bits": ".....X..X.X.....X.X.X.X.X...X...X.X.....",
+     "mode": "repeat"
+    },
+    {
+     "bits": ".....X..X.X.....XXX.XXX.X...XXX.X.X.....",
+     "mode": "repeat"
+    },
+    {
+     "bits": ".....X..X.X.....X...X.X.X...X.X.X.X.....",
+     "mode": "repeat"
+    },
+    {
+     "bits": ".....X...X......X...X.X.XXX.XXX.XXX.....",
+     "mode": "repeat"
+    }
+   ]
+  },
+  {
+   "name": "pal",
+   "line_height": 3,
+   "pf": 14,
+   "bk": 0,
+   "rows": [
+    {
+     "bits": "........XXX.X.X.....XXX.XXX.X...........",
+     "mode": "repeat"
+    },
+    {
+     "bits": ".........X..X.X.....X.X.X.X.X...........",
+     "mode": "repeat"
+    },
+    {
+     "bits": ".........X..X.X.....XXX.XXX.X...........",
+     "mode": "repeat"
+    },
+    {
+     "bits": ".........X..X.X.....X...X.X.X...........",
+     "mode": "repeat"
+    },
+    {
+     "bits": ".........X...X......X...X.X.XXX.........",
+     "mode": "repeat"
+    }
+   ]
+  }
+ ]
+}

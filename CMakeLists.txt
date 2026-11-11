@@ -159,3 +159,8 @@ target_include_directories(vcside_index PRIVATE src)
 target_link_libraries(vcside_index PRIVATE imgui nlohmann_json::nlohmann_json)
 target_include_directories(vcside_tool PRIVATE src)
 target_link_libraries(vcside_tool PRIVATE imgui nlohmann_json::nlohmann_json)
+
+# Creates a project from a template on the command line, as New project does (checking templates).
+add_executable(vcside_new tools/new_project_cli.cpp src/project.cpp src/toolchain.cpp src/paths.cpp src/child_process.cpp src/i18n.cpp src/gfx.cpp src/music/tia_audio.cpp src/music/tuning.cpp src/music/song.cpp src/music/player.cpp src/music/export.cpp)
+target_include_directories(vcside_new PRIVATE src)
+target_link_libraries(vcside_new PRIVATE imgui nlohmann_json::nlohmann_json)

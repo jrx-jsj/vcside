@@ -518,7 +518,7 @@ static bool copySharedFiles(const fs::path& templateDir, const fs::path& project
 }
 
 std::vector<std::pair<std::string, const char*>> Project::examples(Language language) {
-  if (language == Language::Dasm) return {{"animation", N_("Example: an animated sprite")}, {"dpcplus", N_("Example: music on a DPC+ cartridge")},
+  if (language == Language::Dasm) return {{"game", N_("Example: a small game with a title menu")}, {"animation", N_("Example: an animated sprite")}, {"dpcplus", N_("Example: music on a DPC+ cartridge")},
             {"cdfj", N_("Example: C and music on a CDFJ cartridge")}};
   if (language == Language::ElfC) return {{"animation", N_("Example: an animated sprite")}};
   if (language == Language::AceC)
@@ -623,6 +623,10 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
     replaceAll(asmText, "{{NAME}}", projName);
     replaceAll(asmText, "{{TV}} timing", tvText);
     replaceAll(asmText, "{{TVDEFS}}", defs);
+    // a program that chooses the TV system as it runs (the game example's menu) starts with
+    // the project's: 0 NTSC, 1 PAL60, 2 PAL (50 Hz)
+    replaceAll(asmText, "{{TV_SYSTEM}}", tvStandard == "PAL60" ? "1" : pal ? "2" : "0");
+    replaceAll(asmText, "{{TV}}", tvStandard == "AUTO" ? "NTSC" : tvStandard);
     fs::path mainFile = fs::path(newProject.dir) / "main.asm";
     if (!fs::exists(mainFile)) std::ofstream(mainFile) << asmText;
     fs::path headerFile = fs::path(newProject.dir) / "2600.h";

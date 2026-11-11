@@ -1,0 +1,102 @@
+{
+ "vcsgfx": 1,
+ "sprites": [],
+ "playfields": [
+  {
+   "name": "room",
+   "line_height": 8,
+   "pf": 52,
+   "bk": 0,
+   "rows": [
+    {
+     "bits": "XXXXXXXXXXXXXXXXXXXX",
+     "mode": "mirror"
+    },
+    {
+     "bits": "X...................",
+     "mode": "mirror"
+    },
+    {
+     "bits": "X...................",
+     "mode": "mirror"
+    },
+    {
+     "bits": "X...................",
+     "mode": "mirror"
+    },
+    {
+     "bits": "X...................",
+     "mode": "mirror"
+    },
+    {
+     "bits": "X....XXXX...........",
+     "mode": "mirror"
+    },
+    {
+     "bits": "X....XXXX...........",
+     "mode": "mirror"
+    },
+    {
+     "bits": "X...................",
+     "mode": "mirror"
+    },
+    {
+     "bits": "X...................",
+     "mode": "mirror"
+    },
+    {
+     "bits": "X...................",
+     "mode": "mirror"
+    },
+    {
+     "bits": "X..............XXXXX",
+     "mode": "mirror"
+    },
+    {
+     "bits": "X..............XXXXX",
+     "mode": "mirror"
+    },
+    {
+     "bits": "X...................",
+     "mode": "mirror"
+    },
+    {
+     "bits": "X...................",
+     "mode": "mirror"
+    },
+    {
+     "bits": "X...................",
+     "mode": "mirror"
+    },
+    {
+     "bits": "X....XXXX...........",
+     "mode": "mirror"
+    },
+    {
+     "bits": "X....XXXX...........",
+     "mode": "mirror"
+    },
+    {
+     "bits": "X...................",
+     "mode": "mirror"
+    },
+    {
+     "bits": "X...................",
+     "mode": "mirror"
+    },
+    {
+     "bits": "X...................",
+     "mode": "mirror"
+    },
+    {
+     "bits": "X...................",
+     "mode": "mirror"
+    },
+    {
+     "bits": "XXXXXXXXXXXXXXXXXXXX",
+     "mode": "mirror"
+    }
+   ]
+  }
+ ]
+}

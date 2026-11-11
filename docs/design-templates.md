@@ -1,6 +1,6 @@
 # Project templates: one set for every language and cartridge
 
-Status: proposal (2026-11-11), for review before any code. What exists today is in [design.md](design.md) (each language's template) and [design-ace.md](design-ace.md#the-ace-template-datatemplatesace-cc0-phase-3); how templates share files (`data/templates/shared`, `shared.json`) is in [design.md](design.md).
+Status: approved (2026-11-11); in progress. Done: phase 3's DASM 4K game (`data/templates/dasm-game`, with two enemies and English texts). What exists today is in [design.md](design.md) (each language's template) and [design-ace.md](design-ace.md#the-ace-template-datatemplatesace-cc0-phase-3); how templates share files (`data/templates/shared`, `shared.json`) is in [design.md](design.md).
 
 ## Goal
 
