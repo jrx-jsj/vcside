@@ -190,13 +190,20 @@ std::string AssistantPanel::systemPrompt() const {
         "How: 1) find the place with find_code or search, 2) read_file around it, 3) write the edit block for the file you read: its SEARCH text is copied exactly from the lines read_file showed (a few lines, as they are, with their tabs), its REPLACE text is those lines with your new lines among them, 4) say in one or two sentences what you changed.\n"
         "Example. User: \"make the sprite blink\". You: find_code(query: \"sprite colour\"), then read_file(path: \"" + exampleFile_ + "\", from: 40, to: 90), then the block ```edit " + exampleFile_ + "``` with SEARCH \"  lda #$0E / sta COLUP0\" and REPLACE \"  lda FrameCounter / sta COLUP0\", then a sentence: The sprite colour now follows FrameCounter.\n"
       : "\nMODE: Agent. Do the task yourself: read the files you need, then change them with edit_file, one change at a time; code you only write in the chat is not saved. Do not paste the new code into your answer unless asked, and say briefly what you changed.";
-  const std::string askRule = "\nMODE: Ask. You cannot change files or run anything: answer, and propose a change as an edit block for the user to review.";
+  const std::string askRule = "\nMODE: Ask. You cannot change the user's files or run anything. Answer; when code helps, show it in plain fenced code blocks with the language name, and say in words which file and routine it goes in. Never write diffs, SEARCH/REPLACE sections or edit blocks.";
   const std::string englishRule = translateThisTurn_ ? "\nThe user's messages have been translated to English for you: answer in English, whatever language the user writes in. Code, register names, labels and file names stay exactly as they are." : std::string();
   std::ifstream file(dataDir() + "/assistant/system.txt");
   if (file) {
-    std::stringstream text;
-    text << file.rdbuf();
-    if (!text.str().empty()) return text.str() + (agentMode() ? "\n" + toolPrompt(settings_.toolProfile, useNativeTools(), toolSet()) + agentRule : askRule) + englishRule;
+    std::stringstream stream;
+    stream << file.rdbuf();
+    // the paragraph on edit blocks is only for Agent mode with a small model; in Ask mode nothing can be applied, so it is left out
+    std::string text = stream.str();
+    size_t open = text.find("[[EDIT BLOCKS]]\n"), close = text.find("[[/EDIT BLOCKS]]\n");
+    if (open != std::string::npos && close != std::string::npos && close > open) {
+      bool keep = agentMode();
+      text = text.substr(0, open) + (keep ? text.substr(open + 16, close - open - 16) : std::string()) + text.substr(close + 17);
+    }
+    if (!text.empty()) return text + (agentMode() ? "\n" + toolPrompt(settings_.toolProfile, useNativeTools(), toolSet()) + agentRule : askRule) + englishRule;
   }
   return std::string(kFallbackPrompt) + (agentMode() ? "\n" + toolPrompt(settings_.toolProfile, useNativeTools(), toolSet()) + agentRule : askRule) + englishRule;
 }
@@ -1792,6 +1799,17 @@ void AssistantPanel::drawMessageContent(const ChatMessage& message, const std::s
     EditBlock edit;
     std::string editProblem;
     EditParse kind = (!block.code || user) ? EditParse::NotAnEdit : parseEditBlock(block.language, block.text, &edit, &editProblem);
+    if (kind != EditParse::NotAnEdit && !agentMode()) {  // in Ask mode nothing is applied: what the model proposed is shown as the code it is, not as a diff
+      std::string code;
+      for (size_t k = 0; k < edit.sections.size(); k++) code += (k ? "\n...\n" : "") + edit.sections[k].replace;
+      if (kind == EditParse::Edit && !code.empty()) {
+        ImGui::PushStyleColor(ImGuiCol_Text, theme::colv(theme::Role::UiTextDim));
+        ImGui::TextUnformatted(F("For {0}:", {edit.path}).c_str());
+        ImGui::PopStyleColor();
+        block.text = code;
+      }
+      kind = EditParse::NotAnEdit;
+    }
     if (!block.code) {
       std::string prose = block.text;
       while (!prose.empty() && (prose.back() == '\n' || prose.back() == ' ')) prose.pop_back();
