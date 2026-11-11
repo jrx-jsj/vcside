@@ -3382,6 +3382,10 @@ static void testAgentTools(const KnowledgeBase& kb) {
     CHECK(findToolCall("<tool_call>{\"name\": \"find_code\", \"parameters\": {\"q\": \"joystick\"}}</tool_call>", &shape) && shape.name == "find_code" && shape.args["q"] == "joystick");
     CHECK(findToolCall("```json\n{\"tool_name\": \"kb_lookup\", \"input\": {\"id\": \"INPT4\"}}\n```", &shape) && shape.args["id"] == "INPT4");
     CHECK(findToolCall("```tool\n{\"tool\": \"ReadFile\", \"file\": \"main.asm\"}\n```", &shape) && shape.name == "read_file");  // spelled differently
+    CHECK(findToolCall("```\n```\ntool {\"args\":{\"text\":\"PLAYER_FIRE_PREV\"},\"tool\":\"search\"}\n```\n```", &shape) && shape.name == "search" && shape.args["text"] == "PLAYER_FIRE_PREV");  // between empty fences
+    CHECK(findToolCall("Let me look.\ntool {\"tool\": \"search\", \"args\": {\"text\": \"WSYNC\"}}", &shape) && shape.name == "search");  // a bare "tool {...}" line
+    CHECK(findToolCall("tool search {\"text\": \"WSYNC\"}", &shape) && shape.name == "search" && shape.args["text"] == "WSYNC");
+    CHECK(!findToolCall("The tool is useful. tools {not a call}", &shape));
     CHECK(findToolCall("```tool\n{\"tool\": \"project_info\"}\n```", &shape) && shape.args.empty());
   }
   // run through the tools: repaired where that is certain, refused with the reason where it is not

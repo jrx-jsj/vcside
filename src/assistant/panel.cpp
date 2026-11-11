@@ -1146,6 +1146,13 @@ void AssistantPanel::finishAnswer(const PanelContext& context, const std::string
   std::string answer = streaming_;
   streaming_.clear();
   ToolCall call;
+  std::string before;
+  if (noMoreTools_ && !chat_.messages.empty() && chat_.messages.back().role == "assistant" && findToolCall(answer, &call, &before)) {
+    // the last turn has no tools, yet the model wrote a call: what it said before is kept, the call is not shown as if it were the answer
+    while (!before.empty() && (before.back() == '\n' || before.back() == ' ')) before.pop_back();
+    chat_.messages.back().content = before.empty() ? F("The model asked for another tool, but the tool calls for this message were used up. Ask it to go on, or ask again more precisely.", {}) : before;
+    answer = chat_.messages.back().content;
+  }
   if (settings_.agent && !noMoreTools_ && note != "stopped" && error_.empty() && !chat_.messages.empty() && chat_.messages.back().role == "assistant" && findToolCall(answer, &call)) {
     chat_.messages.back().kind = "call";
     saveChat(context);
@@ -1661,6 +1668,7 @@ void AssistantPanel::drawMessage(const ChatMessage& message, const std::string& 
   ImGui::PopStyleColor();
   int blockIndex = 0;
   for (auto& block : splitBlocks(text)) {
+    if (block.code && block.text.find_first_not_of(" \t\r\n") == std::string::npos) continue;  // an empty fence shows nothing
     ImGui::PushID(index * 1000 + blockIndex++);
     EditBlock edit;
     std::string editProblem;

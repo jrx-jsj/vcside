@@ -583,6 +583,34 @@ bool findToolCall(const std::string& answer, ToolCall* call, std::string* before
     size_t start, stop;
     if (balancedObject(answer, tag, &start, &stop) && take(tag, json::parse(answer.substr(start, stop - start), nullptr, false))) return true;
   }
+  // a line "tool {...}" or "tool name {...}" outside any fence (a model that opened and closed its fences around it, or never opened them)
+  size_t lineStart = 0;
+  while (lineStart < answer.size()) {
+    size_t lineEnd = answer.find('\n', lineStart);
+    if (lineEnd == std::string::npos) lineEnd = answer.size();
+    size_t word = answer.find_first_not_of(" \t`", lineStart);
+    if (word != std::string::npos && word < lineEnd && answer.compare(word, 4, "tool") == 0 && word + 4 < answer.size() && (answer[word + 4] == ' ' || answer[word + 4] == '{' || answer[word + 4] == ':')) {
+      size_t start, stop;
+      std::string rest = answer.substr(word + 4);
+      if (balancedObject(rest, 0, &start, &stop)) {
+        json value = json::parse(rest.substr(start, stop - start), nullptr, false);
+        if (callFromJson(value, call)) {
+          if (before) *before = answer.substr(0, lineStart);
+          return true;
+        }
+        std::istringstream words(rest.substr(0, start));
+        std::string name, piece;
+        while (words >> piece)
+          if (piece != ":") name = piece;
+        if (value.is_object() && !name.empty() && !resolveToolName(name).empty()) {
+          call->name = resolveToolName(name), call->args = value;
+          if (before) *before = answer.substr(0, lineStart);
+          return true;
+        }
+      }
+    }
+    lineStart = lineEnd + 1;
+  }
   // a bare object, only when it starts the answer
   size_t first = answer.find_first_not_of(" \n\t");
   if (first != std::string::npos && answer[first] == '{') {

@@ -1172,7 +1172,8 @@
     "{0}:{1}: breakpoint at {2}{3}.": "{0}:{1}: punto de ruptura en {2}{3}.",
     "{0}:{1}: no code at or after this line; breakpoint ignored.": "{0}:{1}: no hay código en esta línea ni después; se ignora el punto de ruptura.",
     "{0}:{1}: no listing to place the breakpoint: build first.": "{0}:{1}: no hay listado para situar el punto de ruptura: compila antes.",
-    "±{0}": "±{0}"
+    "±{0}": "±{0}",
+    "The model asked for another tool, but the tool calls for this message were used up. Ask it to go on, or ask again more precisely.": "El modelo pidió otra herramienta, pero se agotaron las llamadas de este mensaje. Pídele que siga, o vuelve a preguntar con más precisión."
   },
   "total": 1171
 }
