@@ -1288,6 +1288,28 @@ void AssistantPanel::decideEdit(const PanelContext& context, bool apply, bool al
   answer("The user applied this edit.", F("Applied to {0}. Ctrl+Z in the editor undoes it, or \"{1}\".", {edit.relative, T("Undo everything this conversation changed")}), false);
 }
 
+// Every change of an answer, one after another: each is placed again in the file as the previous ones left it, so two changes
+// to one file do not overwrite each other. A change to a file that decides what Build runs is never applied in bulk.
+void AssistantPanel::applyAllBlocks(const PanelContext& context, const std::vector<std::pair<EditBlock, std::string>>& blocks) {
+  int applied = 0, skipped = 0;
+  for (auto& item : blocks) {
+    ToolResult found = runTool(toolEnv(context), {"edit_file", editArguments(item.first)});
+    if (!found.proposed || found.edit.privileged) {
+      skipped++;
+      continue;
+    }
+    if (context.applyEdit && context.applyEdit(found.edit.path, found.edit.after, false)) {
+      originals_.emplace(found.edit.path, std::make_pair(found.edit.created, found.edit.before));
+      applied++;
+    } else {
+      skipped++;
+    }
+  }
+  placements_.clear();
+  notice_ = skipped ? F("Applied {0} changes; {1} could not be applied. \"{2}\" brings the files back.", {std::to_string(applied), std::to_string(skipped), T("Undo everything this conversation changed")})
+                    : F("Applied {0} changes. \"{1}\" brings the files back.", {std::to_string(applied), T("Undo everything this conversation changed")});
+}
+
 void AssistantPanel::undoEverything(const PanelContext& context) {
   for (auto& item : originals_)
     if (context.applyEdit) context.applyEdit(item.first, item.second.second, item.second.first);
@@ -1664,6 +1686,7 @@ void AssistantPanel::drawMessageContent(const ChatMessage& message, const std::s
   ImGui::TextUnformatted(T("Assistant"));
   ImGui::PopStyleColor();
   int blockIndex = 0;
+  std::vector<std::pair<EditBlock, std::string>> editsHere;  // the changes this answer proposes, to apply them all at once
   for (auto& block : splitBlocks(text)) {
     if (block.code && block.text.find_first_not_of(" \t\r\n") == std::string::npos) continue;  // an empty fence shows nothing
     ImGui::PushID(index * 1000 + blockIndex++);
@@ -1679,6 +1702,7 @@ void AssistantPanel::drawMessageContent(const ChatMessage& message, const std::s
       }
     } else if (kind == EditParse::Edit) {
       drawEditBlock(context, edit, std::to_string(index) + "/" + std::to_string(blockIndex), index != 9999);
+      if (index != 9999) editsHere.push_back({edit, std::to_string(index) + "/" + std::to_string(blockIndex)});
     } else if (kind == EditParse::Broken && index != 9999) {  // meant as a change but cut off or without a file: said, and not applied
       ImGui::TextColored(theme::colv(theme::Role::MsgWarning), "%s", F("This change cannot be applied: {0}.", {editProblem}).c_str());
     } else {
@@ -1724,6 +1748,16 @@ void AssistantPanel::drawMessageContent(const ChatMessage& message, const std::s
       ImGui::PopFont();
     }
     ImGui::PopID();
+  }
+  if (editsHere.size() >= 2) {
+    size_t placeable = 0;
+    for (auto& item : editsHere) placeable += placementOf(context, item.second, item.first).ok;
+    if (placeable >= 2) {
+      ImGui::BeginDisabled(pendingEditActive_ || busyWithModel());
+      if (theme::primaryButton(F("Apply all ({0})", {std::to_string(placeable)}).c_str())) applyAllBlocks(context, editsHere);
+      ImGui::EndDisabled();
+      if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("%s", T("Applies every change of this answer that fits its file, one after another. Undo everything this conversation changed brings the files back."));
+    }
   }
   if (!message.reference.empty() && !user) {  // after the answer: which reference entries it was given
     std::string line = std::string(T("From the knowledge base")) + ":";
