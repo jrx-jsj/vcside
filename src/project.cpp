@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <algorithm>
 #include <set>
+#include <functional>
 #include <regex>
 #include <cstdlib>
 #include <fstream>
@@ -569,8 +570,92 @@ struct BankedFormat {
 };
 static const BankedFormat kBankedFormats[] = {{"F8", 2, "$FFF8"}, {"F6", 4, "$FFF6"}, {"F4", 8, "$FFF4"}};
 
-// batari Basic's set romsize for each format (2k does not hold the template and its music).
+// batari Basic's set romsize for each format (2k does not hold the game and its music).
 static const std::pair<const char*, const char*> kBasicRomSizes[] = {{"4K", "4k"}, {"F8", "8k"}, {"F6", "16k"}, {"F4", "32k"}};
+
+// The batari Basic examples, for every cartridge: the folder in data/templates and, for
+// VCSIDE The Game (bb-game), whether it has the title screen.
+struct BasicExample {
+  const char* id;
+  const char* name;  // for people, to translate
+  const char* folder;
+  bool titleScreen = true;
+};
+static const BasicExample kBasicExamples[] = {
+    {"game", N_("VCSIDE The Game"), "bb-game"},
+    {"game-notitle", N_("VCSIDE The Game, without the title screen"), "bb-game", false},
+    {"square", N_("Example: a square in a room, with music"), "bb-square"}};
+
+// A template's optional parts: the lines between {{TAG}} and {{/TAG}} (each on a line of its
+// own) stay without the two markers, or go with them.
+static void keepSection(std::string& text, const std::string& tag, bool keep) {
+  const std::string open = "{{" + tag + "}}\n", close = "{{/" + tag + "}}\n";
+  for (size_t start; (start = text.find(open)) != std::string::npos;) {
+    size_t end = text.find(close, start);
+    if (end == std::string::npos) break;
+    if (keep) text.erase(end, close.size()), text.erase(start, open.size());
+    else text.erase(start, end + close.size() - start);
+  }
+}
+
+// The PAL colour that looks closest to an NTSC one (by RGB distance).
+static int palColourFor(int ntscColour) {
+  uint32_t wanted = gfx::rgb(gfx::Tv::NTSC, ntscColour);
+  int best = 0;
+  long bestDistance = -1;
+  for (int candidate = 0; candidate < 256; candidate += 2) {
+    uint32_t have = gfx::rgb(gfx::Tv::PAL, candidate);
+    long distance = 0;
+    for (int shift : {0, 8, 16}) {
+      long difference = (long)((wanted >> shift) & 0xFF) - (long)((have >> shift) & 0xFF);
+      distance += difference * difference;
+    }
+    if (bestDistance < 0 || distance < bestDistance) bestDistance = distance, best = candidate;
+  }
+  return best;
+}
+
+// The template's graphics are drawn with NTSC colours. A batari Basic program writes them
+// as they are, so a PAL (or PAL60) project gets .vcsgfx files with the closest PAL ones.
+static void graphicsToPal(const fs::path& dir) {
+  std::error_code errorCode;
+  for (auto& entry : fs::directory_iterator(dir, errorCode)) {
+    if (entry.path().extension() != ".vcsgfx") continue;
+    json document = json::parse(readFile(entry.path().string()), nullptr, false);
+    if (document.is_discarded()) continue;
+    std::function<void(json&)> convert = [&](json& node) {
+      if (node.is_array()) {
+        for (auto& item : node) convert(item);
+      } else if (node.is_object()) {
+        for (auto& [key, value] : node.items()) {
+          if ((key == "pf" || key == "bk") && value.is_number_integer() && value.get<int>() >= 0) value = palColourFor(value.get<int>());
+          else if (key == "colours" && value.is_array()) {
+            for (auto& colour : value)
+              if (colour.is_number_integer() && colour.get<int>() >= 0) colour = palColourFor(colour.get<int>());
+          } else convert(value);
+        }
+      }
+    };
+    convert(document);
+    std::ofstream(entry.path(), std::ios::binary) << document.dump(1) << "\n";
+  }
+}
+
+// The `rem vcsgfx` regions of a batari Basic program, filled from the project's .vcsgfx
+// files as the graphics editor fills them on save, for the kernel the program sets.
+static void fillBasicRegions(const fs::path& program) {
+  std::string text = readFile(program.string());
+  if (text.find("rem vcsgfx") == std::string::npos) return;
+  gfx::Profile profile = gfx::profileFromBasic(text);
+  std::error_code errorCode;
+  for (auto& entry : fs::directory_iterator(program.parent_path(), errorCode)) {
+    if (entry.path().extension() != ".vcsgfx") continue;
+    gfx::Asset asset;
+    if (!gfx::fromJson(readFile(entry.path().string()), &asset, nullptr)) continue;
+    text = gfx::updateBasicRegions(text, entry.path().filename().string(), asset, profile, nullptr, nullptr);
+  }
+  std::ofstream(program, std::ios::binary) << text;
+}
 
 std::vector<std::string> Project::cartridgeFormats(Language language) {
   if (language == Language::Dasm) return {"2K", "4K", "F8", "F6", "F4", "DPC+", "CDFJ"};
@@ -588,6 +673,11 @@ std::vector<std::pair<std::string, const char*>> Project::examples(Language lang
     for (auto& entry : dasmExamples())
       if (format.empty() || std::find(entry.formats.begin(), entry.formats.end(), format) != entry.formats.end()) forFormat.push_back({entry.id, entry.name});
     return forFormat;
+  }
+  if (language == Language::BatariBasic) {
+    std::vector<std::pair<std::string, const char*>> all;
+    for (auto& entry : kBasicExamples) all.push_back({entry.id, entry.name});
+    return all;
   }
   if (language == Language::ElfC) return {{"animation", N_("Example: an animated sprite")}};
   if (language == Language::AceC)
@@ -819,23 +909,54 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
     std::string romSize = "4k";
     for (auto& [formatId, size] : kBasicRomSizes)
       if (newProject.format == formatId) romSize = size;
-    fs::path templateDir = fs::path(dataDir()) / "templates" / "bb" / "main.bas";
-    std::string text = readFile(templateDir.string());
-    if (text.empty()) {
-      if (error) *error = F("Template not found in {0}", {templateDir.string()});
+    const BasicExample* basicExample = nullptr;
+    for (auto& entry : kBasicExamples)
+      if (example == entry.id) basicExample = &entry;
+    if (!example.empty() && !basicExample) {
+      if (error) *error = F("Template not found in {0}", {example});
       return false;
     }
+    fs::path templateDir = fs::path(dataDir()) / "templates" / (basicExample ? basicExample->folder : "bb");
+    std::string text = readFile((templateDir / "main.bas").string());
+    if (text.empty()) {
+      if (error) *error = F("Template not found in {0}", {(templateDir / "main.bas").string()});
+      return false;
+    }
+    const bool titleScreen = basicExample && basicExample->titleScreen;
+    keepSection(text, "TITLE", titleScreen);
+    keepSection(text, "NO_TITLE", !titleScreen);
+    replaceAll(text, "{{TITLE_FILE}}", titleScreen ? ", title.vcsgfx" : "");
     replaceAll(text, "{{NAME}}", projName);
     replaceAll(text, "\tset romsize 4k\n", "\tset romsize " + romSize + "\n");
     // batari Basic times the frame for NTSC unless told otherwise (PAL60 keeps NTSC timing)
     if (tvIs50Hz(tvStandard)) replaceAll(text, "\tset romsize " + romSize + "\n", "\tset romsize " + romSize + "\n\tset tv pal\n");
     fs::path mainFile = fs::path(newProject.dir) / "main.bas";
     if (!fs::exists(mainFile)) std::ofstream(mainFile, std::ios::binary) << text;
-    // its music (shared.json), and the player and tables it includes
-    if (!copySharedFiles(templateDir.parent_path(), newProject.dir, {}, error)) return false;
+    // its graphics and music (shared.json), the regions of main.bas they fill, and the
+    // music player and tables it includes
+    std::set<std::string> leaveOut;
+    if (!titleScreen) leaveOut.insert("title.vcsgfx");
+    if (!copySharedFiles(templateDir, newProject.dir, {}, error, leaveOut)) return false;
+    if (gfx::tvFromProject(tvStandard) == gfx::Tv::PAL) graphicsToPal(newProject.dir);
+    // the game's pfscorecolor: the top row's colour of the title and of the room
+    for (auto [placeholder, fileName] : {std::pair{"{{TITLE_TOP_COLOUR}}", "title.vcsgfx"}, {"{{ROOM_TOP_COLOUR}}", "room.vcsgfx"}}) {
+      std::string program = readFile(mainFile.string());
+      if (program.find(placeholder) == std::string::npos) continue;
+      gfx::Asset asset;
+      int colour = 0x0E;
+      if (gfx::fromJson(readFile((fs::path(newProject.dir) / fileName).string()), &asset, nullptr) && !asset.playfields.empty())
+        colour = asset.playfields[0].pfAt(0);
+      replaceAll(program, placeholder, gfx::hexColour(colour));
+      std::ofstream(mainFile, std::ios::binary) << program;
+    }
+    fillBasicRegions(mainFile);
     writeMusicIncludes(newProject.dir, tvStandard);
-    copyProjectNotes({templateDir.parent_path()}, newProject.dir, projName,
-                     {{"{{FORMAT}}", newProject.format}, {"{{ROMSIZE}}", romSize}});
+    copyProjectNotes({templateDir}, newProject.dir, projName,
+                     {{"{{FORMAT}}", newProject.format},
+                      {"{{ROMSIZE}}", romSize},
+                      {"{{TITLE_NOTE}}", titleScreen ? "It starts on a title screen: the button on PLAY starts a game, and the game ends back there."
+                                                     : "There is no title screen: the game starts at once and starts again after the last life."},
+                      {"{{TITLE_WHERE}}", titleScreen ? "; on the title, `titleLoop`" : ""}});
   } else if (isC(projectLanguage)) {
     bool ace = projectLanguage == Language::AceC;
     if (projName.find_first_of(" \t") != std::string::npos) {

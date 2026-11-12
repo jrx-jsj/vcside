@@ -1,0 +1,59 @@
+{
+ "vcsgfx": 1,
+ "sprites": [],
+ "playfields": [
+  {
+   "name": "title",
+   "line_height": 16,
+   "pf": 30,
+   "bk": 0,
+   "rows": [
+    {
+     "bits": "....XXX.X.X.XXX......XX..X..X.X.XXX.....",
+     "mode": "repeat"
+    },
+    {
+     "bits": ".....X..X.X.X.......X...X.X.XXX.X.......",
+     "mode": "repeat"
+    },
+    {
+     "bits": ".....X..XXX.XX......X.X.XXX.XXX.XX......",
+     "mode": "repeat"
+    },
+    {
+     "bits": ".....X..X.X.X.......X.X.X.X.X.X.X.......",
+     "mode": "repeat"
+    },
+    {
+     "bits": ".....X..X.X.XXX......XX.X.X.X.X.XXX.....",
+     "mode": "repeat"
+    },
+    {
+     "bits": "........................................",
+     "mode": "repeat"
+    },
+    {
+     "bits": "............XX..X....X..X.X.............",
+     "mode": "repeat",
+     "pf": 14
+    },
+    {
+     "bits": "............X.X.X...X.X.X.X.............",
+     "mode": "repeat"
+    },
+    {
+     "bits": "............XX..X...XXX..X..............",
+     "mode": "repeat"
+    },
+    {
+     "bits": "............X...X...X.X..X..............",
+     "mode": "repeat"
+    },
+    {
+     "bits": "............X...XXX.X.X..X..............",
+     "mode": "repeat"
+    }
+   ]
+  }
+ ]
+}
