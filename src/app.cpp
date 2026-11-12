@@ -3433,7 +3433,27 @@ void App::newProjectDialog() {
   }
   char title[64];
   snprintf(title, sizeof title, "%s###newproject", T("New project..."));
-  ImGui::SetNextWindowSize(ImVec2(520, 0), ImGuiCond_Appearing);
+  auto examples = Project::examples(languageFromId(kLangIds[npLang_]));
+  {
+    // wide enough for its longest label and value (the folder grows as it is typed): never squeezed
+    const ImGuiStyle& style = ImGui::GetStyle();
+    float labels = 0, values = 0;
+    for (const char* label : {"Name", "Folder", "Programming language", "TV standard", "Start from", "Cartridge", "Flash (KB)", "RAM (KB)"})
+      labels = std::max(labels, ImGui::CalcTextSize(T(label)).x);
+    auto value = [&](const std::string& text) { values = std::max(values, ImGui::CalcTextSize(text.c_str()).x); };
+    for (const char* name : kLangNames) value(T(name));
+    for (auto& tv : tvStandardsFor(languageFromId(kLangIds[npLang_]))) value(tvLabel(tv) + "  " + F("(not in {0})", {"Gopher2600"}));
+    value(T("Empty project"));
+    for (auto& exampleEntry : examples) value(T(exampleEntry.second));
+    float chooseWidth = ImGui::CalcTextSize(T("Choose...")).x + theme::em(14) * 2 + style.ItemSpacing.x;
+    float folder = ImGui::CalcTextSize(npDir_.c_str()).x + style.FramePadding.x * 2 + chooseWidth;
+    float fields = std::max(values + style.FramePadding.x * 2 + ImGui::GetFrameHeight(), folder);
+    float target = ImGui::CalcTextSize((fs::path(npDir_) / npName_).string().c_str()).x;
+    float width = std::max(labels + style.CellPadding.x * 2 + fields, target) + theme::em(16) * 2 + theme::em(8);
+    width = std::min(std::max(width, theme::em(440)), ImGui::GetMainViewport()->WorkSize.x * 0.9f);
+    ImGui::SetNextWindowSizeConstraints(ImVec2(width, 0), ImVec2(FLT_MAX, FLT_MAX));
+    ImGui::SetNextWindowSize(ImVec2(width, 0), ImGuiCond_Appearing);
+  }
   if (!theme::beginModal(title, nullptr)) return;
   float em = ImGui::GetFontSize() / 15.0f;
   auto row = [&](const char* label) {
@@ -3444,14 +3464,13 @@ void App::newProjectDialog() {
     ImGui::TableNextColumn();
     ImGui::SetNextItemWidth(-FLT_MIN);
   };
-  auto examples = Project::examples(languageFromId(kLangIds[npLang_]));
   if (ImGui::BeginTable("##np", 2, ImGuiTableFlags_SizingFixedFit)) {
     ImGui::TableSetupColumn("label", ImGuiTableColumnFlags_WidthFixed);
     ImGui::TableSetupColumn("field", ImGuiTableColumnFlags_WidthStretch);
     row(T("Name"));
     ImGui::InputText("##name", npName_, sizeof npName_);
     row(T("Folder"));
-    ImGui::SetNextItemWidth(-(ImGui::CalcTextSize(T("Choose...")).x + ImGui::GetStyle().FramePadding.x * 2 + ImGui::GetStyle().ItemSpacing.x));
+    ImGui::SetNextItemWidth(-(ImGui::CalcTextSize(T("Choose...")).x + theme::em(14) * 2 + ImGui::GetStyle().ItemSpacing.x));  // dialogButton's padding
     ImGui::InputText("##folder", &npDir_);
     ImGui::SameLine();
     if (theme::dialogButton(T("Choose...")))
