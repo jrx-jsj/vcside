@@ -1006,7 +1006,7 @@ static void testElfSpace() {
   }
 
   // the DASM example: its graphics, the tables they give, and a program that assembles
-  CHECK(Project::examples(Language::Dasm).size() == 6 && Project::examples(Language::Dasm)[0].first == "game" &&
+  CHECK(Project::examples(Language::Dasm).size() == 8 && Project::examples(Language::Dasm)[0].first == "game" &&
         Project::examples(Language::BatariBasic).empty());
   // the cartridge of a new project: the examples made for it, and an empty template that
   // assembles to its size (2K and 4K, and F8, F6 and F4 with their banks)
@@ -1014,8 +1014,9 @@ static void testElfSpace() {
   CHECK(Project::cartridgeFormats(Language::BatariBasic) == std::vector<std::string>({"4K", "F8", "F6", "F4"}));
   CHECK(Project::cartridgeFormats(Language::ElfC).empty());
   CHECK(Project::examples(Language::Dasm, "4K").size() == 3 && Project::examples(Language::Dasm, "F8").size() == 2 &&
-        Project::examples(Language::Dasm, "2K").size() == 1 && Project::examples(Language::Dasm, "CDFJ").size() == 1 &&
-        !Project::hasEmptyTemplate(Language::Dasm, "DPC+"));
+        Project::examples(Language::Dasm, "2K").size() == 1 && Project::examples(Language::Dasm, "DPC+").size() == 2 &&
+        Project::examples(Language::Dasm, "CDFJ").size() == 2 && Project::hasEmptyTemplate(Language::Dasm, "DPC+") &&
+        Project::hasEmptyTemplate(Language::Dasm, "CDFJ"));
   CHECK(!Project::create((dir / "anim-f8").string(), "g", Language::Dasm, "NTSC", &project, &error, "animation", "F8") && !error.empty());
   CHECK(!Project::create((dir / "game-2k-4k").string(), "g", Language::Dasm, "NTSC", &project, &error, "game-2k", "4K"));
   // VCSIDE The Game's variants: the switches, the files they leave out, the cartridge's size
@@ -1034,7 +1035,6 @@ static void testElfSpace() {
       CHECK(std::system(command.c_str()) == 0 && fs::file_size(variantDir / "v.bin", errorCode) == (uintmax_t)bytes);
     }
   }
-  CHECK(!Project::create((dir / "empty-dpc").string(), "g", Language::Dasm, "NTSC", &project, &error, "", "DPC+"));
   CHECK(!Project::create((dir / "bb-2k").string(), "g", Language::BatariBasic, "NTSC", &project, &error, "", "2K"));
   for (auto [format, bytes] : {std::pair{"2K", 2048}, {"4K", 4096}, {"F8", 8192}, {"F6", 16384}, {"F4", 32768}}) {
     fs::path cartDir = dir / (std::string("cart-") + format);
@@ -1121,8 +1121,8 @@ static void testElfSpace() {
       CHECK(notesText.size() <= 4000);  // what the assistant reads of it
     }
   }
-  // the DPC+ example: the driver copied from batari Basic (here a stand-in, through $bB),
-  // the song exported in three parts, and a 32K image
+  // DPC+: the example, VCSIDE The Game and the empty template; the driver copied from
+  // batari Basic (here a stand-in, through $bB), the song exported in three parts, a 32K image
   {
     fs::path fakeBb = dir / "fake-bb";
     fs::create_directories(fakeBb / "includes");
@@ -1138,38 +1138,64 @@ static void testElfSpace() {
 #endif
     };
     setBb(fakeBb.string());
-    for (const char* tvStandard : {"NTSC", "PAL"}) {
-      fs::path dpcDir = dir / (std::string("dpc-") + tvStandard);
-      CHECK(Project::create(dpcDir.string(), "voices", Language::Dasm, tvStandard, &project, &error, "dpcplus"));
-      CHECK(project.format == "DPC+");
-      for (auto fileName : {"main.asm", "2600.h", "DPCplus.arm", "theme.vcsmusic", "theme.music.asm"}) CHECK(fs::exists(dpcDir / fileName));
-      std::ifstream musicFile(dpcDir / "theme.music.asm");
-      std::string musicText((std::istreambuf_iterator<char>(musicFile)), {});
-      CHECK(musicText.find("MUSIC_PART = 3") != std::string::npos && musicText.find("MUSIC_EFFECT_FIRE") != std::string::npos);
-      CHECK(musicText.find("MUSIC_TIA_EFFECTS = 1 ") != std::string::npos);  // "bump", on the TIA's channel 1
-      std::string dasm = findInPath("dasm");
-      if (!dasm.empty()) {
-        std::string command = "cd \"" + dpcDir.string() + "\" && \"" + dasm + "\" main.asm -f3 -oexample.bin > dasm.log 2>&1";
-        CHECK(std::system(command.c_str()) == 0 && fs::file_size(dpcDir / "example.bin", errorCode) == 32768);
+    for (const char* tvStandard : {"NTSC", "PAL"})
+      for (std::string example : {"dpcplus", "game-dpcplus", ""}) {
+        fs::path dpcDir = dir / ("dpc-" + (example.empty() ? std::string("empty") : example) + "-" + tvStandard);
+        CHECK(Project::create(dpcDir.string(), "voices", Language::Dasm, tvStandard, &project, &error, example, "DPC+"));
+        CHECK(project.format == "DPC+");
+        for (auto fileName : {"main.asm", "2600.h", "DPCplus.arm", "VCSIDE.md"}) CHECK(fs::exists(dpcDir / fileName));
+        std::ifstream sourceFile(dpcDir / "main.asm"), notesFile(dpcDir / "VCSIDE.md");
+        std::string sourceText((std::istreambuf_iterator<char>(sourceFile)), {}), notesText((std::istreambuf_iterator<char>(notesFile)), {});
+        CHECK(sourceText.find("{{") == std::string::npos && notesText.find("# voices: notes for the assistant") == 0 &&
+              notesText.find("{{") == std::string::npos && notesText.find("## Kernel rules") != std::string::npos &&
+              notesText.size() <= 4000);
+        CHECK(fs::exists(dpcDir / "theme.music.asm") == !example.empty());
+        if (!example.empty()) {
+          std::ifstream musicFile(dpcDir / "theme.music.asm");
+          std::string musicText((std::istreambuf_iterator<char>(musicFile)), {});
+          CHECK(musicText.find("MUSIC_PART = 3") != std::string::npos);
+          CHECK(musicText.find("MUSIC_TIA_EFFECTS = 1 ") != std::string::npos);  // "bump" or "hit", on the TIA's channel 1
+          CHECK(musicText.find(example == "dpcplus" ? "MUSIC_EFFECT_FIRE" : "MUSIC_EFFECT_SHOT") != std::string::npos);
+        }
+        if (example == "game-dpcplus")
+          for (auto fileName : {"hero.gfx.asm", "enemy.gfx.asm", "room.gfx.asm", "title.gfx.asm"}) CHECK(fs::exists(dpcDir / fileName));
+        std::string dasm = findInPath("dasm");
+        if (!dasm.empty()) {
+          std::string command = "cd \"" + dpcDir.string() + "\" && \"" + dasm + "\" main.asm -f3 -oexample.bin > dasm.log 2>&1";
+          CHECK(std::system(command.c_str()) == 0 && fs::file_size(dpcDir / "example.bin", errorCode) == 32768);
+        }
       }
-    }
     setBb(savedBb);
   }
-  // the CDFJ example: the C code, the Makefile and the song exported for CDFJ; built with
-  // make when the tools are there, with a stand-in for the driver (or the real one in
-  // VCSIDE_CDFJ_DRIVER; VCSIDE_CDFJ_OUT keeps the project there, to run it)
-  for (const char* tvStandard : {"NTSC", "PAL"}) {
+  // CDFJ: the example, VCSIDE The Game and the empty template; the C code, the Makefile and
+  // the song exported for CDFJ; built with make when the tools are there, with a stand-in
+  // for the driver (or the real one in VCSIDE_CDFJ_DRIVER; VCSIDE_CDFJ_OUT keeps the
+  // example's project there, to run it)
+  for (const char* tvStandard : {"NTSC", "PAL"})
+  for (std::string example : {"cdfj", "game-cdfj", ""}) {
     const char* keepIn = std::getenv("VCSIDE_CDFJ_OUT");
-    fs::path cdfjDir = keepIn && std::string(tvStandard) == "NTSC" ? fs::path(keepIn) : dir / (std::string("cdfj-") + tvStandard);
-    CHECK(!Project::create((dir / "cdfj spaces").string(), "my game", Language::Dasm, tvStandard, &project, &error, "cdfj") && !error.empty());
-    CHECK(Project::create(cdfjDir.string(), "voices", Language::Dasm, tvStandard, &project, &error, "cdfj"));
+    fs::path cdfjDir = keepIn && std::string(tvStandard) == "NTSC" && example == "cdfj"
+                           ? fs::path(keepIn)
+                           : dir / ("cdfj-" + (example.empty() ? std::string("empty") : example) + "-" + tvStandard);
+    CHECK(!Project::create((dir / "cdfj spaces").string(), "my game", Language::Dasm, tvStandard, &project, &error, example, "CDFJ") && !error.empty());
+    CHECK(Project::create(cdfjDir.string(), "voices", Language::Dasm, tvStandard, &project, &error, example, "CDFJ"));
     CHECK(project.format == "CDFJ" && project.buildCommand == "make" && project.output == "build/voices.bin");
-    for (auto fileName : {"main.asm", "2600.h", "Makefile", "game.c", "divide.c", "cdfj.h", "layout.h", "start.S", "arm.ld", "theme.vcsmusic", "theme.music.h"})
+    for (auto fileName : {"main.asm", "2600.h", "Makefile", "game.c", "divide.c", "cdfj.h", "layout.h", "start.S", "arm.ld", "VCSIDE.md"})
       CHECK(fs::exists(cdfjDir / fileName));
-    std::ifstream makefile(cdfjDir / "Makefile"), musicFile(cdfjDir / "theme.music.h");
-    std::string makeText((std::istreambuf_iterator<char>(makefile)), {}), musicText((std::istreambuf_iterator<char>(musicFile)), {});
-    CHECK(makeText.find("NAME      = voices") != std::string::npos && musicText.find("#define MUSIC_CDFJ 1") != std::string::npos);
-    CHECK(musicText.find("#define MUSIC_TIA_EFFECTS 1 ") != std::string::npos);
+    std::ifstream makefile(cdfjDir / "Makefile"), notesFile(cdfjDir / "VCSIDE.md");
+    std::string makeText((std::istreambuf_iterator<char>(makefile)), {}), notesText((std::istreambuf_iterator<char>(notesFile)), {});
+    CHECK(makeText.find("NAME      = voices") != std::string::npos);
+    CHECK(notesText.find("# voices: notes for the assistant") == 0 && notesText.find("{{") == std::string::npos &&
+          notesText.find("## Kernel rules") != std::string::npos && notesText.size() <= 4000);
+    CHECK(fs::exists(cdfjDir / "theme.music.h") == !example.empty() && fs::exists(cdfjDir / "theme.vcsmusic") == !example.empty());
+    if (!example.empty()) {
+      std::ifstream musicFile(cdfjDir / "theme.music.h");
+      std::string musicText((std::istreambuf_iterator<char>(musicFile)), {});
+      CHECK(musicText.find("#define MUSIC_CDFJ 1") != std::string::npos);
+      CHECK(musicText.find("#define MUSIC_TIA_EFFECTS 1 ") != std::string::npos);
+    }
+    if (example == "game-cdfj")  // its graphics are the C code's
+      for (auto fileName : {"hero.gfx.h", "enemy.gfx.h", "room.gfx.h", "title.gfx.h"}) CHECK(fs::exists(cdfjDir / fileName));
     std::string make = findInPath("make"), dasm = findInPath("dasm"), gcc = findInPath("arm-none-eabi-gcc");
     if (make.empty() || dasm.empty() || gcc.empty()) {
       std::printf("  (no make, dasm or arm-none-eabi-gcc: the CDFJ example is not built)\n");

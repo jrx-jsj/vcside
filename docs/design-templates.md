@@ -1,6 +1,6 @@
 # Project templates: one set for every language and cartridge
 
-Status: approved (2026-11-11); in progress. Done: phase 3's DASM 4K game (`data/templates/dasm-game`, with two enemies and English texts); *New project* chooses the cartridge for DASM (2K, 4K, F8, F6, F4, DPC+, CDFJ) and batari Basic (4K, F8, F6, F4), with an empty banked DASM template (`data/templates/dasm-banked`) for F8, F6 and F4. *Start from* offers VCSIDE The Game on every DASM TIA cartridge: 4K, F8, F6 and F4 with or without the title screen (on the banked ones the game is in bank 0), and 2K without the title screen or the song (switches `TITLE_SCREEN` and `MUSIC`). Still missing, so those cartridges show fewer than two starts: batari Basic's empty project and game, DPC+'s and CDFJ's empty projects and games, and the game in C for ELF and ACE; the CDFJ driver download waits on its licence (none found). What exists today is in [design.md](design.md) (each language's template) and [design-ace.md](design-ace.md#the-ace-template-datatemplatesace-cc0-phase-3); how templates share files (`data/templates/shared`, `shared.json`) is in [design.md](design.md).
+Status: approved (2026-11-11); in progress. Done: phase 3's DASM 4K game (`data/templates/dasm-game`, with two enemies and English texts); *New project* chooses the cartridge for DASM (2K, 4K, F8, F6, F4, DPC+, CDFJ) and batari Basic (4K, F8, F6, F4), with an empty banked DASM template (`data/templates/dasm-banked`) for F8, F6 and F4. *Start from* offers VCSIDE The Game on every DASM TIA cartridge: 4K, F8, F6 and F4 with or without the title screen (on the banked ones the game is in bank 0), and 2K without the title screen or the song (switches `TITLE_SCREEN` and `MUSIC`). DPC+ and CDFJ have an empty project (`dasm-dpcplus-empty`, `dasm-cdfj-empty`) and VCSIDE The Game (`dasm-dpcplus-game`, `dasm-cdfj-game`, sampled music from the cartridge's voices) besides their examples (2026-11-12). Still missing, so those cartridges show fewer than two starts: batari Basic's empty project and game, and the game in C for ELF and ACE; the CDFJ driver download waits on its licence (none found). What exists today is in [design.md](design.md) (each language's template) and [design-ace.md](design-ace.md#the-ace-template-datatemplatesace-cc0-phase-3); how templates share files (`data/templates/shared`, `shared.json`) is in [design.md](design.md).
 
 ## Goal
 
@@ -74,7 +74,7 @@ Each new template is created and built by `vcside_tests` (NTSC, PAL and, where i
 3. DASM 4K: empty, game; then the F8 banked variant.
 4. ELF: empty (arguments), game; ACE: empty, game on `ace.h`, showcase.
 5. batari Basic: empty, game, banked variant.
-6. DPC+ and CDFJ: empty, game, banked variant.
+6. DPC+ and CDFJ: empty, game (done, 2026-11-12), banked variant.
 7. Documentation, *New project* texts and translations.
 
 ## Open questions

@@ -421,7 +421,8 @@ OpenFile* App::openFile(const std::string& pathIn, int line) {
 gfx::Profile App::gfxProfile() {
   if (!project_ || project_->language != Language::BatariBasic) {
     gfx::Profile profile;
-    profile.usesC = project_ && isC(project_->language);
+    // C kernels, and CDFJ, whose game logic is C run by the cartridge's ARM
+    profile.usesC = project_ && (isC(project_->language) || project_->format == "CDFJ");
     return profile;
   }
   std::string main = project_->abs(project_->main);

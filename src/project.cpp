@@ -550,6 +550,8 @@ static const std::vector<DasmExample>& dasmExamples() {
       {"game", N_("VCSIDE The Game"), "dasm-game", {"4K", "F8", "F6", "F4"}},
       {"game-notitle", N_("VCSIDE The Game, without the title screen"), "dasm-game", {"4K", "F8", "F6", "F4"}, 0, 1},
       {"game-2k", N_("VCSIDE The Game, without the title screen or the song"), "dasm-game", {"2K"}, 0, 0},
+      {"game-dpcplus", N_("VCSIDE The Game"), "dasm-dpcplus-game", {"DPC+"}},
+      {"game-cdfj", N_("VCSIDE The Game"), "dasm-cdfj-game", {"CDFJ"}},
       {"animation", N_("Example: an animated sprite"), "dasm-animation", {"4K"}},
       {"dpcplus", N_("Example: music on a DPC+ cartridge"), "dasm-dpcplus", {"DPC+"}},
       {"cdfj", N_("Example: C and music on a CDFJ cartridge"), "dasm-cdfj", {"CDFJ"}}};
@@ -578,9 +580,9 @@ std::vector<std::string> Project::cartridgeFormats(Language language) {
   return {};
 }
 
-bool Project::hasEmptyTemplate(Language language, const std::string& format) {
-  return !(language == Language::Dasm && (format == "DPC+" || format == "CDFJ"));
-}
+// Every language and cartridge has one today (DPC+ and CDFJ: dasm-dpcplus-empty and
+// dasm-cdfj-empty); a new cartridge without one would say so here.
+bool Project::hasEmptyTemplate(Language, const std::string&) { return true; }
 
 std::vector<std::pair<std::string, const char*>> Project::examples(Language language, const std::string& format) {
   if (language == Language::Dasm) {
@@ -684,9 +686,11 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
     for (auto& candidate : kBankedFormats)
       if (cartridge == candidate.id) banked = &candidate;
     fs::path templateDir = fs::path(dataDir()) / "templates" / "dasm";
-    fs::path exampleDir = dasmExample ? fs::path(dataDir()) / "templates" / dasmExample->folder
-                          : banked        ? fs::path(dataDir()) / "templates" / "dasm-banked"
-                                          : templateDir;
+    fs::path exampleDir = dasmExample            ? fs::path(dataDir()) / "templates" / dasmExample->folder
+                          : banked                 ? fs::path(dataDir()) / "templates" / "dasm-banked"
+                          : cartridge == "DPC+"    ? fs::path(dataDir()) / "templates" / "dasm-dpcplus-empty"
+                          : cartridge == "CDFJ"    ? fs::path(dataDir()) / "templates" / "dasm-cdfj-empty"
+                                                   : templateDir;
     newProject.format = cartridge;
     std::string asmText = readFile((exampleDir / "main.asm").string());
     if (asmText.empty()) {
@@ -694,16 +698,16 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
       return false;
     }
     std::string dpcDriver;
-    if (example == "dpcplus") {
+    if (cartridge == "DPC+") {
       dpcDriver = findDpcPlusDriver();
       if (dpcDriver.empty()) {
-        if (error) *error = T("The DPC+ example takes the cartridge's ARM driver (DPCplus.arm) from batari Basic: install batari Basic first (Tools).");
+        if (error) *error = T("A DPC+ project takes the cartridge's ARM driver (DPCplus.arm) from batari Basic: install batari Basic first (Tools).");
         return false;
       }
     }
-    const bool cdfj = example == "cdfj";
+    const bool cdfj = cartridge == "CDFJ";
     if (cdfj && projName.find_first_of(" \t") != std::string::npos) {
-      if (error) *error = T("The CDFJ example builds with make, which does not take spaces in file names: choose a name without spaces.");
+      if (error) *error = T("CDFJ projects build with make, which does not take spaces in file names: choose a name without spaces.");
       return false;
     }
     bool pal = tvIs50Hz(tvStandard);
@@ -746,9 +750,10 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
     std::set<std::string> leaveOut;  // what the game's switches leave unused
     if (dasmExample && !dasmExample->titleScreen) leaveOut.insert("title.vcsgfx");
     if (dasmExample && !dasmExample->music) leaveOut.insert("theme.vcsmusic");
-    if (!copySharedFiles(exampleDir, newProject.dir, {}, error, leaveOut)) return false;
+    if (!copySharedFiles(exampleDir, newProject.dir, {{"{{NAME}}", projName}}, error, leaveOut)) return false;
     // CDFJ: the C code, its linker script and the Makefile that builds both (the driver
-    // is not included: the Makefile says where it comes from)
+    // is not included: the Makefile says where it comes from); the templates take the
+    // files they share from dasm-cdfj through their shared.json
     if (cdfj) {
       for (auto& entry : fs::directory_iterator(exampleDir, errorCode)) {
         std::string extension = entry.path().extension().string(), fileName = entry.path().filename().string();
@@ -763,7 +768,7 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
     }
     if (!dpcDriver.empty() && !fs::exists(fs::path(newProject.dir) / "DPCplus.arm"))
       fs::copy_file(dpcDriver, fs::path(newProject.dir) / "DPCplus.arm", errorCode);
-    writeGfxIncludes(newProject.dir, false);
+    writeGfxIncludes(newProject.dir, cdfj);  // CDFJ: its graphics are the C code's (.gfx.h)
     writeMusicIncludes(newProject.dir, tvStandard);
     copyProjectNotes({exampleDir, templateDir}, newProject.dir, projName, cartridgeText);
     newProject.main = "main.asm";

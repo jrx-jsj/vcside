@@ -1,0 +1,15 @@
+{
+ "enemy.vcsgfx": {"from": "shared/enemy.vcsgfx"},
+ "hero.vcsgfx": {"from": "shared/hero.vcsgfx"},
+ "room.vcsgfx": {"from": "shared/room.vcsgfx"},
+ "theme.vcsmusic": {"from": "shared/theme.vcsmusic", "change": {
+  "effects": [
+   {"channel": 2, "instrument": 4, "name": "shot", "note": 72},
+   {"channel": 1, "instrument": 5, "name": "hit", "note": 40, "tia": true},
+   {"channel": 2, "instrument": 2, "name": "lose", "note": 30}
+  ],
+  "export": {"to": "dpc"},
+  "name": "game theme"
+ }},
+ "title.vcsgfx": {"from": "shared/title.vcsgfx"}
+}
