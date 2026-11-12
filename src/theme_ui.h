@@ -40,6 +40,10 @@ float stripesHeight();
 // The dialog's main button (Create, Save, OK...), and the others (small: SmallButton's size).
 bool primaryButton(const char* label, const ImVec2& size = ImVec2(0, 0));
 bool dialogButton(const char* label, const ImVec2& size = ImVec2(0, 0), bool small = false);
+// A progress bar with its text centred; the text reads on both parts: over the fill it is
+// black or white, whichever contrasts more with the fill (fill.w == 0: the theme's accent),
+// and over the rest the theme's text colour. size.x <= 0: the width left, minus -size.x.
+void progressBar(float fraction, const ImVec2& size, const char* label, const ImVec4& fill = ImVec4(0, 0, 0, 0));
 // Esc pressed in the dialog being drawn (not in a popup over it): every dialog closes with it.
 bool dialogEscape();
 // A heading inside a dialog: a dark band as wide as the content, with a line under it.

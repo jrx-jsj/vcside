@@ -490,7 +490,8 @@ void AssistantPanel::builtinCard(Provider& provider) {
     using DState = Download::State;
     if (download_.state() == DState::Running || download_.state() == DState::Verifying) {
       ImGui::TextUnformatted(F("Downloading {0}...", {model->name}).c_str());
-      ImGui::ProgressBar((float)download_.progress(), ImVec2(-theme::em(90), 0));
+      std::string percent = std::to_string((int)(download_.progress() * 100)) + " %";
+      theme::progressBar((float)download_.progress(), ImVec2(-theme::em(90), 0), percent.c_str());
       ImGui::SameLine();
       if (download_.state() == DState::Running && theme::dialogButton(T("Cancel"), ImVec2(theme::em(80), 0))) download_.cancel();
       if (download_.state() == DState::Verifying) ImGui::TextDisabled("%s", T("Checking the file..."));
@@ -855,7 +856,8 @@ void AssistantPanel::embedCard() {
   if (!isInstalled(*model)) {
     if (embedDownload_.state() == DState::Running || embedDownload_.state() == DState::Verifying) {
       ImGui::TextUnformatted(F("Downloading {0}...", {model->name}).c_str());
-      ImGui::ProgressBar((float)embedDownload_.progress(), ImVec2(-theme::em(90), 0));
+      std::string percent = std::to_string((int)(embedDownload_.progress() * 100)) + " %";
+      theme::progressBar((float)embedDownload_.progress(), ImVec2(-theme::em(90), 0), percent.c_str());
       ImGui::SameLine();
       if (embedDownload_.state() == DState::Running && theme::dialogButton(T("Cancel"), ImVec2(theme::em(80), 0))) embedDownload_.cancel();
       return;

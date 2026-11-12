@@ -191,6 +191,33 @@ bool dialogButton(const char* label, const ImVec2& size, bool small) {
   return pressed;
 }
 
+void progressBar(float fraction, const ImVec2& sizeIn, const char* label, const ImVec4& fillIn) {
+  ImVec2 size = ImGui::CalcItemSize(sizeIn, em(240), ImGui::GetFrameHeight());
+  ImVec2 start = ImGui::GetCursorScreenPos(), end(start.x + size.x, start.y + size.y);
+  ImGui::Dummy(size);
+  ImVec4 fill = fillIn.w > 0 ? fillIn : ImGui::GetStyleColorVec4(ImGuiCol_PlotHistogram);
+  ImDrawList* draw = ImGui::GetWindowDrawList();
+  float rounding = ImGui::GetStyle().FrameRounding;
+  float fillEnd = start.x + size.x * std::clamp(fraction, 0.0f, 1.0f);
+  draw->AddRectFilled(start, end, ImGui::GetColorU32(ImGuiCol_FrameBg), rounding);
+  if (fillEnd > start.x)
+    draw->AddRectFilled(start, ImVec2(fillEnd, end.y), ImGui::ColorConvertFloat4ToU32(fill), rounding,
+                        fraction >= 1.0f ? ImDrawFlags_RoundCornersAll : ImDrawFlags_RoundCornersLeft);
+  if (!label || !*label) return;
+  auto linear = [](float channel) { return channel <= 0.04045f ? channel / 12.92f : std::pow((channel + 0.055f) / 1.055f, 2.4f); };
+  float luminance = 0.2126f * linear(fill.x) + 0.7152f * linear(fill.y) + 0.0722f * linear(fill.z);
+  // WCAG contrast against black, (L + 0.05) / 0.05, and against white, 1.05 / (L + 0.05)
+  ImU32 onFill = (luminance + 0.05f) / 0.05f >= 1.05f / (luminance + 0.05f) ? IM_COL32(0, 0, 0, 255) : IM_COL32(255, 255, 255, 255);
+  ImVec2 textSize = ImGui::CalcTextSize(label);
+  ImVec2 textAt(start.x + (size.x - textSize.x) * 0.5f, start.y + (size.y - textSize.y) * 0.5f);
+  draw->PushClipRect(start, ImVec2(fillEnd, end.y), true);
+  draw->AddText(textAt, onFill, label);
+  draw->PopClipRect();
+  draw->PushClipRect(ImVec2(fillEnd, start.y), end, true);
+  draw->AddText(textAt, ImGui::GetColorU32(ImGuiCol_Text), label);
+  draw->PopClipRect();
+}
+
 void dialogHeading(const char* text) {
   ImVec2 position = ImGui::GetCursorScreenPos();
   float width = ImGui::GetContentRegionAvail().x, pad = em(5), line = std::max(2.0f, em(3));
