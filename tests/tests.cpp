@@ -900,10 +900,12 @@ static void testElfSpace() {
   std::string basicText((std::istreambuf_iterator<char>(basFile)), {});
   CHECK(basicText.find("rem Square Run - batari Basic") != std::string::npos && basicText.find("drawscreen") != std::string::npos);
   CHECK(basicText.find("set tv") == std::string::npos);  // NTSC: batari Basic's own timing
-  {  // its music: the song, and the player and tables main.bas inlines (h to z)
-    std::ifstream musicFile(dir / "bb" / "theme.music.asm");
-    std::string musicText((std::istreambuf_iterator<char>(musicFile)), {});
-    CHECK(fs::exists(dir / "bb" / "theme.vcsmusic") && basicText.find("inline theme.music.asm") != std::string::npos);
+  CHECK(basicText.find("inline") == std::string::npos && !fs::exists(dir / "bb" / "theme.vcsmusic"));  // empty: the loop alone
+  {  // the square example's music: the song, and the player and tables main.bas inlines (h to z)
+    CHECK(Project::create((dir / "bbsquare").string(), "Square Run", Language::BatariBasic, "NTSC", &project, &error, "square"));
+    std::ifstream squareFile(dir / "bbsquare" / "main.bas"), musicFile(dir / "bbsquare" / "theme.music.asm");
+    std::string squareText((std::istreambuf_iterator<char>(squareFile)), {}), musicText((std::istreambuf_iterator<char>(musicFile)), {});
+    CHECK(fs::exists(dir / "bbsquare" / "theme.vcsmusic") && squareText.find("inline theme.music.asm") != std::string::npos);
     CHECK(musicText.find("MUSIC_RAM = h") != std::string::npos && musicText.find("MUSIC_EFFECT_BLIP") != std::string::npos);
   }
   CHECK(Project::create((dir / "bbpal").string(), "Pal Run", Language::BatariBasic, "PAL", &project, &error));
@@ -1007,7 +1009,7 @@ static void testElfSpace() {
 
   // the DASM example: its graphics, the tables they give, and a program that assembles
   CHECK(Project::examples(Language::Dasm).size() == 6 && Project::examples(Language::Dasm)[0].first == "game" &&
-        Project::examples(Language::BatariBasic).empty());
+        Project::examples(Language::BatariBasic).size() == 3 && Project::examples(Language::BatariBasic, "F4")[0].first == "game");
   // the cartridge of a new project: the examples made for it, and an empty template that
   // assembles to its size (2K and 4K, and F8, F6 and F4 with their banks)
   CHECK(Project::cartridgeFormats(Language::Dasm) == std::vector<std::string>({"2K", "4K", "F8", "F6", "F4", "DPC+", "CDFJ"}));
@@ -1057,6 +1059,49 @@ static void testElfSpace() {
     std::string basText((std::istreambuf_iterator<char>(basFile)), {}), notesText((std::istreambuf_iterator<char>(notesFile)), {});
     CHECK(project.format == format && basText.find(std::string("  set romsize ") + romSize + "\n  set tv pal\n") != std::string::npos);
     CHECK(notesText.find(std::string("set romsize ") + romSize) != std::string::npos && notesText.find("{{") == std::string::npos);
+  }
+  // batari Basic's starts on every cartridge: the empty loop, VCSIDE The Game with and
+  // without the title screen, and the square; the graphics regions filled, nothing left of
+  // the template's markers. With $bB set (batari Basic's folder), each one compiles.
+  {
+    const char* bbFolder = std::getenv("bB");
+    std::string bbScript = bbFolder ? (fs::path(bbFolder) / "2600basic.sh").string() : "";
+    bool canCompile = !bbScript.empty() && fs::exists(bbScript) && !findInPath("wasmtime").empty();
+    int startIndex = 0;
+    for (const char* format : {"4K", "F8", "F6", "F4"})
+      for (const char* example : {"", "game", "game-notitle", "square"})
+        for (const char* tv : {"NTSC", "PAL"}) {
+          fs::path startDir = dir / ("bbstart-" + std::to_string(startIndex++));
+          CHECK(Project::create(startDir.string(), "s", Language::BatariBasic, tv, &project, &error, example, format));
+          std::ifstream basFile(startDir / "main.bas");
+          std::string basText((std::istreambuf_iterator<char>(basFile)), {});
+          const std::string exampleId = example;
+          CHECK(project.format == format && basText.find("{{") == std::string::npos && basText.find("rem s - ") != std::string::npos);
+          CHECK((basText.find("set tv pal") != std::string::npos) == (std::string(tv) == "PAL"));
+          CHECK(basText.find("rem vcsgfx end\n  rem vcsgfx end") == std::string::npos);
+          if (exampleId.rfind("game", 0) == 0) {
+            const bool title = exampleId == "game";
+            CHECK(fs::exists(startDir / "title.vcsgfx") == title && (basText.find("goto title") != std::string::npos) == title);
+            CHECK(fs::exists(startDir / "hero.vcsgfx") && fs::exists(startDir / "enemy.vcsgfx") && fs::exists(startDir / "room.vcsgfx"));
+            // every region holds the export of its frame or playfield
+            for (const char* filled : {"  rem vcsgfx hero.vcsgfx hero frame 4\n  rem hero, frame 4", "  rem vcsgfx enemy.vcsgfx enemy frame 2\n  rem enemy, frame 2",
+                                       "  rem vcsgfx room.vcsgfx room\n  rem room;"})
+              CHECK(basText.find(filled) != std::string::npos);
+            // the graphics' NTSC colours, turned into PAL ones in a PAL project (the hero's $F4)
+            CHECK((basText.find("COLUP0 = $F4") != std::string::npos) == (std::string(tv) == "NTSC"));
+            std::ifstream musicFile(startDir / "theme.music.asm");
+            std::string musicText((std::istreambuf_iterator<char>(musicFile)), {});
+            CHECK(musicText.find("MUSIC_RAM = h") != std::string::npos && musicText.find("MUSIC_EFFECT_LOSE") != std::string::npos);
+          }
+          if (!canCompile) continue;
+          std::string command = "cd \"" + startDir.string() + "\" && sh \"" + bbScript + "\" main.bas > bb.log 2>&1";
+          CHECK(std::system(command.c_str()) == 0);
+          std::ifstream logFile(startDir / "bb.log");
+          std::string logText((std::istreambuf_iterator<char>(logFile)), {});
+          CHECK(logText.find("compilation complete") != std::string::npos && logText.find("rror") == std::string::npos);
+          int romBytes = std::string(format) == "4K" ? 4096 : std::string(format) == "F8" ? 8192 : std::string(format) == "F6" ? 16384 : 32768;
+          CHECK(fs::file_size(startDir / "main.bas.bin", errorCode) == (uintmax_t)romBytes);
+        }
   }
   // the DASM game: the shared graphics and song, the menu's first TV system from the
   // project's standard, and a 4K program that assembles
@@ -1108,7 +1153,7 @@ static void testElfSpace() {
   {
     const std::vector<std::pair<Language, std::string>> notedTemplates = {
         {Language::Dasm, ""},  {Language::Dasm, "animation"}, {Language::Dasm, "game"},   {Language::Dasm, "cdfj"},
-        {Language::BatariBasic, ""}, {Language::ElfC, ""},   {Language::ElfC, "animation"}, {Language::AceC, ""},
+        {Language::BatariBasic, ""}, {Language::BatariBasic, "game"}, {Language::BatariBasic, "square"}, {Language::ElfC, ""},   {Language::ElfC, "animation"}, {Language::AceC, ""},
         {Language::AceC, "animation"}, {Language::AceC, "vcslib"}};
     int notesIndex = 0;
     for (auto& [language, example] : notedTemplates) {

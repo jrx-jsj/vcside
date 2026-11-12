@@ -1,0 +1,58 @@
+{
+ "vcsgfx": 1,
+ "sprites": [],
+ "playfields": [
+  {
+   "name": "room",
+   "line_height": 16,
+   "pf": 52,
+   "bk": 0,
+   "rows": [
+    {
+     "bits": "....XXXXXXXXXXXXXXXX",
+     "mode": "mirror"
+    },
+    {
+     "bits": "....X...............",
+     "mode": "mirror"
+    },
+    {
+     "bits": "....X...............",
+     "mode": "mirror"
+    },
+    {
+     "bits": "....X.....XXXX......",
+     "mode": "mirror"
+    },
+    {
+     "bits": "....X...............",
+     "mode": "mirror"
+    },
+    {
+     "bits": "....X.............XX",
+     "mode": "mirror"
+    },
+    {
+     "bits": "....X...............",
+     "mode": "mirror"
+    },
+    {
+     "bits": "....X.....XXXX......",
+     "mode": "mirror"
+    },
+    {
+     "bits": "....X...............",
+     "mode": "mirror"
+    },
+    {
+     "bits": "....X...............",
+     "mode": "mirror"
+    },
+    {
+     "bits": "....XXXXXXXXXXXXXXXX",
+     "mode": "mirror"
+    }
+   ]
+  }
+ ]
+}
