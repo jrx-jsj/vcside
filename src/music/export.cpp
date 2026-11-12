@@ -1207,6 +1207,10 @@ ExportResult exportSong(const Song& song, double audioClock, const ExportOptions
       tiaTables.push_back(frames);
       continue;
     }
+    // The player lets an effect go only when its volume reaches 0: nothing plays its note off
+    const Envelope* volume = song.instruments[effect.instrument].volumes.empty() ? nullptr : &song.instruments[effect.instrument].volumes[0];
+    if (!song.samples() && (!volume || volume->values.empty() || volume->loop >= 0 || volume->values.back() != 0))
+      builder.problem(F("Sound effect {0} never ends and keeps its channel: its instrument's volume envelope must end on 0, with no loop", {effect.name}));
     effects.push_back({symbol, {builder.sound(effect.instrument, effect.note, 0, 0), std::clamp(effect.channel, 0, channels - 1)}});
   }
   if (builder.sounds.entries.size() > 250) builder.problem(F("{0} different sounds: the player takes 250", {std::to_string(builder.sounds.entries.size())}));

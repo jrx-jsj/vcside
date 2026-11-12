@@ -1073,6 +1073,11 @@ static void testElfSpace() {
     std::ifstream musicFile(gameDir / "theme.music.asm");
     std::string musicText((std::istreambuf_iterator<char>(musicFile)), {});
     CHECK(musicText.find("MUSIC_EFFECT_SHOT") != std::string::npos && musicText.find("MUSIC_EFFECT_LOSE") != std::string::npos);
+    // its effects all end (one that holds its volume keeps the channel for good)
+    std::ifstream songFile(gameDir / "theme.vcsmusic");
+    vcs::music::Song gameSong;
+    CHECK(vcs::music::fromJson(std::string((std::istreambuf_iterator<char>(songFile)), {}), &gameSong, &error));
+    CHECK(vcs::music::exportSong(gameSong, vcs::music::audioClockHz("NTSC"), {}).problems.empty());
     std::string dasm = findInPath("dasm");
     if (!dasm.empty()) {
       std::string command = "cd \"" + gameDir.string() + "\" && \"" + dasm + "\" main.asm -f3 -ogame.bin > dasm.log 2>&1";
@@ -2695,6 +2700,12 @@ static void testMusicExport() {
   ExportResult basic = exportSong(song, ntsc, {ExportTarget::BatariBasic, "h", "NTSC"});
   CHECK(basic.ok && basic.text.find("MUSIC_RAM = h") != std::string::npos && basic.text.find("IFNCONST") == std::string::npos);
   CHECK(effectSymbol("  boom 2 ") == "MUSIC_EFFECT_BOOM_2");
+  // an effect whose volume never reaches 0 is reported: nothing would let it go
+  Song held = song;
+  held.instruments[held.effects[0].instrument].volumes[0] = {{12, 8}, -1};
+  CHECK(exportSong(held, ntsc, {}).problems.size() == 1);
+  held.instruments[held.effects[0].instrument].volumes[0] = {{12, 8, 0}, 1};
+  CHECK(exportSong(held, ntsc, {}).problems.size() == 1);
   // a pattern that plays differently depending on what came before is reported
   Song ambiguous = blankSong();
   ambiguous.patterns[0].resize(2);

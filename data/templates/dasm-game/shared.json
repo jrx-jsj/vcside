@@ -6,7 +6,7 @@
   "effects": [
    {"channel": 1, "instrument": 3, "name": "shot", "note": 72},
    {"channel": 1, "instrument": 4, "name": "hit", "note": 60},
-   {"channel": 0, "instrument": 1, "name": "lose", "note": 36}
+   {"channel": 0, "instrument": 5, "name": "lose", "note": 36}
   ],
   "export": {"to": "dasm"},
   "name": "game theme"

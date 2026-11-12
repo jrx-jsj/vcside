@@ -885,6 +885,7 @@
     "Some layers overlap: the TIA draws P0 and M0 over P1 and M1, and those over the ball and playfield (the preview does the same).": "Algunas capas se solapan: el TIA dibuja P0 y M0 sobre P1 y M1, y estos sobre la bola y el playfield (la vista previa hace lo mismo).",
     "Some lines change {0} registers (playfield and colours): together with sprites it may not fit in one line.": "Algunas líneas cambian {0} registros (playfield y colores): junto con los sprites puede no caber en una línea.",
     "Sound": "Sonido",
+    "Sound effect {0} never ends and keeps its channel: its instrument's volume envelope must end on 0, with no loop": "El efecto {0} no acaba nunca y se queda con su canal: la envolvente de volumen de su instrumento tiene que acabar en 0, sin bucle",
     "Sound effect {0} on the TIA's channel 1 lasts more than {1} frames: its volume envelope must end on 0": "El efecto {0} en el canal 1 del TIA dura más de {1} fotogramas: su envolvente de volumen tiene que acabar en 0",
     "Sound effect {0}: another one has the same name": "Efecto de sonido {0}: otro tiene el mismo nombre",
     "Sound effect {0}: its instrument does not exist": "Efecto de sonido {0}: su instrumento no existe",

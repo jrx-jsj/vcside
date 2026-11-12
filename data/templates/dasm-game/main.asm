@@ -290,6 +290,8 @@ TitleKernel SUBROUTINE
         sta ENAM0
         sta ENAM1
         sta CTRLPF              ; the texts are not mirrored
+        sta REFP0               ; nor the players (the game leaves REFP0 set
+        sta REFP1               ; when the hero faces left)
         sta COLUBK
         sta GRP0                ; no players (with VDELP0/1 on, each one twice)
         sta GRP1
