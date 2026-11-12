@@ -2536,6 +2536,72 @@ void App::welcome() {
   ImGui::EndGroup();
 }
 
+// A project or folder with every tab closed: the icon in the middle, what is open, a way back
+// to the main program and the build keys.
+void App::emptyEditor() {
+  using theme::em;
+  ImVec2 avail = ImGui::GetContentRegionAvail();
+  float lineHeight = ImGui::GetTextLineHeight();
+  struct Key {
+    const char* key;
+    const char* label;
+  } keys[] = {{"F7", N_("Build")}, {"F5", N_("Build and run")}, {"F6", N_("Build and debug")}, {"F1", N_("Documentation")}};
+  std::string mainFile = project_ ? project_->abs(project_->main) : std::string();
+  std::error_code errorCode;
+  bool hasMain = !mainFile.empty() && fs::is_regular_file(mainFile, errorCode);
+  float iconSize = em(80), keyRowH = lineHeight + em(10);
+  float blockH = iconSize + em(16) + lineHeight * 1.7f + em(6) + lineHeight * 2 + em(24) + lineHeight * (hasMain ? 2 : 1) + em(20) +
+                 (sizeof keys / sizeof keys[0]) * keyRowH;
+  float top = std::max(em(16), (avail.y - blockH) * 0.42f);
+  auto centred = [&](float width) { ImGui::SetCursorPosX(std::max(em(8), (avail.x - width) * 0.5f)); };
+  auto centredText = [&](const std::string& text, theme::Role role) {
+    centred(ImGui::CalcTextSize(text.c_str()).x);
+    ImGui::PushStyleColor(ImGuiCol_Text, theme::colv(role));
+    ImGui::TextUnformatted(text.c_str());
+    ImGui::PopStyleColor();
+  };
+  ImGui::SetCursorPosY(top);
+  if (unsigned texture = iconTexture()) {
+    centred(iconSize);
+    ImGui::Image((ImTextureID)(intptr_t)texture, ImVec2(iconSize, iconSize));
+  }
+  ImGui::Dummy(ImVec2(0, em(10)));
+  ImGui::SetWindowFontScale(1.7f);
+  centredText("VCSIDE", theme::Role::UiText);
+  ImGui::SetWindowFontScale(1.0f);
+  centredText(std::string(T("Version")) + " " + VCSIDE_VERSION, theme::Role::UiTextDim);
+  ImGui::Dummy(ImVec2(0, em(14)));
+  // what is open: the project and its cartridge, or the folder
+  if (project_) centredText(project_->name + "  \xC2\xB7  " + project_->format + "  \xC2\xB7  " + project_->tv, theme::Role::UiText);
+  else centredText(fs::path(folder_).filename().string(), theme::Role::UiText);
+  centredText(T("Open a file from the Project panel."), theme::Role::UiTextDim);
+  if (hasMain) {
+    std::string label = F("Open {0}", {project_->main});
+    centred(ImGui::CalcTextSize(label.c_str()).x);
+    ImGui::PushStyleColor(ImGuiCol_Text, theme::colv(theme::Role::UiLink));
+    if (ImGui::Selectable(label.c_str(), false, 0, ImGui::CalcTextSize(label.c_str()))) openFile(mainFile);
+    ImGui::PopStyleColor();
+    if (ImGui::IsItemHovered()) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+  }
+  ImGui::Dummy(ImVec2(0, em(20)));
+  // the keys, as key caps beside what they do, the block centred on the caps' right edge
+  float capW = ImGui::CalcTextSize("F7").x + em(14), labelW = 0;
+  for (auto& key : keys) labelW = std::max(labelW, ImGui::CalcTextSize(T(key.label)).x);
+  float gap = em(10), left = std::max(em(8), (avail.x - (capW + gap + labelW)) * 0.5f);
+  ImDrawList* drawList = ImGui::GetWindowDrawList();
+  for (auto& key : keys) {
+    ImGui::SetCursorPosX(left);
+    ImVec2 origin = ImGui::GetCursorScreenPos();
+    ImVec2 capEnd(origin.x + capW, origin.y + lineHeight + em(6));
+    drawList->AddRectFilled(origin, capEnd, ImGui::GetColorU32(ImGuiCol_FrameBg), em(4));
+    drawList->AddRect(origin, capEnd, theme::col(theme::Role::UiTextDim), em(4));
+    ImVec2 keySize = ImGui::CalcTextSize(key.key);
+    drawList->AddText(ImVec2(origin.x + (capW - keySize.x) * 0.5f, origin.y + em(3)), theme::col(theme::Role::UiText), key.key);
+    drawList->AddText(ImVec2(origin.x + capW + gap, origin.y + em(3)), theme::col(theme::Role::UiTextDim), T(key.label));
+    ImGui::Dummy(ImVec2(capW + gap + labelW, keyRowH));
+  }
+}
+
 void App::editorsPanel() {
   ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
   bool open = theme::beginPanel("Editor###editors", nullptr, ImGuiWindowFlags_NoScrollbar);
@@ -2550,10 +2616,7 @@ void App::editorsPanel() {
     return;
   }
   if (files_.empty()) {
-    ImGui::SetCursorPos(ImVec2(20, 20));
-    ImGui::TextDisabled("VCSIDE %s", VCSIDE_VERSION);
-    ImGui::SetCursorPosX(20);
-    ImGui::TextDisabled("F7 %s   F5 %s   F6 %s   F1 %s", T("Build"), T("Build and run"), T("Build and debug"), T("Documentation"));
+    emptyEditor();
     theme::endPanel();
     return;
   }

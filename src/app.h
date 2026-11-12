@@ -123,6 +123,7 @@ class App {
   void dockspace();
   void projectPanel();
   void welcome();
+  void emptyEditor();
   void welcomeScreen();
   unsigned iconTexture();
   void editorsPanel();
