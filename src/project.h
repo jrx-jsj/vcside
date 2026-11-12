@@ -93,6 +93,15 @@ struct Project {
   // (DPC+ and CDFJ only come as their examples). Empty for C: ELF and ACE choose otherwise.
   static std::vector<std::string> cartridgeFormats(Language language);
   static bool hasEmptyTemplate(Language language, const std::string& format);
+  // DPC+'s ARM driver from the batari Basic VCSIDE installs (or $bB's); empty if there is none.
+  static std::string dpcPlusDriver();
+  // CDFJ's ARM driver (cdfj_driver.bin) is not included with VCSIDE: its licence does not let
+  // VCSIDE pass it on, so the user adds their own copy. checkCdfjDriver says whether a file
+  // is one (2048 bytes, the driver's "CDFJ" signature and its four entry points);
+  // addCdfjDriver checks it and copies it into the project folder as cdfj_driver.bin.
+  static constexpr const char* kCdfjDriverFile = "cdfj_driver.bin";
+  static bool checkCdfjDriver(const std::string& path, std::string* error);
+  static bool addCdfjDriver(const std::string& path, const std::string& projectDir, std::string* error);
 };
 
 // TV standards a project can choose, and whether an emulator has each one.

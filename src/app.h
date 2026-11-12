@@ -99,6 +99,8 @@ class App {
   bool testMenu(const std::string& path);  // "File/Save": the system menu, or the ImGui one
   void testGoToAddress(const std::string& address) { showGoToAddress_ = true, pendingAddress_ = address; }
   void testFocus(const std::string& panel) { ImGui::SetWindowFocus(("###" + panel).c_str()); }
+  // what a file dialog of that kind would answer (cdfjdriver, npcdfj...), without the system dialog
+  void testDialogResult(const std::string& kind, const std::string& path) { pushDialogResult(kind, path); }
   // What completion offers for a prefix and the tooltip of a word, in the active file.
   std::string testComplete(const std::string& prefix);
   void testDefinition(const std::string& word) {
@@ -333,6 +335,7 @@ class App {
   int npLang_ = 0, npExample_ = 0;
   std::string npTvId_ = "NTSC";  // 0 = empty, then Project::examples()
   std::string npFormat_ = "4K";                // DASM and batari Basic: the cartridge (formats.json id)
+  std::string npCdfjDriver_, npCdfjError_;    // CDFJ: the user's own driver, chosen before Create
   std::string npElfCartridge_ = "chameleon";  // ELF: the cartridge, and its sizes in KB
   int npFlashKb_ = 128, npRamKb_ = 36;
 

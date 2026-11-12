@@ -1710,6 +1710,21 @@ void App::frame() {
       else if (kind == "folder") openPath(path);
       else if (kind == "file") openFile(path);
       else if (kind == "newdir") npDir_ = path;
+      else if (kind == "npcdfj") {  // New project: checked now, copied once the project exists
+        npCdfjError_.clear();
+        if (Project::checkCdfjDriver(path, &npCdfjError_)) npCdfjDriver_ = path;
+        else npCdfjDriver_.clear();
+      } else if (kind == "cdfjdriver" && project_) {
+        std::string error;
+        if (Project::addCdfjDriver(path, project_->dir, &error)) {
+          output_ += F("{0} copied into the project as {1}.", {path, Project::kCdfjDriverFile}) + "\n";
+          build(0);
+        } else {
+          output_ += error + "\n", lastStatus_ = error;
+          diagnostics_.push_back({Diagnostic::Error, path, 0, error});
+        }
+        outputScroll_ = true;
+      }
       else if (kind == "themeimport") {
         std::string id, error;
         if (themes_.import(path, &id, &error)) useTheme(id), themeEditor_.open = true;
@@ -2787,6 +2802,19 @@ void App::outputPanel() {
   theme::endPanel();
 }
 
+static void wrappedTooltip(const std::string& text) {
+  if (!ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) return;
+  ImGui::BeginTooltip();
+  ImGui::PushTextWrapPos(ImGui::GetFontSize() * 30);
+  ImGui::TextUnformatted(text.c_str());
+  ImGui::PopTextWrapPos();
+  ImGui::EndTooltip();
+}
+
+// CDFJ's driver: why VCSIDE has none, and what to do (New project and Problems).
+static const char* kCdfjDriverHelp =
+    N_("VCSIDE does not include CDFJ's ARM driver (cdfj_driver.bin, 2048 bytes). It is by Chris Walton, Fred Quimby and Darrell Spice Jr, published with SpiceWare's CDFJ tutorial on AtariAge, with no licence that lets VCSIDE pass it on. The project does not build until you add your own copy: Choose file... checks it and copies it into the project.");
+
 void App::problemsPanel() {
   char title[64];
   snprintf(title, sizeof title, "%s (%d)###problems", T("Problems"), (int)diagnostics_.size());
@@ -2815,7 +2843,12 @@ void App::problemsPanel() {
         }
         ImGui::PopID();
         ImGui::TableNextColumn();
-        if (!diagnostic.file.empty()) {
+        // CDFJ's missing driver: the button in the file's column, which a narrow panel still shows
+        if (project_ && diagnostic.message.find(std::string(Project::kCdfjDriverFile) + " is missing") != std::string::npos) {
+          if (ImGui::SmallButton(T("Choose file...")))  // the user's own copy: VCSIDE has none to offer
+            SDL_ShowOpenFileDialog(dialogCallback, new DialogCtx{this, "cdfjdriver"}, window_, nullptr, 0, nullptr, false);
+          wrappedTooltip(T(kCdfjDriverHelp));
+        } else if (!diagnostic.file.empty()) {
           std::string shown = diagnostic.file;
           std::error_code errorCode;
           if (project_ && fs::path(diagnostic.file).is_absolute()) {
@@ -2851,14 +2884,6 @@ void App::problemsPanel() {
     N_("automatic, on"), N_("automatic"), N_("small"), N_("medium"), N_("large"), N_("gamepad"),
     N_("trak-ball"), N_("Amiga mouse"), N_("Atari mouse"), N_("light gun"), N_("Genesis pad")};
 
-static void wrappedTooltip(const std::string& text) {
-  if (!ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) return;
-  ImGui::BeginTooltip();
-  ImGui::PushTextWrapPos(ImGui::GetFontSize() * 30);
-  ImGui::TextUnformatted(text.c_str());
-  ImGui::PopTextWrapPos();
-  ImGui::EndTooltip();
-}
 
 void App::emulatorOptionsDialog() {
   if (showEmuOptions_) {
@@ -3554,6 +3579,27 @@ void App::newProjectDialog() {
     }
     ImGui::EndTable();
   }
+  // drivers VCSIDE cannot include: said before Create, not found out at the first build
+  if (npLanguage == Language::Dasm && npFormat_ == "CDFJ") {
+    ImGui::PushTextWrapPos(0);
+    ImGui::TextColored(theme::colv(theme::Role::MsgWarning), "%s", T(kCdfjDriverHelp));
+    ImGui::PopTextWrapPos();
+    if (theme::dialogButton(T("Choose file...")))
+      SDL_ShowOpenFileDialog(dialogCallback, new DialogCtx{this, "npcdfj"}, window_, nullptr, 0, nullptr, false);
+    if (!npCdfjDriver_.empty()) ImGui::SetItemTooltip("%s", npCdfjDriver_.c_str());
+    ImGui::SameLine();
+    ImGui::AlignTextToFramePadding();
+    ImGui::PushTextWrapPos(0);
+    if (!npCdfjError_.empty()) ImGui::TextColored(theme::colv(theme::Role::MsgError), "%s", npCdfjError_.c_str());
+    else if (!npCdfjDriver_.empty()) ImGui::TextUnformatted(F("Driver: {0}", {fs::path(npCdfjDriver_).filename().string()}).c_str());
+    else ImGui::TextDisabled("%s", T("No driver chosen: the project is made without it."));
+    ImGui::PopTextWrapPos();
+  } else if (npLanguage == Language::Dasm && npFormat_ == "DPC+" && Project::dpcPlusDriver().empty()) {
+    ImGui::PushTextWrapPos(0);
+    ImGui::TextColored(theme::colv(theme::Role::MsgWarning), "%s",
+                       T("VCSIDE does not include DPC+'s ARM driver (DPCplus.arm): the project takes a copy from batari Basic. Install batari Basic first (Tools)."));
+    ImGui::PopTextWrapPos();
+  }
   fs::path target = fs::path(npDir_) / npName_;
   ImGui::TextDisabled("%s", target.string().c_str());
   static std::string error;
@@ -3570,7 +3616,12 @@ void App::newProjectDialog() {
       created.elfRamKb = npRamKb_ == defaultElfRamKb(npElfCartridge_) ? 0 : npRamKb_;
       made = created.save(&error);
     }
+    if (made && npLanguage == Language::Dasm && npFormat_ == "CDFJ" && !npCdfjDriver_.empty()) {
+      std::string driverError;
+      if (!Project::addCdfjDriver(npCdfjDriver_, created.dir, &driverError)) output_ += driverError + "\n", outputScroll_ = true;
+    }
     if (made) {
+      npCdfjDriver_.clear(), npCdfjError_.clear();
       openProject(created.file);
       ImGui::CloseCurrentPopup();
     }

@@ -1186,6 +1186,35 @@ static void testElfSpace() {
     std::string build = "cd \"" + cdfjDir.string() + "\" && make > make.log 2>&1";
     CHECK(std::system(build.c_str()) == 0 && fs::file_size(cdfjDir / "build" / "voices.bin", errorCode) == 32768);
   }
+  {
+    // the user's own CDFJ driver: checked (size, signature, entry points), then copied. The
+    // files are made here: zeros with only what is checked, not the driver
+    fs::path drivers = dir / "cdfj-drivers";
+    fs::create_directories(drivers, errorCode);
+    std::string likeDriver(2048, '\0');
+    likeDriver.replace(0x174, 12, "CDFJCDFJCDFJ");
+    for (int entry = 0x750; entry < 0x760; entry += 4) likeDriver.replace(entry, 4, "\x25\x4c\x20\x47");
+    auto write = [&](const char* name, const std::string& bytes) {
+      std::ofstream(drivers / name, std::ios::binary) << bytes;
+      return (drivers / name).string();
+    };
+    std::string driverError;
+    CHECK(Project::checkCdfjDriver(write("good.bin", likeDriver), &driverError) && driverError.empty());
+    CHECK(!Project::checkCdfjDriver(write("short.bin", likeDriver.substr(0, 2047)), &driverError) && driverError.find("2047") != std::string::npos);
+    std::string cdfPlus = likeDriver;
+    cdfPlus.replace(0x174, 12, "PLUSCDFJPLUS");
+    CHECK(!Project::checkCdfjDriver(write("plus.bin", cdfPlus), &driverError) && driverError.find("signature") != std::string::npos);
+    std::string moved = likeDriver;
+    moved.replace(0x758, 4, std::string(4, '\0'));
+    CHECK(!Project::checkCdfjDriver(write("moved.bin", moved), &driverError) && driverError.find("$0751") != std::string::npos);
+    CHECK(!Project::checkCdfjDriver((drivers / "none.bin").string(), &driverError));
+    fs::path into = drivers / "project";
+    fs::create_directories(into, errorCode);
+    CHECK(!Project::addCdfjDriver((drivers / "plus.bin").string(), into.string(), &driverError) && !fs::exists(into / Project::kCdfjDriverFile));
+    CHECK(Project::addCdfjDriver((drivers / "good.bin").string(), into.string(), &driverError) && fs::file_size(into / Project::kCdfjDriverFile, errorCode) == 2048);
+    CHECK(Project::addCdfjDriver((into / Project::kCdfjDriverFile).string(), into.string(), &driverError));  // already there
+    if (const char* realDriver = std::getenv("VCSIDE_CDFJ_DRIVER")) CHECK(Project::checkCdfjDriver(realDriver, &driverError));
+  }
   CHECK(stellaFormat("CDFJ") == "CDF" && stellaFormat("DPC+") == "DPCP");
   // the ELF example: the template with the example's main.c, and hero.gfx.h next to it
   CHECK(Project::examples(Language::ElfC).size() == 1);

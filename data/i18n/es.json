@@ -1244,7 +1244,16 @@
     "A {0} cartridge starts from its example.": "Un cartucho {0} empieza desde su ejemplo.",
     "VCSIDE The Game": "VCSIDE The Game",
     "VCSIDE The Game, without the title screen": "VCSIDE The Game, sin la pantalla de título",
-    "VCSIDE The Game, without the title screen or the song": "VCSIDE The Game, sin la pantalla de título ni la canción"
+    "VCSIDE The Game, without the title screen or the song": "VCSIDE The Game, sin la pantalla de título ni la canción",
+    "{0} copied into the project as {1}.": "{0} copiado al proyecto como {1}.",
+    "VCSIDE does not include CDFJ's ARM driver (cdfj_driver.bin, 2048 bytes). It is by Chris Walton, Fred Quimby and Darrell Spice Jr, published with SpiceWare's CDFJ tutorial on AtariAge, with no licence that lets VCSIDE pass it on. The project does not build until you add your own copy: Choose file... checks it and copies it into the project.": "VCSIDE no incluye el driver ARM de CDFJ (cdfj_driver.bin, 2048 bytes). Es de Chris Walton, Fred Quimby y Darrell Spice Jr, publicado con el tutorial de CDFJ de SpiceWare en AtariAge, sin una licencia que permita a VCSIDE distribuirlo. El proyecto no compila hasta que añadas tu propia copia: Elegir archivo... la comprueba y la copia al proyecto.",
+    "Choose file...": "Elegir archivo...",
+    "Driver: {0}": "Driver: {0}",
+    "No driver chosen: the project is made without it.": "Sin driver elegido: el proyecto se crea sin él.",
+    "VCSIDE does not include DPC+'s ARM driver (DPCplus.arm): the project takes a copy from batari Basic. Install batari Basic first (Tools).": "VCSIDE no incluye el driver ARM de DPC+ (DPCplus.arm): el proyecto toma una copia de batari Basic. Instala antes batari Basic (Herramientas).",
+    "{0} has {1} bytes: CDFJ's driver has 2048.": "{0} tiene {1} bytes: el driver de CDFJ tiene 2048.",
+    "{0} is not CDFJ's driver: it lacks the CDFJ signature (a CDF or CDFJ+ driver, or another file?).": "{0} no es el driver de CDFJ: le falta la firma de CDFJ (¿un driver de CDF o de CDFJ+, u otro archivo?).",
+    "{0} is a CDFJ driver of another version: its functions are not where the template calls them ($0751-$075D).": "{0} es un driver de CDFJ de otra versión: sus funciones no están donde las llama la plantilla ($0751-$075D)."
   },
   "total": 1171
 }

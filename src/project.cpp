@@ -605,6 +605,49 @@ static std::string findDpcPlusDriver() {
   return "";
 }
 
+std::string Project::dpcPlusDriver() { return findDpcPlusDriver(); }
+
+// What is checked is what the templates rely on, not the driver itself (VCSIDE carries none
+// of it): its size, "CDFJ" three times where the driver keeps its signature ($0174, which
+// emulators look for to tell CDFJ from CDF and CDFJ+), and an entry point at each of $0750,
+// $0754, $0758 and $075C (the code calls setNote, resetWave, getWavePtr and setWaveSize there).
+bool Project::checkCdfjDriver(const std::string& path, std::string* error) {
+  std::ifstream in(path, std::ios::binary);
+  if (!in) {
+    if (error) *error = F("Cannot read {0}", {path});
+    return false;
+  }
+  std::string bytes((std::istreambuf_iterator<char>(in)), {});
+  if (bytes.size() != 2048) {
+    if (error) *error = F("{0} has {1} bytes: CDFJ's driver has 2048.", {fs::path(path).filename().string(), std::to_string(bytes.size())});
+    return false;
+  }
+  if (bytes.compare(0x174, 12, "CDFJCDFJCDFJ") != 0) {
+    if (error) *error = F("{0} is not CDFJ's driver: it lacks the CDFJ signature (a CDF or CDFJ+ driver, or another file?).", {fs::path(path).filename().string()});
+    return false;
+  }
+  bool entryPoints = (unsigned char)bytes[0x753] == 0x47;  // each one ends in a Thumb "bx"
+  for (int entry = 0x754; entry < 0x760; entry += 4) entryPoints = entryPoints && bytes.compare(entry, 4, bytes, 0x750, 4) == 0;
+  if (!entryPoints) {
+    if (error) *error = F("{0} is a CDFJ driver of another version: its functions are not where the template calls them ($0751-$075D).", {fs::path(path).filename().string()});
+    return false;
+  }
+  return true;
+}
+
+bool Project::addCdfjDriver(const std::string& path, const std::string& projectDir, std::string* error) {
+  if (!checkCdfjDriver(path, error)) return false;
+  std::error_code errorCode;
+  fs::path target = fs::path(projectDir) / kCdfjDriverFile;
+  if (fs::exists(target, errorCode) && fs::equivalent(path, target, errorCode)) return true;
+  fs::copy_file(path, target, fs::copy_options::overwrite_existing, errorCode);
+  if (errorCode) {
+    if (error) *error = F("Cannot write {0}", {target.string()});
+    return false;
+  }
+  return true;
+}
+
 // A .vcsgfx of an example comes with the tables its program includes (.gfx.asm, or .gfx.h
 // for C), written as the graphics editor writes them on save.
 static void writeGfxIncludes(const fs::path& dir, bool isC) {

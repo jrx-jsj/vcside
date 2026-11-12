@@ -480,10 +480,11 @@ int main(int argc, char** argv) {
   // --imgui-menu draws the menus with ImGui on macOS too; --menu "File/Save" chooses a
   // system menu item; --menu-dump prints the system menu bar; --goto-address TEXT
   // opens "Go to address" with that text. --input FILE plays mouse and key actions
-  // (see InputScript) before the capture.
+  // (see InputScript) before the capture. --dialog KIND PATH answers a file dialog of that
+  // kind (cdfjdriver, npcdfj...) with PATH, after --build's build has ended.
   vcs::App& app = *windows[0]->app;
   ImGui::SetCurrentContext(windows[0]->imguiContext);
-  std::string shot, select, doc, find, def, focus, menu, gotoAddr;
+  std::string shot, select, doc, find, def, focus, menu, gotoAddr, dialogKind, dialogPath;
   bool menuDump = false;
   bool findReplace = false;
   bool doBuild = false;
@@ -504,6 +505,7 @@ int main(int argc, char** argv) {
     else if (arg == "--menu-dump") menuDump = true;
     else if (arg == "--complete" && i + 1 < argc) complete = argv[++i];
     else if (arg == "--goto-address" && i + 1 < argc) gotoAddr = argv[++i];
+    else if (arg == "--dialog" && i + 2 < argc) dialogKind = argv[++i], dialogPath = argv[++i];
     else if (arg == "--input" && i + 1 < argc) {
       std::ifstream file(argv[++i]);
       for (std::string line; std::getline(file, line);)
@@ -531,7 +533,7 @@ int main(int argc, char** argv) {
     ImGui::SetCurrentContext(windows[0]->imguiContext);
   }
 
-  int frame = 0, shotFrame = -1;
+  int frame = 0, shotFrame = -1, dialogFrame = 0;  // dialogFrame: when --dialog answered (what it starts, e.g. a build, comes next)
   bool done = false;
 
   while (!done) {
@@ -546,7 +548,8 @@ int main(int argc, char** argv) {
       if (frame == 9 && !menu.empty() && !app.testMenu(menu)) SDL_Log("menu item not found or disabled: %s", menu.c_str());
       if (frame == 10 && !complete.empty()) std::fputs(app.testComplete(complete).c_str(), stdout), std::fflush(stdout);
       if (frame == 12 && menuDump) std::fputs(app.testMenuDump().c_str(), stdout), std::fflush(stdout), menuDump = false;
-      if (frame > 10 && shotFrame < 0 && !app.testBusy() && (frame > 20 || input.lines.empty()) && input.done()) shotFrame = frame + 5;
+      if (frame > 10 && !dialogKind.empty() && !app.testBusy()) app.testDialogResult(dialogKind, dialogPath), dialogKind.clear(), dialogFrame = frame;
+      if (frame > 10 && shotFrame < 0 && dialogKind.empty() && frame > dialogFrame + 5 && !app.testBusy() && (frame > 20 || input.lines.empty()) && input.done()) shotFrame = frame + 5;
       if (frame == shotFrame - 3 && !focus.empty()) app.testFocus(focus);
     }
     SDL_Event event;
