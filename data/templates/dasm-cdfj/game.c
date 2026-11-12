@@ -33,56 +33,56 @@ static uint8_t hero_x, hero_y, last_button;
 /* A voice's samples, to its 32 bytes of the display data, where the cartridge reads them. */
 static void voice_waveform(int voice, const uint8_t *samples)
 {
-    uint8_t *wave = CDFJ_DISPLAY + LAYOUT_WAVES + 32 * voice;
-    for (int i = 0; i < 32; i++) wave[i] = samples[i];
-    cdfj_waveform(voice, LAYOUT_WAVES + 32 * voice);
+	uint8_t *wave = CDFJ_DISPLAY + LAYOUT_WAVES + 32 * voice;
+	for (int i = 0; i < 32; i++) wave[i] = samples[i];
+	cdfj_waveform(voice, LAYOUT_WAVES + 32 * voice);
 }
 
 static void voice_note(int voice, uint32_t frequency, int restart)
 {
-    cdfj_set_note(voice, frequency);
-    if (restart) cdfj_reset_wave(voice);
+	cdfj_set_note(voice, frequency);
+	if (restart) cdfj_reset_wave(voice);
 }
 
 static void start(int lines)
 {
-    for (uint8_t *byte = __bss_start; byte < __bss_end; byte++) *byte = 0;
-    for (int voice = 0; voice < 3; voice++) cdfj_set_wave_size(voice, 27);
-    music_init();
-    hero_x = 76;
-    hero_y = (uint8_t)(lines / 2);
-    last_button = 0x80;         /* as if up: holding it at power on plays nothing */
+	for (uint8_t *byte = __bss_start; byte < __bss_end; byte++) *byte = 0;
+	for (int voice = 0; voice < 3; voice++) cdfj_set_wave_size(voice, 27);
+	music_init();
+	hero_x = 76;
+	hero_y = (uint8_t)(lines / 2);
+	last_button = 0x80;         /* as if up: holding it at power on plays nothing */
 }
 
 static void frame(int lines, uint8_t swcha, uint8_t inpt4)
 {
-    /* the joystick moves the square; reaching the left or right edge plays "bump" */
-    if (!(swcha & 0x80) && hero_x < HERO_RIGHT && ++hero_x == HERO_RIGHT) music_effect(MUSIC_EFFECT_BUMP);
-    if (!(swcha & 0x40) && hero_x > 0 && --hero_x == 0) music_effect(MUSIC_EFFECT_BUMP);
-    if (!(swcha & 0x20) && hero_y < lines - HERO_HEIGHT) hero_y++;
-    if (!(swcha & 0x10) && hero_y > 0) hero_y--;
-    /* the button going down plays "fire" */
-    if (!(inpt4 & 0x80) && (last_button & 0x80)) music_effect(MUSIC_EFFECT_FIRE);
-    last_button = inpt4;
+	/* the joystick moves the square; reaching the left or right edge plays "bump" */
+	if (!(swcha & 0x80) && hero_x < HERO_RIGHT && ++hero_x == HERO_RIGHT) music_effect(MUSIC_EFFECT_BUMP);
+	if (!(swcha & 0x40) && hero_x > 0 && --hero_x == 0) music_effect(MUSIC_EFFECT_BUMP);
+	if (!(swcha & 0x20) && hero_y < lines - HERO_HEIGHT) hero_y++;
+	if (!(swcha & 0x10) && hero_y > 0) hero_y--;
+	/* the button going down plays "fire" */
+	if (!(inpt4 & 0x80) && (last_button & 0x80)) music_effect(MUSIC_EFFECT_FIRE);
+	last_button = inpt4;
 
-    music_frame(lines);
+	music_frame(lines);
 
-    /* what the 6507 reads: the square's x, the TIA's channel 1, and the square's graphics
-     * line by line */
-    uint8_t *display = CDFJ_DISPLAY;
-    for (int i = 0; i < 3; i++) display[LAYOUT_TIA + i] = music_tia[i];
-    for (int line = 0; line < lines; line++)
-        display[LAYOUT_HERO_GFX + line] = (unsigned)(line - hero_y) < HERO_HEIGHT ? 0xFF : 0x00;
-    display[LAYOUT_HERO_X] = hero_x;
-    cdfj_point(HERO_STREAM, LAYOUT_HERO_GFX);
-    cdfj_step(HERO_STREAM, 1, 0);
+	/* what the 6507 reads: the square's x, the TIA's channel 1, and the square's graphics
+	 * line by line */
+	uint8_t *display = CDFJ_DISPLAY;
+	for (int i = 0; i < 3; i++) display[LAYOUT_TIA + i] = music_tia[i];
+	for (int line = 0; line < lines; line++)
+		display[LAYOUT_HERO_GFX + line] = (unsigned)(line - hero_y) < HERO_HEIGHT ? 0xFF : 0x00;
+	display[LAYOUT_HERO_X] = hero_x;
+	cdfj_point(HERO_STREAM, LAYOUT_HERO_GFX);
+	cdfj_step(HERO_STREAM, 1, 0);
 }
 
 void game_arm(void)
 {
-    uint8_t *display = CDFJ_DISPLAY;
-    int lines = display[LAYOUT_LINES];
-    if (display[LAYOUT_FUNCTION] == FUNCTION_START) start(lines);
-    else frame(lines, display[LAYOUT_SWCHA], display[LAYOUT_INPT4]);
-    cdfj_step(CDFJ_COMM_STREAM, 1, 0);  /* the 6507 reads what follows with DSCOMM */
+	uint8_t *display = CDFJ_DISPLAY;
+	int lines = display[LAYOUT_LINES];
+	if (display[LAYOUT_FUNCTION] == FUNCTION_START) start(lines);
+	else frame(lines, display[LAYOUT_SWCHA], display[LAYOUT_INPT4]);
+	cdfj_step(CDFJ_COMM_STREAM, 1, 0);  /* the 6507 reads what follows with DSCOMM */
 }

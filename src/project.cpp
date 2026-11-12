@@ -754,8 +754,8 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
     const char* lines60 = "VBLANK_LINES   = 37\nVISIBLE_LINES  = 192\nOVERSCAN_LINES = 30";
     std::string defs = pal ? lines50 : lines60, tvText = tvStandard + " timing";
     if (tvStandard == "AUTO") {  // several systems: the program chooses when it is assembled
-      defs = std::string("        IFCONST PAL     ; 50 Hz: assemble with -DPAL=1 (Project settings > DASM arguments)\n") +
-             lines50 + "\n        ELSE\n" + lines60 + "\n        ENDIF";
+      defs = std::string("\tIFCONST PAL     ; 50 Hz: assemble with -DPAL=1 (Project settings > DASM arguments)\n") +
+             lines50 + "\n\tELSE\n" + lines60 + "\n\tENDIF";
       tvText = cdfj ? "NTSC timing, or PAL with make DASMFLAGS=-DPAL=1" : "NTSC timing, or PAL assembled with -DPAL=1";
     }
     // the cartridge: the empty templates' size and banks
@@ -770,8 +770,8 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
     if (dasmExample && std::string(dasmExample->folder) == "dasm-game") {
       replaceAll(asmText, "{{TITLE_SCREEN}}", std::to_string(dasmExample->titleScreen));
       replaceAll(asmText, "{{MUSIC}}", std::to_string(dasmExample->music));
-      replaceAll(asmText, "{{CODE_START}}", banked ? "        ORG $0000\n        RORG $F000" : cartridge == "2K" ? "        ORG $F800" : "        ORG $F000");
-      replaceAll(asmText, "{{CODE_END}}", banked ? readFile((exampleDir / "banks.asm").string()) : "        ORG $FFFC\n        .word Reset\n        .word Reset\n");
+      replaceAll(asmText, "{{CODE_START}}", banked ? "\tORG $0000\n\tRORG $F000" : cartridge == "2K" ? "\tORG $F800" : "\tORG $F000");
+      replaceAll(asmText, "{{CODE_END}}", banked ? readFile((exampleDir / "banks.asm").string()) : "\tORG $FFFC\n\t.word Reset\n\t.word Reset\n");
     }
     for (auto& [search, replacement] : cartridgeText) replaceAll(asmText, search, replacement);
     replaceAll(asmText, "{{NAME}}", projName);
@@ -826,9 +826,9 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
       return false;
     }
     replaceAll(text, "{{NAME}}", projName);
-    replaceAll(text, "  set romsize 4k\n", "  set romsize " + romSize + "\n");
+    replaceAll(text, "\tset romsize 4k\n", "\tset romsize " + romSize + "\n");
     // batari Basic times the frame for NTSC unless told otherwise (PAL60 keeps NTSC timing)
-    if (tvIs50Hz(tvStandard)) replaceAll(text, "  set romsize " + romSize + "\n", "  set romsize " + romSize + "\n  set tv pal\n");
+    if (tvIs50Hz(tvStandard)) replaceAll(text, "\tset romsize " + romSize + "\n", "\tset romsize " + romSize + "\n\tset tv pal\n");
     fs::path mainFile = fs::path(newProject.dir) / "main.bas";
     if (!fs::exists(mainFile)) std::ofstream(mainFile, std::ios::binary) << text;
     // its music (shared.json), and the player and tables it includes

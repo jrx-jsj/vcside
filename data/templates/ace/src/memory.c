@@ -11,15 +11,15 @@
 
 void* memcpy(void* destination, const void* source, size_t size)
 {
-    uint8_t* to = destination;
-    const uint8_t* from = source;
-    while (size--) *to++ = *from++;
-    return destination;
+	uint8_t* to = destination;
+	const uint8_t* from = source;
+	while (size--) *to++ = *from++;
+	return destination;
 }
 
 void* memset(void* destination, int value, size_t size)
 {
-    uint8_t* to = destination;
-    while (size--) *to++ = (uint8_t)value;
-    return destination;
+	uint8_t* to = destination;
+	while (size--) *to++ = (uint8_t)value;
+	return destination;
 }

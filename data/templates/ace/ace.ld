@@ -15,47 +15,47 @@ ENTRY(ace_entry)
 
 MEMORY
 {
-    file (rx)  : ORIGIN = 0x08020000, LENGTH = 896K   /* the firmware's limit */
-    sram (rwx) : ORIGIN = 0x20000100, LENGTH = 96K - 0x100
+	file (rx)  : ORIGIN = 0x08020000, LENGTH = 896K   /* the firmware's limit */
+	sram (rwx) : ORIGIN = 0x20000100, LENGTH = 96K - 0x100
 }
 
 SECTIONS
 {
-    .ace_header : { __ace_start = .; KEEP(*(.ace_header)) } > file
-    .ace_start : { KEEP(*(.ace_start)) . = ALIGN(4); } > file
+	.ace_header : { __ace_start = .; KEEP(*(.ace_header)) } > file
+	.ace_start : { KEEP(*(.ace_start)) . = ALIGN(4); } > file
 
-    .text : ALIGN(4)
-    {
-        __image_start = .;
-        *(.text .text.*)
-        *(.RamFunc .RamFunc.*)    /* an ELF game's RAM_FUNC code (make ace in an ELF project) */
-        . = ALIGN(4);
-    } > sram AT > file
+	.text : ALIGN(4)
+	{
+		__image_start = .;
+		*(.text .text.*)
+		*(.RamFunc .RamFunc.*)    /* an ELF game's RAM_FUNC code (make ace in an ELF project) */
+		. = ALIGN(4);
+	} > sram AT > file
 
-    .rodata : ALIGN(4)
-    {
-        *(.rodata .rodata.*)
-        . = ALIGN(4);
-    } > sram AT > file
+	.rodata : ALIGN(4)
+	{
+		*(.rodata .rodata.*)
+		. = ALIGN(4);
+	} > sram AT > file
 
-    .data : ALIGN(4)
-    {
-        *(.data .data.*)
-        . = ALIGN(4);
-        __image_end = .;
-    } > sram AT > file
+	.data : ALIGN(4)
+	{
+		*(.data .data.*)
+		. = ALIGN(4);
+		__image_end = .;
+	} > sram AT > file
 
-    .bss (NOLOAD) : ALIGN(4)
-    {
-        __bss_start = .;
-        *(.bss .bss.* COMMON)
-        . = ALIGN(4);
-        __bss_end = .;
-    } > sram
+	.bss (NOLOAD) : ALIGN(4)
+	{
+		__bss_start = .;
+		*(.bss .bss.* COMMON)
+		. = ALIGN(4);
+		__bss_end = .;
+	} > sram
 
-    __image_offset = LOADADDR(.text) - __ace_start;
-    __ace_size = LOADADDR(.data) + SIZEOF(.data) - __ace_start;
-    __ace_entry_offset = (ace_entry - __ace_start) | 1;
+	__image_offset = LOADADDR(.text) - __ace_start;
+	__ace_size = LOADADDR(.data) + SIZEOF(.data) - __ace_start;
+	__ace_entry_offset = (ace_entry - __ace_start) | 1;
 
-    /DISCARD/ : { *(.ARM.exidx* .ARM.extab* .comment .note*) }
+	/DISCARD/ : { *(.ARM.exidx* .ARM.extab* .comment .note*) }
 }

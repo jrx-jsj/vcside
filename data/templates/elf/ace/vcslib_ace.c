@@ -32,38 +32,38 @@ uint8_t vcsRead4(uint16_t address) { return ace_read(address); }
 
 void vcsLdx2(uint8_t value)
 {
-    const uint8_t code[] = {0xA2, value};
-    ace_code(code, sizeof code);
+	const uint8_t code[] = {0xA2, value};
+	ace_code(code, sizeof code);
 }
 
 void vcsLdy2(uint8_t value)
 {
-    const uint8_t code[] = {0xA0, value};
-    ace_code(code, sizeof code);
+	const uint8_t code[] = {0xA0, value};
+	ace_code(code, sizeof code);
 }
 
 void vcsStx3(uint8_t zeroPage)
 {
-    const uint8_t code[] = {0x86, zeroPage};
-    ace_code(code, sizeof code);
+	const uint8_t code[] = {0x86, zeroPage};
+	ace_code(code, sizeof code);
 }
 
 void vcsSty3(uint8_t zeroPage)
 {
-    const uint8_t code[] = {0x84, zeroPage};
-    ace_code(code, sizeof code);
+	const uint8_t code[] = {0x84, zeroPage};
+	ace_code(code, sizeof code);
 }
 
 void vcsSta4(uint8_t zeroPage)
 {
-    const uint8_t code[] = {0x8D, zeroPage, 0x00};   /* sta $00zp, absolute */
-    ace_code(code, sizeof code);
+	const uint8_t code[] = {0x8D, zeroPage, 0x00};   /* sta $00zp, absolute */
+	ace_code(code, sizeof code);
 }
 
 void vcsWrite6(uint16_t address, uint8_t value)
 {
-    const uint8_t code[] = {0xA9, value, 0x8D, (uint8_t)address, (uint8_t)(address >> 8)};
-    ace_code(code, sizeof code);
+	const uint8_t code[] = {0xA9, value, 0x8D, (uint8_t)address, (uint8_t)(address >> 8)};
+	ace_code(code, sizeof code);
 }
 
 /* The ACE overblank program has the ELF loaders' layout (samples at $E0-$FE, 63 lines) but

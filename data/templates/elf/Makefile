@@ -19,7 +19,7 @@ CC    = arm-none-eabi-gcc
 # -fdata-sections without -ffunction-sections: constants without pointers stay in flash on
 # the PlusCart, and the code stays in one section per file.
 CFLAGS = -mcpu=cortex-m0 -mthumb -O2 -std=c11 -Wall -Wextra -ffreestanding -fno-builtin \
-         -fno-common -fdata-sections -Iinclude
+	-fno-common -fdata-sections -Iinclude
 
 SOURCES = $(wildcard src/*.c)
 OBJS    = $(SOURCES:src/%.c=$(OUT)/%.o) $(OUT)/memcpy_long.o
@@ -76,8 +76,8 @@ ACE_OUT    = build/ace
 ACE_GAME   = build/$(NAME).ace
 ACE_DEBUG  = build/ACE_debugging.elf
 ACE_CFLAGS = -mcpu=cortex-m4 -mthumb -mfpu=fpv4-sp-d16 -mfloat-abi=hard -O2 -gdwarf-4 -gstrict-dwarf -std=c11 \
-             -Wall -Wextra -ffreestanding -fno-builtin -fno-common -ffunction-sections -fdata-sections \
-             -fno-tree-loop-distribute-patterns -Iinclude -Iace -DACE_SYSTEM=$(ACE_SYSTEM)
+	-Wall -Wextra -ffreestanding -fno-builtin -fno-common -ffunction-sections -fdata-sections \
+	-fno-tree-loop-distribute-patterns -Iinclude -Iace -DACE_SYSTEM=$(ACE_SYSTEM)
 ACE_OBJS   = $(SOURCES:src/%.c=$(ACE_OUT)/game/%.o) $(patsubst ace/%.c,$(ACE_OUT)/%.o,$(wildcard ace/*.c)) $(ACE_OUT)/start.o
 
 ace: $(ACE_GAME)

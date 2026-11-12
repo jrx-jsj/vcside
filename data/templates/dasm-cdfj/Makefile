@@ -13,7 +13,7 @@ CC        = arm-none-eabi-gcc
 DASMFLAGS ?=
 # The Harmony/Melody's ARM is an ARM7TDMI: Thumb code for it.
 CFLAGS = -mcpu=arm7tdmi -mthumb -Os -std=c11 -Wall -Wextra -ffreestanding -fno-builtin \
-         -ffunction-sections -fdata-sections -fno-tree-loop-distribute-patterns
+	-ffunction-sections -fdata-sections -fno-tree-loop-distribute-patterns
 
 all: $(ROM)
 

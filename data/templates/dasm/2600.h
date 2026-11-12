@@ -5,8 +5,8 @@
 ; not name $285; TIMINT is the name programs know it by.
 ; Writes and reads both start at $00 (the TIA decodes reads from $00-$0D too).
 
-        SEG.U TIA_WRITES
-        ORG $00
+	SEG.U TIA_WRITES
+	ORG $00
 VSYNC   ds 1    ; $00 vertical sync (D1)
 VBLANK  ds 1    ; $01 vertical blank (D1), input latch (D6), dump paddles (D7)
 WSYNC   ds 1    ; $02 wait for the end of the scanline (strobe)
@@ -53,8 +53,8 @@ HMOVE   ds 1    ; $2A apply horizontal motion (strobe, right after WSYNC)
 HMCLR   ds 1    ; $2B clear horizontal motion registers (strobe)
 CXCLR   ds 1    ; $2C clear collision latches (strobe)
 
-        SEG.U TIA_READS
-        ORG $00
+	SEG.U TIA_READS
+	ORG $00
 CXM0P   ds 1    ; $00 collisions M0-P1 (D7), M0-P0 (D6)
 CXM1P   ds 1    ; $01 M1-P0, M1-P1
 CXP0FB  ds 1    ; $02 P0-PF, P0-BL
@@ -70,8 +70,8 @@ INPT3   ds 1    ; $0B
 INPT4   ds 1    ; $0C left fire button (D7, 0 = pressed)
 INPT5   ds 1    ; $0D right fire button
 
-        SEG.U RIOT_PORTS
-        ORG $280
+	SEG.U RIOT_PORTS
+	ORG $280
 SWCHA   ds 1    ; $280 joysticks: P0 right/left/down/up in D7-D4, P1 in D3-D0 (0 = pressed)
 SWACNT  ds 1    ; $281 port A direction
 SWCHB   ds 1    ; $282 console switches: D0 reset, D1 select, D3 colour/BW, D6/D7 difficulty
@@ -79,7 +79,7 @@ SWBCNT  ds 1    ; $283 port B direction
 INTIM   ds 1    ; $284 timer value
 TIMINT  ds 1    ; $285 interrupt flags: D7 timer, D6 PA7 edge (not named by the Stella guide)
 
-        ORG $294
+	ORG $294
 TIM1T   ds 1    ; $294 set timer, 1 cycle per tick
 TIM8T   ds 1    ; $295 8 cycles per tick
 TIM64T  ds 1    ; $296 64 cycles per tick

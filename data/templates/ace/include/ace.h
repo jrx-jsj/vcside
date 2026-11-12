@@ -19,18 +19,18 @@
 
 /* The words the firmware leaves at 0x20000000 before calling the program. */
 typedef struct {
-    const uint8_t* file;                 /* where the ACE file is (in flash) */
-    uint32_t* ccm;                       /* the CCM RAM the firmware leaves free */
-    int (*reboot_into_cartridge)(void);  /* resets the console into this cartridge */
-    int (*back_to_menu)(void);           /* the firmware's own cartridge: its menu */
-    uint32_t clock_hz;                   /* the ARM's clock */
-    uint32_t ace_version;                /* 0x00MMmmbb */
-    uint32_t firmware_version;           /* 0x00MMmmbb */
-    volatile uint16_t* address_in;       /* the 6507's address bus (13 bits) */
-    volatile uint8_t* data_in;           /* the data bus, as an input */
-    volatile uint8_t* data_out;          /* the data bus, as an output */
-    volatile uint16_t* data_mode;        /* 0x5555: data pins drive the bus; 0: let go */
-    uint32_t end_mark;                   /* 0xACE42600 */
+	const uint8_t* file;                 /* where the ACE file is (in flash) */
+	uint32_t* ccm;                       /* the CCM RAM the firmware leaves free */
+	int (*reboot_into_cartridge)(void);  /* resets the console into this cartridge */
+	int (*back_to_menu)(void);           /* the firmware's own cartridge: its menu */
+	uint32_t clock_hz;                   /* the ARM's clock */
+	uint32_t ace_version;                /* 0x00MMmmbb */
+	uint32_t firmware_version;           /* 0x00MMmmbb */
+	volatile uint16_t* address_in;       /* the 6507's address bus (13 bits) */
+	volatile uint8_t* data_in;           /* the data bus, as an input */
+	volatile uint8_t* data_out;          /* the data bus, as an output */
+	volatile uint16_t* data_mode;        /* 0x5555: data pins drive the bus; 0: let go */
+	uint32_t end_mark;                   /* 0xACE42600 */
 } AceArguments;
 
 #define ACE_ARGUMENTS ((const AceArguments*)0x20000000)
@@ -122,13 +122,14 @@ void ace_sta(uint8_t address);                /* STA address: A to a TIA registe
 void ace_write(uint8_t address, uint8_t value); /* LDA #value, STA address (5) */
 void ace_wsync(void);                         /* STA WSYNC (3): the 6507 waits for the line's end */
 void ace_nops(int count);                     /* NOP, count times (2 each) */
-void ace_code(const uint8_t* bytes, int count); /* any instruction: its bytes, in order
-                                                 (no jumps or branches: the library must
-                                                 know where the 6507 fetches next) */
-void ace_jmp(void);                           /* JMP $1000 (3): call once a line, or the library
-                                                 does it when the 6507 nears the end of its 4 KB */
-uint8_t ace_read(uint16_t address);           /* LDA address, STA $1FF0 (7, or 8 above $FF):
-                                                 a TIA, RIOT or RAM value for the ARM */
+/* any instruction: its bytes, in order (no jumps or branches: the library must know
+ * where the 6507 fetches next) */
+void ace_code(const uint8_t* bytes, int count);
+/* JMP $1000 (3): call once a line, or the library does it when the 6507 nears the end
+ * of its 4 KB */
+void ace_jmp(void);
+/* LDA address, STA $1FF0 (7, or 8 above $FF): a TIA, RIOT or RAM value for the ARM */
+uint8_t ace_read(uint16_t address);
 
 /* Back to the PlusCart's or UnoCart's menu: the 6507 is left reading the reset vector;
  * then return 1 from main() at once, and the start code hands the bus to the firmware.

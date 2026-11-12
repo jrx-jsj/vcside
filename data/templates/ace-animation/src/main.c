@@ -27,7 +27,7 @@
 
 static int lines = {{VISIBLE_LINES}};    /* visible lines: the frame's lines - 63 of overblank */
 static uint8_t swcha = 0xFF, swchb = 0xFF;  /* joysticks and console switches, read after the kernel
-                                            (0xFF: nothing pressed until the first frame reads them) */
+											(0xFF: nothing pressed until the first frame reads them) */
 static uint8_t inpt4 = 0x80, last_inpt4 = 0x80;  /* fire button 0 (bit 7: 0 pressed; released until read) */
 static int hero_x = 76, hero_y = 90, facing_left;
 static int hero_frame;           /* the frame the kernel draws */
@@ -37,14 +37,14 @@ static vcsgfx_player hero;       /* the animation that is playing and where it i
  * level), the overblank program in its RAM, and the first overblank. */
 static void start_6507(void)
 {
-    ace_start();
-    ace_lda(0);
-    for (int address = 0; address < 0x40; address++)
-        if (address != WSYNC && address != RSYNC) ace_sta((uint8_t)address);
-    for (int address = 0x80; address < 0x100; address++)
-        ace_sta((uint8_t)address);
-    ace_overblank_load();
-    ace_overblank_start();
+	ace_start();
+	ace_lda(0);
+	for (int address = 0; address < 0x40; address++)
+		if (address != WSYNC && address != RSYNC) ace_sta((uint8_t)address);
+	for (int address = 0x80; address < 0x100; address++)
+		ace_sta((uint8_t)address);
+	ace_overblank_load();
+	ace_overblank_start();
 }
 
 /* Puts player 0 at x (0-159): RESP0 on the right cycle of a line, then HMOVE for the
@@ -54,12 +54,12 @@ static void start_6507(void)
  * right edge. One line, and the next starts with the HMOVE. */
 static void position_p0(int x)
 {
-    ace_write(HMP0, (uint8_t)((6 - x % 6) << 4));  /* positive: to the left */
-    ace_wsync();
-    ace_nops(10 + x / 6);
-    ace_sta(RESP0);
-    ace_wsync();
-    ace_sta(HMOVE);
+	ace_write(HMP0, (uint8_t)((6 - x % 6) << 4));  /* positive: to the left */
+	ace_wsync();
+	ace_nops(10 + x / 6);
+	ace_sta(RESP0);
+	ace_wsync();
+	ace_sta(HMOVE);
 }
 
 /* The visible lines. Between two ace_ calls the 6507 is already waiting for the next
@@ -68,75 +68,75 @@ static void position_p0(int x)
  * lines 2 to 32 also take a byte of the overblank's samples. */
 static void kernel(void)
 {
-    const uint8_t *gfx = hero_P0_gfx[hero_frame], *colour = hero_P0_colour[hero_frame];
-    ace_overblank_end();
-    ace_write(NUSIZ0, HERO_P0_NUSIZ);
-    ace_write(REFP0, facing_left ? 0x08 : 0x00);
-    ace_write(AUDV0, music_level[0]);
-    position_p0(hero_x);
-    ace_write(AUDV0, music_level[1]);
-    ace_jmp();
-    for (int line = 2; line < lines - 1; line++) {
-        ace_wsync();
-        ace_write(AUDV0, music_level[line]);
-        if (line < 2 + 31) ace_write((uint8_t)(0xE0 + line - 2), music_nibbles[line - 2]);
-        if (line == 2) ace_write(VBLANK, 0);
-        unsigned row = (unsigned)(line - hero_y) / LINES_PER_ROW;
-        if (line >= hero_y && row < HERO_P0_HEIGHT) {
-            ace_write(GRP0, gfx[row]);
-            ace_write(COLUP0, colour[row]);
-        } else {
-            ace_write(GRP0, 0);
-        }
-        ace_jmp();                /* once a line: the 6507's code stays at the same place */
-    }
-    ace_wsync();
-    ace_write(AUDV0, music_level[lines - 1]);
-    ace_write(VBLANK, 2);
-    ace_write(AUDC1, music_tia[0]); /* "bump", on the TIA's channel 1 (silent when it ends) */
-    ace_write(AUDF1, music_tia[1]);
-    ace_write(AUDV1, music_tia[2]);
-    ace_write(GRP0, 0);
-    swcha = ace_read(SWCHA);
-    swchb = ace_read(SWCHB);
-    inpt4 = ace_read(INPT4);
-    ace_overblank_start();
+	const uint8_t *gfx = hero_P0_gfx[hero_frame], *colour = hero_P0_colour[hero_frame];
+	ace_overblank_end();
+	ace_write(NUSIZ0, HERO_P0_NUSIZ);
+	ace_write(REFP0, facing_left ? 0x08 : 0x00);
+	ace_write(AUDV0, music_level[0]);
+	position_p0(hero_x);
+	ace_write(AUDV0, music_level[1]);
+	ace_jmp();
+	for (int line = 2; line < lines - 1; line++) {
+		ace_wsync();
+		ace_write(AUDV0, music_level[line]);
+		if (line < 2 + 31) ace_write((uint8_t)(0xE0 + line - 2), music_nibbles[line - 2]);
+		if (line == 2) ace_write(VBLANK, 0);
+		unsigned row = (unsigned)(line - hero_y) / LINES_PER_ROW;
+		if (line >= hero_y && row < HERO_P0_HEIGHT) {
+			ace_write(GRP0, gfx[row]);
+			ace_write(COLUP0, colour[row]);
+		} else {
+			ace_write(GRP0, 0);
+		}
+		ace_jmp();                /* once a line: the 6507's code stays at the same place */
+	}
+	ace_wsync();
+	ace_write(AUDV0, music_level[lines - 1]);
+	ace_write(VBLANK, 2);
+	ace_write(AUDC1, music_tia[0]); /* "bump", on the TIA's channel 1 (silent when it ends) */
+	ace_write(AUDF1, music_tia[1]);
+	ace_write(AUDV1, music_tia[2]);
+	ace_write(GRP0, 0);
+	swcha = ace_read(SWCHA);
+	swchb = ace_read(SWCHB);
+	inpt4 = ace_read(INPT4);
+	ace_overblank_start();
 }
 
 /* Back to the menu: silence, then the 6507 is left reading the reset vector. */
 static void leave(void)
 {
-    ace_overblank_end();
-    ace_write(VBLANK, 2);
-    ace_write(AUDV0, 0);
-    ace_write(AUDV1, 0);
-    ace_leave();
+	ace_overblank_end();
+	ace_write(VBLANK, 2);
+	ace_write(AUDV0, 0);
+	ace_write(AUDV1, 0);
+	ace_leave();
 }
 
 int main(void)
 {
-    music_init();
-    start_6507();
-    for (;;) {
-        /* Overblank: the game logic goes here. */
-        int moving = 0, bottom = lines - 1 - HERO_P0_HEIGHT * LINES_PER_ROW;
-        int was_at_edge = hero_x == 0 || hero_x == 160 - 8 || hero_y == 2 || hero_y == bottom;
-        if (!(swcha & 0x80) && hero_x < 160 - 8) hero_x++, facing_left = 0, moving = 1;   /* right */
-        if (!(swcha & 0x40) && hero_x > 0) hero_x--, facing_left = 1, moving = 1;         /* left */
-        if (!(swcha & 0x10) && hero_y > 2) hero_y--, moving = 1;                          /* up */
-        if (!(swcha & 0x20) && hero_y < bottom) hero_y++, moving = 1;                     /* down */
-        if (!was_at_edge && (hero_x == 0 || hero_x == 160 - 8 || hero_y == 2 || hero_y == bottom))
-            music_effect(MUSIC_EFFECT_BUMP);              /* it has just reached an edge */
-        if (!(inpt4 & 0x80) && (last_inpt4 & 0x80)) music_effect(MUSIC_EFFECT_FIRE);
-        last_inpt4 = inpt4;
-        vcsgfx_play(&hero, moving ? &hero_walk : &hero_idle);
-        hero_frame = vcsgfx_animate(&hero);
-        /* the frame's music: samples for the kernel's lines and for the overblank's */
-        music_frame(lines + MUSIC_OVERBLANK_LINES);
-        if (!(swchb & 0x01)) {               /* RESET: back to the menu */
-            leave();
-            return 1;
-        }
-        kernel();
-    }
+	music_init();
+	start_6507();
+	for (;;) {
+		/* Overblank: the game logic goes here. */
+		int moving = 0, bottom = lines - 1 - HERO_P0_HEIGHT * LINES_PER_ROW;
+		int was_at_edge = hero_x == 0 || hero_x == 160 - 8 || hero_y == 2 || hero_y == bottom;
+		if (!(swcha & 0x80) && hero_x < 160 - 8) hero_x++, facing_left = 0, moving = 1;   /* right */
+		if (!(swcha & 0x40) && hero_x > 0) hero_x--, facing_left = 1, moving = 1;         /* left */
+		if (!(swcha & 0x10) && hero_y > 2) hero_y--, moving = 1;                          /* up */
+		if (!(swcha & 0x20) && hero_y < bottom) hero_y++, moving = 1;                     /* down */
+		if (!was_at_edge && (hero_x == 0 || hero_x == 160 - 8 || hero_y == 2 || hero_y == bottom))
+			music_effect(MUSIC_EFFECT_BUMP);              /* it has just reached an edge */
+		if (!(inpt4 & 0x80) && (last_inpt4 & 0x80)) music_effect(MUSIC_EFFECT_FIRE);
+		last_inpt4 = inpt4;
+		vcsgfx_play(&hero, moving ? &hero_walk : &hero_idle);
+		hero_frame = vcsgfx_animate(&hero);
+		/* the frame's music: samples for the kernel's lines and for the overblank's */
+		music_frame(lines + MUSIC_OVERBLANK_LINES);
+		if (!(swchb & 0x01)) {               /* RESET: back to the menu */
+			leave();
+			return 1;
+		}
+		kernel();
+	}
 }

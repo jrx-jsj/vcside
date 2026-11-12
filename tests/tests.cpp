@@ -909,7 +909,7 @@ static void testElfSpace() {
   CHECK(Project::create((dir / "bbpal").string(), "Pal Run", Language::BatariBasic, "PAL", &project, &error));
   std::ifstream palFile(dir / "bbpal" / "main.bas");
   std::string palText((std::istreambuf_iterator<char>(palFile)), {});
-  CHECK(palText.find("  set romsize 4k\n  set tv pal\n") != std::string::npos);
+  CHECK(palText.find("\tset romsize 4k\n\tset tv pal\n") != std::string::npos);
   CHECK(tvStandardsFor(Language::BatariBasic) == std::vector<std::string>({"NTSC", "PAL", "PAL60"}));
   CHECK(tvStandardsFor(Language::Dasm).size() == 7);
   // a folder that builds with its own Makefile becomes a project; tools and flags of its own
@@ -1055,7 +1055,7 @@ static void testElfSpace() {
     CHECK(Project::create(cartDir.string(), "c", Language::BatariBasic, "PAL", &project, &error, "", format));
     std::ifstream basFile(cartDir / "main.bas"), notesFile(cartDir / "VCSIDE.md");
     std::string basText((std::istreambuf_iterator<char>(basFile)), {}), notesText((std::istreambuf_iterator<char>(notesFile)), {});
-    CHECK(project.format == format && basText.find(std::string("  set romsize ") + romSize + "\n  set tv pal\n") != std::string::npos);
+    CHECK(project.format == format && basText.find(std::string("\tset romsize ") + romSize + "\n\tset tv pal\n") != std::string::npos);
     CHECK(notesText.find(std::string("set romsize ") + romSize) != std::string::npos && notesText.find("{{") == std::string::npos);
   }
   // the DASM game: the shared graphics and song, the menu's first TV system from the

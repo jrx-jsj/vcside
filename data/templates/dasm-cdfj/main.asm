@@ -21,9 +21,9 @@
 ; Makefile. The cartridge, as built: the driver, the C code from $0800 (build/arm.bin,
 ; up to 26K), and bank 6, the 6507's, at $7000. The display data is the cartridge's RAM.
 
-        processor 6502
-        include "2600.h"
-        include "build/layout.asm"     ; the display data's offsets, from layout.h
+	processor 6502
+	include "2600.h"
+	include "build/layout.asm"     ; the display data's offsets, from layout.h
 
 ; ---- CDFJ registers ----------------------------------------------------------
 DSWRITE        = $1FF0          ; write: a byte to the display data, at DSCOMM's pointer, which moves on
@@ -40,143 +40,143 @@ AMPLITUDE      = $23            ; the voices' sum, for AUDV0
 
 ; ---- SOUND: the voices' sum to AUDV0. Every line does it once; code that takes
 ; longer than a line does it in between, or the sound stops for those lines.
-        MAC SOUND
-        lda #AMPLITUDE
-        sta AUDV0
-        ENDM
+	MAC SOUND
+	lda #AMPLITUDE
+	sta AUDV0
+	ENDM
 
 ; ---- RAM -------------------------------------------------------------------
-        SEG.U Variables
-        ORG $80
+	SEG.U Variables
+	ORG $80
 Temp    ds 1
 
 ; ---- The ARM driver and the C code -------------------------------------------
-        SEG Code
-        ORG $0000
-        incbin "cdfj_driver.bin"
-        ORG $0800
-        incbin "build/arm.bin"
+	SEG Code
+	ORG $0000
+	incbin "cdfj_driver.bin"
+	ORG $0800
+	incbin "build/arm.bin"
 
 ; ---- Bank 6: the 6507's program ----------------------------------------------
-        ORG $7000
-        RORG $F000
+	ORG $7000
+	RORG $F000
 
 Reset   sei
-        cld
-        ldx #0
-        txa
+	cld
+	ldx #0
+	txa
 .clear  dex
-        txs
-        pha
-        bne .clear              ; clears RAM and TIA, S ends at $FF
-        ldx #$F0
-        stx SETMODE             ; fast fetch on, the cartridge plays voices
-        ldx #$1E                ; yellow square
-        stx COLUP0
-        ldy #FUNCTION_START
-        jsr CallArm             ; the song from its start (AUDC0 is 0 already)
+	txs
+	pha
+	bne .clear              ; clears RAM and TIA, S ends at $FF
+	ldx #$F0
+	stx SETMODE             ; fast fetch on, the cartridge plays voices
+	ldx #$1E                ; yellow square
+	stx COLUP0
+	ldy #FUNCTION_START
+	jsr CallArm             ; the song from its start (AUDC0 is 0 already)
 
 StartFrame
-        ldx #2
-        stx VBLANK
-        stx VSYNC
-        ldy #3
+	ldx #2
+	stx VBLANK
+	stx VSYNC
+	ldy #3
 .vsync  sta WSYNC
-        SOUND                   ; the sound goes on in every line
-        dey
-        bne .vsync
-        sty VSYNC
-        ldx #(VBLANK_LINES*76-14)/64  ; timer for the vertical blank
-        stx TIM64T
+	SOUND                   ; the sound goes on in every line
+	dey
+	bne .vsync
+	sty VSYNC
+	ldx #(VBLANK_LINES*76-14)/64  ; timer for the vertical blank
+	stx TIM64T
 
-        ldy #FUNCTION_FRAME
-        jsr CallArm             ; the frame: joystick, square, effects and music
-        SOUND
-        ldx #>LAYOUT_HERO_X     ; what the C code left: the square's x
-        stx DSPTR
-        ldx #<LAYOUT_HERO_X
-        stx DSPTR
-        lda #DSCOMM
-        ldx #0                  ; player 0
-        jsr PosObject
-        sta WSYNC
-        sta HMOVE
-        SOUND
-        lda #DSCOMM             ; then "bump", on the TIA's channel 1 (LAYOUT_TIA)
-        sta AUDC1
-        lda #DSCOMM
-        sta AUDF1
-        lda #DSCOMM
-        sta AUDV1
+	ldy #FUNCTION_FRAME
+	jsr CallArm             ; the frame: joystick, square, effects and music
+	SOUND
+	ldx #>LAYOUT_HERO_X     ; what the C code left: the square's x
+	stx DSPTR
+	ldx #<LAYOUT_HERO_X
+	stx DSPTR
+	lda #DSCOMM
+	ldx #0                  ; player 0
+	jsr PosObject
+	sta WSYNC
+	sta HMOVE
+	SOUND
+	lda #DSCOMM             ; then "bump", on the TIA's channel 1 (LAYOUT_TIA)
+	sta AUDC1
+	lda #DSCOMM
+	sta AUDF1
+	lda #DSCOMM
+	sta AUDV1
 .vblank sta WSYNC               ; until the timer runs out, a line at a time
-        SOUND
-        lda INTIM
-        bne .vblank
-        sta VBLANK              ; A = 0: beam on
+	SOUND
+	lda INTIM
+	bne .vblank
+	sta VBLANK              ; A = 0: beam on
 
 ; ---- Kernel: one line per pass ------------------------------------------------
-        ldy #VISIBLE_LINES
+	ldy #VISIBLE_LINES
 .line   sta WSYNC
-        lda #AMPLITUDE          ; 2
-        sta AUDV0               ; 3
-        asl                     ; 2  the amplitude (0-15) as luminance
-        and #$0E                ; 2
-        ora #$80                ; 2  in blue
-        sta COLUBK              ; 3
-        lda #HERO_STREAM        ; 2  this line of the square
-        sta GRP0                ; 3
-        dey                     ; 2
-        bne .line               ; 3
+	lda #AMPLITUDE          ; 2
+	sta AUDV0               ; 3
+	asl                     ; 2  the amplitude (0-15) as luminance
+	and #$0E                ; 2
+	ora #$80                ; 2  in blue
+	sta COLUBK              ; 3
+	lda #HERO_STREAM        ; 2  this line of the square
+	sta GRP0                ; 3
+	dey                     ; 2
+	bne .line               ; 3
 
-        sta WSYNC
-        SOUND
-        ldx #0
-        stx COLUBK
-        stx GRP0
-        ldx #2
-        stx VBLANK
-        ldx #(OVERSCAN_LINES*76-14)/64
-        stx TIM64T
+	sta WSYNC
+	SOUND
+	ldx #0
+	stx COLUBK
+	stx GRP0
+	ldx #2
+	stx VBLANK
+	ldx #(OVERSCAN_LINES*76-14)/64
+	stx TIM64T
 .over   sta WSYNC
-        SOUND
-        lda INTIM
-        bne .over
-        jmp StartFrame
+	SOUND
+	lda INTIM
+	bne .over
+	jmp StartFrame
 
 ; ---- CallArm: Y = what to do (FUNCTION_x). The joystick, the button and the
 ; number of lines go to the display data, then the C code runs (game_arm).
 CallArm
-        ldx #>LAYOUT_FUNCTION
-        stx DSPTR
-        ldx #<LAYOUT_FUNCTION
-        stx DSPTR
-        sty DSWRITE             ; LAYOUT_FUNCTION
-        lda SWCHA
-        sta DSWRITE             ; LAYOUT_SWCHA
-        lda INPT4
-        sta DSWRITE             ; LAYOUT_INPT4
-        ldx #VISIBLE_LINES
-        stx DSWRITE             ; LAYOUT_LINES
-        ldx #$FE
-        stx CALLFN              ; the 6507 waits here while the ARM runs
-        rts
+	ldx #>LAYOUT_FUNCTION
+	stx DSPTR
+	ldx #<LAYOUT_FUNCTION
+	stx DSPTR
+	sty DSWRITE             ; LAYOUT_FUNCTION
+	lda SWCHA
+	sta DSWRITE             ; LAYOUT_SWCHA
+	lda INPT4
+	sta DSWRITE             ; LAYOUT_INPT4
+	ldx #VISIBLE_LINES
+	stx DSWRITE             ; LAYOUT_LINES
+	ldx #$FE
+	stx CALLFN              ; the 6507 waits here while the ARM runs
+	rts
 
 ; ---- PosObject: A = x (0-159), X = object (0 = P0). Ends with HMxx set. ------
 PosObject
-        sta WSYNC
-        sec
+	sta WSYNC
+	sec
 .div    sbc #15
-        bcs .div
-        eor #7
-        asl
-        asl
-        asl
-        asl
-        sta HMP0,x
-        sta RESP0,x
-        rts
+	bcs .div
+	eor #7
+	asl
+	asl
+	asl
+	asl
+	sta HMP0,x
+	sta RESP0,x
+	rts
 
-        ORG $7FF0
-        RORG $FFF0
-        ds.b 12, 0              ; the cartridge's registers
-        .word Reset, Reset
+	ORG $7FF0
+	RORG $FFF0
+	ds.b 12, 0              ; the cartridge's registers
+	.word Reset, Reset

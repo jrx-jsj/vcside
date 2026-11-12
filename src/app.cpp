@@ -383,7 +383,7 @@ OpenFile* App::openFile(const std::string& pathIn, int line) {
   if (cLike) newFile->asmSyntax = false;
   newFile->editor.setCommentPrefix(cLike ? "//" : ext == ".bas" ? "rem" : ";");
   newFile->editor.setFoldSyntax(cLike ? FoldSyntax::C : ext == ".bas" ? FoldSyntax::Basic : newFile->asmSyntax ? FoldSyntax::Asm : FoldSyntax::None);
-  newFile->editor.setDefaultIndent(cLike ? IndentStyle{false, 4} : IndentStyle{true, 4});  // as the templates
+  newFile->editor.setDefaultIndent(IndentStyle{true, 4});  // tabs, as the templates
   {
     EditorHooks editorHooks = newFile->asmSyntax ? asmHooks() : ext == ".bas" ? basicHooks() : EditorHooks{};
     OpenFile* self = newFile.get();
@@ -3074,9 +3074,30 @@ static void spaceBar(const SpaceReport::Area& area, int warnPercent) {
   ImVec4 colour = theme::colv(area.used > area.size ? theme::Role::SpaceFull : percent >= warnPercent ? theme::Role::SpaceWarning : theme::Role::SpaceOk);
   std::string label = F("{0} / {1} bytes ({2} %), {3} free",
                         {std::to_string(area.used), std::to_string(area.size), std::to_string(percent), std::to_string(std::max(0L, area.size - area.used))});
-  ImGui::PushStyleColor(ImGuiCol_PlotHistogram, colour);
-  ImGui::ProgressBar(std::min(frac, 1.0f), ImVec2(ImGui::GetFontSize() * 24, 0), label.c_str());
-  ImGui::PopStyleColor();
+  // Drawn by hand so the text reads on both parts: over the fill it is black or white,
+  // whichever contrasts more with the fill's colour; over the rest, the theme's text colour.
+  ImVec2 size(ImGui::GetFontSize() * 24, ImGui::GetFrameHeight());
+  ImVec2 start = ImGui::GetCursorScreenPos(), end(start.x + size.x, start.y + size.y);
+  ImGui::Dummy(size);
+  ImDrawList* draw = ImGui::GetWindowDrawList();
+  float rounding = ImGui::GetStyle().FrameRounding;
+  float fillEnd = start.x + size.x * std::clamp(frac, 0.0f, 1.0f);
+  draw->AddRectFilled(start, end, ImGui::GetColorU32(ImGuiCol_FrameBg), rounding);
+  if (fillEnd > start.x)
+    draw->AddRectFilled(start, ImVec2(fillEnd, end.y), ImGui::ColorConvertFloat4ToU32(colour), rounding,
+                        frac >= 1.0f ? ImDrawFlags_RoundCornersAll : ImDrawFlags_RoundCornersLeft);
+  auto linear = [](float channel) { return channel <= 0.04045f ? channel / 12.92f : std::pow((channel + 0.055f) / 1.055f, 2.4f); };
+  float luminance = 0.2126f * linear(colour.x) + 0.7152f * linear(colour.y) + 0.0722f * linear(colour.z);
+  // WCAG contrast against black, (L + 0.05) / 0.05, and against white, 1.05 / (L + 0.05)
+  ImU32 onFill = (luminance + 0.05f) / 0.05f >= 1.05f / (luminance + 0.05f) ? IM_COL32(0, 0, 0, 255) : IM_COL32(255, 255, 255, 255);
+  ImVec2 textSize = ImGui::CalcTextSize(label.c_str());
+  ImVec2 textAt(start.x + (size.x - textSize.x) * 0.5f, start.y + (size.y - textSize.y) * 0.5f);
+  draw->PushClipRect(start, ImVec2(fillEnd, end.y), true);
+  draw->AddText(textAt, onFill, label.c_str());
+  draw->PopClipRect();
+  draw->PushClipRect(ImVec2(fillEnd, start.y), end, true);
+  draw->AddText(textAt, ImGui::GetColorU32(ImGuiCol_Text), label.c_str());
+  draw->PopClipRect();
 }
 
 void App::spacePanel() {

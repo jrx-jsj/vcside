@@ -14,8 +14,8 @@ CC    = arm-none-eabi-gcc
 # The STM32F407's Cortex-M4 with its FPU. Gopher2600 reads DWARF 4 only (GCC writes 5), and
 # none of GCC's extensions to it (-gstrict-dwarf): with them it says the DWARF is unsupported.
 CFLAGS = -mcpu=cortex-m4 -mthumb -mfpu=fpv4-sp-d16 -mfloat-abi=hard -O2 -gdwarf-4 -gstrict-dwarf -std=c11 \
-         -Wall -Wextra -ffreestanding -fno-builtin -ffunction-sections -fdata-sections \
-         -fno-tree-loop-distribute-patterns -Iinclude -Isrc
+	-Wall -Wextra -ffreestanding -fno-builtin -ffunction-sections -fdata-sections \
+	-fno-tree-loop-distribute-patterns -Iinclude -Isrc
 
 SOURCES = $(wildcard src/*.c)
 OBJS    = $(SOURCES:src/%.c=$(OUT)/%.o) $(OUT)/start.o
