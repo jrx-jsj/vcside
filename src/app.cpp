@@ -102,6 +102,7 @@ void App::loadSettings() {
   showCycles_ = settings.value("show_cycles", true);
   columnAddresses_ = settings.value("cycle_column_addresses", false);
   showPages_ = settings.value("show_pages", true);
+  projectsDir_ = settings.value("projects_dir", std::string());
   zoom_ = std::clamp(settings.value("zoom", settings.value("editor_zoom", 1.0f)), 0.5f, 3.0f);
   tools_.loadSettings(settings.value("tools", std::map<std::string, std::string>{}));
   assistant_.load(settings.value("assistant", nlohmann::json::object()));
@@ -118,6 +119,7 @@ void App::saveSettings() {
             {"show_cycles", showCycles_},
             {"cycle_column_addresses", columnAddresses_},
             {"show_pages", showPages_},
+            {"projects_dir", projectsDir_},
             {"zoom", zoom_},
             {"theme", themeId_},
             {"tools", tools_.userPaths()},
@@ -141,6 +143,7 @@ void App::syncSettings() {
   showCycles_ = settings.value("show_cycles", showCycles_);
   columnAddresses_ = settings.value("cycle_column_addresses", columnAddresses_);
   showPages_ = settings.value("show_pages", showPages_);
+  projectsDir_ = settings.value("projects_dir", projectsDir_);
   zoom_ = std::clamp(settings.value("zoom", zoom_), 0.5f, 3.0f);
   themes_.load(dataDir() + "/themes", configDir() + "themes");
   useTheme(settings.value("theme", themeId_), false);  // this window's ImGui style
@@ -3452,7 +3455,9 @@ void App::newProjectDialog() {
   if (showNewProject_) {
     ImGui::OpenPopup("###newproject");
     showNewProject_ = false;
-    if (npDir_.empty()) {
+    if (npDir_.empty()) npDir_ = projectsDir_;  // where the last project was made
+    std::error_code folderError;
+    if (npDir_.empty() || !fs::is_directory(npDir_, folderError)) {
       const char* home = SDL_GetUserFolder(SDL_FOLDER_DOCUMENTS);
       npDir_ = home ? home : "";
     }
@@ -3622,6 +3627,7 @@ void App::newProjectDialog() {
     }
     if (made) {
       npCdfjDriver_.clear(), npCdfjError_.clear();
+      if (projectsDir_ != npDir_) projectsDir_ = npDir_, saveSettings();  // the next new project goes there too
       openProject(created.file);
       ImGui::CloseCurrentPopup();
     }

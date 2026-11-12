@@ -344,6 +344,7 @@ class App {
   bool showCycles_ = true;
   bool columnAddresses_ = false;  // the cycle column shows each line's address and bytes instead
   bool showPages_ = true;  // 6502 page separators in assembly files
+  std::string projectsDir_;  // where New project makes them: the folder of the last one made
   bool resetLayout_ = false;
   // themes
   theme::Library themes_;
