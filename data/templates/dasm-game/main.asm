@@ -471,6 +471,8 @@ StartGame SUBROUTINE
 .clear  sta Shared,x
         dex
         bpl .clear
+        lda #$F0                ; no enemy on this frame: GameLogic has not
+        sta EnemyRow            ; placed one yet
         lda #1
         sta Mode
         lda #LIVES
@@ -647,28 +649,42 @@ Shoot SUBROUTINE
         sta ShotPair
 .done   rts
 
-; ---- MoveEnemy: this frame's enemy (they take turns) moves diagonally; the
-; collisions turn it round.
+; ---- MoveEnemy: each enemy moves diagonally on every other frame (they take
+; turns, 30 Hz each); the collisions turn it round. Both alive: they share
+; player 1 and take turns on the screen too (30 Hz flicker). One alive: it is
+; drawn on every frame, without flicker.
 MoveEnemy SUBROUTINE
-        lda Frame
-        and #1
-        sta Shown
-        tax
         lda #$F0                ; not drawn
         sta EnemyRow
+        lda Frame
+        and #1
+        sta Temp                ; whose turn it is to move
+        tax
+        lda EnemyLive
+        beq .shown              ; none: nothing drawn
+        cmp #3
+        beq .shown              ; both: the one whose turn it is
+        lsr                     ; one: that one (1: enemy 0, 2: enemy 1)
+        tax
+.shown  stx Shown
         lda EnemyLive
         and EnemyBit,x
         beq .anim
-        lda EnemyX,x
+        lda EnemyX,x            ; where it was, for the collisions
         sta OldEnemyX
+        lda EnemyY,x
+        sta OldEnemyY
+        cpx Temp
+        bne .draw               ; not its turn: drawn where it is
+        lda EnemyX,x
         clc
         adc EnemyDX,x
         sta EnemyX,x
         lda EnemyY,x
-        sta OldEnemyY
         clc
         adc EnemyDY,x
         sta EnemyY,x
+.draw   lda EnemyY,x
         sta EnemyRow
 .anim   lda Frame
         lsr
@@ -694,6 +710,9 @@ Collisions SUBROUTINE
         sta HeroY
 .heroFree
         ldx Shown
+        lda EnemyRow
+        cmp #$F0
+        beq .enemyFree          ; no enemy was drawn
         bit CXP1FB              ; D7: the enemy and the playfield
         bpl .enemyFree
         lda OldEnemyX           ; back where it was...
