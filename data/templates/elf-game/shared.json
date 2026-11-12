@@ -1,0 +1,20 @@
+{
+ "src/enemy.vcsgfx": {"from": "shared/enemy.vcsgfx"},
+ "src/game.c": {"from": "shared/game/game.c"},
+ "src/game.h": {"from": "shared/game/game.h"},
+ "src/hero.vcsgfx": {"from": "shared/hero.vcsgfx"},
+ "src/menu.c": {"from": "shared/game/menu.c"},
+ "src/menu.h": {"from": "shared/game/menu.h"},
+ "src/room.vcsgfx": {"from": "shared/room.vcsgfx"},
+ "src/screen.c": {"from": "shared/game/screen.c"},
+ "src/screen.h": {"from": "shared/game/screen.h"},
+ "src/theme.vcsmusic": {"from": "shared/theme.vcsmusic", "change": {
+  "effects": [
+   {"channel": 2, "instrument": 4, "name": "shot", "note": 72},
+   {"channel": 1, "instrument": 5, "name": "hit", "note": 40, "tia": true},
+   {"channel": 0, "instrument": 6, "name": "lose", "note": 36}
+  ],
+  "name": "game theme"
+ }},
+ "src/title.vcsgfx": {"from": "shared/title.vcsgfx"}
+}

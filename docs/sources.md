@@ -151,3 +151,14 @@ Read for the proposal in [design-ace.md](design-ace.md), which lists every sourc
 - **Still to be found**: the author of the ELF-in-ACE wrapper, the author of the Wolf3D port, the free RAM a program may use. AtariAge threads returned HTTP 403 and were not used.
 - Embedding model for the project index: Qwen3-Embedding-0.6B GGUF (Q8_0, 639,150,592 bytes, SHA-256 `06507c7b...e439`, Apache-2.0), file listing and licence read from the publisher's Hugging Face repository on 2026-11-10; nomic-embed-text-v1.5 GGUF (Apache-2.0) was compared and not kept.
 - Gemini through an OpenAI-compatible address: base URL `https://generativelanguage.googleapis.com/v1beta/openai/` with the Gemini API key as the key, and `GET /v1beta/openai/models` to list the models, from Google's "OpenAI compatibility" page, https://ai.google.dev/gemini-api/docs/openai, read 2026-11-11. The key page of Google AI Studio and the addresses of Anthropic, OpenAI and OpenRouter in `data/assistant/providers.json` are from general knowledge and not yet checked.
+
+## Project templates: the C game for ELF and ACE (2026-11-12)
+
+`data/templates/elf-game`, `data/templates/ace-game` and `data/templates/shared/game` (CC0) are written for VCSIDE; the techniques and where they come from:
+
+- **48-pixel text** (title and menu): the technique of the DASM game above, with the timing of La Abadía del Crimen 2600's `line48` (writes ending at cycles 45, 48, 51 and 54 with the players at 56 and 64), measured again in Gopher2600. The 5x7 font is our own; "THE GAME" is converted from the DASM game's table.
+- **The menu** (PLAY, SYSTEM, HMOVE, EXIT; a row's value shown under it) from La Abadía del Crimen 2600 (`la-abadia-del-crimen/docs/pal-ntsc.md`).
+- **The NTSC→PAL colour table**: the DASM game's (above), copied.
+- **The late HMOVE at cycle 73** (no black comb; objects move 8 pixels more to the left than HMxx says, and one less on consoles with the short HMOVE): ZackAttack's measurements and Eckhard Stolberg's note in the AtariAge thread on HMOVE variations (2018), as the Abadía document above explains them. Moving player 1 between the enemies with RESP1 on one line and that HMOVE on the next is a general technique of 2600 games; the cycles and HMP1 values are our own measurements in Gopher2600 `07d8de5` and Stella 7.0 (exact for x = 4 to 148).
+- **Collisions in software** against the room's playfield tables (the C code reads the same `room_pf0`-`room_pf2` the kernel draws): a general technique, our own code.
+- **vcsLib, the ELF rules, the ACE bus library and the sampled music player**: as in the ELF and ACE rows above.

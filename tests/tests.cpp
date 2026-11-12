@@ -1158,8 +1158,8 @@ static void testElfSpace() {
   {
     const std::vector<std::pair<Language, std::string>> notedTemplates = {
         {Language::Dasm, ""},  {Language::Dasm, "animation"}, {Language::Dasm, "game"},   {Language::Dasm, "cdfj"},
-        {Language::BatariBasic, ""}, {Language::BatariBasic, "game"}, {Language::BatariBasic, "square"}, {Language::ElfC, ""},   {Language::ElfC, "animation"}, {Language::AceC, ""},
-        {Language::AceC, "animation"}, {Language::AceC, "vcslib"}};
+        {Language::BatariBasic, ""}, {Language::BatariBasic, "game"}, {Language::BatariBasic, "square"}, {Language::ElfC, ""},   {Language::ElfC, "animation"},
+        {Language::ElfC, "game"},    {Language::AceC, ""},        {Language::AceC, "animation"}, {Language::AceC, "vcslib"}, {Language::AceC, "game"}};
     int notesIndex = 0;
     for (auto& [language, example] : notedTemplates) {
       fs::path notedDir = dir / ("notes-" + std::to_string(notesIndex++));
@@ -1267,7 +1267,7 @@ static void testElfSpace() {
   }
   CHECK(stellaFormat("CDFJ") == "CDF" && stellaFormat("DPC+") == "DPCP");
   // the ELF example: the template with the example's main.c, and hero.gfx.h next to it
-  CHECK(Project::examples(Language::ElfC).size() == 1);
+  CHECK(Project::examples(Language::ElfC).size() == 2 && Project::examples(Language::ElfC)[0].first == "game");
   fs::path elfDir = dir / "anim-elf";
   CHECK(Project::create(elfDir.string(), "walker", Language::ElfC, "NTSC", &project, &error, "animation"));
   for (auto fileName : {"Makefile", "include/vcsLib.h", "src/main.c", "src/memcpy_long.S", "src/hero.vcsgfx", "src/hero.gfx.h", "src/theme.vcsmusic", "src/theme.music.h"})
@@ -1289,6 +1289,36 @@ static void testElfSpace() {
     for (auto& [projectDir, aceName] : {std::pair{elfDir, "walker.ace"}, std::pair{dir, "rainbow.ace"}}) {
       command = "cd \"" + projectDir.string() + "\" && \"" + make + "\" ace > make-ace.log 2>&1";
       CHECK(std::system(command.c_str()) == 0 && romFormat((projectDir / "build" / aceName).string()) == "ACE");
+    }
+  }
+  // VCSIDE The Game in C, on ELF: the shared rules, menu and screen, the shared graphics and
+  // song (with the game's three effects), the menu's first system from the project's TV
+  // standard; it builds as ELF and, with make ace, as ACE
+  for (const char* tvStandard : {"NTSC", "PAL", "PAL60"}) {
+    fs::path gameDir = dir / (std::string("elf-game-") + tvStandard);
+    CHECK(Project::create(gameDir.string(), "game", Language::ElfC, tvStandard, &project, &error, "game"));
+    CHECK(project.format == "ELF" && project.buildCommand == "make" && project.output == "build/game.bin");
+    for (auto fileName : {"Makefile", "include/vcsLib.h", "src/main.c", "src/game.c", "src/game.h", "src/menu.c", "src/menu.h", "src/screen.c",
+                          "src/screen.h", "src/hero.gfx.h", "src/enemy.gfx.h", "src/room.gfx.h", "src/title.gfx.h", "src/theme.music.h",
+                          "ace/vcslib_ace.c", "chameleon/support.c"})
+      CHECK(fs::exists(gameDir / fileName));
+    {  // its effects all end (one that holds its volume keeps its voice for good)
+      std::ifstream songFile(gameDir / "src" / "theme.vcsmusic");
+      vcs::music::Song gameSong;
+      CHECK(vcs::music::fromJson(std::string((std::istreambuf_iterator<char>(songFile)), {}), &gameSong, &error));
+      CHECK(vcs::music::exportSong(gameSong, vcs::music::audioClockHz("NTSC"), {vcs::music::ExportTarget::C, "", "NTSC"}).problems.empty());
+    }
+    std::ifstream gameMain(gameDir / "src" / "main.c"), gameMusic(gameDir / "src" / "theme.music.h"), gameRules(gameDir / "src" / "game.c");
+    std::string gameMainText((std::istreambuf_iterator<char>(gameMain)), {}), gameMusicText((std::istreambuf_iterator<char>(gameMusic)), {});
+    std::string gameRulesText((std::istreambuf_iterator<char>(gameRules)), {});
+    const std::string expectedSystem = std::string(tvStandard) == "PAL" ? "SYSTEM_PAL" : std::string(tvStandard) == "PAL60" ? "SYSTEM_PAL60" : "SYSTEM_NTSC";
+    CHECK(gameMainText.find("#define DEFAULT_SYSTEM " + expectedSystem + " ") != std::string::npos && gameMainText.find("{{") == std::string::npos);
+    CHECK(gameRulesText.find("game - the rules") != std::string::npos && gameRulesText.find("{{") == std::string::npos);
+    CHECK(gameMusicText.find("MUSIC_EFFECT_SHOT") != std::string::npos && gameMusicText.find("MUSIC_EFFECT_HIT") != std::string::npos &&
+          gameMusicText.find("MUSIC_EFFECT_LOSE") != std::string::npos && gameMusicText.find("#define MUSIC_TIA_EFFECTS 1 ") != std::string::npos);
+    if (!gcc.empty() && !make.empty() && std::string(tvStandard) == "NTSC") {
+      std::string command = "cd \"" + gameDir.string() + "\" && \"" + make + "\" > make.log 2>&1 && \"" + make + "\" ace > make-ace.log 2>&1";
+      CHECK(std::system(command.c_str()) == 0 && fs::exists(gameDir / "build" / "game.bin") && romFormat((gameDir / "build" / "game.ace").string()) == "ACE");
     }
   }
   // the ACE files an ELF project gets for make ace, and its TV system
@@ -1331,7 +1361,8 @@ static void testElfSpace() {
     CHECK(aceFileSize == builtSpace.startCode + builtSpace.code + builtSpace.constants + builtSpace.data);  // the file: all but .bss
   }
   // the ACE example: the animated sprite, its graphics' tables, NTSC lines
-  CHECK(Project::examples(Language::AceC).size() == 2 && Project::examples(Language::AceC)[0].first == "animation");
+  CHECK(Project::examples(Language::AceC).size() == 3 && Project::examples(Language::AceC)[0].first == "game" &&
+        Project::examples(Language::AceC)[1].first == "animation");
   fs::path aceAnimationDir = dir / "ace-animation";
   CHECK(Project::create(aceAnimationDir.string(), "walker", Language::AceC, "NTSC", &project, &error, "animation"));
   for (auto fileName : {"src/hero.vcsgfx", "src/hero.gfx.h", "src/theme.music.h", "src/ace.c", "src/start.S"})
@@ -1342,6 +1373,22 @@ static void testElfSpace() {
   if (!gcc.empty() && !make.empty()) {
     std::string command = "cd \"" + aceAnimationDir.string() + "\" && \"" + make + "\" > make.log 2>&1";
     CHECK(std::system(command.c_str()) == 0 && romFormat((aceAnimationDir / "build" / "walker.ace").string()) == "ACE");
+  }
+  // VCSIDE The Game on ace.h: the ELF game's shared files with ACE's own main.c, and the
+  // project's TV standard as the menu's first system
+  fs::path aceGameDir = dir / "ace-game";
+  CHECK(Project::create(aceGameDir.string(), "game", Language::AceC, "PAL", &project, &error, "game"));
+  CHECK(project.format == "ACE" && project.output == "build/game.ace" && project.buildCommand == "make" && project.emulator == "gopher2600");
+  for (auto fileName : {"Makefile", "include/ace.h", "src/ace.c", "src/start.S", "src/main.c", "src/game.c", "src/menu.c", "src/screen.c",
+                        "src/hero.gfx.h", "src/enemy.gfx.h", "src/room.gfx.h", "src/title.gfx.h", "src/theme.music.h"})
+    CHECK(fs::exists(aceGameDir / fileName));
+  CHECK(!fs::exists(aceGameDir / "include" / "vcsLib.h"));
+  std::ifstream aceGameMain(aceGameDir / "src" / "main.c");
+  std::string aceGameText((std::istreambuf_iterator<char>(aceGameMain)), {});
+  CHECK(aceGameText.find("#define DEFAULT_SYSTEM SYSTEM_PAL ") != std::string::npos && aceGameText.find("ace_overblank_end") != std::string::npos);
+  if (!gcc.empty() && !make.empty()) {
+    std::string command = "cd \"" + aceGameDir.string() + "\" && \"" + make + "\" > make.log 2>&1";
+    CHECK(std::system(command.c_str()) == 0 && romFormat((aceGameDir / "build" / "game.ace").string()) == "ACE");
   }
   // ACE's vcsLib example: the ELF project, built with make ace (and still as ELF with make)
   fs::path aceVcsLibDir = dir / "ace-vcslib";
