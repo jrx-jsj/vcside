@@ -70,6 +70,8 @@
     "editor.warningNumber": "#B07800",
     "editor.breakpoint": "#E04040",
     "editor.cycles": "#8A7A30",
+    "editor.pageRule": "#D03030",
+    "editor.bankRule": "#2F6FD0",
     "editor.indentGuide": "#00000020",
     "editor.link": "$accent",
     "syntax.comment": "#008000",

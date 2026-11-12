@@ -82,7 +82,11 @@ class TextEditor {
   void setMarkers(std::map<int, std::pair<bool, std::string>> markers) { markers_ = std::move(markers); }  // line -> (error?, msg)
   void setGutterWidthChars(int chars) { gutterChars_ = chars; }
   // Labelled rules drawn above lines (0-based), e.g. where a new 6502 page starts.
-  void setSeparators(std::map<int, std::string> separators) { separators_ = std::move(separators); }
+  struct Separator {
+    std::string label;
+    bool bank = false;  // a new bank (blue, thicker) rather than a new page (red)
+  };
+  void setSeparators(std::map<int, Separator> separators) { separators_ = std::move(separators); }
 
   // Draws the editor filling the available region. Returns true if the text changed.
   bool render(const char* id, ImFont* font);
@@ -194,7 +198,7 @@ class TextEditor {
   double cycleRestTime_ = 0;
   EditorHooks hooks_;
   std::map<int, std::pair<bool, std::string>> markers_;
-  std::map<int, std::string> separators_;
+  std::map<int, Separator> separators_;
   std::set<int> bps_;
   std::vector<std::string> bpBase_;  // text the breakpoint lines refer to
   size_t bpVersion_ = 0;

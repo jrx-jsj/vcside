@@ -192,12 +192,13 @@ std::vector<PageBreak> pageBreaks(const AddressMap& addresses, const std::string
     long last = listed->cpu + listed->bytes - 1;
     int bank = addresses.bankOf(*listed);
     if (lastPage >= 0 && ((listed->cpu >> 8) != lastPage || bank != lastBank)) {
+      bool newBank = bank != lastBank;
       if (listed->line == lastLine) {
-        result.push_back({listed->line, listed->cpu & ~0xFFL, bank, true});
+        result.push_back({listed->line, listed->cpu & ~0xFFL, bank, true, newBank});
       } else {
         int above = listed->line - 1;
         while (above - 1 > lastLine - 1 && isLabelLine(above - 1)) above--;
-        result.push_back({above, listed->cpu & ~0xFFL, bank, false});
+        result.push_back({above, listed->cpu & ~0xFFL, bank, false, newBank});
       }
     }
     if ((last >> 8) != (listed->cpu >> 8)) result.push_back({listed->line, last & ~0xFFL, bank, true});

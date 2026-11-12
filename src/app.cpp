@@ -977,16 +977,17 @@ std::string App::addressInfo(const std::string& path, int line) const {
 }
 
 void App::updatePageSeparators(OpenFile& file) {
-  std::map<int, std::string> separators;
+  std::map<int, TextEditor::Separator> separators;
   if (!showPages_ || !file.asmSyntax || file.gfx || file.form || addresses_.empty()) {
     file.editor.setSeparators(separators);
     return;
   }
   for (const PageBreak& pageBreak : pageBreaks(addresses_, file.path, file.editor.lines())) {
-    std::string name = F("page {0}", {hexAddress(pageBreak.address)});
-    if (addresses_.banks() > 1) name += "  " + F("(bank {0})", {std::to_string(pageBreak.bank)});
+    std::string name = pageBreak.newBank ? F("bank {0}", {std::to_string(pageBreak.bank)}) + "  " + F("page {0}", {hexAddress(pageBreak.address)})
+                                         : F("page {0}", {hexAddress(pageBreak.address)});
+    if (!pageBreak.newBank && addresses_.banks() > 1) name += "  " + F("(bank {0})", {std::to_string(pageBreak.bank)});
     if (pageBreak.inside) name += "  " + std::string(T("(starts in the line above)"));
-    separators.emplace(pageBreak.line, name);
+    separators.emplace(pageBreak.line, TextEditor::Separator{name, pageBreak.newBank});
   }
   file.editor.setSeparators(separators);
 }

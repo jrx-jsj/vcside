@@ -87,6 +87,8 @@
     "editor.warningNumber": "$yellow",
     "editor.breakpoint": "$red",
     "editor.cycles": "$dim",
+    "editor.pageRule": "$red",
+    "editor.bankRule": "$blue",
     "editor.indentGuide": "$dim/60",
     "editor.link": "$blue",
     "syntax.comment": "$dim",

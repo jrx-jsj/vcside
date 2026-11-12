@@ -94,6 +94,8 @@ namespace vcs::theme {
   X(EdWarningNumber, "editor.warningNumber", N_("Code editor"), N_("Number of a line with a warning")) \
   X(EdBreakpoint, "editor.breakpoint", N_("Code editor"), N_("Breakpoint"))                     \
   X(EdCycles, "editor.cycles", N_("Code editor"), N_("Cycle counts"))                           \
+  X(EdPageRule, "editor.pageRule", N_("Code editor"), N_("Where a new 6502 page starts"))       \
+  X(EdBankRule, "editor.bankRule", N_("Code editor"), N_("Where a new bank starts"))            \
   X(EdIndentGuide, "editor.indentGuide", N_("Code editor"), N_("Indentation guides"))           \
   X(EdLink, "editor.link", N_("Code editor"), N_("Symbol under Ctrl/Cmd (click to go to it)"))     \
   X(SynComment, "syntax.comment", N_("Syntax"), N_("Comments"))                                 \

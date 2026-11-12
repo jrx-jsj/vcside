@@ -70,6 +70,7 @@ struct PageBreak {
   long address = 0;  // the first address of the page
   int bank = 0;
   bool inside = false;
+  bool newBank = false;  // the code before it was in another bank
 };
 std::vector<PageBreak> pageBreaks(const AddressMap& addresses, const std::string& file, const std::vector<std::string>& lines);
 

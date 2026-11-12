@@ -443,6 +443,16 @@ static void testDebugMap() {
   CHECK(breakpoint && breakpoint->cpu == 0xF004);
   breakpoint = map.breakpointAt("inc.h", 1, isCode);
   CHECK(breakpoint && breakpoint->cpu == 0xF005 && breakpoint->bank == 1);
+  {  // a second bank in the same file: a bank separator, not just a new page
+    std::vector<std::string> source(23, "  nop");
+    int bankBreaks = 0;
+    for (const PageBreak& pageBreak : pageBreaks(map, "main.asm", source))
+      if (pageBreak.newBank) {
+        bankBreaks++;
+        CHECK(pageBreak.bank == 1 && pageBreak.address == 0xF000);
+      }
+    CHECK(bankBreaks == 1);
+  }
   breakpoint = map.breakpointAt("main.asm", 23, isCode);
   CHECK(breakpoint && breakpoint->cpu == 0xF007);
   CHECK(!map.breakpointAt("main.asm", 24, isCode));
@@ -497,6 +507,7 @@ static void testDebugMap() {
   CHECK(breaks.size() == 3);
   if (breaks.size() == 3) {
     CHECK(breaks[0].line == 4 && breaks[0].address == 0xF100 && breaks[0].inside);   // the table crosses into $F100
+    CHECK(!breaks[0].newBank && !breaks[1].newBank && !breaks[2].newBank);  // one bank
     CHECK(breaks[1].line == 7 && breaks[1].address == 0xF200 && !breaks[1].inside);  // above the label Next
     CHECK(breaks[2].line == 10 && breaks[2].address == 0xF300 && breaks[2].inside);  // the ds goes on into $F300
   }

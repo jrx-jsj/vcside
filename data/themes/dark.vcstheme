@@ -72,6 +72,8 @@
     "editor.warningNumber": "#E6BE50",
     "editor.breakpoint": "#DC3C3C",
     "editor.cycles": "#96965A",
+    "editor.pageRule": "#E05A5A",
+    "editor.bankRule": "#5A9BEA",
     "editor.indentGuide": "#FFFFFF14",
     "editor.link": "#4FC1FF",
     "syntax.comment": "#6A9955",
