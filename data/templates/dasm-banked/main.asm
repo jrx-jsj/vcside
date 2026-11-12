@@ -63,11 +63,13 @@ CallBank1                       ; $FFE6: jsr CallBank1 runs FrameLogic in bank 1
 	ORG $0000
 	RORG $F000
 
-Reset   sei
+Reset
+	sei
 	cld
 	ldx #0
 	txa
-.clear  dex
+.clear
+	dex
 	txs
 	pha
 	bne .clear              ; clears RAM and TIA, S ends at $FF
@@ -85,14 +87,16 @@ StartFrame
 	lda #(VBLANK_LINES*76-14)/64  ; timer for the vertical blank
 	sta TIM64T
 	jsr CallBank1           ; the frame's logic, in bank 1
-.vblank lda INTIM
+.vblank
+	lda INTIM
 	bne .vblank
 	sta WSYNC
 	sta VBLANK              ; A = 0: beam on
 
 	ldx #VISIBLE_LINES
 	lda Colour
-.kernel sta WSYNC               ; 3
+.kernel
+	sta WSYNC               ; 3
 	sta COLUBK              ; 3  one colour per line, scrolling down
 	adc #1                  ; 2
 	dex                     ; 2
@@ -102,7 +106,8 @@ StartFrame
 	sta VBLANK
 	lda #(OVERSCAN_LINES*76-14)/64
 	sta TIM64T
-.over   lda INTIM
+.over
+	lda INTIM
 	bne .over
 	jmp StartFrame
 

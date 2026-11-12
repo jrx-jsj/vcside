@@ -345,6 +345,7 @@ class App {
   // settings
   std::vector<std::string> recent_;
   bool showCycles_ = true;
+  int tabSize_ = 4;  // columns per tab in the editor (View > Tab size)
   bool columnAddresses_ = false;  // the cycle column shows each line's address and bytes instead
   bool showPages_ = true;  // 6502 page separators in assembly files
   std::string projectsDir_;  // where New project makes them: the folder of the last one made

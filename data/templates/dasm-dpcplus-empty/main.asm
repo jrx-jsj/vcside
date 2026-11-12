@@ -84,11 +84,13 @@ Frame   ds 1
 	RORG $F000
 	ds.b 128, 0             ; under the cartridge's registers
 
-Reset   sei
+Reset
+	sei
 	cld
 	ldx #0
 	txa
-.clear  dex
+.clear
+	dex
 	txs
 	pha
 	bne .clear              ; clears RAM and TIA, S ends at $FF
@@ -101,7 +103,8 @@ StartFrame
 	sta VBLANK
 	sta VSYNC
 	ldx #2
-.vsync  sta WSYNC
+.vsync
+	sta WSYNC
 	SOUND                   ; the sound goes on in every line
 	dex
 	bne .vsync
@@ -114,7 +117,8 @@ StartFrame
 
 	; the game logic goes here, with SOUND at least once a line
 
-.vblank sta WSYNC               ; until the timer runs out, a line at a time
+.vblank
+	sta WSYNC               ; until the timer runs out, a line at a time
 	SOUND
 	bit TIMINT              ; D7: the timer has run out
 	bpl .vblank
@@ -125,7 +129,8 @@ StartFrame
 
 	ldx #VISIBLE_LINES
 	ldy Frame
-.kernel sta WSYNC               ; 3
+.kernel
+	sta WSYNC               ; 3
 	SOUND                   ; 7
 	sty COLUBK              ; 3  one colour per line, scrolling down
 	iny                     ; 2
@@ -143,7 +148,8 @@ StartFrame
 
 	; more game logic can go here
 
-.over   sta WSYNC
+.over
+	sta WSYNC
 	SOUND
 	bit TIMINT
 	bpl .over

@@ -1103,6 +1103,7 @@
     "VCSIDE found these in its reference (instructions, registers, cartridge formats, TV standards) for your question and gave them to the model, which was asked to answer from them and to say when something is not confirmed.": "VCSIDE encontró esto en su referencia (instrucciones, registros, formatos de cartucho, estándares de TV) para tu pregunta y se lo dio al modelo, al que se le pidió responder a partir de ello y avisar cuando algo no está confirmado.",
     "VCSIDE needs {0} ({1}) to {2}, and did not find it on this computer.": "VCSIDE necesita {0} ({1}) para {2}, y no lo ha encontrado en este ordenador.",
     "Version": "Versión",
+    "Tab size": "Tamaño del tabulador",
     "Open a file from the Project panel.": "Abre un archivo desde el panel Proyecto.",
     "Open {0}": "Abrir {0}",
     "Version {0}": "Versión {0}",

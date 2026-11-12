@@ -63,7 +63,8 @@ TEXT_LINES     = 15             ; ...and the menu's texts (5 rows of 3): game.c 
 ; writes PF0-PF2 for the left half and again, in time, for the right one.
 	MAC DRAW_TEXT
 	ldx #TEXT_LINES
-.line   sta WSYNC
+.line
+	sta WSYNC
 	lda #AMPLITUDE          ; 2
 	sta AUDV0               ; 5
 	lda #{1}                ; 7
@@ -115,11 +116,13 @@ Temp2     ds 1
 	ORG $7000
 	RORG $F000
 
-Reset   sei
+Reset
+	sei
 	cld
 	ldx #0
 	txa
-.clear  dex
+.clear
+	dex
 	txs
 	pha
 	bne .clear              ; clears RAM and TIA, S ends at $FF
@@ -135,7 +138,8 @@ StartFrame SUBROUTINE
 	sta WSYNC               ; VSYNC from the start of a line
 	stx VBLANK
 	stx VSYNC
-.vsync  sta WSYNC
+.vsync
+	sta WSYNC
 	SOUND                   ; the sound goes on in every line
 	dex
 	bne .vsync
@@ -154,7 +158,8 @@ StartFrame SUBROUTINE
 	lda #DSCOMM
 	sta System
 	ldx #0                  ; the objects' places: P0, P1, M0, M1 and the ball
-.place  lda #DSCOMM
+.place
+	lda #DSCOMM
 	jsr PosObject
 	inx
 	cpx #5
@@ -195,7 +200,8 @@ StartFrame SUBROUTINE
 	stx ENAM0
 	stx ENAM1
 	stx ENABL
-.wait   sta WSYNC               ; until the timer runs out, a line at a time
+.wait
+	sta WSYNC               ; until the timer runs out, a line at a time
 	SOUND
 	bit TIMINT              ; D7: the timer has run out (it stays set)
 	bpl .wait
@@ -203,7 +209,8 @@ StartFrame SUBROUTINE
 	bne .game
 	jsr TitleKernel
 	jmp .overscan
-.game   jsr GameKernel
+.game
+	jsr GameKernel
 
 .overscan
 	ldx #2
@@ -222,7 +229,8 @@ StartFrame SUBROUTINE
 	lda CXPPMM
 	sta Collided+3
 	sta CXCLR
-.over   sta WSYNC
+.over
+	sta WSYNC
 	SOUND
 	bit TIMINT
 	bpl .over
@@ -300,7 +308,8 @@ TitleKernel SUBROUTINE
 ; (a playfield line has one colour), written before the left one (cycle 35).
 Cartridge SUBROUTINE
 	ldx #CART_LINES
-.line   sta WSYNC
+.line
+	sta WSYNC
 	lda #AMPLITUDE          ; 2
 	sta AUDV0               ; 5
 	lda #STREAM_CART_COLOUR ; 7
@@ -342,7 +351,8 @@ Cartridge SUBROUTINE
 Text48 SUBROUTINE
 	ldy #TEXT48_LINES
 	sty Temp2
-.line   sta WSYNC
+.line
+	sta WSYNC
 	lda #AMPLITUDE          ; 2
 	sta AUDV0               ; 5
 	lda #STREAM_THE_GAME    ; 7
@@ -380,7 +390,8 @@ GameKernel SUBROUTINE
 	ldx #3
 	jsr BlankLines
 	ldx #10                 ; the score in score mode (CTRLPF from the C code):
-.digit  sta WSYNC               ; the left PF1 in COLUP0, the right one in COLUP1
+.digit
+	sta WSYNC               ; the left PF1 in COLUP0, the right one in COLUP1
 	lda #AMPLITUDE          ; 2
 	sta AUDV0               ; 5
 	lda #STREAM_SCORE       ; 7
@@ -408,7 +419,8 @@ GameKernel SUBROUTINE
 ; Two lines per pass (ROOM_PAIRS passes): the first writes the playfield, the
 ; second the sprites and the shot.
 	ldx #ROOM_PAIRS
-.pair   sta WSYNC
+.pair
+	sta WSYNC
 	lda #AMPLITUDE          ; 2
 	sta AUDV0               ; 5
 	lda #STREAM_ROOM        ; 7
@@ -447,7 +459,8 @@ GameKernel SUBROUTINE
 ; ============================================================================
 
 ; ---- BeamOn: the first visible line.
-BeamOn  sta WSYNC
+BeamOn
+	sta WSYNC
 	SOUND
 	ldx #0
 	stx VBLANK              ; beam on
@@ -455,21 +468,24 @@ BeamOn  sta WSYNC
 
 ; ---- BlankLines: X = lines with nothing drawn, and the sound on each.
 BlankLines SUBROUTINE
-.line   sta WSYNC
+.line
+	sta WSYNC
 	SOUND
 	dex
 	bne .line
 	rts
 
 ; ---- Wait12: jsr and rts take 12 cycles: a short wait in a kernel.
-Wait12  rts
+Wait12
+	rts
 
 ; ---- PosObject: A = x (0-159), X = object (0 P0, 1 P1, 2 M0, 3 M1, 4 BL).
 ; Ends with HMxx set: an HMOVE afterwards puts it in place.
 PosObject SUBROUTINE
 	sta WSYNC
 	sec
-.div    sbc #15
+.div
+	sbc #15
 	bcs .div
 	eor #7
 	asl

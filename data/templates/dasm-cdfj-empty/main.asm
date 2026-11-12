@@ -53,11 +53,13 @@ Frame   ds 1
 	ORG $7000
 	RORG $F000
 
-Reset   sei
+Reset
+	sei
 	cld
 	ldx #0
 	txa
-.clear  dex
+.clear
+	dex
 	txs
 	pha
 	bne .clear              ; clears RAM and TIA, S ends at $FF
@@ -72,7 +74,8 @@ StartFrame
 	stx VBLANK
 	stx VSYNC
 	ldy #2
-.vsync  sta WSYNC
+.vsync
+	sta WSYNC
 	SOUND                   ; the sound goes on in every line
 	dey
 	bne .vsync
@@ -89,7 +92,8 @@ StartFrame
 
 	; more game logic can go here, with SOUND at least once a line
 
-.vblank sta WSYNC               ; until the timer runs out, a line at a time
+.vblank
+	sta WSYNC               ; until the timer runs out, a line at a time
 	SOUND
 	bit TIMINT              ; D7: the timer has run out
 	bpl .vblank
@@ -100,7 +104,8 @@ StartFrame
 
 	ldx #VISIBLE_LINES
 	ldy Frame
-.kernel sta WSYNC               ; 3
+.kernel
+	sta WSYNC               ; 3
 	SOUND                   ; 5
 	sty COLUBK              ; 3  one colour per line, scrolling down
 	iny                     ; 2
@@ -118,7 +123,8 @@ StartFrame
 
 	; more game logic can go here
 
-.over   sta WSYNC
+.over
+	sta WSYNC
 	SOUND
 	bit TIMINT
 	bpl .over

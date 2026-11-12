@@ -143,6 +143,9 @@ class TextEditor {
   // Indentation: a level is what most of the file uses (indentation.h); `fallback` for a file
   // with no indented line yet. In C (FoldSyntax::C), Enter and braces indent as the code goes.
   void setDefaultIndent(IndentStyle fallback) { defaultIndent_ = fallback; }
+  // How many columns a tab takes (View > Tab size); the file keeps its tabs as they are.
+  void setTabSize(int columns) { tabSize_ = columns; }
+  int tabSize() const { return tabSize_; }
   IndentStyle indentStyle() const { return detectIndentStyle(lines_, defaultIndent_); }
   // What the keys do, also for tests: Enter, typed text, Tab (Shift+Tab: `outdent`), Backspace.
   void newline();
@@ -194,7 +197,7 @@ class TextEditor {
   bool lastWasTyping_ = false;
   bool dirty_ = false, changed_ = false;
   bool scrollToCursor_ = false, centerOnCursor_ = false;
-  int tabSize_ = 8;
+  int tabSize_ = 4;
   int gutterChars_ = 0;
   int cycleRestLine_ = -1;     // the cycle column line the mouse rests on, and since when
   double cycleRestTime_ = 0;

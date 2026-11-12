@@ -61,11 +61,13 @@ Temp    ds 1
 	ORG $7000
 	RORG $F000
 
-Reset   sei
+Reset
+	sei
 	cld
 	ldx #0
 	txa
-.clear  dex
+.clear
+	dex
 	txs
 	pha
 	bne .clear              ; clears RAM and TIA, S ends at $FF
@@ -81,7 +83,8 @@ StartFrame
 	stx VBLANK
 	stx VSYNC
 	ldy #3
-.vsync  sta WSYNC
+.vsync
+	sta WSYNC
 	SOUND                   ; the sound goes on in every line
 	dey
 	bne .vsync
@@ -108,7 +111,8 @@ StartFrame
 	sta AUDF1
 	lda #DSCOMM
 	sta AUDV1
-.vblank sta WSYNC               ; until the timer runs out, a line at a time
+.vblank
+	sta WSYNC               ; until the timer runs out, a line at a time
 	SOUND
 	lda INTIM
 	bne .vblank
@@ -116,7 +120,8 @@ StartFrame
 
 ; ---- Kernel: one line per pass ------------------------------------------------
 	ldy #VISIBLE_LINES
-.line   sta WSYNC
+.line
+	sta WSYNC
 	lda #AMPLITUDE          ; 2
 	sta AUDV0               ; 3
 	asl                     ; 2  the amplitude (0-15) as luminance
@@ -137,7 +142,8 @@ StartFrame
 	stx VBLANK
 	ldx #(OVERSCAN_LINES*76-14)/64
 	stx TIM64T
-.over   sta WSYNC
+.over
+	sta WSYNC
 	SOUND
 	lda INTIM
 	bne .over
@@ -165,7 +171,8 @@ CallArm
 PosObject
 	sta WSYNC
 	sec
-.div    sbc #15
+.div
+	sbc #15
 	bcs .div
 	eor #7
 	asl

@@ -100,6 +100,7 @@ void App::loadSettings() {
   themes_.load(dataDir() + "/themes", configDir() + "themes");
   useTheme(settings.value("theme", std::string("dark")), false);
   showCycles_ = settings.value("show_cycles", true);
+  tabSize_ = std::clamp(settings.value("tab_size", 4), 1, 16);
   columnAddresses_ = settings.value("cycle_column_addresses", false);
   showPages_ = settings.value("show_pages", true);
   projectsDir_ = settings.value("projects_dir", std::string());
@@ -117,6 +118,7 @@ void App::saveSettings() {
   json settings = {{"language", currentLanguage()},
             {"recent", recent_},
             {"show_cycles", showCycles_},
+            {"tab_size", tabSize_},
             {"cycle_column_addresses", columnAddresses_},
             {"show_pages", showPages_},
             {"projects_dir", projectsDir_},
@@ -141,6 +143,7 @@ void App::syncSettings() {
   if (!settings.is_object()) return;
   recent_ = settings.value("recent", recent_);
   showCycles_ = settings.value("show_cycles", showCycles_);
+  tabSize_ = std::clamp(settings.value("tab_size", tabSize_), 1, 16);
   columnAddresses_ = settings.value("cycle_column_addresses", columnAddresses_);
   showPages_ = settings.value("show_pages", showPages_);
   projectsDir_ = settings.value("projects_dir", projectsDir_);
@@ -2098,7 +2101,14 @@ MenuBar App::buildMenuBar(bool native) {
   }
   themeMenu.push_back(MenuItem::sep());
   themeMenu.push_back(item(T("Edit themes..."), "", [this] { themeEditor_.open = true; }));
+  std::vector<MenuItem> tabSizes;
+  for (int columns : {2, 4, 8})
+    tabSizes.push_back(item(std::to_string(columns), "", [this, columns] {
+      tabSize_ = columns;
+      saveSettings();
+    }, true, tabSize_ == columns));
   bar.push_back(sub(T("View"), {
+      sub(T("Tab size"), tabSizes),
       item(T("Show cycle column"), "", [this] {
         showCycles_ = !showCycles_;
         for (auto& openedFile : files_) openedFile->editor.setGutterWidthChars(gutterChars(*openedFile));
@@ -2650,7 +2660,7 @@ void App::editorsPanel() {
           ImGui::BeginChild("##gfx", ImVec2(0, 0), 0, ImGuiWindowFlags_NoScrollbar);
           openedFile.gfx->render(gfxTv(), gfxProfile());
           ImGui::EndChild();
-        } else if (openedFile.editor.render("##code", editorFont())) {
+        } else if (openedFile.editor.setTabSize(tabSize_), openedFile.editor.render("##code", editorFont())) {
           lint(openedFile);
         }
         if (int zoomDelta = openedFile.editor.takeZoomSteps()) zoomEditor(zoomDelta);

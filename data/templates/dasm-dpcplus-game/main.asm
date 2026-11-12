@@ -156,12 +156,10 @@ GfxPtr    ds 2          ; the hero's frame (bottom row first)
 ColPtr    ds 2          ; its colours
 Temp      ds 2          ; scratch: pointers and the score's digits
 Temp2     ds 1
-TextColour  ds 1        ; THE GAME's colour, and the lives' in the game, worked
-	                ; out in the vertical blank (not between WSYNCs)
+TextColour  ds 1        ; THE GAME's colour and the lives', worked out in the vertical blank
 ColourKeep  ds 1        ; ConvertColour's own
 SidesColour ds 1        ; the cartridge label's sides, for the TV system
-MusicRam  ds 29         ; the music player's (5 bytes + 7 per voice, and 3 for
-	                ; sound effects on the TIA's channel 1)
+MusicRam  ds 29         ; the music player's: 5 bytes, 7 per voice, 3 for the TIA's effects
 MusicRamEnd
 MUSIC_RAM = MusicRam
 
@@ -258,11 +256,13 @@ MUSIC_PART SET 1
 	RORG $F000
 	ds.b 128, 0             ; under the cartridge's registers
 
-Reset   sei
+Reset
+	sei
 	cld
 	ldx #0
 	txa
-.clear  dex
+.clear
+	dex
 	txs
 	pha
 	bne .clear              ; clears RAM and TIA, S ends at $FF
@@ -283,7 +283,8 @@ StartFrame SUBROUTINE
 	sta VBLANK
 	sta VSYNC
 	ldx #2
-.vsync  sta WSYNC
+.vsync
+	sta WSYNC
 	SOUND                   ; the sound goes on in every line
 	dex
 	bne .vsync
@@ -302,8 +303,10 @@ StartFrame SUBROUTINE
 	bne .game
 	jsr TitleLogic
 	jmp .wait
-.game   jsr GameLogic
-.wait   sta WSYNC               ; until the timer runs out, a line at a time
+.game
+	jsr GameLogic
+.wait
+	sta WSYNC               ; until the timer runs out, a line at a time
 	SOUND
 	bit TIMINT              ; D7: the timer has run out (it stays set)
 	bpl .wait
@@ -329,14 +332,16 @@ StartFrame SUBROUTINE
 	SOUND
 	jsr PrepareScore        ; the score and the lives for the next frame
 	jmp .animate
-.title  lda System              ; the title: its colours, when the system has changed
+.title
+	lda System              ; the title: its colours, when the system has changed
 	cmp CartSystem
 	beq .animate
 	jsr CartColoursForTv
 	jmp .over
 .animate
 	jsr Animate             ; the hero for the next frame (on the title too, so
-.over   sta WSYNC               ; it is ready when the game starts)
+.over
+	sta WSYNC               ; it is ready when the game starts)
 	SOUND
 	bit TIMINT
 	bpl .over
@@ -358,13 +363,15 @@ CopyTables SUBROUTINE
 	lda #>CartPF0D
 	sta DF7HI
 	ldx #0
-.table  lda CopyList,x
+.table
+	lda CopyList,x
 	sta Temp
 	lda CopyList+1,x
 	sta Temp+1
 	ldy CopyList+2,x
 	dey
-.row    lda (Temp),y
+.row
+	lda (Temp),y
 	sta DF7WRITE
 	dey
 	bpl .row
@@ -428,7 +435,8 @@ TitleLogic SUBROUTINE
 	lda MenuRow
 	eor #1
 	sta MenuRow
-.noRow  lda MenuRow
+.noRow
+	lda MenuRow
 	beq .play
 	lda Temp
 	and #$80                ; right
@@ -447,7 +455,8 @@ TitleLogic SUBROUTINE
 	bcc .place
 	jsr NextSystem
 	jmp .place
-.play   jsr ButtonPress
+.play
+	jsr ButtonPress
 	bcc .place
 	jsr StartGame           ; the game from the next frame (DrawMode)
 .place  SOUND
@@ -500,7 +509,8 @@ TitleLogic SUBROUTINE
 	sta DF0LOW,x
 	lda TheGameHi,x
 	sta DF0HI,x
-.next   inx
+.next
+	inx
 	cpx #8
 	bne .fetcher
 	rts
@@ -518,7 +528,8 @@ NextSystem SUBROUTINE
 	bcc .ok
 	lda #0
 	sta System
-.ok     rts
+.ok
+	rts
 
 ; ---- TitleKernel: 192 lines: VCSIDE's cartridge (playfield and missiles),
 ; THE GAME (48 pixels of players), PLAY and the TV system. The selected row is
@@ -589,7 +600,8 @@ CART_LEFT   = 34                ; PosObject's x for the missiles over columns 9 
 CART_RIGHT  = 114               ; (pixels 36 and 116): it puts a missile 2 pixels right
 Cartridge SUBROUTINE
 	ldx #cart_ROWS*cart_LINES
-.line   sta WSYNC
+.line
+	sta WSYNC
 	lda #<AMPLITUDE         ; 2
 	sta AUDV0               ; 5
 	lda #<DF6FRACDATA       ; 7  the row's colour
@@ -634,13 +646,15 @@ CartColoursForTv SUBROUTINE
 	ldy #cart_ROWS-1
 	lda System
 	bne .pal
-.ntsc   lda cart_COLUPF_ROWS,y  ; NTSC: as they are
+.ntsc
+	lda cart_COLUPF_ROWS,y  ; NTSC: as they are
 	sta DF7WRITE
 	SOUND
 	dey
 	bpl .ntsc
 	rts
-.pal    lda cart_COLUPF_ROWS,y
+.pal
+	lda cart_COLUPF_ROWS,y
 	lsr
 	tax
 	lda NtscToPal,x
@@ -662,7 +676,8 @@ TEXT48_LINES = 14
 Text48 SUBROUTINE
 	ldy #TEXT48_LINES
 	sty Temp2
-.line   sta WSYNC
+.line
+	sta WSYNC
 	lda #<AMPLITUDE         ; 2
 	sta AUDV0               ; 5
 	lda #<DF0DATA           ; 7
@@ -705,7 +720,8 @@ PointText SUBROUTINE
 	sta Temp
 	bcc .first
 	inc Temp+1
-.first  ldx #0
+.first
+	ldx #0
 .fetcher
 	sta WSYNC
 	lda #<AMPLITUDE
@@ -723,7 +739,8 @@ PointText SUBROUTINE
 	sta Temp
 	bcc .same
 	inc Temp+1
-.same   inx
+.same
+	inx
 	cpx #6
 	bne .fetcher
 	rts
@@ -734,7 +751,8 @@ TextOffsets .byte 0, TEXT_ROWS, TEXT_ROWS*2, TEXT_ROWS*3
 ; writes PF0-PF2 for the left half and again, in time, for the right one.
 DrawText SUBROUTINE
 	ldx #TEXT_LINES
-.line   sta WSYNC
+.line
+	sta WSYNC
 	lda #<AMPLITUDE         ; 2
 	sta AUDV0               ; 5
 	lda #<DF0FRACDATA       ; 7
@@ -773,7 +791,8 @@ DrawText SUBROUTINE
 StartGame SUBROUTINE
 	lda #0                  ; the game's state from zero
 	ldx #GameEnd-Shared-1
-.clear  sta Shared,x
+.clear
+	sta Shared,x
 	dex
 	bpl .clear
 	lda #$F0                ; no enemy until GameLogic places one
@@ -798,7 +817,8 @@ PlaceHero SUBROUTINE
 ; Both enemies back, near the top of the room.
 NewWave SUBROUTINE
 	ldx #1
-.enemy  lda WaveX,x
+.enemy
+	lda WaveX,x
 	sta EnemyX,x
 	lda #70
 	sta EnemyY,x
@@ -841,7 +861,8 @@ GameLogic SUBROUTINE
 	beq .first
 	clc
 	adc #$40                ; the second enemy: another hue
-.first  jsr ConvertColour
+.first
+	jsr ConvertColour
 	sta EnemyColour         ; COLUP1, written after the score
 	lda #$1C                ; the lives: yellow
 	jsr ConvertColour
@@ -933,7 +954,8 @@ PointGame SUBROUTINE
 	sta DF3BOT
 	SOUND
 	ldx #2                  ; the room: a byte every 4 line pairs
-.room   lda RoomTablesLo,x
+.room
+	lda RoomTablesLo,x
 	sta DF0FRACLOW+4,x
 	lda RoomTablesHi,x
 	sta DF0FRACHI+4,x
@@ -983,7 +1005,8 @@ MoveHero SUBROUTINE
 	cmp #ROOM_PAIRS-hero_P0_HEIGHT
 	bcs .noUp
 	inc HeroY
-.noUp   lda SWCHA
+.noUp
+	lda SWCHA
 	and #$20                ; D5 = 0: down
 	bne .noDown
 	ldy #1
@@ -991,13 +1014,15 @@ MoveHero SUBROUTINE
 	cmp #2
 	bcc .noDown
 	dec HeroY
-.noDown cpy Anim
+.noDown
+	cpy Anim
 	beq .same
 	sty Anim                ; another animation: from its first step
 	lda #0
 	sta Step
 	sta Timer
-.same   rts
+.same
+	rts
 
 ; ---- Shoot: the button fires one shot the way the hero faces; it flies until
 ; it hits something or leaves the screen.
@@ -1019,12 +1044,14 @@ Shoot SUBROUTINE
 	sec
 	sbc #10                 ; ...or its left one
 	ldx #256-SHOT_SPEED
-.from   sta ShotX
+.from
+	sta ShotX
 	stx ShotDX
 	SOUND
 	lda #MUSIC_EFFECT_SHOT
 	jsr PlayerEffect
-.move   lda ShotPair
+.move
+	lda ShotPair
 	beq .done
 	lda ShotX
 	clc
@@ -1034,7 +1061,8 @@ Shoot SUBROUTINE
 	bcc .done
 	lda #0
 	sta ShotPair
-.done   rts
+.done
+	rts
 
 ; ---- MoveEnemy: each enemy moves diagonally on every other frame (they take
 ; turns, 30 Hz each); the collisions turn it round. Both alive: they share
@@ -1053,7 +1081,8 @@ MoveEnemy SUBROUTINE
 	beq .shown              ; both: the one whose turn it is
 	lsr                     ; one: that one (1: enemy 0, 2: enemy 1)
 	tax
-.shown  stx Shown
+.shown
+	stx Shown
 	lda EnemyLive
 	and EnemyBit,x
 	beq .anim
@@ -1071,7 +1100,8 @@ MoveEnemy SUBROUTINE
 	clc
 	adc EnemyDY,x
 	sta EnemyY,x
-.draw   lda EnemyY,x
+.draw
+	lda EnemyY,x
 	sta EnemyRow
 .anim   SOUND
 	lda Frame
@@ -1115,7 +1145,8 @@ Collisions SUBROUTINE
 	sbc EnemyDX,x
 	sta EnemyDX,x
 	jmp .enemyFree
-.turnY  lda #0
+.turnY
+	lda #0
 	sec
 	sbc EnemyDY,x
 	sta EnemyDY,x
@@ -1159,7 +1190,8 @@ Collisions SUBROUTINE
 	bne .done
 	lda #0                  ; no lives left: the title
 	sta Mode
-.done   sta CXCLR
+.done
+	sta CXCLR
 	rts
 
 ; ---- GameKernel: 192 lines: the score (16) and the room (176). Fast fetch is
@@ -1183,7 +1215,8 @@ GameKernel SUBROUTINE
 	ldx #3
 	jsr BlankLines
 	ldy #0
-.digit  ldx #2                  ; two lines per row
+.digit
+	ldx #2                  ; two lines per row
 .digitLine
 	sta WSYNC
 	lda #<AMPLITUDE         ; 2
@@ -1214,7 +1247,8 @@ GameKernel SUBROUTINE
 ; Two lines per pass, X = line pairs left (ROOM_PAIRS down to 1): the first
 ; writes the playfield, the second the sprites and the shot.
 	ldx #ROOM_PAIRS
-.pair   sta WSYNC
+.pair
+	sta WSYNC
 	lda #<AMPLITUDE         ; 2
 	sta AUDV0               ; 5
 	lda #<DF4FRACDATA       ; 7
@@ -1269,7 +1303,8 @@ PrepareScore SUBROUTINE
 	jsr TimesFive
 	sta Temp2               ; the lives'
 	ldy #0
-.row    ldx Temp2
+.row
+	ldx Temp2
 	lda Digits,x
 	and #$0F                ; the lives: the right half of PF1
 	sta LivesRows,y
@@ -1339,8 +1374,10 @@ Animate SUBROUTINE
 	lda AnimLoop,x
 	bne .keep
 	ldy Step                ; ...unless it does not loop
-.keep   sty Step
-.show   lda AnimFrameLo,x
+.keep
+	sty Step
+.show
+	lda AnimFrameLo,x
 	sta Temp
 	lda AnimFrameHi,x
 	sta Temp+1
@@ -1361,7 +1398,8 @@ Animate SUBROUTINE
 	lda #>HeroGfxBuf
 	sta DF7HI
 	ldy #hero_P0_HEIGHT-1
-.gfx    lda (GfxPtr),y
+.gfx
+	lda (GfxPtr),y
 	sta DF7WRITE
 	dey
 	bpl .gfx
@@ -1369,13 +1407,15 @@ Animate SUBROUTINE
 	ldy #hero_P0_HEIGHT-1
 	lda System
 	bne .pal
-.ntsc   lda (ColPtr),y          ; NTSC: as they are
+.ntsc
+	lda (ColPtr),y          ; NTSC: as they are
 	sta DF7WRITE
 	dey
 	bpl .ntsc
 	SOUND
 	rts
-.pal    lda (ColPtr),y
+.pal
+	lda (ColPtr),y
 	lsr
 	tax
 	lda NtscToPal,x
@@ -1403,7 +1443,8 @@ ConvertColour SUBROUTINE
 	lsr                     ; one byte for each colour (bit 0 is not used)
 	tax
 	lda NtscToPal,x
-.done   ldx ColourKeep
+.done
+	ldx ColourKeep
 	rts
 
 ; The closest PAL colour to each NTSC one, $00 to $FE in steps of 2: worked
@@ -1449,14 +1490,17 @@ ButtonPress SUBROUTINE
 	bcs .no
 	sec
 	rts
-.no     clc
+.no
+	clc
 	rts
 
 ; ---- Wait12: jsr and rts take 12 cycles: a short wait in a kernel.
-Wait12  rts
+Wait12
+	rts
 
 ; ---- BeamOn: the first visible line, with fast fetch on, for the kernels.
-BeamOn  sta WSYNC
+BeamOn
+	sta WSYNC
 	SOUND
 	lda #0
 	sta VBLANK              ; beam on
@@ -1465,7 +1509,8 @@ BeamOn  sta WSYNC
 
 ; ---- BlankLines: X = lines with nothing drawn, and the sound on each.
 BlankLines SUBROUTINE
-.line   sta WSYNC
+.line
+	sta WSYNC
 	lda AMPLITUDE           ; (absolute: with fast fetch on or off)
 	sta AUDV0
 	dex
@@ -1477,7 +1522,8 @@ BlankLines SUBROUTINE
 PosObject SUBROUTINE
 	sta WSYNC
 	sec
-.div    sbc #15
+.div
+	sbc #15
 	bcs .div
 	eor #7
 	asl

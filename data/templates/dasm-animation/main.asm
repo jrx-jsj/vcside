@@ -46,11 +46,13 @@ MUSIC_RAM = MusicRam
 	SEG Code
 	ORG $F000
 
-Reset   sei
+Reset
+	sei
 	cld
 	ldx #0
 	txa
-.clear  dex
+.clear
+	dex
 	txs
 	pha
 	bne .clear              ; clears RAM and TIA, S ends at $FF
@@ -86,7 +88,8 @@ StartFrame
 	sta WSYNC
 	sta HMOVE
 
-.vblank lda INTIM
+.vblank
+	lda INTIM
 	bne .vblank
 	sta WSYNC
 	sta VBLANK              ; A = 0: beam on
@@ -94,7 +97,8 @@ StartFrame
 ; ---- Kernel: a line pair per pass. The first line writes what the second
 ; one worked out on the pass before.
 	ldx #PAIRS
-.pair   sta WSYNC
+.pair
+	sta WSYNC
 	lda CurGfx              ; 3
 	sta GRP0                ; 3
 	lda CurCol              ; 3
@@ -110,9 +114,11 @@ StartFrame
 	lda (ColPtr),y          ; 5
 	sta CurCol              ; 3
 	jmp .next               ; 3
-.none   lda #0
+.none
+	lda #0
 	sta CurGfx
-.next   sta WSYNC
+.next
+	sta WSYNC
 	dex
 	bne .pair
 
@@ -122,7 +128,8 @@ StartFrame
 	sta VBLANK
 	lda #(OVERSCAN_LINES*76-14)/64
 	sta TIM64T
-.over   lda INTIM
+.over
+	lda INTIM
 	bne .over
 	jmp StartFrame
 
@@ -161,7 +168,8 @@ Joystick
 	lda #0
 	sta Step
 	sta Timer
-.same   rts
+.same
+	rts
 
 ; ---- Sounds: the effects, when the button goes down and at the edges -------
 Sounds
@@ -172,13 +180,15 @@ Sounds
 	bcs .noJump
 	lda #MUSIC_EFFECT_JUMP
 	jsr MusicEffect
-.noJump lda Bump
+.noJump
+	lda Bump
 	beq .done
 	lda #0
 	sta Bump
 	lda #MUSIC_EFFECT_BUMP
 	jsr MusicEffect
-.done   rts
+.done
+	rts
 
 ; ---- Animate: advance the current animation and point at its frame ----------
 Animate
@@ -202,8 +212,10 @@ Animate
 	lda AnimLoop,x
 	bne .keep
 	ldy Step                ; ...unless it does not loop
-.keep   sty Step
-.show   lda AnimFrameLo,x
+.keep
+	sty Step
+.show
+	lda AnimFrameLo,x
 	sta Ptr
 	lda AnimFrameHi,x
 	sta Ptr+1
@@ -224,7 +236,8 @@ Animate
 PosObject
 	sta WSYNC
 	sec
-.div    sbc #15
+.div
+	sbc #15
 	bcs .div
 	eor #7
 	asl

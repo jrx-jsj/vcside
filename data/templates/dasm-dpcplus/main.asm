@@ -56,8 +56,7 @@ HeroX   ds 1            ; colour clocks from the left
 HeroY   ds 1            ; lines from the top of the screen
 Button  ds 1            ; the fire button on the last frame (0 = down)
 Bump    ds 1            ; not 0: the square has just reached an edge
-MusicRam ds 29          ; the music player's (5 bytes + 7 per voice, and 3 for
-			; sound effects on the TIA's channel 1)
+MusicRam ds 29          ; the music player's: 5 bytes, 7 per voice, 3 for the TIA's effects
 MusicRamEnd
 MUSIC_RAM = MusicRam
 
@@ -109,11 +108,13 @@ MUSIC_RAM = MusicRam
 	RORG $F000
 	ds.b 128, 0             ; under the cartridge's registers
 
-Reset   sei
+Reset
+	sei
 	cld
 	ldx #0
 	txa
-.clear  dex
+.clear
+	dex
 	txs
 	pha
 	bne .clear              ; clears RAM and TIA, S ends at $FF
@@ -132,7 +133,8 @@ StartFrame
 	sta VBLANK
 	sta VSYNC
 	ldx #3
-.vsync  sta WSYNC
+.vsync
+	sta WSYNC
 	lda AMPLITUDE           ; the sound goes on in every line
 	sta AUDV0
 	dex
@@ -153,7 +155,8 @@ StartFrame
 	sta WSYNC
 	sta HMOVE
 	SOUND
-.vblank sta WSYNC               ; until the timer runs out, a line at a time
+.vblank
+	sta WSYNC               ; until the timer runs out, a line at a time
 	lda AMPLITUDE
 	sta AUDV0
 	lda INTIM
@@ -162,7 +165,8 @@ StartFrame
 
 ; ---- Kernel: one line per pass ------------------------------------------------
 	ldx #0                  ; the line, from the top
-.line   sta WSYNC
+.line
+	sta WSYNC
 	lda AMPLITUDE           ; 4
 	sta AUDV0               ; 3
 	asl                     ; 2  the amplitude (0-15) as luminance
@@ -176,7 +180,8 @@ StartFrame
 	lda #0                  ; 2
 	bcs .draw               ; 2/3
 	lda #$FF                ; 2  inside the square
-.draw   sta GRP0                ; 3
+.draw
+	sta GRP0                ; 3
 	inx                     ; 2
 	cpx #VISIBLE_LINES      ; 2
 	bne .line               ; 3
@@ -190,7 +195,8 @@ StartFrame
 	sta VBLANK
 	lda #(OVERSCAN_LINES*76-14)/64
 	sta TIM64T
-.over   sta WSYNC
+.over
+	sta WSYNC
 	lda AMPLITUDE
 	sta AUDV0
 	lda INTIM
@@ -239,7 +245,8 @@ Joystick
 	beq .noUp
 	dex
 	stx HeroY
-.noUp   rts
+.noUp
+	rts
 
 ; ---- Sounds: the effects, when the button goes down and at the edges -------
 Sounds
@@ -250,19 +257,22 @@ Sounds
 	bcs .noFire
 	lda #MUSIC_EFFECT_FIRE
 	jsr MusicEffect
-.noFire lda Bump
+.noFire
+	lda Bump
 	beq .done
 	lda #0
 	sta Bump
 	lda #MUSIC_EFFECT_BUMP
 	jsr MusicEffect
-.done   rts
+.done
+	rts
 
 ; ---- PosObject: A = x (0-159), X = object (0 = P0). Ends with HMxx set. ------
 PosObject
 	sta WSYNC
 	sec
-.div    sbc #15
+.div
+	sbc #15
 	bcs .div
 	eor #7
 	asl
