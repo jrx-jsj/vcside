@@ -4,6 +4,7 @@
 
 #include <filesystem>
 #include <algorithm>
+#include <set>
 #include <regex>
 #include <cstdlib>
 #include <fstream>
@@ -483,7 +484,8 @@ static void replaceAll(std::string& text, const std::string& search, const std::
 // editors save. The text substitutions are applied to every file. A file the project
 // already has is kept.
 static bool copySharedFiles(const fs::path& templateDir, const fs::path& projectDir,
-                            const std::vector<std::pair<std::string, std::string>>& substitutions, std::string* error) {
+                            const std::vector<std::pair<std::string, std::string>>& substitutions, std::string* error,
+                            const std::set<std::string>& leaveOut = {}) {
   fs::path manifestFile = templateDir / "shared.json";
   if (!fs::exists(manifestFile)) return true;
   json manifest = json::parse(readFile(manifestFile.string()), nullptr, false);
@@ -495,7 +497,7 @@ static bool copySharedFiles(const fs::path& templateDir, const fs::path& project
   std::error_code errorCode;
   for (auto& [destinationName, entry] : manifest.items()) {
     fs::path destination = projectDir / destinationName, source = templatesDir / entry.value("from", std::string());
-    if (fs::exists(destination)) continue;
+    if (fs::exists(destination) || leaveOut.count(destinationName)) continue;
     std::string text = readFile(source.string());
     if (text.empty()) {
       if (error) *error = F("Template not found in {0}", {source.string()});
@@ -534,9 +536,29 @@ static void copyProjectNotes(const std::vector<fs::path>& from, const fs::path& 
   }
 }
 
-// The cartridge each DASM example is made for.
-static std::string dasmExampleFormat(const std::string& example) {
-  return example == "dpcplus" ? "DPC+" : example == "cdfj" ? "CDFJ" : "4K";
+// The DASM examples: the folder in data/templates, the cartridges each is made for, and
+// for VCSIDE The Game (dasm-game), its switches TITLE_SCREEN and MUSIC.
+struct DasmExample {
+  const char* id;
+  const char* name;  // for people, to translate
+  const char* folder;
+  std::vector<std::string> formats;
+  int titleScreen = 1, music = 1;
+};
+static const std::vector<DasmExample>& dasmExamples() {
+  static const std::vector<DasmExample> list = {
+      {"game", N_("VCSIDE The Game"), "dasm-game", {"4K", "F8", "F6", "F4"}},
+      {"game-notitle", N_("VCSIDE The Game, without the title screen"), "dasm-game", {"4K", "F8", "F6", "F4"}, 0, 1},
+      {"game-2k", N_("VCSIDE The Game, without the title screen or the song"), "dasm-game", {"2K"}, 0, 0},
+      {"animation", N_("Example: an animated sprite"), "dasm-animation", {"4K"}},
+      {"dpcplus", N_("Example: music on a DPC+ cartridge"), "dasm-dpcplus", {"DPC+"}},
+      {"cdfj", N_("Example: C and music on a CDFJ cartridge"), "dasm-cdfj", {"CDFJ"}}};
+  return list;
+}
+static const DasmExample* findDasmExample(const std::string& id) {
+  for (auto& entry : dasmExamples())
+    if (id == entry.id) return &entry;
+  return nullptr;
 }
 
 // Banks of 4K and the first hotspot (bank 0's) of the banked DASM template's formats.
@@ -562,12 +584,9 @@ bool Project::hasEmptyTemplate(Language language, const std::string& format) {
 
 std::vector<std::pair<std::string, const char*>> Project::examples(Language language, const std::string& format) {
   if (language == Language::Dasm) {
-    std::vector<std::pair<std::string, const char*>> all = {{"game", N_("Example: a small game with a title menu")}, {"animation", N_("Example: an animated sprite")},
-                                                            {"dpcplus", N_("Example: music on a DPC+ cartridge")}, {"cdfj", N_("Example: C and music on a CDFJ cartridge")}};
-    if (format.empty()) return all;
     std::vector<std::pair<std::string, const char*>> forFormat;
-    for (auto& entry : all)
-      if (dasmExampleFormat(entry.first) == format) forFormat.push_back(entry);
+    for (auto& entry : dasmExamples())
+      if (format.empty() || std::find(entry.formats.begin(), entry.formats.end(), format) != entry.formats.end()) forFormat.push_back({entry.id, entry.name});
     return forFormat;
   }
   if (language == Language::ElfC) return {{"animation", N_("Example: an animated sprite")}};
@@ -646,10 +665,15 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
     return false;
   }
   if (projectLanguage == Language::Dasm) {
-    // the cartridge: the example's own, or the chosen one (4K if none)
-    const std::string cartridge = !example.empty() ? dasmExampleFormat(example) : format.empty() ? "4K" : format;
-    if (!format.empty() && format != cartridge) {
-      if (error) *error = F("That example is made for a {0} cartridge.", {cartridge});
+    // the cartridge: the chosen one, or the example's first (4K if neither)
+    const DasmExample* dasmExample = example.empty() ? nullptr : findDasmExample(example);
+    if (!example.empty() && !dasmExample) {
+      if (error) *error = F("Template not found in {0}", {example});
+      return false;
+    }
+    const std::string cartridge = !format.empty() ? format : dasmExample ? dasmExample->formats[0] : "4K";
+    if (dasmExample && std::find(dasmExample->formats.begin(), dasmExample->formats.end(), cartridge) == dasmExample->formats.end()) {
+      if (error) *error = F("That example is made for a {0} cartridge.", {dasmExample->formats[0]});
       return false;
     }
     if (example.empty() && !hasEmptyTemplate(projectLanguage, cartridge)) {
@@ -660,7 +684,7 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
     for (auto& candidate : kBankedFormats)
       if (cartridge == candidate.id) banked = &candidate;
     fs::path templateDir = fs::path(dataDir()) / "templates" / "dasm";
-    fs::path exampleDir = !example.empty() ? fs::path(dataDir()) / "templates" / ("dasm-" + example)
+    fs::path exampleDir = dasmExample ? fs::path(dataDir()) / "templates" / dasmExample->folder
                           : banked        ? fs::path(dataDir()) / "templates" / "dasm-banked"
                                           : templateDir;
     newProject.format = cartridge;
@@ -698,6 +722,14 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
         {"{{ROM_BYTES}}", std::to_string(banked ? banked->banks * 4096 : cartridge == "2K" ? 2048 : 4096)},
         {"{{BANKS}}", banked ? std::to_string(banked->banks) : "1"},
         {"{{HOTSPOT}}", banked ? banked->hotspot : ""}};
+    // VCSIDE The Game: its switches, and where its code starts and ends (bank 0 of a
+    // banked cartridge, with the other banks after it)
+    if (dasmExample && std::string(dasmExample->folder) == "dasm-game") {
+      replaceAll(asmText, "{{TITLE_SCREEN}}", std::to_string(dasmExample->titleScreen));
+      replaceAll(asmText, "{{MUSIC}}", std::to_string(dasmExample->music));
+      replaceAll(asmText, "{{CODE_START}}", banked ? "        ORG $0000\n        RORG $F000" : cartridge == "2K" ? "        ORG $F800" : "        ORG $F000");
+      replaceAll(asmText, "{{CODE_END}}", banked ? readFile((exampleDir / "banks.asm").string()) : "        ORG $FFFC\n        .word Reset\n        .word Reset\n");
+    }
     for (auto& [search, replacement] : cartridgeText) replaceAll(asmText, search, replacement);
     replaceAll(asmText, "{{NAME}}", projName);
     replaceAll(asmText, "{{TV}} timing", tvText);
@@ -711,7 +743,10 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
     fs::path headerFile = fs::path(newProject.dir) / "2600.h";
     if (!fs::exists(headerFile)) fs::copy_file(templateDir / "2600.h", headerFile, errorCode);
     // the example's graphics and music (shared.json), and the tables they give
-    if (!copySharedFiles(exampleDir, newProject.dir, {}, error)) return false;
+    std::set<std::string> leaveOut;  // what the game's switches leave unused
+    if (dasmExample && !dasmExample->titleScreen) leaveOut.insert("title.vcsgfx");
+    if (dasmExample && !dasmExample->music) leaveOut.insert("theme.vcsmusic");
+    if (!copySharedFiles(exampleDir, newProject.dir, {}, error, leaveOut)) return false;
     // CDFJ: the C code, its linker script and the Makefile that builds both (the driver
     // is not included: the Makefile says where it comes from)
     if (cdfj) {

@@ -1,12 +1,16 @@
 ; {{NAME}} - made with VCSIDE
 ; Template: SPDX-License-Identifier: CC0-1.0 (public domain; your game, your licence)
-; 4K cartridge. The TV system is chosen in the title menu (it starts as {{TV}}).
+; VCSIDE The Game on a {{FORMAT}} cartridge, {{TV}} at start.
 ; Build: F7 (or Build > Build). Run: F5.
 ;
-; Example: a small game. A title screen with a menu (PLAY, and the TV system),
-; then a room with walls where the hero walks and shoots at two enemies.
-; Hitting one scores a point; touching one costs a life; with no lives left the
-; game goes back to the title. RESET also goes back to the title.
+; A room with walls where the hero walks and shoots at two enemies. Hitting
+; one scores a point; touching one costs a life. Two switches below choose
+; what comes with it:
+; - TITLE_SCREEN = 1: a title screen with a menu (PLAY, and the TV system)
+;   comes first; with no lives left, or with RESET, the game goes back to it.
+;   0: the game starts at once, and starts again instead.
+; - MUSIC = 1: the TIA music player, with a song and three effects. 0: only
+;   the three effects, written straight to the TIA (SoundEffects, smaller).
 ;
 ; Graphics (open them from the project panel; saving one writes its .gfx.asm):
 ;   hero.vcsgfx   the hero (P0) and its animations, idle and walk
@@ -15,8 +19,8 @@
 ;   title.vcsgfx  the title's cartridge (VCSIDE's icon) and the menu's texts,
 ;                 as playfields
 ; THE GAME is written in main.asm (TheGame0-5), six columns of 8 pixels.
-; Music and sound: theme.vcsmusic (saving it writes theme.music.asm) is the song,
-; played on both screens, and three effects: shot, hit and lose.
+; Music and sound (MUSIC = 1): theme.vcsmusic (saving it writes theme.music.asm)
+; is the song, played on both screens, and three effects: shot, hit and lose.
 ;
 ; How it works:
 ; - The frame: VSYNC, the vertical blank (the game logic, timed by the RIOT),
@@ -33,7 +37,9 @@
         include "2600.h"
 
 ; ---- Settings ----------------------------------------------------------------
-DEFAULT_SYSTEM = {{TV_SYSTEM}}  ; the menu's first TV system: 0 NTSC, 1 PAL60, 2 PAL
+DEFAULT_SYSTEM = {{TV_SYSTEM}}  ; the TV system at start (the title's menu changes it): 0 NTSC, 1 PAL60, 2 PAL
+TITLE_SCREEN   = {{TITLE_SCREEN}}  ; 1: the title screen and its menu; 0: the game starts at once
+MUSIC          = {{MUSIC}}  ; 1: the music player and theme.vcsmusic; 0: the effects alone
 LIVES          = 3
 ROOM_PAIRS     = room_ROWS * room_LINES / 2  ; 88 line pairs of room
 HERO_START_X   = 76
@@ -67,13 +73,19 @@ TextColour  ds 1        ; THE GAME's colour, and the lives' in the game, worked
                         ; out in the vertical blank (not between WSYNCs)
 ColourKeep  ds 1        ; ConvertColour's own
 SidesColour ds 1        ; the cartridge label's sides, for the TV system
+  IF MUSIC
 MusicRam  ds 19         ; the music player's
 MUSIC_RAM = MusicRam
+  ELSE
+SoundTimer ds 1         ; SoundEffects: frames left of the effect
+  ENDIF
 
 ; The title and the game use the rest of the RAM for different things: the
 ; title screen does not need the game's state, and StartGame clears it.
 Shared
+  IF TITLE_SCREEN
 CartColours ds cart_ROWS ; the title: the cartridge's row colours, for the TV system
+  ENDIF
 TitleEnd
         ORG Shared
 EnemyX    ds 2          ; two enemies
@@ -105,7 +117,7 @@ GameEnd
 
 ; ---- Code ------------------------------------------------------------------
         SEG Code
-        ORG $F000
+{{CODE_START}}
 
 Reset   sei
         cld
@@ -123,6 +135,9 @@ Reset   sei
         sta LastStick
         sta Random              ; any start but 0
         jsr MusicInit           ; the song from its start
+  IF !TITLE_SCREEN
+        jsr StartGame           ; no title screen: the game at once
+  ENDIF
 
 StartFrame SUBROUTINE
         lda #2
@@ -146,20 +161,24 @@ StartFrame SUBROUTINE
         sta Random
 
         jsr MusicFrame          ; the music's writes for this frame
+  IF TITLE_SCREEN
         lda Mode
         bne .game
         jsr TitleLogic
         jmp .wait
+  ENDIF
 .game   jsr GameLogic
 .wait   lda INTIM
         bne .wait
         sta WSYNC
         sta VBLANK              ; A = 0: beam on
 
+  IF TITLE_SCREEN
         lda Mode
         bne .drawGame
         jsr TitleKernel
         jmp .overscan
+  ENDIF
 .drawGame
         jsr GameKernel
 
@@ -186,6 +205,7 @@ StartFrame SUBROUTINE
 VblankTime      .byte 43, 43, 73
 OverscanTime    .byte 36, 36, 65
 
+  IF TITLE_SCREEN
 ; ============================================================================
 ; Title screen
 ; ============================================================================
@@ -460,6 +480,7 @@ Text48 SUBROUTINE
         sta PF1
         sta PF2
         ENDM
+  ENDIF ; TITLE_SCREEN
 
 ; ============================================================================
 ; The game
@@ -513,9 +534,13 @@ GameLogic SUBROUTINE
         lda SWCHB
         lsr                     ; D0 = 0: RESET is down
         bcs .noReset
-        lda #0
+  IF TITLE_SCREEN
+        lda #0                  ; back to the title
         sta Mode
         rts
+  ELSE
+        jmp StartGame           ; a new game
+  ENDIF
 .noReset
         jsr MoveHero
         jsr Shoot
@@ -766,8 +791,12 @@ Collisions SUBROUTINE
         jsr NewWave             ; the enemies back at the top, away from the hero
         dec Lives
         bne .done
+  IF TITLE_SCREEN
         lda #0                  ; no lives left: the title
         sta Mode
+  ELSE
+        jsr StartGame           ; no lives left: a new game
+  ENDIF
 .done   sta CXCLR
         rts
 
@@ -935,6 +964,7 @@ TimesFive                       ; A = A * 5 (A up to 51)
         adc Temp2
         rts
 
+  IF TITLE_SCREEN
 ; THE GAME, 48 pixels wide: six columns of 8, two lines per row, bottom first.
 TheGame0
         .byte %00100010  ; ..X...X.
@@ -1026,6 +1056,7 @@ TheGame5
         .byte %10100000  ; X.X.....
         .byte %10111110  ; X.XXXXX.
         .byte %10111110  ; X.XXXXX.
+  ENDIF
 
 ; The digits 0-9, five rows each, top first, in both halves of the byte.
 Digits  .byte $EE,$AA,$AA,$AA,$EE  ; 0
@@ -1190,9 +1221,44 @@ PosObject SUBROUTINE
         include "hero.gfx.asm"
         include "enemy.gfx.asm"
         include "room.gfx.asm"
+  IF TITLE_SCREEN
         include "title.gfx.asm"
+  ENDIF
+  IF MUSIC
         include "theme.music.asm"
+  ELSE
+; ---- SoundEffects: the three effects without the music player, on channel 0:
+; a tone or a noise that fades out. MusicInit, MusicFrame and MusicEffect work
+; as the player's do, so the game calls them the same way.
+MUSIC_EFFECT_SHOT = 0
+MUSIC_EFFECT_HIT  = 1
+MUSIC_EFFECT_LOSE = 2
+MusicInit SUBROUTINE
+        lda #0
+        sta SoundTimer
+        sta AUDV0
+        rts
+MusicEffect SUBROUTINE          ; A = the effect
+        tay
+        lda EffectAudc,y
+        sta AUDC0
+        lda EffectAudf,y
+        sta AUDF0
+        lda EffectFrames,y
+        sta SoundTimer
+        rts
+MusicFrame SUBROUTINE           ; once a frame: the volume follows the frames left
+        lda SoundTimer
+        beq .volume
+        dec SoundTimer
+        cmp #16
+        bcc .volume
+        lda #15
+.volume sta AUDV0
+        rts
+EffectAudc      .byte 8, 4, 6     ; shot: noise; hit: a pure tone; lose: a low buzz
+EffectAudf      .byte 3, 9, 24
+EffectFrames    .byte 10, 14, 40
+  ENDIF
 
-        ORG $FFFC
-        .word Reset
-        .word Reset
+{{CODE_END}}
