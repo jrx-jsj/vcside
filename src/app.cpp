@@ -977,7 +977,7 @@ std::string App::addressInfo(const std::string& path, int line) const {
 }
 
 void App::updatePageSeparators(OpenFile& file) {
-  std::map<int, TextEditor::Separator> separators;
+  std::multimap<int, TextEditor::Separator> separators;
   if (!showPages_ || !file.asmSyntax || file.gfx || file.form || addresses_.empty()) {
     file.editor.setSeparators(separators);
     return;
@@ -986,8 +986,14 @@ void App::updatePageSeparators(OpenFile& file) {
     std::string name = pageBreak.newBank ? F("bank {0}", {std::to_string(pageBreak.bank)}) + "  " + F("page {0}", {hexAddress(pageBreak.address)})
                                          : F("page {0}", {hexAddress(pageBreak.address)});
     if (!pageBreak.newBank && addresses_.banks() > 1) name += "  " + F("(bank {0})", {std::to_string(pageBreak.bank)});
-    if (pageBreak.inside) name += "  " + std::string(T("(starts in the line above)"));
-    separators.emplace(pageBreak.line, TextEditor::Separator{name, pageBreak.newBank});
+    if (pageBreak.inside) {  // the line that crosses into the page is framed, and the label says so
+      name = pageBreak.newBank ? F("bank {0}", {std::to_string(pageBreak.bank)}) + "  " : "";
+      name += F("page {0} starts inside this line", {hexAddress(pageBreak.address)});
+      if (!pageBreak.newBank && addresses_.banks() > 1) name += "  " + F("(bank {0})", {std::to_string(pageBreak.bank)});
+      separators.emplace(pageBreak.line - 1, TextEditor::Separator{name, pageBreak.newBank, true});
+    } else {
+      separators.emplace(pageBreak.line, TextEditor::Separator{name, pageBreak.newBank, false});
+    }
   }
   file.editor.setSeparators(separators);
 }

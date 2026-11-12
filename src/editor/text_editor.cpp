@@ -1210,26 +1210,51 @@ bool TextEditor::render(const char* id, ImFont* font) {
     linkWord_.clear(), linkLine_ = -1;
   }
 
-  // separators: a rule above the line, with its label at the right
+  // separators: a rule above the line with its label at the right, or (a page that starts inside
+  // a line, such as an instruction or a table that crosses it) a frame around that line, pointed at
   for (int row = firstRow; row <= lastRow; row++) {
-    auto separator = separators_.find(lineAt_[row]);
-    if (separator == separators_.end()) continue;
-    float y = origin.y + row * lineH_;
-    float right = winPos.x + ImGui::GetWindowWidth() - charW_ * 2;
-    const std::string& label = separator->second.label;
-    ImU32 ruleColour = col(separator->second.bank ? Role::EdBankRule : Role::EdPageRule);
-    float thickness = std::max(1.0f, charW_ * (separator->second.bank ? 0.28f : 0.16f));
-    float labelWidth = ImGui::CalcTextSize(label.c_str()).x * 0.9f;
-    // the label goes right of the code on both sides of the rule, or at the right edge
     int lineIndex = lineAt_[row];
-    int besideCols = visualCol(lineIndex, (int)lines_[lineIndex].size());
-    if (row > 0) besideCols = std::max(besideCols, visualCol(lineAt_[row - 1], (int)lines_[lineAt_[row - 1]].size()));
-    float labelX = std::max(right - labelWidth, textX + (besideCols + 3) * charW_);
-    // a coloured rule across the code, and its label in the same colour on a patch of background
-    drawList->AddLine(ImVec2(winPos.x + gutterW - charW_ * 0.5f, y), ImVec2(winPos.x + ImGui::GetWindowWidth(), y), ruleColour, thickness);
-    drawList->AddRectFilled(ImVec2(labelX - charW_ * 0.6f, y - lineH_ * 0.45f), ImVec2(labelX + labelWidth + charW_ * 0.6f, y + lineH_ * 0.45f), col(Role::EdBackground), lineH_ * 0.2f);
-    drawList->AddRect(ImVec2(labelX - charW_ * 0.6f, y - lineH_ * 0.45f), ImVec2(labelX + labelWidth + charW_ * 0.6f, y + lineH_ * 0.45f), ruleColour, lineH_ * 0.2f, 0, 1.0f);
-    drawList->AddText(font, fontSize * 0.9f, ImVec2(labelX, y - lineH_ * 0.42f), ruleColour, label.c_str());
+    auto [first, last] = separators_.equal_range(lineIndex);
+    for (auto separator = first; separator != last; ++separator) {
+      float y = origin.y + row * lineH_;
+      float right = winPos.x + ImGui::GetWindowWidth() - charW_ * 2;
+      const std::string& label = separator->second.label;
+      ImU32 ruleColour = col(separator->second.bank ? Role::EdBankRule : Role::EdPageRule);
+      float thickness = std::max(1.0f, charW_ * (separator->second.bank ? 0.28f : 0.16f));
+      float labelWidth = ImGui::CalcTextSize(label.c_str()).x * 0.9f;
+      float pad = charW_ * 0.6f, round = lineH_ * 0.2f;
+      int endCols = visualCol(lineIndex, (int)lines_[lineIndex].size());
+      if (separator->second.inside) {
+        const std::string& text = lines_[lineIndex];
+        size_t firstChar = text.find_first_not_of(" \t");
+        size_t codeEnd = text.find(';');  // the frame goes round the code, not its comment
+        if (codeEnd == std::string::npos) codeEnd = text.size();
+        while (codeEnd > 0 && (text[codeEnd - 1] == ' ' || text[codeEnd - 1] == '\t')) codeEnd--;
+        if (firstChar == std::string::npos || firstChar >= codeEnd) firstChar = 0, codeEnd = text.size();
+        float boxLeft = textX + visualCol(lineIndex, (int)firstChar) * charW_ - charW_ * 0.4f;
+        float boxRight = textX + visualCol(lineIndex, (int)codeEnd) * charW_ + charW_ * 0.4f;
+        float middle = y + lineH_ * 0.5f;
+        drawList->AddRect(ImVec2(boxLeft, y + 1), ImVec2(boxRight, y + lineH_ - 1), ruleColour, round, 0, thickness);
+        // the label right of the line, with a pointer to the frame
+        float labelX = textX + (endCols + 4) * charW_;
+        drawList->AddLine(ImVec2(boxRight, middle), ImVec2(labelX - pad, middle), ruleColour, thickness);
+        drawList->AddTriangleFilled(ImVec2(boxRight, middle), ImVec2(boxRight + charW_ * 0.6f, middle - lineH_ * 0.2f),
+                                    ImVec2(boxRight + charW_ * 0.6f, middle + lineH_ * 0.2f), ruleColour);
+        drawList->AddRectFilled(ImVec2(labelX - pad, middle - lineH_ * 0.45f), ImVec2(labelX + labelWidth + pad, middle + lineH_ * 0.45f), col(Role::EdBackground), round);
+        drawList->AddRect(ImVec2(labelX - pad, middle - lineH_ * 0.45f), ImVec2(labelX + labelWidth + pad, middle + lineH_ * 0.45f), ruleColour, round, 0, 1.0f);
+        drawList->AddText(font, fontSize * 0.9f, ImVec2(labelX, middle - lineH_ * 0.42f), ruleColour, label.c_str());
+        continue;
+      }
+      // the label goes right of the code on both sides of the rule, or at the right edge
+      int besideCols = endCols;
+      if (row > 0) besideCols = std::max(besideCols, visualCol(lineAt_[row - 1], (int)lines_[lineAt_[row - 1]].size()));
+      float labelX = std::max(right - labelWidth, textX + (besideCols + 3) * charW_);
+      // a coloured rule across the code, and its label in the same colour on a patch of background
+      drawList->AddLine(ImVec2(winPos.x + gutterW - charW_ * 0.5f, y), ImVec2(winPos.x + ImGui::GetWindowWidth(), y), ruleColour, thickness);
+      drawList->AddRectFilled(ImVec2(labelX - pad, y - lineH_ * 0.45f), ImVec2(labelX + labelWidth + pad, y + lineH_ * 0.45f), col(Role::EdBackground), round);
+      drawList->AddRect(ImVec2(labelX - pad, y - lineH_ * 0.45f), ImVec2(labelX + labelWidth + pad, y + lineH_ * 0.45f), ruleColour, round, 0, 1.0f);
+      drawList->AddText(font, fontSize * 0.9f, ImVec2(labelX, y - lineH_ * 0.42f), ruleColour, label.c_str());
+    }
   }
 
   // gutter (drawn over the text so it stays fixed when scrolling horizontally)

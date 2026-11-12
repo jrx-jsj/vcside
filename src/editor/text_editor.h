@@ -84,9 +84,11 @@ class TextEditor {
   // Labelled rules drawn above lines (0-based), e.g. where a new 6502 page starts.
   struct Separator {
     std::string label;
-    bool bank = false;  // a new bank (blue, thicker) rather than a new page (red)
+    bool bank = false;    // a new bank (blue, thicker) rather than a new page (red)
+    bool inside = false;  // the page starts inside this line (an instruction or data that crosses it): a frame round it
   };
-  void setSeparators(std::map<int, Separator> separators) { separators_ = std::move(separators); }
+  // By line (0-based): a rule above it, or a frame round it when inside.
+  void setSeparators(std::multimap<int, Separator> separators) { separators_ = std::move(separators); }
 
   // Draws the editor filling the available region. Returns true if the text changed.
   bool render(const char* id, ImFont* font);
@@ -198,7 +200,7 @@ class TextEditor {
   double cycleRestTime_ = 0;
   EditorHooks hooks_;
   std::map<int, std::pair<bool, std::string>> markers_;
-  std::map<int, Separator> separators_;
+  std::multimap<int, Separator> separators_;
   std::set<int> bps_;
   std::vector<std::string> bpBase_;  // text the breakpoint lines refer to
   size_t bpVersion_ = 0;
