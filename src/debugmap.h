@@ -64,7 +64,8 @@ class AddressMap {
 
 // Where the code or data of a file enters a new 256-byte page (or bank): a rule goes above
 // line (0-based). A page that starts inside a line (a table that crosses it) goes below
-// that line, with inside set. Labels just before a new page are kept below the rule.
+// that line, with inside set. Labels and ORG/RORG/ALIGN/SEG lines just before a new page
+// (with any blank lines between them) are kept below the rule.
 struct PageBreak {
   int line = 0;
   long address = 0;  // the first address of the page

@@ -508,8 +508,25 @@ static void testDebugMap() {
   if (breaks.size() == 3) {
     CHECK(breaks[0].line == 4 && breaks[0].address == 0xF100 && breaks[0].inside);   // the table crosses into $F100
     CHECK(!breaks[0].newBank && !breaks[1].newBank && !breaks[2].newBank);  // one bank
-    CHECK(breaks[1].line == 7 && breaks[1].address == 0xF200 && !breaks[1].inside);  // above the label Next
+    CHECK(breaks[1].line == 6 && breaks[1].address == 0xF200 && !breaks[1].inside);  // above the ORG and the label Next
     CHECK(breaks[2].line == 10 && breaks[2].address == 0xF300 && breaks[2].inside);  // the ds goes on into $F300
+  }
+
+  {  // the vectors: the rule goes above the ORG, across the blank line after it
+    std::string vectorsListing =
+        "------- FILE v.asm LEVEL 1 PASS 2\n"
+        "      1  f000\t\t\t\t\t      ORG\t$F000\n"
+        "      2  f000\t\t       ea\t\t      nop\n"
+        "      3  f001\t\t\t\t\t      ; Interrupt vectors\n"
+        "      4  f001\n"
+        "      5  fffa\t\t\t\t\t      ORG\t$FFFA\n"
+        "      6  fffa\n"
+        "      7  fffa\t\t       00 f0\t\t      .word\tStart\n";
+    AddressMap vectorsMap;
+    vectorsMap.load(vectorsListing, [](const std::string&) -> std::optional<int> { return std::nullopt; }, 4096);
+    std::vector<std::string> vectorsSource = {"  ORG $F000", "  nop", "; Interrupt vectors", "", "  ORG $FFFA", "", "  .word Start"};
+    auto vectorBreaks = pageBreaks(vectorsMap, "v.asm", vectorsSource);
+    CHECK(vectorBreaks.size() == 1 && vectorBreaks[0].line == 4 && vectorBreaks[0].address == 0xFF00);
   }
 
   // Breakpoints follow the text.

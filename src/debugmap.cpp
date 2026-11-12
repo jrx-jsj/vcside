@@ -185,6 +185,20 @@ std::vector<PageBreak> pageBreaks(const AddressMap& addresses, const std::string
     char first = lines[index][0];
     return !std::isspace((unsigned char)first) && first != ';' && first != '*';
   };
+  // ORG, RORG, ALIGN or SEG: they place what follows, so they go below the rule with it
+  auto isPlacingLine = [&lines](int index) {
+    if (index < 0 || index >= (int)lines.size()) return false;
+    std::istringstream words(lines[index]);
+    std::string word;
+    words >> word;
+    if (!lines[index].empty() && !std::isspace((unsigned char)lines[index][0])) words >> word;  // after a label
+    if (!word.empty() && word[0] == '.') word.erase(0, 1);
+    for (auto& c : word) c = (char)std::toupper((unsigned char)c);
+    return word == "ORG" || word == "RORG" || word == "ALIGN" || word == "SEG" || word.rfind("SEG.", 0) == 0;
+  };
+  auto isBlankLine = [&lines](int index) {
+    return index >= 0 && index < (int)lines.size() && lines[index].find_first_not_of(" \t\r") == std::string::npos;
+  };
   std::vector<PageBreak> result;
   long lastPage = -1;
   int lastBank = -1, lastLine = 0;  // lastLine: 1-based, as in the listing
@@ -196,8 +210,12 @@ std::vector<PageBreak> pageBreaks(const AddressMap& addresses, const std::string
       if (listed->line == lastLine) {
         result.push_back({listed->line, listed->cpu & ~0xFFL, bank, true, newBank});
       } else {
+        // above the labels and ORG/ALIGN/SEG lines just before it (blank lines between them included)
         int above = listed->line - 1;
-        while (above - 1 > lastLine - 1 && isLabelLine(above - 1)) above--;
+        for (int index = above - 1; index > lastLine - 1; index--) {
+          if (isLabelLine(index) || isPlacingLine(index)) above = index;
+          else if (!isBlankLine(index)) break;
+        }
         result.push_back({above, listed->cpu & ~0xFFL, bank, false, newBank});
       }
     }
