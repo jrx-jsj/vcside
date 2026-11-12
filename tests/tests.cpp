@@ -1779,7 +1779,7 @@ static void testGfx() {
 
   // DASM export, read back
   std::string dasmText = exportDasm(sprite);
-  CHECK(dasmText.find("hero_P0_Frame0\n        .byte #%11111111;$44\n        .byte #%00111100;$1E\n        .byte #%10000001;$1E\n") != std::string::npos);
+  CHECK(dasmText.find("hero_P0_Frame0\n\t.byte #%11111111;$44\n\t.byte #%00111100;$1E\n\t.byte #%10000001;$1E\n") != std::string::npos);
   CHECK(dasmText.find("hero_M0_DX = 9") != std::string::npos && dasmText.find("hero_M0_SIZE = $10") != std::string::npos);
   Asset importedAsset;
   std::string what;
@@ -1803,7 +1803,7 @@ static void testGfx() {
   // batari Basic export and import. The standard kernel without options: one colour per
   // player, rows bottom first, missiles as blocks.
   std::string basicText = exportBasic(sprite, standardProfile);
-  CHECK(basicText.find("  player0:\n  %11111111\n  %00111100\n  %10000001\nend\n  COLUP0 = $1E : rem every frame\n") != std::string::npos);
+  CHECK(basicText.find("\tplayer0:\n\t%11111111\n\t%00111100\n\t%10000001\nend\n\tCOLUP0 = $1E : rem every frame\n") != std::string::npos);
   CHECK(basicText.find("missile0height = 2") != std::string::npos);
   CHECK(hasIssue(check(sprite, standardProfile), Issue::Warning, "playercolors"));
   // playercolors: a colour per row, at the cost of both missiles
@@ -1812,7 +1812,7 @@ static void testGfx() {
   CHECK(playercolorsProfile.rowColours(Obj::P0) && !playercolorsProfile.has(Obj::M0) && !playercolorsProfile.has(Obj::M1) && playercolorsProfile.has(Obj::BL) && playercolorsProfile.pfRowColours() && playercolorsProfile.pfRowsDefault() == 12);
   CHECK(hasIssue(check(sprite, playercolorsProfile), Issue::Error, "M0"));
   basicText = exportBasic(sprite, playercolorsProfile);
-  CHECK(basicText.find("  player0color:\n  $44\n  $1E\n  $1E\nend\n") != std::string::npos && basicText.find("rem M0: not drawn") != std::string::npos);
+  CHECK(basicText.find("\tplayer0color:\n\t$44\n\t$1E\n\t$1E\nend\n") != std::string::npos && basicText.find("rem M0: not drawn") != std::string::npos);
   importedAsset = Asset();
   CHECK(importText(basicText, &importedAsset, &what) && importedAsset.sprites.size() == 1 && importedAsset.sprites[0].layers[0].bits[0] == sprite.layers[0].bits[0] &&
         importedAsset.sprites[0].layers[0].colour(0, 2) == 0x44);
@@ -1823,7 +1823,7 @@ static void testGfx() {
   Profile dpcProfile = profileFromBasic("  set kernel DPC+\n");
   CHECK(dpcProfile.kernel == Kernel::DPCPlus && dpcProfile.players() == 10 && dpcProfile.has(Obj::P9) && !dpcProfile.has(Obj::P10) && dpcProfile.topFirst());
   basicText = exportBasic(sprite, dpcProfile);
-  CHECK(basicText.find("  player0:\n  %10000001\n  %00111100\n  %11111111\nend\n  player0color:\n  $1E\n  $1E\n  $44\nend\n") != std::string::npos);
+  CHECK(basicText.find("\tplayer0:\n\t%10000001\n\t%00111100\n\t%11111111\nend\n\tplayer0color:\n\t$1E\n\t$1E\n\t$44\nend\n") != std::string::npos);
   importedAsset = Asset();
   CHECK(importText(basicText, &importedAsset, &what, dpcProfile) && importedAsset.sprites.size() == 1 && importedAsset.sprites[0].layers[0].bits[0] == sprite.layers[0].bits[0]);
   importedAsset = Asset();
@@ -1838,7 +1838,7 @@ static void testGfx() {
   CHECK(!hasIssue(check(many, pxeProfile), Issue::Error, "") && hasIssue(check(many, pxeProfile), Issue::Warning, "player 1"));
   CHECK(hasIssue(check(many, standardProfile), Issue::Error, "P12") && hasIssue(check(many, dpcProfile), Issue::Error, "P12"));
   basicText = exportBasic(many, pxeProfile);
-  CHECK(basicText.find("  player12:\n  %10000001\n") != std::string::npos && basicText.find("player12color:") != std::string::npos);
+  CHECK(basicText.find("\tplayer12:\n\t%10000001\n") != std::string::npos && basicText.find("player12color:") != std::string::npos);
   importedAsset = Asset();
   CHECK(importText(basicText, &importedAsset, &what, pxeProfile) && importedAsset.sprites.size() == 1 && importedAsset.sprites[0].layers.size() == 2);
   if (importedAsset.sprites.size() == 1 && importedAsset.sprites[0].layers.size() == 2)
@@ -1860,9 +1860,9 @@ static void testGfx() {
   many.layers = {playerLayer, playerLayer};
   many.layers[1].obj = Obj::P4;
   basicText = exportBasic(many, multispriteProfile);
-  CHECK(basicText.find("  COLUP4 = ") != std::string::npos && basicText.find("player4color") == std::string::npos);
+  CHECK(basicText.find("\tCOLUP4 = ") != std::string::npos && basicText.find("player4color") == std::string::npos);
   many.layers[1].obj = Obj::P1;
-  CHECK(exportBasic(many, multispriteProfile).find("  _COLUP1 = ") != std::string::npos);
+  CHECK(exportBasic(many, multispriteProfile).find("\t_COLUP1 = ") != std::string::npos);
   // playfields: DASM tables and batari Basic blocks both come back
   Playfield secondPlayfield;
   secondPlayfield.name = "level";
@@ -1884,7 +1884,7 @@ static void testGfx() {
     CHECK(same && importedPlayfield.name == "level" && importedPlayfield.pfAt(1) == 0x86 && importedPlayfield.rows[1].asymmetric && !importedPlayfield.rows[0].asymmetric);
   }
   basicText = exportBasic(secondPlayfield, ownProfile);  // a kernel of one's own copied as batari Basic: the standard kernel with what it needs
-  CHECK(basicText.find("  playfield:\n  .X...................X..........\n") != std::string::npos && basicText.find("pfcolors:") != std::string::npos);
+  CHECK(basicText.find("\tplayfield:\n\t.X...................X..........\n") != std::string::npos && basicText.find("pfcolors:") != std::string::npos);
   importedAsset = Asset();
   CHECK(importText(basicText, &importedAsset, &what) && importedAsset.playfields.size() == 1 && importedAsset.playfields[0].pixel(0, 5) && importedAsset.playfields[0].pixel(1, 33) &&
         importedAsset.playfields[0].pfAt(1) == 0x86);
@@ -1902,7 +1902,7 @@ static void testGfx() {
   multispritePlayfield.setPixel(1, 19, true);
   CHECK(!hasIssue(check(multispritePlayfield, multispriteProfile), Issue::Warning, "mirrored") && !hasIssue(check(multispritePlayfield, multispriteProfile), Issue::Warning, "columns"));
   basicText = exportBasic(multispritePlayfield, multispriteProfile);
-  CHECK(basicText.find("  playfield:\n  X...............\n  ...............X\nend\n  COLUPF = ") != std::string::npos);
+  CHECK(basicText.find("\tplayfield:\n\tX...............\n\t...............X\nend\n\tCOLUPF = ") != std::string::npos);
   importedAsset = Asset();
   CHECK(importText(basicText, &importedAsset, &what) && importedAsset.playfields.size() == 1 && importedAsset.playfields[0].pixel(0, 4) && importedAsset.playfields[0].pixel(0, 35) &&
         importedAsset.playfields[0].pixel(1, 20) && !importedAsset.playfields[0].rows[0].asymmetric);
@@ -1921,7 +1921,7 @@ static void testGfx() {
     multispritePlayfield.name = "level";
     art.playfields = {multispritePlayfield};
     std::string region = basicRegion("art.vcsgfx", art, 0, standardProfile);
-    CHECK(region.find("  rem vcsgfx art.vcsgfx walk frame 1\n") == 0 && region.find("  rem vcsgfx art.vcsgfx walk frame 2\n") != std::string::npos);
+    CHECK(region.find("\trem vcsgfx art.vcsgfx walk frame 1\n") == 0 && region.find("\trem vcsgfx art.vcsgfx walk frame 2\n") != std::string::npos);
     CHECK(region.find("%00011000") != std::string::npos);
     std::string program = " set kernel_options pfcolors\r\nmain\r\n  if a then goto two\r\n  rem vcsgfx art.vcsgfx walk frame 1\r\n  player0:\r\nold\r\nend\r\n"
                        "  rem vcsgfx end\r\n  goto draw\r\ntwo\r\n REM VCSGFX Art.vcsgfx walk frame 2\r\n rem vcsgfx end\r\n"
@@ -1931,9 +1931,9 @@ static void testGfx() {
     std::string updated = updateBasicRegions(program, "art.vcsgfx", art, standardProfile, &updatedCount, &problems);
     CHECK(updatedCount == 3 && problems.empty());
     CHECK(updated.find("old") == std::string::npos && updated.find("keep\r\n") != std::string::npos && updated.find("drawscreen\r\n") != std::string::npos);
-    CHECK(updated.find("  rem vcsgfx art.vcsgfx walk frame 1\r\n  rem walk, frame 1;") != std::string::npos);
-    CHECK(updated.find("  %00011000\r\nend\r\n") != std::string::npos);  // frame 2's top row, bottom first: last
-    CHECK(updated.find("  playfield:\r\n") != std::string::npos && updated.find("\n\n") == std::string::npos);
+    CHECK(updated.find("  rem vcsgfx art.vcsgfx walk frame 1\r\n\trem walk, frame 1;") != std::string::npos);  // the marker stays as the program wrote it
+    CHECK(updated.find("\t%00011000\r\nend\r\n") != std::string::npos);  // frame 2's top row, bottom first: last
+    CHECK(updated.find("\tplayfield:\r\n") != std::string::npos && updated.find("\n\n") == std::string::npos);
     // a second pass changes nothing
     CHECK(updateBasicRegions(updated, "art.vcsgfx", art, standardProfile, &updatedCount, &problems) == updated && updatedCount == 3);
     // problems: an unknown item, a frame too many, no end
@@ -2013,8 +2013,8 @@ static void testGfx() {
     CHECK(toJson(decodedAsset) == toJson(walkerAsset));
   }
   dasmText = exportDasm(walker);
-  CHECK(dasmText.find("walker_P0_FramePtrLo\n        .byte <walker_P0_Frame0,<walker_P0_Frame1,<walker_P0_Frame2\n") != std::string::npos);
-  CHECK(dasmText.find("walker_walk_FRAME\n        .byte 0,1,2,1\nwalker_walk_TICKS\n        .byte 8,4,8,4\n") != std::string::npos &&
+  CHECK(dasmText.find("walker_P0_FramePtrLo\n\t.byte <walker_P0_Frame0,<walker_P0_Frame1,<walker_P0_Frame2\n") != std::string::npos);
+  CHECK(dasmText.find("walker_walk_FRAME\n\t.byte 0,1,2,1\nwalker_walk_TICKS\n\t.byte 8,4,8,4\n") != std::string::npos &&
         dasmText.find("walker_idle_LOOP = 0") != std::string::npos && dasmText.find("walker_FRAMES = 3") != std::string::npos);
   importedAsset = Asset();
   CHECK(importText(dasmText, &importedAsset, &what) && importedAsset.sprites.size() == 1);
@@ -2031,15 +2031,15 @@ static void testGfx() {
   walker.animations[0].basicTimer = "y";
   walker.animations[0].basicStep = "z";
   basicText = exportBasicAnimation(walker, walker.animations[0], standardProfile);
-  CHECK(basicText.find("  dim walker_walk_t = y\n  dim walker_walk_s = z\n  data walker_walk_ticks\n  8, 4, 8, 4\nend\n") != std::string::npos);
-  CHECK(basicText.find("  on walker_walk_s goto walker_walk_f0 walker_walk_f1 walker_walk_f2 walker_walk_f1\n") != std::string::npos);
-  CHECK(basicText.find("\nwalker_walk_f2\n") != std::string::npos && basicText.find("  if walker_walk_s >= 4 then walker_walk_s = 0\n") != std::string::npos);
+  CHECK(basicText.find("\tdim walker_walk_t = y\n\tdim walker_walk_s = z\n\tdata walker_walk_ticks\n\t8, 4, 8, 4\nend\n") != std::string::npos);
+  CHECK(basicText.find("\ton walker_walk_s goto walker_walk_f0 walker_walk_f1 walker_walk_f2 walker_walk_f1\n") != std::string::npos);
+  CHECK(basicText.find("\nwalker_walk_f2\n") != std::string::npos && basicText.find("\tif walker_walk_s >= 4 then walker_walk_s = 0\n") != std::string::npos);
   CHECK(exportBasicAnimation(walker, walker.animations[1], standardProfile).find("then walker_idle_s = 1\n") != std::string::npos);
   {
     Asset walkerAsset;
     walkerAsset.sprites = {walker};
     std::string region = basicRegion("w.vcsgfx", walkerAsset, 0, standardProfile);
-    CHECK(region.find("  rem vcsgfx w.vcsgfx walker animation walk\n") == 0 && region.find("  rem vcsgfx w.vcsgfx walker animation idle\n") != std::string::npos);
+    CHECK(region.find("\trem vcsgfx w.vcsgfx walker animation walk\n") == 0 && region.find("\trem vcsgfx w.vcsgfx walker animation idle\n") != std::string::npos);
     int updatedCount = 0;
     std::vector<std::string> problems;
     std::string program = "  rem vcsgfx w.vcsgfx walker animation walk\n  rem vcsgfx end\n  rem vcsgfx w.vcsgfx walker animation run\n  rem vcsgfx end\n";

@@ -50,4 +50,33 @@ CNewline cNewline(const std::vector<std::string>& lines, int line, int column, I
 //       (the brace on a line of its own goes under the statement it belongs to).
 bool cBraceIndent(const std::vector<std::string>& lines, int line, char brace, std::string& indent);
 
+// Generated code (graphics and music exports) indented with tabs, as the templates: each line's
+// leading spaces become one tab per `unit` spaces. roundUp: a part of a unit is one tab more
+// (DASM: conditionals 2 spaces in, code 4 or 8 in, all one tab); otherwise the rest stays as
+// spaces (C: the " *" of a block comment).
+inline std::string indentWithTabs(const std::string& text, int unit, bool roundUp) {
+  std::string out;
+  out.reserve(text.size());
+  bool lineStart = true;
+  size_t spaces = 0;
+  for (char character : text) {
+    if (lineStart && character == ' ') {
+      spaces++;
+      continue;
+    }
+    if (lineStart) {
+      bool blank = character == '\n';
+      if (!blank && spaces) {
+        size_t tabs = spaces / unit, rest = spaces % unit;
+        if (roundUp && rest) tabs++, rest = 0;
+        out.append(tabs, '\t').append(rest, ' ');
+      }
+      lineStart = false, spaces = 0;
+    }
+    out += character;
+    if (character == '\n') lineStart = true;
+  }
+  return out;
+}
+
 }  // namespace vcs

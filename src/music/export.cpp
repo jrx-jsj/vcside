@@ -12,6 +12,7 @@
 #include <sstream>
 
 #include "../i18n.h"
+#include "../editor/indentation.h"
 #include "player.h"
 
 namespace vcs::music {
@@ -1112,7 +1113,7 @@ static ExportResult writeC(const Song& song, Builder& builder, std::map<std::tup
   }
   out << kCPlayer << "\n#endif\n";
   result.ok = true;
-  result.text = out.str();
+  result.text = indentWithTabs(out.str(), 4, false);  // tabs, as the templates (the " *" of comments stays)
   result.dataBytes = dataBytes;
   result.sounds = (int)builder.sounds.entries.size();
   result.envelopes = (int)builder.envelopes.entries.size();
@@ -1416,7 +1417,7 @@ ExportResult exportSong(const Song& song, double audioClock, const ExportOptions
     out << "  ENDIF  ; MUSIC_PART = 3\n";
   }
   result.ok = true;
-  result.text = out.str();
+  result.text = indentWithTabs(out.str(), 4, true);  // tabs, as the templates: conditionals and code one tab in
   result.dataBytes = dataBytes;
   result.sounds = (int)builder.sounds.entries.size();
   result.envelopes = (int)builder.envelopes.entries.size();
