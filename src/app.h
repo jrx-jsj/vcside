@@ -220,9 +220,11 @@ class App {
   ImFont* editorFont() const;
   bool quit_ = false, quitConfirm_ = false;
   bool closeProjectAfterConfirm_ = false;  // the "unsaved changes" dialog closes the project, not the window
+  std::string openAfterClose_;           // and then opens this project or folder
   bool active_ = true;
   int settingsSeen_ = 0;
   void doCloseProject();
+  bool leaveProject(const std::string& next);
   KnowledgeBase kb_;
   std::string kbError_;
   Toolchain tools_;

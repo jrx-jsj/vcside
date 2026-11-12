@@ -271,7 +271,10 @@ void App::openProject(const std::string& file) {
     output_ += error + "\n";
     return;
   }
-  saveUserState();  // the project this window leaves
+  std::error_code errorCode;
+  bool same = project_ && fs::weakly_canonical(project_->file, errorCode) == fs::weakly_canonical(file, errorCode);
+  if (same) saveUserState();  // the same project again (its .vcsproj just written): its files stay open
+  else if (!leaveProject(file)) return;  // unsaved changes: the dialog opens it after
   project_ = loadedProject;
   projectUnsaved_ = false;
   folder_ = loadedProject.dir;
@@ -298,8 +301,7 @@ void App::openProject(const std::string& file) {
 
 void App::openFolder(const std::string& dir) {
   if (hooks.raiseIfOpen && hooks.raiseIfOpen(fs::absolute(dir).string(), this)) return;
-  project_.reset();
-  projectUnsaved_ = false;
+  if (!leaveProject(dir)) return;
   folder_ = fs::absolute(dir).string();
   addRecent(folder_);
   SDL_SetWindowTitle(window_, ("VCSIDE - " + fs::path(folder_).filename().string()).c_str());
@@ -1667,10 +1669,22 @@ void App::showDoc(const std::string& word) {
 void App::closeProject() {
   for (auto& file : files_)
     if (file->dirty()) {
-      quitConfirm_ = true, closeProjectAfterConfirm_ = true;
+      quitConfirm_ = true, closeProjectAfterConfirm_ = true, openAfterClose_.clear();
       return;
     }
   doCloseProject();
+}
+
+// Before another project or folder: everything of this one goes. With unsaved changes, the
+// "Unsaved changes" dialog asks first and then opens `next` itself (false: not yet).
+bool App::leaveProject(const std::string& next) {
+  for (auto& file : files_)
+    if (file->dirty()) {
+      quitConfirm_ = true, closeProjectAfterConfirm_ = true, openAfterClose_ = next;
+      return false;
+    }
+  if (project_ || !folder_.empty() || !files_.empty()) doCloseProject();
+  return true;
 }
 
 void App::doCloseProject() {
@@ -1687,11 +1701,37 @@ void App::doCloseProject() {
   diskSymbols_.clear();
   diagnostics_.clear();
   treeToggled_.clear();
+  // what the last build, its space report and the scans left, and what still runs for it
+  job_.stop();
+  building_ = false;
+  runAfterBuild_ = 0;
+  spaceJob_.stop();
+  spaceRunning_ = false;
+  output_.clear();
+  lastStatus_.clear();
+  space_.reset();
+  elfSpace_.reset();
+  spaceNote_.clear();
+  addresses_ = AddressMap();
+  addressColumns_.clear();
+  liveSymbols_.clear();
+  liveValues_.clear();
+  liveReady_ = false;
+  breakpoints_.clear();
+  savedFiles_.clear();
+  savedActiveFile_.clear();
+  detected_.reset();
+  detectedFor_.clear();
+  buildCandidate_.reset();
+  showNoProject_ = false;
+  gitIgnored_.clear();
+  gitFolder_.clear();
   SDL_SetWindowTitle(window_, "VCSIDE");
 }
 
 void App::requestQuit() {
   closeProjectAfterConfirm_ = false;
+  openAfterClose_.clear();
   for (auto& file : files_)
     if (file->dirty()) {
       quitConfirm_ = true;
@@ -2702,16 +2742,19 @@ void App::closeDialogs() {
     quitConfirm_ = false;
     ImGui::TextUnformatted(T("Save changes before closing?"));
     auto done = [&] {
+      std::string next = std::move(openAfterClose_);
+      openAfterClose_.clear();
       if (closeProjectAfterConfirm_) doCloseProject();
       else quit_ = true;
       closeProjectAfterConfirm_ = false;
+      if (!next.empty()) openPath(next);  // the project or folder that asked to replace this one
       ImGui::CloseCurrentPopup();
     };
     if (theme::primaryButton(T("Save all"))) saveAll(), done();
     ImGui::SameLine();
     if (theme::dialogButton(T("Don't save"))) done();
     ImGui::SameLine();
-    if (theme::dialogButton(T("Cancel")) || theme::dialogEscape()) ImGui::CloseCurrentPopup();
+    if (theme::dialogButton(T("Cancel")) || theme::dialogEscape()) openAfterClose_.clear(), ImGui::CloseCurrentPopup();
     ImGui::EndPopup();
   }
 }
