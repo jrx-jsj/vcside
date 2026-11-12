@@ -1098,13 +1098,16 @@ bool TextEditor::render(const char* id, ImFont* font) {
   float fontSize = ImGui::GetFontSize();
   ImVec2 winPos = ImGui::GetWindowPos();
 
-  // indentation: tabs are a level each; spaces go by the smallest indentation in sight (2-8, else 4)
+  // indentation: tabs are a level each; spaces go by the file's own step (what the Tab key
+  // inserts: 8 in a DASM file whose conditionals sit 2 spaces in), or, in a file indented with
+  // tabs, by the smallest indentation in sight (2-8, else 4)
   std::vector<ImU32> indentColours;
   for (auto guideColour : theme::current().indent)
     if (guideColour & 0xFF) indentColours.push_back(theme::u32(guideColour));
   ImU32 indentGuide = (theme::colour(Role::EdIndentGuide) & 0xFF) ? col(Role::EdIndentGuide) : 0;
-  int spaceUnit = 0;
-  for (int row = firstRow; row <= lastRow; row++) {
+  IndentStyle fileIndent = indentStyle();
+  int spaceUnit = fileIndent.tabs ? 0 : fileIndent.width;
+  for (int row = firstRow; row <= lastRow && fileIndent.tabs; row++) {
     int lineIndex = lineAt_[row];
     int spaceCount = 0;
     while (spaceCount < (int)lines_[lineIndex].size() && lines_[lineIndex][spaceCount] == ' ') spaceCount++;

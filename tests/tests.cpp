@@ -1451,6 +1451,9 @@ static void testIndentation() {
   CHECK(detectIndentStyle({"int f()", "{", "  a();", "  if (x) {", "    b();", "  }", "}"}, tabs) == (IndentStyle{false, 2}));
   CHECK(detectIndentStyle({"main", "\tlda #1", "\tsta COLUBK"}, fourSpaces) == tabs);
   CHECK(detectIndentStyle({"int x;"}, fourSpaces) == fourSpaces);  // nothing indented: the fallback
+  // DASM with spaces: code 8 in, conditionals 2 in; the step is 8, not the smallest indentation
+  CHECK(detectIndentStyle({"  IF MUSIC", "Start", "        lda #1", "        sta AUDV0", "Loop", "        jmp Loop", "  ENDIF"}, tabs) ==
+        (IndentStyle{false, 8}));
   CHECK(detectIndentStyle({"/*", " * a comment", " */", "int x;"}, fourSpaces) == fourSpaces);
   bool inComment = false;
   CHECK(cCode("if (c == '{') { // {", inComment) == "if (c == '') { ");
