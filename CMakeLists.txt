@@ -75,6 +75,9 @@ if(APPLE)
   # HTTPS (NSURLSession) and the Keychain for the assistant's remote models
   list(APPEND VCSIDE_SOURCES ${CMAKE_SOURCE_DIR}/src/platform/apple_backends.mm)
   set_source_files_properties(${CMAKE_SOURCE_DIR}/src/platform/apple_backends.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")
+  # the folder panel with its New Folder button
+  list(APPEND VCSIDE_SOURCES ${CMAKE_SOURCE_DIR}/src/platform/folder_dialog_macos.mm)
+  set_source_files_properties(${CMAKE_SOURCE_DIR}/src/platform/folder_dialog_macos.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")
 elseif(WIN32)
   list(APPEND VCSIDE_ICON_SOURCES ${CMAKE_SOURCE_DIR}/assets/icon/vcside.rc)
 endif()

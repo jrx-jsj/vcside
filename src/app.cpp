@@ -15,6 +15,7 @@
 
 #include "about.h"
 #include "file_operations.h"
+#include "folder_dialog.h"
 #include "assistant/markdown_view.h"
 #include "doc_markdown.h"
 #include "file_icons.h"
@@ -1858,7 +1859,7 @@ MenuBar App::buildMenuBar(bool native) {
         static const SDL_DialogFileFilter filters[] = {{"VCSIDE project", "vcsproj"}, {"All files", "*"}};
         SDL_ShowOpenFileDialog(dialogCallback, new DialogCtx{this, "project"}, window_, filters, 2, nullptr, false);
       }),
-      item(T("Open folder..."), "", [this] { SDL_ShowOpenFolderDialog(dialogCallback, new DialogCtx{this, "folder"}, window_, nullptr, false); }),
+      item(T("Open folder..."), "", [this] { showFolderDialog(dialogCallback, new DialogCtx{this, "folder"}, window_, nullptr); }),
       sub(T("Recent projects"), recent, !recent.empty()),
       item(T("New window"), "Ctrl+Shift+N", [] { if (hooks.newWindow) hooks.newWindow(); }),
       item(T("New graphics..."), "", [this] {
@@ -2428,7 +2429,7 @@ void App::welcome() {
     SDL_ShowOpenFileDialog(dialogCallback, new DialogCtx{this, "project"}, window_, filters, 1, nullptr, false);
   }
   if (link(T("Open folder...")))
-    SDL_ShowOpenFolderDialog(dialogCallback, new DialogCtx{this, "folder"}, window_, nullptr, false);
+    showFolderDialog(dialogCallback, new DialogCtx{this, "folder"}, window_, nullptr);
 
   if (shown) {
     ImGui::Dummy(ImVec2(0, em(18)));
@@ -3465,10 +3466,10 @@ void App::newProjectDialog() {
     float target = ImGui::CalcTextSize((fs::path(npDir_) / npName_).string().c_str()).x;
     float width = std::max(labels + style.CellPadding.x * 2 + fields, target) + theme::em(16) * 2 + theme::em(8);
     width = std::min(std::max(width, theme::em(440)), ImGui::GetMainViewport()->WorkSize.x * 0.9f);
-    ImGui::SetNextWindowSizeConstraints(ImVec2(width, 0), ImVec2(FLT_MAX, FLT_MAX));
-    ImGui::SetNextWindowSize(ImVec2(width, 0), ImGuiCond_Appearing);
+    // the height fits the rows every frame (a language adds or removes some): never a scrollbar
+    ImGui::SetNextWindowSize(ImVec2(width, 0), ImGuiCond_Always);
   }
-  if (!theme::beginModal(title, nullptr)) return;
+  if (!theme::beginModal(title, nullptr, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse)) return;
   float em = ImGui::GetFontSize() / 15.0f;
   auto row = [&](const char* label) {
     ImGui::TableNextRow();
@@ -3488,7 +3489,7 @@ void App::newProjectDialog() {
     ImGui::InputText("##folder", &npDir_);
     ImGui::SameLine();
     if (theme::dialogButton(T("Choose...")))
-      SDL_ShowOpenFolderDialog(dialogCallback, new DialogCtx{this, "newdir"}, window_, npDir_.c_str(), false);
+      showFolderDialog(dialogCallback, new DialogCtx{this, "newdir"}, window_, npDir_.c_str());
     const char* langNames[std::size(kLangNames)];
     for (size_t i = 0; i < std::size(kLangNames); i++) langNames[i] = T(kLangNames[i]);
     row(T("Programming language"));
