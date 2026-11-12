@@ -80,6 +80,16 @@ Read for the design in `docs/design-music.md`; only facts are taken, in our own 
 - **PosObject** (dividing by 15 in a loop for the coarse position, then HMxx for the rest): the routine most 2600 programs use, as in the `dasm-animation` template; who wrote it first is still to be found.
 - **The frame's timing** with the RIOT timer (TIM64T and INTIM) for the vertical blank and overscan: the Stella Programmer's Guide and the 6532 datasheet. Measured in Gopher2600 in the three systems: 262, 262 and 312 lines, stable, on the title screen and in the game.
 
+## Project templates: DPC+ and CDFJ (2026-11-12)
+
+`data/templates/dasm-dpcplus-empty`, `dasm-dpcplus-game`, `dasm-cdfj-empty` and `dasm-cdfj-game` (CC0) are written for VCSIDE, with no other game's code; the games port `dasm-game` (above), whose techniques they keep. What they add and where it comes from:
+
+- **DPC+** by Darrell Spice Jr., Fred Quimby and Chris Walton (after David Crane's DPC for Pitfall II). The data fetchers (`DFxDATA`, windowed `DFxDATAW` with `DFxTOP`/`DFxBOT`, fractional `DFxFRACDATA` with `DFxFRACINC`), fast fetch (`FASTFETCH` = 0: `lda #n` with n < $28 reads register n) and `DFxWRITE` were read in batari Basic's CC0 `DPCplus.h` and its DPC+ kernel; the registers' addresses also in Stella's `CartDPCPlus.cxx`. The window rule (data at `buffer` to `buffer + height - 1` with `TOP = <(buffer - 1)`, `BOT = <(buffer + height)`) and the cycles of every kernel write were measured in Gopher2600.
+- **Music in another bank through trampolines**: the general technique of the banked skeleton (above); the DPC+ player is too big to share bank 5 with the game.
+- **Timing a line at a time** (`sta WSYNC`, the voices' sum to AUDV0, `bit TIMINT`): TIMINT's D7 stays set once the timer runs out, where a read of INTIM = 0 can be missed between two polls (6532 datasheet).
+- **CDFJ** (credited above, *CDFJ example*): the data streams pointed and stepped by the C code a byte per line or pass, values for the 6507 read in order through DSCOMM, the inputs and the collisions written with DSWRITE before CALLFN; as in the example, read in Stella 7.0's `CartCDF.cxx` and the framework's headers. The split (the ARM computes, the 6507 only draws) is the one SpiceWare's tutorial teaches.
+- Measured in Gopher2600 in NTSC, PAL60 and PAL: 262, 262 and 312 lines, stable on the title and through a simulated game; seen in Stella in NTSC and PAL. The CDFJ ROMs were tested with a CDFJ driver that VCSIDE does not carry.
+
 ## Project templates: the banked DASM skeleton (2026-11-12)
 
 `data/templates/dasm-banked` (CC0, F8, F6 and F4) is written for VCSIDE. What it uses and where it comes from:
