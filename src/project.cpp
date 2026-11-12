@@ -589,9 +589,11 @@ std::vector<std::pair<std::string, const char*>> Project::examples(Language lang
       if (format.empty() || std::find(entry.formats.begin(), entry.formats.end(), format) != entry.formats.end()) forFormat.push_back({entry.id, entry.name});
     return forFormat;
   }
-  if (language == Language::ElfC) return {{"animation", N_("Example: an animated sprite")}};
+  if (language == Language::ElfC) return {{"game", N_("VCSIDE The Game")}, {"animation", N_("Example: an animated sprite")}};
   if (language == Language::AceC)
-    return {{"animation", N_("Example: an animated sprite")}, {"vcslib", N_("Example: the ELF game on vcsLib (also builds as ELF)")}};
+    return {{"game", N_("VCSIDE The Game")},
+            {"animation", N_("Example: an animated sprite")},
+            {"vcslib", N_("Example: the ELF game on vcsLib (also builds as ELF)")}};
   return {};
 }
 
@@ -810,6 +812,8 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
     std::string visibleLines = std::to_string((tvIs50Hz(tvStandard) ? 312 : 262) - 63);
     // the vcsLib system type an ELF game gets in its ACE build: ST_NTSC_2600, ST_PAL_2600, ST_PAL60_2600
     std::string aceSystem = tvStandard == "PAL" ? "1" : tvStandard == "PAL60" ? "2" : "0";
+    // the TV system VCSIDE The Game's menu starts with, when the cartridge does not say
+    std::string menuSystem = tvStandard == "PAL" ? "SYSTEM_PAL" : tvStandard == "PAL60" ? "SYSTEM_PAL60" : "SYSTEM_NTSC";
     fs::path templateDir = fs::path(dataDir()) / "templates" / templateName;
     fs::path exampleDir = fs::path(dataDir()) / "templates" / (templateName + "-" + exampleName);
     if (!fs::exists(templateDir / "Makefile") || (!exampleName.empty() && !fs::exists(exampleDir / "src" / "main.c"))) {
@@ -817,7 +821,7 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
       return false;
     }
     const std::vector<std::pair<std::string, std::string>> substitutions = {
-        {"{{NAME}}", projName}, {"{{ACE_NAME}}", aceName}, {"{{VISIBLE_LINES}}", visibleLines}, {"{{ACE_SYSTEM}}", aceSystem}};
+        {"{{NAME}}", projName}, {"{{ACE_NAME}}", aceName}, {"{{VISIBLE_LINES}}", visibleLines}, {"{{ACE_SYSTEM}}", aceSystem}, {"{{MENU_SYSTEM}}", menuSystem}};
     std::vector<fs::path> from{templateDir};
     if (!exampleName.empty()) from.insert(from.begin(), exampleDir);  // the first copy of a file wins
     for (auto& sourceDir : from) {
