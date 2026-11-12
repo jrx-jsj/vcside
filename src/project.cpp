@@ -520,21 +520,56 @@ static bool copySharedFiles(const fs::path& templateDir, const fs::path& project
 // VCSIDE.md: the project's notes for the assistant (kernel rules, where things live, how it
 // builds, what not to touch), the example's own or else the template's, with the name in it.
 // C templates are copied whole, so theirs comes with the rest.
-static void copyProjectNotes(const std::vector<fs::path>& from, const fs::path& projectDir, const std::string& projName) {
+static void copyProjectNotes(const std::vector<fs::path>& from, const fs::path& projectDir, const std::string& projName,
+                             const std::vector<std::pair<std::string, std::string>>& substitutions = {}) {
   fs::path destination = projectDir / "VCSIDE.md";
   if (fs::exists(destination)) return;
   for (const fs::path& dir : from) {
     std::string text = readFile((dir / "VCSIDE.md").string());
     if (text.empty()) continue;
     replaceAll(text, "{{NAME}}", projName);
+    for (auto& [search, replacement] : substitutions) replaceAll(text, search, replacement);
     std::ofstream(destination, std::ios::binary) << text;
     return;
   }
 }
 
-std::vector<std::pair<std::string, const char*>> Project::examples(Language language) {
-  if (language == Language::Dasm) return {{"game", N_("Example: a small game with a title menu")}, {"animation", N_("Example: an animated sprite")}, {"dpcplus", N_("Example: music on a DPC+ cartridge")},
-            {"cdfj", N_("Example: C and music on a CDFJ cartridge")}};
+// The cartridge each DASM example is made for.
+static std::string dasmExampleFormat(const std::string& example) {
+  return example == "dpcplus" ? "DPC+" : example == "cdfj" ? "CDFJ" : "4K";
+}
+
+// Banks of 4K and the first hotspot (bank 0's) of the banked DASM template's formats.
+struct BankedFormat {
+  const char* id;
+  int banks;
+  const char* hotspot;
+};
+static const BankedFormat kBankedFormats[] = {{"F8", 2, "$FFF8"}, {"F6", 4, "$FFF6"}, {"F4", 8, "$FFF4"}};
+
+// batari Basic's set romsize for each format (2k does not hold the template and its music).
+static const std::pair<const char*, const char*> kBasicRomSizes[] = {{"4K", "4k"}, {"F8", "8k"}, {"F6", "16k"}, {"F4", "32k"}};
+
+std::vector<std::string> Project::cartridgeFormats(Language language) {
+  if (language == Language::Dasm) return {"2K", "4K", "F8", "F6", "F4", "DPC+", "CDFJ"};
+  if (language == Language::BatariBasic) return {"4K", "F8", "F6", "F4"};
+  return {};
+}
+
+bool Project::hasEmptyTemplate(Language language, const std::string& format) {
+  return !(language == Language::Dasm && (format == "DPC+" || format == "CDFJ"));
+}
+
+std::vector<std::pair<std::string, const char*>> Project::examples(Language language, const std::string& format) {
+  if (language == Language::Dasm) {
+    std::vector<std::pair<std::string, const char*>> all = {{"game", N_("Example: a small game with a title menu")}, {"animation", N_("Example: an animated sprite")},
+                                                            {"dpcplus", N_("Example: music on a DPC+ cartridge")}, {"cdfj", N_("Example: C and music on a CDFJ cartridge")}};
+    if (format.empty()) return all;
+    std::vector<std::pair<std::string, const char*>> forFormat;
+    for (auto& entry : all)
+      if (dasmExampleFormat(entry.first) == format) forFormat.push_back(entry);
+    return forFormat;
+  }
   if (language == Language::ElfC) return {{"animation", N_("Example: an animated sprite")}};
   if (language == Language::AceC)
     return {{"animation", N_("Example: an animated sprite")}, {"vcslib", N_("Example: the ELF game on vcsLib (also builds as ELF)")}};
@@ -586,7 +621,7 @@ static void writeMusicIncludes(const fs::path& dir, const std::string& tvStandar
 }
 
 bool Project::create(const std::string& dirIn, const std::string& projName, Language projectLanguage, const std::string& tvStandard,
-                     Project* result, std::string* error, const std::string& example) {
+                     Project* result, std::string* error, const std::string& example, const std::string& format) {
   fs::path folder(dirIn);
   std::error_code errorCode;
   fs::create_directories(folder, errorCode);
@@ -605,9 +640,30 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
     if (error) *error = F("{0} already exists.", {newProject.file});
     return false;
   }
+  const auto formats = cartridgeFormats(projectLanguage);
+  if (!format.empty() && !formats.empty() && std::find(formats.begin(), formats.end(), format) == formats.end()) {
+    if (error) *error = F("There is no template for a {0} cartridge.", {format});
+    return false;
+  }
   if (projectLanguage == Language::Dasm) {
+    // the cartridge: the example's own, or the chosen one (4K if none)
+    const std::string cartridge = !example.empty() ? dasmExampleFormat(example) : format.empty() ? "4K" : format;
+    if (!format.empty() && format != cartridge) {
+      if (error) *error = F("That example is made for a {0} cartridge.", {cartridge});
+      return false;
+    }
+    if (example.empty() && !hasEmptyTemplate(projectLanguage, cartridge)) {
+      if (error) *error = F("A {0} cartridge starts from its example.", {cartridge});
+      return false;
+    }
+    const BankedFormat* banked = nullptr;
+    for (auto& candidate : kBankedFormats)
+      if (cartridge == candidate.id) banked = &candidate;
     fs::path templateDir = fs::path(dataDir()) / "templates" / "dasm";
-    fs::path exampleDir = example.empty() ? templateDir : fs::path(dataDir()) / "templates" / ("dasm-" + example);
+    fs::path exampleDir = !example.empty() ? fs::path(dataDir()) / "templates" / ("dasm-" + example)
+                          : banked        ? fs::path(dataDir()) / "templates" / "dasm-banked"
+                                          : templateDir;
+    newProject.format = cartridge;
     std::string asmText = readFile((exampleDir / "main.asm").string());
     if (asmText.empty()) {
       if (error) *error = F("Template not found in {0}", {exampleDir.string()});
@@ -635,6 +691,14 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
              lines50 + "\n        ELSE\n" + lines60 + "\n        ENDIF";
       tvText = cdfj ? "NTSC timing, or PAL with make DASMFLAGS=-DPAL=1" : "NTSC timing, or PAL assembled with -DPAL=1";
     }
+    // the cartridge: the empty templates' size and banks
+    const std::vector<std::pair<std::string, std::string>> cartridgeText = {
+        {"{{FORMAT}}", cartridge},
+        {"{{ROM_START}}", cartridge == "2K" ? "$F800" : "$F000"},
+        {"{{ROM_BYTES}}", std::to_string(banked ? banked->banks * 4096 : cartridge == "2K" ? 2048 : 4096)},
+        {"{{BANKS}}", banked ? std::to_string(banked->banks) : "1"},
+        {"{{HOTSPOT}}", banked ? banked->hotspot : ""}};
+    for (auto& [search, replacement] : cartridgeText) replaceAll(asmText, search, replacement);
     replaceAll(asmText, "{{NAME}}", projName);
     replaceAll(asmText, "{{TV}} timing", tvText);
     replaceAll(asmText, "{{TVDEFS}}", defs);
@@ -661,20 +725,22 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
         std::ofstream(target, std::ios::binary) << text;
       }
       newProject.buildCommand = "make";
-      newProject.format = "CDFJ";
     }
-    if (!dpcDriver.empty()) {
-      if (!fs::exists(fs::path(newProject.dir) / "DPCplus.arm")) fs::copy_file(dpcDriver, fs::path(newProject.dir) / "DPCplus.arm", errorCode);
-      newProject.format = "DPC+";
-    }
+    if (!dpcDriver.empty() && !fs::exists(fs::path(newProject.dir) / "DPCplus.arm"))
+      fs::copy_file(dpcDriver, fs::path(newProject.dir) / "DPCplus.arm", errorCode);
     writeGfxIncludes(newProject.dir, false);
     writeMusicIncludes(newProject.dir, tvStandard);
-    copyProjectNotes({exampleDir, templateDir}, newProject.dir, projName);
+    copyProjectNotes({exampleDir, templateDir}, newProject.dir, projName, cartridgeText);
     newProject.main = "main.asm";
   } else if (projectLanguage == Language::BatariBasic) {
     newProject.main = "main.bas";
     newProject.output = "main.bas.bin";
-    newProject.format = "AUTO";  // the game says it (set romsize, set kernel); Stella and Gopher2600 detect it
+    // the cartridge: set romsize in the game, and the same format in the project
+    // (none chosen: AUTO, the emulators detect it)
+    newProject.format = format.empty() ? "AUTO" : format;
+    std::string romSize = "4k";
+    for (auto& [formatId, size] : kBasicRomSizes)
+      if (newProject.format == formatId) romSize = size;
     fs::path templateDir = fs::path(dataDir()) / "templates" / "bb" / "main.bas";
     std::string text = readFile(templateDir.string());
     if (text.empty()) {
@@ -682,14 +748,16 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
       return false;
     }
     replaceAll(text, "{{NAME}}", projName);
+    replaceAll(text, "  set romsize 4k\n", "  set romsize " + romSize + "\n");
     // batari Basic times the frame for NTSC unless told otherwise (PAL60 keeps NTSC timing)
-    if (tvIs50Hz(tvStandard)) replaceAll(text, "  set romsize 4k\n", "  set romsize 4k\n  set tv pal\n");
+    if (tvIs50Hz(tvStandard)) replaceAll(text, "  set romsize " + romSize + "\n", "  set romsize " + romSize + "\n  set tv pal\n");
     fs::path mainFile = fs::path(newProject.dir) / "main.bas";
     if (!fs::exists(mainFile)) std::ofstream(mainFile, std::ios::binary) << text;
     // its music (shared.json), and the player and tables it includes
     if (!copySharedFiles(templateDir.parent_path(), newProject.dir, {}, error)) return false;
     writeMusicIncludes(newProject.dir, tvStandard);
-    copyProjectNotes({templateDir.parent_path()}, newProject.dir, projName);
+    copyProjectNotes({templateDir.parent_path()}, newProject.dir, projName,
+                     {{"{{FORMAT}}", newProject.format}, {"{{ROMSIZE}}", romSize}});
   } else if (isC(projectLanguage)) {
     bool ace = projectLanguage == Language::AceC;
     if (projName.find_first_of(" \t") != std::string::npos) {

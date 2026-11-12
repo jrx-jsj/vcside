@@ -332,6 +332,7 @@ class App {
   std::string npDir_;
   int npLang_ = 0, npExample_ = 0;
   std::string npTvId_ = "NTSC";  // 0 = empty, then Project::examples()
+  std::string npFormat_ = "4K";                // DASM and batari Basic: the cartridge (formats.json id)
   std::string npElfCartridge_ = "chameleon";  // ELF: the cartridge, and its sizes in KB
   int npFlashKb_ = 128, npRamKb_ = 36;
 

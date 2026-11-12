@@ -3433,7 +3433,20 @@ void App::newProjectDialog() {
   }
   char title[64];
   snprintf(title, sizeof title, "%s###newproject", T("New project..."));
-  auto examples = Project::examples(languageFromId(kLangIds[npLang_]));
+  const Language npLanguage = languageFromId(kLangIds[npLang_]);
+  // DASM and batari Basic: the cartridge, and the templates made for it ("" is the empty one)
+  const auto formats = Project::cartridgeFormats(npLanguage);
+  if (!formats.empty() && std::find(formats.begin(), formats.end(), npFormat_) == formats.end()) npFormat_ = "4K";
+  auto examples = Project::examples(npLanguage, formats.empty() ? "" : npFormat_);
+  std::vector<std::string> startIds;
+  std::vector<const char*> startNames;
+  if (Project::hasEmptyTemplate(npLanguage, npFormat_) || formats.empty()) startIds.push_back(""), startNames.push_back(T("Empty project"));
+  for (auto& exampleEntry : examples) startIds.push_back(exampleEntry.first), startNames.push_back(T(exampleEntry.second));
+  auto formatLabel = [](const std::string& format) {  // the size, for the banked ones
+    for (auto [id, size] : {std::pair{"F8", "8K"}, {"F6", "16K"}, {"F4", "32K"}, {"DPC+", "32K"}, {"CDFJ", "32K"}})
+      if (format == id) return format + " (" + size + ")";
+    return format;
+  };
   {
     // wide enough for its longest label and value (the folder grows as it is typed): never squeezed
     const ImGuiStyle& style = ImGui::GetStyle();
@@ -3444,7 +3457,8 @@ void App::newProjectDialog() {
     for (const char* name : kLangNames) value(T(name));
     for (auto& tv : tvStandardsFor(languageFromId(kLangIds[npLang_]))) value(tvLabel(tv) + "  " + F("(not in {0})", {"Gopher2600"}));
     value(T("Empty project"));
-    for (auto& exampleEntry : examples) value(T(exampleEntry.second));
+    for (auto& exampleEntry : Project::examples(npLanguage)) value(T(exampleEntry.second));
+    for (auto& format : formats) value(formatLabel(format));
     float chooseWidth = ImGui::CalcTextSize(T("Choose...")).x + theme::em(14) * 2 + style.ItemSpacing.x;
     float folder = ImGui::CalcTextSize(npDir_.c_str()).x + style.FramePadding.x * 2 + chooseWidth;
     float fields = std::max(values + style.FramePadding.x * 2 + ImGui::GetFrameHeight(), folder);
@@ -3522,12 +3536,20 @@ void App::newProjectDialog() {
       ImGui::InputInt("##ram", &npRamKb_, 0);
       npRamKb_ = std::clamp(npRamKb_, 1, 65536);
     }
-    npExample_ = std::clamp(npExample_, 0, (int)examples.size());
-    if (!examples.empty()) {
-      std::vector<const char*> names = {T("Empty project")};
-      for (auto& exampleEntry : examples) names.push_back(T(exampleEntry.second));
+    if (!formats.empty()) {
+      row(T("Cartridge"));
+      if (ImGui::BeginCombo("##format", formatLabel(npFormat_).c_str())) {
+        for (auto& format : formats)
+          if (ImGui::Selectable(formatLabel(format).c_str(), format == npFormat_) && format != npFormat_) npFormat_ = format, npExample_ = 0;
+        ImGui::EndCombo();
+      }
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s", T("The ROM's size and bank switching. The template's code is written for it: the project settings can change the format later, not the code."));
+    }
+    npExample_ = std::clamp(npExample_, 0, (int)startIds.size() - 1);
+    if (startIds.size() > 1) {
       row(T("Start from"));
-      ImGui::Combo("##example", &npExample_, names.data(), (int)names.size());
+      ImGui::Combo("##example", &npExample_, startNames.data(), (int)startNames.size());
     }
     ImGui::EndTable();
   }
@@ -3539,8 +3561,8 @@ void App::newProjectDialog() {
   if (theme::primaryButton(T("Create"))) {
     Project created;
     error.clear();
-    std::string example = npExample_ > 0 && npExample_ <= (int)examples.size() ? examples[npExample_ - 1].first : "";
-    bool made = Project::create(target.string(), npName_, languageFromId(kLangIds[npLang_]), npTvId_, &created, &error, example);
+    std::string example = startIds[npExample_];
+    bool made = Project::create(target.string(), npName_, npLanguage, npTvId_, &created, &error, example, formats.empty() ? "" : npFormat_);
     if (made && created.language == Language::ElfC) {  // the cartridge; its own sizes are left unset
       created.elfCartridge = npElfCartridge_;
       created.elfFlashKb = npFlashKb_ == defaultElfFlashKb(npElfCartridge_) ? 0 : npFlashKb_;

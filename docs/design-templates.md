@@ -1,6 +1,6 @@
 # Project templates: one set for every language and cartridge
 
-Status: approved (2026-11-11); in progress. Done: phase 3's DASM 4K game (`data/templates/dasm-game`, with two enemies and English texts). What exists today is in [design.md](design.md) (each language's template) and [design-ace.md](design-ace.md#the-ace-template-datatemplatesace-cc0-phase-3); how templates share files (`data/templates/shared`, `shared.json`) is in [design.md](design.md).
+Status: approved (2026-11-11); in progress. Done: phase 3's DASM 4K game (`data/templates/dasm-game`, with two enemies and English texts); *New project* chooses the cartridge for DASM (2K, 4K, F8, F6, F4, DPC+, CDFJ) and batari Basic (4K, F8, F6, F4), with an empty banked DASM template (`data/templates/dasm-banked`) for F8, F6 and F4. What exists today is in [design.md](design.md) (each language's template) and [design-ace.md](design-ace.md#the-ace-template-datatemplatesace-cc0-phase-3); how templates share files (`data/templates/shared`, `shared.json`) is in [design.md](design.md).
 
 ## Goal
 
@@ -81,7 +81,7 @@ Each new template is created and built by `vcside_tests` (NTSC, PAL and, where i
 
 - Menu texts in English only, or bilingual like Mists of Aldar (English by default, a LANGUAGE row)?
 - Two or three enemies? Three need flicker or bands in the 4K kernel.
-- The banked DASM variant: F8 only (with notes for F6/F4), or a choice of size?
+- ~~The banked DASM variant: F8 only, or a choice of size?~~ A choice: *New project* has a Cartridge row (F8, F6 and F4 share one template, with 2, 4 or 8 banks).
 - batari Basic's showcase: the DPC+ kernel, or none?
 - ELF's showcase: keep today's rainbow, or something that shows the ARM's speed (bus stuffing, many sprites)?
 

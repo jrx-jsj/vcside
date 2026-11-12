@@ -81,11 +81,18 @@ struct Project {
   static bool detect(const std::string& directory, Project* result);
 
   // Creates a new project folder with a template for the language.
-  // example: "" for the empty template, or one of examples(language).
+  // example: "" for the empty template, or one of examples(language, format).
+  // format: the cartridge, one of cartridgeFormats(language) ("": 4K, or the example's own).
   static bool create(const std::string& directory, const std::string& projectName, Language projectLanguage, const std::string& tvStandard,
-                     Project* result, std::string* error, const std::string& example = "");
-  // Examples a new project can start from: id and name (for people, to translate).
-  static std::vector<std::pair<std::string, const char*>> examples(Language language);
+                     Project* result, std::string* error, const std::string& example = "", const std::string& format = "");
+  // Examples a new project can start from: id and name (for people, to translate). With a
+  // format, only the ones made for that cartridge.
+  static std::vector<std::pair<std::string, const char*>> examples(Language language, const std::string& format = "");
+  // The cartridges a new DASM or batari Basic project can start on, as formats.json ids
+  // (the ones with a template that builds), and whether there is an empty template for one
+  // (DPC+ and CDFJ only come as their examples). Empty for C: ELF and ACE choose otherwise.
+  static std::vector<std::string> cartridgeFormats(Language language);
+  static bool hasEmptyTemplate(Language language, const std::string& format);
 };
 
 // TV standards a project can choose, and whether an emulator has each one.

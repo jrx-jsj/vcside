@@ -80,6 +80,15 @@ Read for the design in `docs/design-music.md`; only facts are taken, in our own 
 - **PosObject** (dividing by 15 in a loop for the coarse position, then HMxx for the rest): the routine most 2600 programs use, as in the `dasm-animation` template; who wrote it first is still to be found.
 - **The frame's timing** with the RIOT timer (TIM64T and INTIM) for the vertical blank and overscan: the Stella Programmer's Guide and the 6532 datasheet. Measured in Gopher2600 in the three systems: 262, 262 and 312 lines, stable, on the title screen and in the game.
 
+## Project templates: the banked DASM skeleton (2026-11-12)
+
+`data/templates/dasm-banked` (CC0, F8, F6 and F4) is written for VCSIDE. What it uses and where it comes from:
+
+- **The hotspots** ($1FF8-$1FF9 for F8, $1FF6-$1FF9 for F6, $1FF4-$1FFB for F4; any access switches): the knowledge base's `formats.json`, with its sources (`horton`, `stella-src`, `gopher-src`).
+- **Starting in any bank**: the same code at the end of every bank (the vectors point to a switch to bank 0 and a jump to `Reset`), since the bank the console starts in is not fixed; a general technique of banked 2600 games, with no single author.
+- **Calling another bank through a trampoline at the same address in both banks** (the switch, then the next instruction fetched from the other bank): a general technique of banked games since Atari's own F8 cartridges; the addresses and the check that each bank's code ends before it are VCSIDE's. Built and run in Stella in NTSC and PAL.
+- **batari Basic's `set romsize`, `bank` and `goto ... bankN`**: batari Basic's manual and its `samples` (`64kbb.bas`).
+
 ## Main errors fixed
 
 1. **WSYNC at cycle 75**: the note said the wait was "very short"; in fact the wait still ends at the start of the next line (the stall is less than a cycle) and only a write at cycle 0 waits a full line.

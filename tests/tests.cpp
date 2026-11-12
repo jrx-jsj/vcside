@@ -1008,6 +1008,38 @@ static void testElfSpace() {
   // the DASM example: its graphics, the tables they give, and a program that assembles
   CHECK(Project::examples(Language::Dasm).size() == 4 && Project::examples(Language::Dasm)[0].first == "game" &&
         Project::examples(Language::BatariBasic).empty());
+  // the cartridge of a new project: the examples made for it, and an empty template that
+  // assembles to its size (2K and 4K, and F8, F6 and F4 with their banks)
+  CHECK(Project::cartridgeFormats(Language::Dasm) == std::vector<std::string>({"2K", "4K", "F8", "F6", "F4", "DPC+", "CDFJ"}));
+  CHECK(Project::cartridgeFormats(Language::BatariBasic) == std::vector<std::string>({"4K", "F8", "F6", "F4"}));
+  CHECK(Project::cartridgeFormats(Language::ElfC).empty());
+  CHECK(Project::examples(Language::Dasm, "4K").size() == 2 && Project::examples(Language::Dasm, "F8").empty() &&
+        Project::examples(Language::Dasm, "CDFJ").size() == 1 && !Project::hasEmptyTemplate(Language::Dasm, "DPC+"));
+  CHECK(!Project::create((dir / "game-f8").string(), "g", Language::Dasm, "NTSC", &project, &error, "game", "F8") && !error.empty());
+  CHECK(!Project::create((dir / "empty-dpc").string(), "g", Language::Dasm, "NTSC", &project, &error, "", "DPC+"));
+  CHECK(!Project::create((dir / "bb-2k").string(), "g", Language::BatariBasic, "NTSC", &project, &error, "", "2K"));
+  for (auto [format, bytes] : {std::pair{"2K", 2048}, {"4K", 4096}, {"F8", 8192}, {"F6", 16384}, {"F4", 32768}}) {
+    fs::path cartDir = dir / (std::string("cart-") + format);
+    CHECK(Project::create(cartDir.string(), "c", Language::Dasm, "PAL", &project, &error, "", format));
+    CHECK(project.format == format);
+    std::ifstream sourceFile(cartDir / "main.asm"), notesFile(cartDir / "VCSIDE.md");
+    std::string sourceText((std::istreambuf_iterator<char>(sourceFile)), {}), notesText((std::istreambuf_iterator<char>(notesFile)), {});
+    CHECK(sourceText.find("{{") == std::string::npos && notesText.find("{{") == std::string::npos);
+    CHECK(notesText.find(std::to_string(bytes) + " bytes") != std::string::npos);
+    std::string dasm = findInPath("dasm");
+    if (!dasm.empty()) {
+      std::string command = "cd \"" + cartDir.string() + "\" && \"" + dasm + "\" main.asm -f3 -oc.bin > dasm.log 2>&1";
+      CHECK(std::system(command.c_str()) == 0 && fs::file_size(cartDir / "c.bin", errorCode) == (uintmax_t)bytes);
+    }
+  }
+  for (auto [format, romSize] : {std::pair{"4K", "4k"}, {"F8", "8k"}, {"F6", "16k"}, {"F4", "32k"}}) {
+    fs::path cartDir = dir / (std::string("bbcart-") + format);
+    CHECK(Project::create(cartDir.string(), "c", Language::BatariBasic, "PAL", &project, &error, "", format));
+    std::ifstream basFile(cartDir / "main.bas"), notesFile(cartDir / "VCSIDE.md");
+    std::string basText((std::istreambuf_iterator<char>(basFile)), {}), notesText((std::istreambuf_iterator<char>(notesFile)), {});
+    CHECK(project.format == format && basText.find(std::string("  set romsize ") + romSize + "\n  set tv pal\n") != std::string::npos);
+    CHECK(notesText.find(std::string("set romsize ") + romSize) != std::string::npos && notesText.find("{{") == std::string::npos);
+  }
   // the DASM game: the shared graphics and song, the menu's first TV system from the
   // project's standard, and a 4K program that assembles
   for (const char* tvStandard : {"NTSC", "PAL", "PAL60", "AUTO"}) {
