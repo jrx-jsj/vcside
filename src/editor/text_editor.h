@@ -85,9 +85,9 @@ class TextEditor {
   struct Separator {
     std::string label;
     bool bank = false;    // a new bank (blue, thicker) rather than a new page (red)
-    bool inside = false;  // the page starts inside this line (an instruction or data that crosses it): a frame round it
+    bool inside = false;  // the page starts inside this line (an instruction or data that crosses it): an arrow to it
   };
-  // By line (0-based): a rule above it, or a frame round it when inside.
+  // By line (0-based): a rule above it, or an arrow to it when inside.
   void setSeparators(std::multimap<int, Separator> separators) { separators_ = std::move(separators); }
 
   // Draws the editor filling the available region. Returns true if the text changed.

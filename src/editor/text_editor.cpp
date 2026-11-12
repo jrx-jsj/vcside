@@ -1211,7 +1211,7 @@ bool TextEditor::render(const char* id, ImFont* font) {
   }
 
   // separators: a rule above the line with its label at the right, or (a page that starts inside
-  // a line, such as an instruction or a table that crosses it) a frame around that line, pointed at
+  // a line, such as an instruction or a table that crosses it) a label with an arrow to that line
   for (int row = firstRow; row <= lastRow; row++) {
     int lineIndex = lineAt_[row];
     auto [first, last] = separators_.equal_range(lineIndex);
@@ -1225,21 +1225,13 @@ bool TextEditor::render(const char* id, ImFont* font) {
       float pad = charW_ * 0.6f, round = lineH_ * 0.2f;
       int endCols = visualCol(lineIndex, (int)lines_[lineIndex].size());
       if (separator->second.inside) {
-        const std::string& text = lines_[lineIndex];
-        size_t firstChar = text.find_first_not_of(" \t");
-        size_t codeEnd = text.find(';');  // the frame goes round the code, not its comment
-        if (codeEnd == std::string::npos) codeEnd = text.size();
-        while (codeEnd > 0 && (text[codeEnd - 1] == ' ' || text[codeEnd - 1] == '\t')) codeEnd--;
-        if (firstChar == std::string::npos || firstChar >= codeEnd) firstChar = 0, codeEnd = text.size();
-        float boxLeft = textX + visualCol(lineIndex, (int)firstChar) * charW_ - charW_ * 0.4f;
-        float boxRight = textX + visualCol(lineIndex, (int)codeEnd) * charW_ + charW_ * 0.4f;
+        float arrowTip = textX + endCols * charW_ + charW_ * 0.5f;  // the end of the line: no stroke through its code or comment
         float middle = y + lineH_ * 0.5f;
-        drawList->AddRect(ImVec2(boxLeft, y + 1), ImVec2(boxRight, y + lineH_ - 1), ruleColour, round, 0, thickness);
-        // the label right of the line, with a pointer to the frame
+        // the label right of the line, with an arrow to it
         float labelX = textX + (endCols + 4) * charW_;
-        drawList->AddLine(ImVec2(boxRight, middle), ImVec2(labelX - pad, middle), ruleColour, thickness);
-        drawList->AddTriangleFilled(ImVec2(boxRight, middle), ImVec2(boxRight + charW_ * 0.6f, middle - lineH_ * 0.2f),
-                                    ImVec2(boxRight + charW_ * 0.6f, middle + lineH_ * 0.2f), ruleColour);
+        drawList->AddLine(ImVec2(arrowTip, middle), ImVec2(labelX - pad, middle), ruleColour, thickness);
+        drawList->AddTriangleFilled(ImVec2(arrowTip, middle), ImVec2(arrowTip + charW_ * 0.6f, middle - lineH_ * 0.2f),
+                                    ImVec2(arrowTip + charW_ * 0.6f, middle + lineH_ * 0.2f), ruleColour);
         drawList->AddRectFilled(ImVec2(labelX - pad, middle - lineH_ * 0.45f), ImVec2(labelX + labelWidth + pad, middle + lineH_ * 0.45f), col(Role::EdBackground), round);
         drawList->AddRect(ImVec2(labelX - pad, middle - lineH_ * 0.45f), ImVec2(labelX + labelWidth + pad, middle + lineH_ * 0.45f), ruleColour, round, 0, 1.0f);
         drawList->AddText(font, fontSize * 0.9f, ImVec2(labelX, middle - lineH_ * 0.42f), ruleColour, label.c_str());
