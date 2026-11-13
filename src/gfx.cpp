@@ -1245,6 +1245,7 @@ struct Marker {
   bool is = false, end = false;
   std::string file, item, animation;
   int frame = -1;
+  int asPlayer = -1;  // "as player2": the sprite drawn by another player (the same art for several)
 };
 static Marker marker(const std::string& line) {
   Marker result;
@@ -1259,6 +1260,9 @@ static Marker marker(const std::string& line) {
   if (words.empty()) return result;
   result.file = words[0];
   size_t wordCount = words.size();
+  if (wordCount >= 4 && lowered(words[wordCount - 2]) == "as" && lowered(words[wordCount - 1]).rfind("player", 0) == 0 &&
+      words[wordCount - 1].size() > 6 && std::isdigit((unsigned char)words[wordCount - 1][6]))
+    result.asPlayer = std::atoi(words[wordCount - 1].c_str() + 6), wordCount -= 2;
   if (wordCount >= 3 && lowered(words[wordCount - 2]) == "frame") result.frame = std::atoi(words[wordCount - 1].c_str()) - 1, wordCount -= 2;
   for (size_t i = 2; i < wordCount; i++)
     if (lowered(words[i]) == "animation") {
@@ -1271,10 +1275,17 @@ static Marker marker(const std::string& line) {
 }
 
 static std::string regionBody(const Asset& asset, const std::string& item, int frame, const std::string& animation, const Profile& profile,
-                              bool* found) {
+                              bool* found, int asPlayer = -1) {
   *found = true;
-  for (auto& sprite : asset.sprites)
-    if (sprite.name == item) {
+  for (auto& original : asset.sprites)
+    if (original.name == item) {
+      // "as playerN": a sprite of one player drawn by player N instead
+      Sprite sprite = original;
+      int players = 0;
+      for (auto& layer : sprite.layers) players += isPlayer(layer.obj);
+      if (asPlayer >= 0 && asPlayer <= 16 && players == 1)
+        for (auto& layer : sprite.layers)
+          if (isPlayer(layer.obj)) layer.obj = playerObj(asPlayer);
       if (animation.empty()) return exportBasic(sprite, profile, frame);
       for (auto& candidate : sprite.animations)
         if (candidate.name == animation) return exportBasicAnimation(sprite, candidate, profile);
@@ -1340,7 +1351,7 @@ std::string updateBasicRegions(const std::string& source, const std::string& fil
       continue;
     }
     bool found;
-    std::string body = regionBody(asset, region.item, region.frame, region.animation, profile, &found);
+    std::string body = regionBody(asset, region.item, region.frame, region.animation, profile, &found, region.asPlayer);
     if (!found) {
       if (problems)
         problems->push_back(region.animation.empty() || foundSprite == asset.sprites.end()

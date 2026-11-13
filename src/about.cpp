@@ -59,6 +59,7 @@ AboutInfo aboutInfo(const KnowledgeBase& kb, Toolchain& tools) {
       {"stella", {"7.0", "GPL-2.0-or-later"}},
       {"gopher2600", {"0.56.1, nightly 07d8de5", "GPL-3.0"}},
       {"bb", {"1.9", "GPL-2.0; generated assembly CC0"}},
+      {"bb-pxe", {"1.9 PXE beta 42", "GPL-2.0; generated assembly CC0"}},
       {"wasmtime", {"41.0.0", "Apache-2.0 WITH LLVM-exception"}},
       {"arm-gcc", {"GCC 16.2.0", "GPL-3.0 with the GCC runtime exception"}},
   };

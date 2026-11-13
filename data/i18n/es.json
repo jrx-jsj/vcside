@@ -209,7 +209,6 @@
     "C for a CDFJ cartridge": "C para un cartucho CDFJ",
     "C for an ELF cartridge": "C para un cartucho ELF",
     "C for ELF (vcsLib)": "C para ELF (vcsLib)",
-    "C, CDFJ and DPC+ export are for songs played as samples; a TIA song is exported for DASM or batari Basic.": "Las exportaciones C, CDFJ y DPC+ son para canciones tocadas con muestras; una canción del TIA se exporta para DASM o batari Basic.",
     "Cancel": "Cancelar",
     "Cannot copy {0} to {1}: {2}": "No se puede copiar {0} en {1}: {2}",
     "Cannot create {0}: {1}": "No se puede crear {0}: {1}",
@@ -1269,7 +1268,16 @@
     "A column played on the TIA's channel 1, which the voices leave free: its instruments play as TIA instruments (AUDC, AUDF and AUDV once per frame), tuned as in a TIA song. A sound effect on the TIA's channel 1 takes it while it sounds.": "Una columna que suena en el canal 1 de la TIA, que las voces dejan libre: sus instrumentos suenan como instrumentos de la TIA (AUDC, AUDF y AUDV una vez por fotograma), afinados como en una canción de la TIA. Un efecto de sonido en el canal 1 de la TIA la ocupa mientras suena.",
     "DPC+ does not play the TIA track yet: it is left out.": "DPC+ todavía no toca la pista de la TIA: se queda fuera.",
     "{0} different sounds on the TIA track: the player takes 250": "{0} sonidos distintos en la pista de la TIA: el reproductor admite 250",
-    "pattern \"{0}\", TIA track, row {1}: not a cell": "patrón \"{0}\", pista de la TIA, fila {1}: no es una celda"
+    "pattern \"{0}\", TIA track, row {1}: not a cell": "patrón \"{0}\", pista de la TIA, fila {1}: no es una celda",
+    "pxe.c needs the Arm GNU toolchain (arm-none-eabi-gcc): install it or set its path in Settings > Tools.": "pxe.c necesita la toolchain GNU de Arm (arm-none-eabi-gcc): instálala o pon su ruta en Ajustes > Herramientas.",
+    "Cannot rename {0}: {1}": "No se puede renombrar {0}: {1}",
+    "C (ELF, or batari Basic's PXE kernel)": "C (ELF, o el kernel PXE de batari Basic)",
+    "music.h, with every song of this folder. Calls: music_init once, music_play with a song (MUSIC_SONG_x), music_stop, music_frame once per frame, music_effect with an effect; then music_audio[c] holds AUDC, AUDF and AUDV of channel c.": "music.h, con todas las canciones de esta carpeta. Llamadas: music_init una vez, music_play con una canción (MUSIC_SONG_x), music_stop, music_frame una vez por cuadro, music_effect con un efecto; después music_audio[c] tiene AUDC, AUDF y AUDV del canal c.",
+    "Left out: songs played together are all played as samples or all on the TIA.": "Se queda fuera: las canciones que van juntas se tocan todas con muestras o todas en el TIA.",
+    "CDFJ and DPC+ export are for songs played as samples; a TIA song is exported for DASM, batari Basic or C.": "Las exportaciones CDFJ y DPC+ son para canciones tocadas con muestras; una canción del TIA se exporta para DASM, batari Basic o C.",
+    "{0} (the Chameleon Cart image) has a kernel of its own: pxe.c is not in it.": "{0} (la imagen para el Chameleon Cart) lleva un kernel propio: pxe.c no está en ella.",
+    "The PXE beta of batari Basic not found. Unpack it into the bb-pxe folder of VCSIDE's tools folder or set its path in Settings > Tools.": "No se encuentra la beta PXE de batari Basic. Descomprímela en la carpeta bb-pxe de la carpeta de herramientas de VCSIDE o pon su ruta en Ajustes > Herramientas.",
+    "PXE projects build with the PXE beta of batari Basic (ZackAttack's), whose kernel runs programs that 1.9's does not. Unpack its release (bB-1.9-PXE-beta-...-wasm) into the bb-pxe folder of VCSIDE's tools folder, or choose its 2600basic.sh (2600bas.bat on Windows). It needs wasmtime too.": "Los proyectos PXE se compilan con la beta PXE de batari Basic (la de ZackAttack), cuyo kernel ejecuta programas que el de la 1.9 no. Descomprime su release (bB-1.9-PXE-beta-...-wasm) en la carpeta bb-pxe de la carpeta de herramientas de VCSIDE, o elige su 2600basic.sh (2600bas.bat en Windows). También necesita wasmtime."
   },
   "total": 1171
 }

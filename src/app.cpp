@@ -587,6 +587,9 @@ void App::build(int thenRun) {
     return;
   }
   output_.clear();
+  earlierOutput_.clear();
+  earlierDiagnostics_.clear();
+  linkingPxe_ = false;
   diagnostics_.clear();
   space_.reset();
   elfSpace_.reset();
@@ -605,21 +608,58 @@ void App::build(int thenRun) {
 
 void App::pollBuild() {
   if (!building_) return;
-  output_ = job_.output();
+  output_ = earlierOutput_ + job_.output();
   if (job_.running()) return;
   building_ = false;
-  output_ = job_.output();
+  const std::string jobOutput = job_.output();
+  output_ = earlierOutput_ + jobOutput;
+  const bool linking = linkingPxe_;
+  linkingPxe_ = false;
   bool gcc = project_ && (isC(project_->language) || !project_->buildCommand.empty());
   bool basic = project_ && project_->language == Language::BatariBasic && project_->buildCommand.empty();
   // the first line repeats the command ("> make ..."): only what it printed is parsed
-  std::string printed = output_.rfind("> ", 0) == 0 && output_.find('\n') != std::string::npos ? output_.substr(output_.find('\n') + 1) : output_;
-  if (basic) diagnostics_ = parseBasicOutput(printed, project_->main, readFile(project_->basicOutput(".asm")));
-  else diagnostics_ = gcc ? parseGccOutput(printed) : parseDasmOutput(printed);
+  std::string printed = jobOutput.rfind("> ", 0) == 0 && jobOutput.find('\n') != std::string::npos ? jobOutput.substr(jobOutput.find('\n') + 1) : jobOutput;
+  if (linking) {
+    diagnostics_ = earlierDiagnostics_;
+    auto linkDiagnostics = parseGccOutput(printed);
+    diagnostics_.insert(diagnostics_.end(), linkDiagnostics.begin(), linkDiagnostics.end());
+  } else if (basic) {
+    diagnostics_ = parseBasicOutput(printed, project_->main, readFile(project_->basicOutput(".asm")));
+  } else {
+    diagnostics_ = gcc ? parseGccOutput(printed) : parseDasmOutput(printed);
+  }
   if (gcc) {
     auto dasmDiagnostics = parseDasmOutput(printed);
     diagnostics_.insert(diagnostics_.end(), dasmDiagnostics.begin(), dasmDiagnostics.end());
   }
   bool ok = job_.exitCode() == 0;
+  if (linking) {
+    // the linked ELF takes the place of the one batari Basic wrote
+    std::error_code errorCode;
+    if (ok) fs::rename(project_->basicOutput(".linked"), project_->basicOutput(".bin"), errorCode);
+    if (ok && errorCode) output_ += F("Cannot rename {0}: {1}", {project_->basicOutput(".linked"), errorCode.message()}) + "\n";
+    ok = ok && !errorCode;
+    // the PXE beta also writes a Chameleon Cart image, from the program and a kernel of its own
+    if (ok && fs::exists(project_->basicOutput("-cc.elf"), errorCode))
+      output_ += F("{0} (the Chameleon Cart image) has a kernel of its own: pxe.c is not in it.", {fs::path(project_->basicOutput("-cc.elf")).filename().string()}) + "\n";
+  } else if (basic && ok && !project_->pxeSource().empty() && fs::exists(project_->basicOutput(".bin")) &&
+             std::none_of(diagnostics_.begin(), diagnostics_.end(), [](auto& diagnostic) { return diagnostic.severity == Diagnostic::Error; })) {
+    // the PXE kernel's ELF is there: pxe.c goes into it, as a second step of the build
+    std::string error;
+    auto linkArgs = project_->pxeLinkArgs(tools_, &error);
+    if (linkArgs.empty()) {
+      diagnostics_.push_back({Diagnostic::Error, project_->pxeSource(), 0, error});
+      ok = false;
+    } else {
+      earlierOutput_ = output_;
+      earlierDiagnostics_ = diagnostics_;
+      linkingPxe_ = building_ = true;
+      job_.start(linkArgs, fs::path(project_->pxeSource()).parent_path().string());
+      return;
+    }
+  }
+  earlierOutput_.clear();
+  earlierDiagnostics_.clear();
   // batari Basic's script ends with 0 even when it fails: the ROM and no errors tell
   if (basic) ok = ok && finishBasicBuild();
   std::string message = F(ok ? "Build succeeded (exit {0})" : "Build failed (exit {0})", {std::to_string(job_.exitCode())});

@@ -1023,6 +1023,31 @@ static void testElfSpace() {
     CHECK(project.format == "ELF" && program.find("set kernel PXE") != std::string::npos &&
           program.find("romsize") == std::string::npos && program.find("set tv") == std::string::npos);
   }
+  // PXE's game: pxe.c plays the TIA music from C, the second enemy is drawn "as player2",
+  // and the project builds with the PXE beta of batari Basic, then links pxe.c
+  {
+    CHECK(Project::examples(Language::BatariBasic, "PXE").size() == 2 && Project::examples(Language::BatariBasic, "PXE")[0].first == "game");
+    fs::path gameDir = dir / "pxe-game";
+    CHECK(Project::create(gameDir.string(), "g", Language::BatariBasic, "NTSC", &project, &error, "game", "PXE"));
+    std::ifstream programFile(gameDir / "main.bas"), musicFile(gameDir / "music.h");
+    const std::string program((std::istreambuf_iterator<char>(programFile)), std::istreambuf_iterator<char>());
+    const std::string music((std::istreambuf_iterator<char>(musicFile)), std::istreambuf_iterator<char>());
+    CHECK(fs::exists(gameDir / "pxe.c") && music.find("#define MUSIC_TIA 1") != std::string::npos && music.find("music_audio") != std::string::npos);
+    CHECK(program.find("set kernel PXE") != std::string::npos && program.find("player2:") != std::string::npos &&
+          program.find("player2color:") != std::string::npos && program.find("{{") == std::string::npos);
+    CHECK(project.pxe() && project.basicTool() == "bb-pxe" && !project.pxeSource().empty());
+    project.toolPaths["bb"] = "/somewhere/2600basic.sh";  // a batari Basic of one's own is used for PXE too
+    CHECK(project.basicTool() == "bb");
+    Toolchain pxeTools;
+    bool listed = false;
+    for (auto& tool : pxeTools.tools()) listed = listed || tool.id == "bb-pxe";
+    CHECK(listed);
+    std::string gcc = findInPath("arm-none-eabi-gcc");
+    if (!gcc.empty()) {  // pxe.c and the exported player compile for the cartridge's ARM
+      std::string command = "cd \"" + gameDir.string() + "\" && \"" + gcc + "\" -mcpu=cortex-m0 -mthumb -O2 -std=c11 -Wall -Werror -ffreestanding -c pxe.c -o pxe.o";
+      CHECK(std::system(command.c_str()) == 0);
+    }
+  }
   CHECK(Project::cartridgeFormats(Language::ElfC).empty());
   CHECK(Project::examples(Language::Dasm, "4K").size() == 3 && Project::examples(Language::Dasm, "F8").size() == 2 &&
         Project::examples(Language::Dasm, "2K").size() == 1 && Project::examples(Language::Dasm, "DPC+").size() == 2 &&
@@ -2072,6 +2097,12 @@ static void testGfx() {
     problems.clear();
     std::string bad = "  rem vcsgfx art.vcsgfx nobody\n  rem vcsgfx end\n  rem vcsgfx art.vcsgfx walk frame 3\n  rem vcsgfx end\n  rem vcsgfx art.vcsgfx walk\nx\n";
     CHECK(updateBasicRegions(bad, "art.vcsgfx", art, standardProfile, &updatedCount, &problems) == bad && updatedCount == 0 && problems.size() == 3);
+    // "as player2": the sprite drawn by another player (PXE and multisprite's enemies)
+    problems.clear();
+    std::string asOther = "  rem vcsgfx art.vcsgfx walk frame 2 as player2\n  rem vcsgfx end\n";
+    std::string drawnAsOther = updateBasicRegions(asOther, "art.vcsgfx", art, multispriteProfile, &updatedCount, &problems);
+    CHECK(updatedCount == 1 && problems.empty() && drawnAsOther.find("player2:") != std::string::npos &&
+          drawnAsOther.find("player0:") == std::string::npos && drawnAsOther.find("%00011000") != std::string::npos);
   }
   CHECK(!importText("lda #1\n", &importedAsset, &what) && what.empty());
   // another playfield editor's export: a "; mode:" header, then one .byte line per row
@@ -3568,8 +3599,10 @@ static void testSampleExport() {
   FrameRegisters zapRegisters = zapPlayer.nextFrame();
   CHECK(zapRegisters.tiaVolume == 14 && !zapRegisters.sounding[0] && !zapRegisters.sounding[1] && !zapRegisters.sounding[2]);
   song.effects.clear();
-  // TIA songs go to DASM or batari Basic, samples to C
-  CHECK(!exportSong(song, ntsc, {}).ok && !exportSong(blankSong(), ntsc, {ExportTarget::C, "", "NTSC"}).ok);
+  // samples go to C; TIA songs to DASM, batari Basic, or C (a TIA player)
+  CHECK(!exportSong(song, ntsc, {}).ok);
+  ExportResult tiaC = exportSong(blankSong(), ntsc, {ExportTarget::C, "", "NTSC"});
+  CHECK(tiaC.ok && tiaC.text.find("#define MUSIC_TIA 1") != std::string::npos && tiaC.text.find("music_audio") != std::string::npos);
   ExportResult c = exportSong(song, ntsc, {ExportTarget::C, "", "NTSC"});
   CHECK(c.ok && c.text.find("#define MUSIC_VOICES 3") != std::string::npos && c.text.find("CC0") != std::string::npos);
 

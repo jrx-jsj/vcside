@@ -68,6 +68,16 @@ struct Project {
   // batari Basic writes <main>.bin, .asm, .list.txt (.lst before 1.9) and .symbol.txt (.sym)
   // next to the source; these are the paths.
   std::string basicOutput(const std::string& suffix) const { return abs(main) + suffix; }
+  // batari Basic's PXE kernel (format ELF) with a pxe.c in the project's folder: that C is
+  // compiled and linked into the ELF batari Basic wrote, at <main>.bas.linked; it wraps
+  // vcsEndOverblank, which the kernel calls once per frame (see the PXE template).
+  // Empty when the project has none.
+  std::string pxeSource() const;
+  // batari Basic's PXE kernel (format ELF): built with the PXE beta (tool "bb-pxe"), unless
+  // the project names a batari Basic of its own
+  bool pxe() const { return language == Language::BatariBasic && format == "ELF" && buildCommand.empty(); }
+  std::string basicTool() const { return pxe() && !toolPaths.count("bb") ? "bb-pxe" : "bb"; }
+  std::vector<std::string> pxeLinkArgs(Toolchain& toolchain, std::string* error) const;
   std::vector<std::string> runArgs(Toolchain& toolchain, bool debug, std::string* error) const;
 
   // The tool this project uses: its own path if it has one and it exists, else the one

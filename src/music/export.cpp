@@ -912,6 +912,192 @@ voices:
 }
 )PLAYER";
 
+// The C player for TIA songs (an ELF game, or batari Basic's PXE kernel): the same rules as
+// the 6502 player, a register set per channel and frame. CC0 like the others.
+static const char* kCTiaPlayer = R"PLAYER(
+/* ---------------------------------------------------------------------------
+ * VCSIDE music player in C for TIA songs: each channel's AUDC, AUDF and AUDV, once
+ * per frame. Dedicated to the public domain under CC0 1.0: use it in any game, with
+ * no licence or credit needed.
+ *
+ *   music_init();         once, at power on: song 0 from its start
+ *   music_play(MUSIC_SONG_x);   a song from its start (sound effects that play go on)
+ *   music_stop();         the song lets its notes go and stops
+ *   music_effect(n);      a sound effect (MUSIC_EFFECT_x) on its channel: the song's
+ *                         notes there wait until it has ended
+ *   music_frame();        once per frame; then music_audio[c][0], [1] and [2] are
+ *                         AUDCc, AUDFc and AUDVc for channel c, for the game to write
+ * ------------------------------------------------------------------------- */
+
+typedef struct {
+    uint16_t volume;        /* the envelope or the release, in music_volume_data */
+    uint8_t volume_index;
+    uint8_t pitch_index;    /* bit 7: a sound effect has the channel */
+    uint16_t pitch;         /* the sound's AUDC and AUDF steps, in music_pitch_data */
+    uint8_t state;          /* bit 7 sounding, bit 6 released, bits 0-5 the release */
+} music_voice;
+
+static music_voice music_voices[MUSIC_CHANNELS];
+static uint8_t music_order, music_row, music_wait;   /* music_order 0xFF: stopped */
+static uint16_t music_pointer;                       /* the next row, in music_patterns */
+uint8_t music_audio[MUSIC_CHANNELS][3];              /* AUDC, AUDF and AUDV of each channel */
+
+static void music_start(music_voice *voice, int sound)
+{
+    voice->pitch = music_sound_pitch[sound];
+    voice->state = (uint8_t)(music_sound_release[sound] | 0x80);
+    voice->volume = music_envelope_offset[music_sound_envelope[sound]];
+    voice->volume_index = 0;
+    voice->pitch_index = 0;
+}
+
+static void music_note_off(music_voice *voice)
+{
+    if (!(voice->state & 0x80) || (voice->state & 0x40)) return;
+    voice->state |= 0x40;
+    voice->volume = music_release_offset[voice->state & 0x3F];
+    voice->volume_index = 0;
+}
+
+/* The order list holds every song one after another, each one closed by an entry of
+ * 0 rows whose offset is the entry it loops to (itself: it stops). */
+void music_play(int song)
+{
+    music_order = music_song_start[song];
+    music_row = music_wait = 0;
+    music_pointer = music_order_offset[music_order];
+    for (int i = 0; i < MUSIC_CHANNELS; i++)
+        if (!(music_voices[i].pitch_index & 0x80)) music_voices[i].state = 0;   /* a sound effect keeps its channel */
+}
+
+/* On the next frame the notes are let go, as at a song's end. */
+void music_stop(void)
+{
+    music_order = MUSIC_ORDER_LENGTH - 1;
+    music_wait = 0;
+}
+
+void music_init(void)
+{
+    for (int i = 0; i < MUSIC_CHANNELS; i++) {
+        music_voices[i].state = 0;
+        music_voices[i].pitch_index = 0;
+        music_audio[i][0] = music_audio[i][1] = music_audio[i][2] = 0;
+    }
+    music_play(0);
+}
+
+void music_effect(int effect)
+{
+    music_voice *voice = &music_voices[music_effect_channel[effect]];
+    music_start(voice, music_effect_sound[effect]);
+    voice->pitch_index = 0x80;
+}
+
+/* A row's event for a channel, from music_patterns[at]; returns where the next one is. */
+static int music_event(music_voice *voice, int at)
+{
+    int code = music_patterns[at++], argument = 0;
+    if (code >= 2 && code <= 4) argument = music_patterns[at++];
+    if (voice->pitch_index & 0x80) return at;          /* a sound effect has the channel */
+    if (code >= 6) {
+        music_start(voice, code - 6);
+    } else if (code == 1) {
+        music_note_off(voice);
+    } else if (code == 2) {
+        if (!(voice->state & 0x40)) voice->volume = music_envelope_offset[argument];
+    } else if (code == 3 || code == 4) {
+        voice->state = (uint8_t)((voice->state & 0xC0) | argument);
+        if (code == 4) music_note_off(voice);
+    } else if (code == 5) {
+        voice->state = 0;
+    }
+    return at;
+}
+
+static void music_play_row(void)
+{
+    int at = music_pointer;
+    for (int i = 0; i < MUSIC_CHANNELS; i++) at = music_event(&music_voices[i], at);
+    music_pointer = (uint16_t)at;
+#if MUSIC_PATTERN_SPEEDS
+    music_wait = (music_row & 1) ? music_order_swing[music_order] : music_order_speed[music_order];
+#else
+    music_wait = (MUSIC_SWING > 0 && (music_row & 1)) ? MUSIC_SWING : MUSIC_SPEED;
+#endif
+    if (++music_row >= music_order_rows[music_order]) {
+        music_row = 0;
+        music_order++;
+        if (!music_order_rows[music_order]) music_order = (uint8_t)music_order_offset[music_order];  /* the song's end: its loop, or itself */
+        if (music_order_rows[music_order]) music_pointer = music_order_offset[music_order];
+    }
+}
+
+/* This frame's volume of a channel, from its envelope or its release; -1: it is silent
+ * (it was not sounding, or it stops now), and the channel is the song's again. */
+static int music_volume_step(music_voice *voice)
+{
+    if (!(voice->state & 0x80)) {
+        voice->pitch_index = 0;
+        return -1;
+    }
+    const uint8_t *volume = music_volume_data + voice->volume;
+    int index = voice->volume_index;
+    if (index >= volume[0]) {
+        if (voice->state & 0x40) goto stop;             /* the release is over */
+        if (volume[1] != 0xFF) {
+            index = volume[1];                          /* the loop */
+        } else {
+            if (volume[0] == 0) goto stop;
+            index = volume[0] - 1;                      /* the last value stays... */
+            if (volume[2 + index] == 0) goto stop;      /* ...unless it is 0: the note is over */
+        }
+    }
+    voice->volume_index = (uint8_t)(index + 1);
+    return volume[2 + index];
+stop:
+    voice->state = 0;
+    voice->pitch_index = 0;
+    return -1;
+}
+
+/* A channel's AUDC, AUDF and AUDV for this frame. */
+static void music_channel_frame(int channel)
+{
+    music_voice *voice = &music_voices[channel];
+    uint8_t *audio = music_audio[channel];
+    int value = music_volume_step(voice);
+    if (value < 0) {
+        audio[2] = 0;
+        return;
+    }
+    const uint8_t *pitch = music_pitch_data + voice->pitch;
+    int length = pitch[0] & 0x7F, step = voice->pitch_index & 0x7F;
+    if (step != length - 1) voice->pitch_index++;
+    audio[0] = pitch[1 + 2 * step];
+    audio[1] = pitch[2 + 2 * step];
+    audio[2] = (uint8_t)((pitch[0] & 0x80) ? 0 : value);   /* no allowed AUDC reaches the note */
+}
+
+void music_frame(void)
+{
+    if (music_order != 0xFF) {
+        if (music_wait == 0) {
+            if (!music_order_rows[music_order]) {       /* the song is over: what sounds is released */
+                for (int i = 0; i < MUSIC_CHANNELS; i++)
+                    if (!(music_voices[i].pitch_index & 0x80)) music_note_off(&music_voices[i]);
+                music_order = 0xFF;
+                goto channels;
+            }
+            music_play_row();
+        }
+        music_wait--;
+    }
+channels:
+    for (int i = 0; i < MUSIC_CHANNELS; i++) music_channel_frame(i);
+}
+)PLAYER";
+
 bool exportTargetOf(const std::string& name, ExportTarget* target) {
   static const std::pair<const char*, ExportTarget> names[] = {
       {"dasm", ExportTarget::Dasm}, {"bb", ExportTarget::BatariBasic}, {"c", ExportTarget::C}, {"dpc", ExportTarget::DpcPlus}, {"cdfj", ExportTarget::Cdfj}};
@@ -1330,6 +1516,105 @@ static ExportResult writeC(const Combined& combined, Builder& builder, const Exp
   return result;
 }
 
+// C for TIA songs: the 6502 player's data, as C tables, and kCTiaPlayer.
+static ExportResult writeCTia(const Combined& combined, Builder& builder, const ExportOptions& options, ExportResult& result) {
+  std::ostringstream out;
+  int dataBytes = 0;
+  const int channels = combined.channels;
+  const auto& effects = combined.effects;
+  out << "/* Music for the Atari 2600 in C, made with VCSIDE's music editor: every song of this\n";
+  out << " * folder, with one player, for an ELF game or batari Basic's PXE kernel. Generated from\n";
+  out << " * the .vcsmusic files: change those, not this. Tuned for " << options.tv << ". Include it\n";
+  out << " * once, in the C file that calls the player. The songs, for music_play:\n" << songList(combined, " *") << " */\n";
+  out << "#ifndef MUSIC_H_INCLUDED\n#define MUSIC_H_INCLUDED\n#include <stdint.h>\n\n";
+  out << "#define MUSIC_TIA 1  /* a TIA song: music_audio holds each channel's registers */\n";
+  out << "#define MUSIC_CHANNELS " << channels << "\n";
+  out << "#define MUSIC_SPEED " << std::clamp(combined.speed, 1, 255) << "\n";
+  out << "#define MUSIC_SWING " << std::clamp(combined.swing, 0, 255) << "\n";
+  out << "#define MUSIC_PATTERN_SPEEDS " << (combined.patternSpeeds ? 1 : 0) << "  /* patterns with speeds of their own */\n";
+  out << "#define MUSIC_ORDER_LENGTH " << combined.order.size() << "  /* every song's entries and the one that closes it */\n";
+  out << "#define MUSIC_SONGS " << combined.songs.size() << "\n";
+  for (size_t index = 0; index < combined.songs.size(); index++) out << "#define " << combined.songSymbols[index] << " " << index << "\n";
+  for (size_t index = 0; index < effects.size(); index++) out << "#define " << effects[index].first << " " << index << "\n";
+  out << "#define MUSIC_EFFECTS " << effects.size() << "\n";
+  std::vector<long long> patternBytes, orderOffset, orderRows, songStart;
+  std::map<std::pair<int, int>, int> patternAt;
+  for (auto& [song, patternIndex] : combined.patterns()) {
+    patternAt[{song, patternIndex}] = (int)patternBytes.size();
+    for (int byte : combined.patternBytes(song, patternIndex)) patternBytes.push_back(byte);
+  }
+  for (auto& entry : combined.order) {
+    bool valid = !entry.closing() && patternAt.count({entry.song, entry.pattern}) > 0;
+    orderOffset.push_back(entry.closing() ? entry.loopTo : valid ? patternAt[{entry.song, entry.pattern}] : 0);
+    orderRows.push_back(entry.rows);
+  }
+  for (int start : combined.songStart) songStart.push_back(start);
+  if (patternBytes.size() > 65535) {
+    result.problems.push_back(T("The songs are too long for the C player (more than 64 KB of patterns)."));
+    return result;
+  }
+  if (patternBytes.empty()) patternBytes.push_back(0);
+  out << "\nstatic const uint8_t music_patterns[] = {\n" << cList(patternBytes) << "};\n";
+  out << "static const uint16_t music_order_offset[] = {\n" << cList(orderOffset) << "};\n";
+  out << "static const uint8_t music_order_rows[] = {\n" << cList(orderRows) << "};\n";
+  out << "static const uint8_t music_song_start[] = {\n" << cList(songStart) << "};\n";
+  if (combined.patternSpeeds) {
+    std::vector<long long> evenFrames, oddFrames;
+    for (auto& entry : combined.order) evenFrames.push_back(entry.even), oddFrames.push_back(entry.odd);
+    out << "static const uint8_t music_order_speed[] = {\n" << cList(evenFrames) << "};\n";
+    out << "static const uint8_t music_order_swing[] = {\n" << cList(oddFrames) << "};\n";
+    dataBytes += (int)combined.order.size() * 2;
+  }
+  dataBytes += (int)patternBytes.size() + (int)combined.order.size() * 3 + (int)songStart.size();
+  std::vector<long long> volumeData, envelopeOffset, releaseOffset;
+  for (auto& [values, loop] : builder.envelopes.entries) {
+    envelopeOffset.push_back((long long)volumeData.size());
+    volumeData.push_back((long long)values.size()), volumeData.push_back(loop >= 0 ? loop : 0xff);
+    volumeData.insert(volumeData.end(), values.begin(), values.end());
+  }
+  for (auto& values : builder.releases.entries) {
+    releaseOffset.push_back((long long)volumeData.size());
+    volumeData.push_back((long long)values.size()), volumeData.push_back(0xff);
+    volumeData.insert(volumeData.end(), values.begin(), values.end());
+  }
+  for (auto* list : {&volumeData, &envelopeOffset, &releaseOffset})
+    if (list->empty()) list->push_back(0);
+  out << "static const uint8_t music_volume_data[] = {\n" << cList(volumeData) << "};\n";
+  out << "static const uint16_t music_envelope_offset[] = {\n" << cList(envelopeOffset) << "};\n";
+  out << "static const uint16_t music_release_offset[] = {\n" << cList(releaseOffset) << "};\n";
+  dataBytes += (int)volumeData.size() + (int)(envelopeOffset.size() + releaseOffset.size()) * 2;
+  // pitches: the length (+ 0x80 silent), then AUDC and AUDF for each frame
+  std::vector<long long> pitchData, pitchAt;
+  for (auto& entry : builder.pitches.entries) {
+    pitchAt.push_back((long long)pitchData.size());
+    pitchData.insert(pitchData.end(), entry.begin(), entry.end());
+  }
+  if (pitchData.empty()) pitchData = {1, 0, 0}, pitchAt.push_back(0);
+  out << "static const uint8_t music_pitch_data[] = {\n" << cList(pitchData) << "};\n";
+  dataBytes += (int)pitchData.size();
+  std::vector<long long> soundEnvelope, soundRelease, soundPitch, effectSound, effectChannel;
+  for (auto& [envelopeIndex, pitchIndex, releaseIndex] : builder.sounds.entries)
+    soundEnvelope.push_back(envelopeIndex), soundRelease.push_back(releaseIndex), soundPitch.push_back(pitchAt[pitchIndex]);
+  for (auto& effect : effects) effectSound.push_back(effect.second.first), effectChannel.push_back(effect.second.second);
+  for (auto* list : {&soundEnvelope, &soundRelease, &soundPitch, &effectSound, &effectChannel})
+    if (list->empty()) list->push_back(0);
+  out << "static const uint8_t music_sound_envelope[] = {\n" << cList(soundEnvelope) << "};\n";
+  out << "static const uint8_t music_sound_release[] = {\n" << cList(soundRelease) << "};\n";
+  out << "static const uint16_t music_sound_pitch[] = {\n" << cList(soundPitch) << "};\n";
+  out << "static const uint8_t music_effect_sound[] = {\n" << cList(effectSound) << "};\n";
+  out << "static const uint8_t music_effect_channel[] = {\n" << cList(effectChannel) << "};\n";
+  dataBytes += (int)builder.sounds.entries.size() * 4 + (int)effects.size() * 2;
+  out << kCTiaPlayer << "\n#endif\n";
+  result.ok = true;
+  result.text = indentWithTabs(out.str(), 4, false);
+  result.dataBytes = dataBytes;
+  result.sounds = (int)builder.sounds.entries.size();
+  result.envelopes = (int)builder.envelopes.entries.size();
+  result.releases = (int)builder.releases.entries.size();
+  result.pitches = (int)builder.pitches.entries.size();
+  return result;
+}
+
 std::string songSymbol(const std::string& name) {
   std::string symbol = effectSymbol(name);
   return "MUSIC_SONG_" + symbol.substr(13);
@@ -1479,9 +1764,14 @@ ExportResult exportSongs(const std::vector<NamedSong>& songs, double audioClock,
       result.problems.push_back(prefix + T("The song has no instruments or no order list."));
       continue;
     }
-    if (samplesTarget != song.samples()) {
+    // C takes either kind; the songs of a folder are all of the first one's
+    if (options.target == ExportTarget::C && !combined.songs.empty() && song.samples() != combined.songs[0].song->samples()) {
+      result.problems.push_back(prefix + T("Left out: songs played together are all played as samples or all on the TIA."));
+      continue;
+    }
+    if (options.target != ExportTarget::C && samplesTarget != song.samples()) {
       result.problems.push_back(prefix + (song.samples() ? T("A song played as samples is exported as C (ELF or CDFJ) or for DPC+.")
-                                                         : T("C, CDFJ and DPC+ export are for songs played as samples; a TIA song is exported for DASM or batari Basic.")));
+                                                         : T("CDFJ and DPC+ export are for songs played as samples; a TIA song is exported for DASM, batari Basic or C.")));
       continue;
     }
     if (!combined.songs.empty() && (song.channelCount() != combined.channels || (song.samples() && song.gain != combined.gain))) {
@@ -1531,6 +1821,7 @@ ExportResult exportSongs(const std::vector<NamedSong>& songs, double audioClock,
       result.problems.push_back(F("{0} waveforms at {1} volumes do not fit in DPC+'s 128 waveform slots", {std::to_string(waves), std::to_string(most)}));
     if (result.problems.size() > before) return result;
   }
+  if (options.target == ExportTarget::C && !combined.songs[0].song->samples()) return writeCTia(combined, builder, options, result);
   if (options.target == ExportTarget::C || cdfj) return writeC(combined, builder, options, result);
   const auto& effects = combined.effects;
   const auto& tiaTables = combined.tiaTables;

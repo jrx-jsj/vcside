@@ -1222,20 +1222,27 @@ void MusicEditor::exportPopup() {
     ImGui::EndPopup();
     return;
   }
-  bool basic = song_.exportTo == "bb";
-  if (ImGui::RadioButton(T("DASM (assembly)"), !basic)) basic = false;
-  if (ImGui::RadioButton("batari Basic", basic)) basic = true;
-  if (basic) {
+  // a TIA song: DASM, batari Basic or C (an ELF game, or batari Basic's PXE kernel)
+  static std::string tiaChosen;
+  if (ImGui::IsWindowAppearing()) tiaChosen = song_.exportTo == "bb" || song_.exportTo == "c" ? song_.exportTo : "dasm";
+  if (ImGui::RadioButton(T("DASM (assembly)"), tiaChosen == "dasm")) tiaChosen = "dasm";
+  if (ImGui::RadioButton("batari Basic", tiaChosen == "bb")) tiaChosen = "bb";
+  if (ImGui::RadioButton(T("C (ELF, or batari Basic's PXE kernel)"), tiaChosen == "c")) tiaChosen = "c";
+  const bool basic = tiaChosen == "bb";
+  if (tiaChosen == "c") {
+    ImGui::TextDisabled("%s", T("music.h, with every song of this folder. Calls: music_init once, music_play with a song (MUSIC_SONG_x), music_stop, music_frame once per frame, music_effect with an effect; then music_audio[c] holds AUDC, AUDF and AUDV of channel c."));
+  } else if (basic) {
     ImGui::SetNextItemWidth(em(60));
     if (ImGui::InputText(T("first variable"), &song_.exportRam)) changed();
     ImGui::TextDisabled("%s", F("The player takes {0} variables from there: h takes h to z.", {std::to_string(kMusicRamBytes)}).c_str());
   } else {
     ImGui::TextDisabled("%s", F("Define MUSIC_RAM, {0} bytes of zero page, before the include.", {std::to_string(kMusicRamBytes)}).c_str());
   }
-  ImGui::TextDisabled("%s", T("music.asm, with every song of this folder. Calls: MusicInit once, MusicPlay with a song (MUSIC_SONG_x) in A, MusicStop, MusicFrame once per frame, MusicEffect with an effect in A."));
+  if (tiaChosen != "c")
+    ImGui::TextDisabled("%s", T("music.asm, with every song of this folder. Calls: MusicInit once, MusicPlay with a song (MUSIC_SONG_x) in A, MusicStop, MusicFrame once per frame, MusicEffect with an effect in A."));
   ImGui::Spacing();
   if (theme::primaryButton(T("Export"))) {
-    std::string target = basic ? "bb" : "dasm";
+    std::string target = tiaChosen;
     if (song_.exportTo != target) song_.exportTo = target, changed();
     exportSongFile(false);
     ImGui::CloseCurrentPopup();
@@ -1430,7 +1437,7 @@ void MusicEditor::soundPanel() {
   if (ImGui::IsItemHovered())
     ImGui::SetTooltip("%s", T("Voices with waveforms, played as one 4-bit sample per scanline in AUDV0, with exact pitch: mixed by the ARM of an ELF cartridge (C), or played by a DPC+ or CDFJ cartridge (up to 3 voices)."));
   if (!song_.samples()) {
-    if (song_.exportTo == "c" || song_.exportTo == "dpc" || song_.exportTo == "cdfj") song_.exportTo.clear();
+    if (song_.exportTo == "dpc" || song_.exportTo == "cdfj") song_.exportTo.clear();  // C plays TIA songs too
     return;
   }
   ImGui::SetNextItemWidth(em(80));

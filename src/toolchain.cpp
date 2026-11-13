@@ -26,6 +26,8 @@ Toolchain::Toolchain() {
        N_("Install it normally; VCSIDE looks in the usual application folders.")},
       {"bb", "batari Basic", N_("compiler"), "", "", "https://github.com/batari-Basic/batari-Basic/releases",
        N_("Unpack the release zip into the bb folder of VCSIDE's tools folder, or choose its 2600basic.sh (2600bas.bat on Windows). It brings its own DASM; version 1.9 also needs wasmtime.")},
+      {"bb-pxe", "batari Basic for PXE (beta)", N_("compiler"), "", "", "https://github.com/ZacharyScolaro/batari-Basic/releases",
+       N_("PXE projects build with the PXE beta of batari Basic (ZackAttack's), whose kernel runs programs that 1.9's does not. Unpack its release (bB-1.9-PXE-beta-...-wasm) into the bb-pxe folder of VCSIDE's tools folder, or choose its 2600basic.sh (2600bas.bat on Windows). It needs wasmtime too.")},
       {"wasmtime", "wasmtime", N_("runtime"), "", "", "https://wasmtime.dev/",
        N_("batari Basic 1.9 runs its compiler on it (WebAssembly). macOS: brew install wasmtime; Windows: winget install BytecodeAlliance.Wasmtime.Portable.")},
       {"arm-gcc", "Arm GNU toolchain (ELF-VCS)", N_("compiler"), "", "",
@@ -127,6 +129,12 @@ std::vector<std::string> Toolchain::candidates(const Tool& tool) const {
     add(findInPath("2600basic.sh"));
     add(toolsFolder + "/bb/2600basic.sh");
     if (const char* bb = std::getenv("bB")) add(std::string(bb) + "/2600basic.sh");
+#endif
+  } else if (tool.id == "bb-pxe") {
+#ifdef _WIN32
+    add(toolsFolder + "\\bb-pxe\\2600bas.bat");
+#else
+    add(toolsFolder + "/bb-pxe/2600basic.sh");
 #endif
   } else if (tool.id == "arm-gcc") {
     add(findInPath("arm-none-eabi-gcc"));

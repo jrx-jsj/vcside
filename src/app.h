@@ -255,6 +255,10 @@ class App {
   // build state
   Job job_;
   bool building_ = false;
+  // a PXE project's pxe.c, linked after batari Basic: its output and problems so far
+  bool linkingPxe_ = false;
+  std::string earlierOutput_;
+  std::vector<Diagnostic> earlierDiagnostics_;
   int runAfterBuild_ = 0;
   std::string output_;
   bool outputScroll_ = false;

@@ -98,6 +98,7 @@ Read for the design in `docs/design-music.md`; only facts are taken, in our own 
 - **Starting in any bank**: the same code at the end of every bank (the vectors point to a switch to bank 0 and a jump to `Reset`), since the bank the console starts in is not fixed; a general technique of banked 2600 games, with no single author.
 - **Calling another bank through a trampoline at the same address in both banks** (the switch, then the next instruction fetched from the other bank): a general technique of banked games since Atari's own F8 cartridges; the addresses and the check that each bank's code ends before it are VCSIDE's. Built and run in Stella in NTSC and PAL.
 - **batari Basic's `set romsize`, `bank` and `goto ... bankN`**: batari Basic's manual and its `samples` (`64kbb.bas`).
+- **batari Basic's PXE kernel**: ZackAttack (Zachary Scolaro), with Mike_at_AEI and 8bitPoet; its PXE beta (https://github.com/ZacharyScolaro/batari-Basic/releases, GPL-2, used as a tool and not shipped). C linked into its ELF (`data/templates/bb-pxe-game/pxe.c`): the kernel's emulated 6502 is a C++ object whose `CPU::read` and `CPU::write` (`_ZN3CPU4readEt`, `_ZN3CPU5writeEth`, on the `cpu` object) reach the program's RAM and the TIA registers the kernel writes out every frame, and the kernel calls `vcsEndOverblank` once per frame, so the linker's `--wrap=vcsEndOverblank` runs our code there; read in the symbols of ELFs the beta built and measured in Stella 7.0 (frame dumps and audio). Our own: the music protocol through `z` and the TIA player in C.
 
 ## Main errors fixed
 

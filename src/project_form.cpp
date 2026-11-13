@@ -214,7 +214,7 @@ void ProjectForm::render(TextEditor& text, ImFont* mono, const KnowledgeBase& kb
     text1("##cmd", project_.buildCommand, project_.language == Language::BatariBasic ? T("(batari Basic)") : isC(project_.language) ? "make" : T("(DASM)"));
     if (project_.buildCommand.empty() && !isC(project_.language)) {
       const char* id = project_.language == Language::BatariBasic ? "bb" : "dasm";
-      Tool* tool = toolchain.get(id);
+      Tool* tool = toolchain.get(project_.language == Language::BatariBasic ? project_.basicTool() : id);  // PXE: the PXE beta
       std::string label = F("{0} of the project", {tool ? tool->name : id});
       row(label.c_str(), T("A path to use this project's own copy (a version of its own) instead of the one in Settings > Tools. Relative to the project or absolute."));
       std::string value = project_.toolPaths.count(id) ? project_.toolPaths[id] : "";

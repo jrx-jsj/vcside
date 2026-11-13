@@ -203,11 +203,12 @@ std::vector<std::string> Project::buildTools(Toolchain& toolchain) const {
     case Language::Dasm: return toolPaths.count("dasm") && !toolPath(toolchain, "dasm").empty() ? std::vector<std::string>{} : std::vector<std::string>{"dasm"};
     case Language::BatariBasic: {
       // 1.9 is WebAssembly (2600basic.wasm next to its script) and runs on wasmtime
-      std::string bb = toolPath(toolchain, "bb");
+      std::string bb = toolPath(toolchain, basicTool());
       bool hasOwnBb = toolPaths.count("bb") && !bb.empty();
       std::error_code errorCode;
       std::vector<std::string> tools;
-      if (!hasOwnBb) tools.push_back("bb");
+      if (!hasOwnBb) tools.push_back(basicTool());
+      if (!pxeSource().empty()) tools.push_back("arm-gcc");  // C linked into the PXE kernel
       if (!bb.empty() && fs::exists(fs::path(bb).parent_path() / "2600basic.wasm", errorCode)) tools.push_back("wasmtime");
       return tools;
     }
@@ -267,9 +268,10 @@ std::vector<std::string> Project::buildArgs(Toolchain& toolchain, std::string* e
       return arguments;
     }
     case Language::BatariBasic: {
-      std::string bbPath = toolPath(toolchain, "bb");
+      std::string bbPath = toolPath(toolchain, basicTool());
       if (bbPath.empty()) {
         if (error) *error = toolPaths.count("bb") ? F("The project's batari Basic ({0}) does not exist.", {toolPaths.at("bb")})
+                            : basicTool() == "bb-pxe" ? std::string(T("The PXE beta of batari Basic not found. Unpack it into the bb-pxe folder of VCSIDE's tools folder or set its path in Settings > Tools."))
                                                   : std::string(T("batari Basic not found. Set the path to 2600basic.sh / 2600bas.bat in Settings > Tools."));
         return {};
       }
@@ -298,6 +300,29 @@ std::vector<std::string> Project::buildArgs(Toolchain& toolchain, std::string* e
       if (error) *error = T("Unknown project language.");
       return {};
   }
+}
+
+std::string Project::pxeSource() const {
+  std::error_code errorCode;
+  if (!pxe()) return "";
+  fs::path source = fs::path(abs(main)).parent_path() / "pxe.c";
+  return fs::is_regular_file(source, errorCode) ? source.string() : "";
+}
+
+std::vector<std::string> Project::pxeLinkArgs(Toolchain& toolchain, std::string* error) const {
+  std::string source = pxeSource();
+  if (source.empty()) return {};
+  std::string gcc = toolPath(toolchain, "arm-gcc");
+  if (gcc.empty()) {
+    if (error) *error = T("pxe.c needs the Arm GNU toolchain (arm-none-eabi-gcc): install it or set its path in Settings > Tools.");
+    return {};
+  }
+  // one relocatable ELF, as the PXE kernel's: Cortex-M0 code (it runs on every ELF cart),
+  // long calls (vcsLib may be far away), and the kernel's call to vcsEndOverblank sent to
+  // __wrap_vcsEndOverblank, which calls __real_vcsEndOverblank
+  return {gcc, "-mcpu=cortex-m0", "-mthumb", "-O2", "-std=c11", "-Wall", "-ffreestanding", "-fno-builtin", "-mlong-calls",
+          "-nostdlib", "-r", "-Wl,--wrap=vcsEndOverblank", "-I" + fs::path(source).parent_path().string(), "-o", basicOutput(".linked"), source,
+          basicOutput(".bin")};
 }
 
 std::string Project::toolPath(Toolchain& toolchain, const std::string& id) const {
