@@ -978,8 +978,12 @@ void MusicEditor::instrumentEditor() {
     if (ImGui::RadioButton(T("Drum"), instrument.drum)) instrument.drum = true, changed();
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", T("Fixed AUDC and AUDF frame by frame, whatever the note."));
   }
+  // on the TIA each envelope writes one register: the titles name it (the samples' voices have none)
+  auto title = [&](const char* name, const char* tiaRegister) {
+    ImGui::SeparatorText(onTia ? (std::string(name) + " (" + tiaRegister + ")").c_str() : name);
+  };
   if (onTia && !instrument.drum) {
-    ImGui::SeparatorText(T("Sounds it may use"));
+    title(T("Sounds it may use"), "AUDC");
     ImGui::TextWrapped("%s", T("For each note the tuning picks the closest pitch among these."));
     for (auto& distortion : distortions()) {
       if (!distortion.tonal) continue;
@@ -997,7 +1001,7 @@ void MusicEditor::instrumentEditor() {
     }
   }
   bool add = false, remove = false;
-  ImGui::SeparatorText(T("Volume"));
+  title(T("Volume"), "AUDV");
   volumeVariant_ = std::clamp(volumeVariant_, 0, (int)instrument.volumes.size() - 1);
   variantButtons("volumes", (int)instrument.volumes.size(), &volumeVariant_, &add, &remove);
   if (add) instrument.volumes.push_back(instrument.volumes[volumeVariant_]), volumeVariant_ = (int)instrument.volumes.size() - 1, changed();
@@ -1006,7 +1010,7 @@ void MusicEditor::instrumentEditor() {
                                                 : F("Used by notes with the effect V{0}. Right click: the held note repeats from there.", {std::to_string(volumeVariant_)}).c_str());
   Envelope& volume = instrument.volumes[volumeVariant_];
   if (envelope("volume", volume.values, 0, 15, &volume.loop, 1)) changed();
-  ImGui::SeparatorText(T("Release"));
+  title(T("Release"), "AUDV");
   releaseVariant_ = std::clamp(releaseVariant_, 0, (int)instrument.releases.size() - 1);
   variantButtons("releases", (int)instrument.releases.size(), &releaseVariant_, &add, &remove);
   if (add) instrument.releases.push_back(instrument.releases[releaseVariant_]), releaseVariant_ = (int)instrument.releases.size() - 1, changed();
@@ -1020,12 +1024,12 @@ void MusicEditor::instrumentEditor() {
     pitchRangeButtons(instrument.pitch);
     if (envelope("pitch", instrument.pitch, -pitchRange_, pitchRange_, nullptr, 0)) changed();
   } else if (instrument.drum) {
-    ImGui::SeparatorText("AUDC");
+    title(T("Waveform"), "AUDC");
     if (envelope("audc", instrument.drumControl, 0, 15, nullptr, 1)) changed();
-    ImGui::SeparatorText("AUDF");
+    title(T("Pitch"), "AUDF");
     if (envelope("audf", instrument.drumFrequency, 0, 31, nullptr, 1)) changed();
   } else {
-    ImGui::SeparatorText(T("Pitch"));
+    title(T("Pitch"), "AUDF");
     bool cents = instrument.pitchUnit == PitchUnit::Cents;
     if (ImGui::RadioButton(T("in cents"), cents) && !cents) instrument.pitchUnit = PitchUnit::Cents, instrument.pitch.assign(instrument.pitch.size(), 0), changed();
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", T("The same interval on every note: each frame gets the AUDF that comes closest, note by note."));

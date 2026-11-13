@@ -88,6 +88,7 @@ With AUDC = 0 the TIA outputs AUDV as a level, so a program that writes AUDV0 on
   It opens in a tab, as `.vcsgfx` does. *File → New music...*.
 - **Instruments:**
   - **TIA:** an AUDC (or a list of allowed ones, for the tuning) and envelopes per video frame for volume, AUDC and pitch offset.
+    The instrument panel names the register each part writes: *Volume (AUDV)* and *Release (AUDV)*; a melodic instrument's *Sounds it may use (AUDC)* and *Pitch (AUDF)*; a drum's *Waveform (AUDC)* and *Pitch (AUDF)*, frame by frame whatever the note. A sample voice has no register of its own (the ARM mixes the voices into AUDV0), so its titles name none.
   - **Samples:** a waveform, an envelope and effects.
 - **Composition:** a tracker grid to write in and a piano roll of the same pattern. Both have:
   - two channels on the TIA, or N voices with samples;
