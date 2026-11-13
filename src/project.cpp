@@ -956,14 +956,21 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
       replaceAll(program, placeholder, gfx::hexColour(colour));
       std::ofstream(mainFile, std::ios::binary) << program;
     }
+    // the game's second enemy: the first one's red ($46) plus $40, a blue, for the TV standard
+    if (std::string program = readFile(mainFile.string()); program.find("{{SECOND_ENEMY_COLOUR}}") != std::string::npos) {
+      int blue = 0x86;
+      if (gfx::tvFromProject(tvStandard) == gfx::Tv::PAL) blue = palColourFor(blue);
+      replaceAll(program, "{{SECOND_ENEMY_COLOUR}}", gfx::hexColour(blue));
+      std::ofstream(mainFile, std::ios::binary) << program;
+    }
     fillBasicRegions(mainFile);
     writeMusicIncludes(newProject.dir, tvStandard);
     copyProjectNotes({templateDir}, newProject.dir, projName,
                      {{"{{FORMAT}}", newProject.format},
                       {"{{ROMSIZE}}", romSize},
-                      {"{{TITLE_NOTE}}", titleScreen ? "It starts on a title screen: the button on PLAY starts a game, and the game ends back there."
+                      {"{{TITLE_NOTE}}", titleScreen ? "It starts on a title screen (the cartridge and THE GAME): the button starts a game, and the game ends back there."
                                                      : "There is no title screen: the game starts at once and starts again after the last life."},
-                      {"{{TITLE_WHERE}}", titleScreen ? "; on the title, `titleLoop`" : ""}});
+                      {"{{TITLE_WHERE}}", titleScreen ? "; on the title, `titleLoop` (the cartridge: `title.vcsgfx`, sprite `cart`)" : ""}});
   } else if (isC(projectLanguage)) {
     bool ace = projectLanguage == Language::AceC;
     if (projName.find_first_of(" \t") != std::string::npos) {

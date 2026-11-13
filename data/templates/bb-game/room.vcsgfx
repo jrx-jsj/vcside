@@ -21,7 +21,7 @@
      "mode": "mirror"
     },
     {
-     "bits": "....X.....XXXX......",
+     "bits": "....X...XXXX........",
      "mode": "mirror"
     },
     {
@@ -29,7 +29,7 @@
      "mode": "mirror"
     },
     {
-     "bits": "....X.............XX",
+     "bits": "....X..........XXXXX",
      "mode": "mirror"
     },
     {
@@ -37,7 +37,7 @@
      "mode": "mirror"
     },
     {
-     "bits": "....X.....XXXX......",
+     "bits": "....X...XXXX........",
      "mode": "mirror"
     },
     {

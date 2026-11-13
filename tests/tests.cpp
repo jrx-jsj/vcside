@@ -1087,8 +1087,13 @@ static void testElfSpace() {
             for (const char* filled : {"\trem vcsgfx hero.vcsgfx hero frame 4\n\trem hero, frame 4", "\trem vcsgfx enemy.vcsgfx enemy frame 2\n\trem enemy, frame 2",
                                        "\trem vcsgfx room.vcsgfx room\n\trem room;"})
               CHECK(basText.find(filled) != std::string::npos);
-            // the graphics' NTSC colours, turned into PAL ones in a PAL project (the hero's $F4)
-            CHECK((basText.find("COLUP0 = $F4") != std::string::npos) == (std::string(tv) == "NTSC"));
+            if (title) CHECK(basText.find("\trem vcsgfx title.vcsgfx cart\n\trem cart:") != std::string::npos);
+            // the graphics' NTSC colours, turned into PAL ones in a PAL project (the hero's top row,
+            // $F4, last: batari Basic's tables start at the bottom), and the second enemy's blue ($86)
+            const bool ntsc = std::string(tv) == "NTSC";
+            CHECK((basText.find("\t$F4\nend\n") != std::string::npos) == ntsc);
+            CHECK((basText.find("in enemy.vcsgfx.\n\tplayer1color:\n\t$86\n") != std::string::npos) == ntsc &&
+                  basText.find("{{SECOND_ENEMY_COLOUR}}") == std::string::npos);
             std::ifstream musicFile(startDir / "theme.music.asm");
             std::string musicText((std::istreambuf_iterator<char>(musicFile)), {});
             CHECK(musicText.find("MUSIC_RAM = h") != std::string::npos && musicText.find("MUSIC_EFFECT_LOSE") != std::string::npos);
