@@ -13,9 +13,12 @@ An ACE cartridge game in C (PlusCart, UnoCart) from VCSIDE's template: the ARM (
 - `main()` in `src/main.c`: the game loop. Joystick, switches, button: read by `kernel()` (`swcha`, `swchb`, `inpt4`). RESET: `leave()` and back to the cartridge's menu.
 - Music: `music_init`, `music_frame(lines + MUSIC_OVERBLANK_LINES)`, `music_effect(MUSIC_EFFECT_FIRE / _BUMP)`; "bump" plays on the TIA's channel 1 from `music_tia`. A song with a TIA track (*TIA track* in the music editor) plays it there too, through the same `music_tia`, when no effect sounds there.
 
+## Folders
+- `src/`: programs; `resources/gfx/`, `resources/music/`: `.vcsgfx`, `.vcsmusic`; `generated/`: what VCSIDE writes from them; `build/`: the build's. Set in the `.vcsproj` (`*_dir`).
+
 ## Build
 - F7 runs `make`: `build/{{NAME}}.ace` and `build/ACE_debugging.elf` (for Gopher2600's debugger). Runs in Gopher2600 only (Stella has no ACE).
 
 ## Do not touch
 - `include/ace.h`, `src/ace.c`, `src/start.S`, `src/memory.c`, `ace.ld` (the bus library, start code and header).
-- `src/music.h`: written by VCSIDE when `theme.vcsmusic` is saved. Every `.vcsmusic` of that folder exported the same way goes into it, with one player: `music_play(MUSIC_SONG_<NAME>)` starts another song, `music_stop()` stops it.
+- `generated/music/music.h`: written by VCSIDE when `theme.vcsmusic` is saved. Every `.vcsmusic` of that folder exported the same way goes into it, with one player: `music_play(MUSIC_SONG_<NAME>)` starts another song, `music_stop()` stops it.

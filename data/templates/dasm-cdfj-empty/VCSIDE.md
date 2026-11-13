@@ -16,6 +16,9 @@ A 32K CDFJ program from VCSIDE's empty CDFJ template: the ARM driver, the cartri
 - `layout.h`: what the 6507 and the ARM share (offsets in the display data, one `#define NAME number` per line, decimal).
 - Joystick and button: read by `CallArm`, given to `frame()`. Sound: the voices are silent.
 
+## Folders
+- `src/`: programs; `resources/gfx/`, `resources/music/`: `.vcsgfx`, `.vcsmusic`; `generated/`: what VCSIDE writes from them; `build/`: the build's. Set in the `.vcsproj` (`*_dir`).
+
 ## Build
 - F7 runs `make`: `build/{{NAME}}.bin` (32K). Needs DASM, `arm-none-eabi-gcc` and `cdfj_driver.bin` (CDFJ's 2K driver, not included).
 

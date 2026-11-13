@@ -13,8 +13,11 @@ A DASM program for a {{FORMAT}} cartridge, from VCSIDE's empty template: a frame
 - Joystick, button, sound: not read or played yet.
 - `2600.h`: the TIA and RIOT register names.
 
+## Folders
+- `src/`: programs; `resources/gfx/`, `resources/music/`: `.vcsgfx`, `.vcsmusic`; `generated/`: what VCSIDE writes from them; `build/`: the build's. Set in the `.vcsproj` (`*_dir`).
+
 ## Build
-- F7 assembles `main.asm` with DASM (`-f3`) into `build/{{NAME}}.bin`, {{ROM_BYTES}} bytes. F5 runs it.
+- F7 assembles `src/main.asm` with DASM (`-f3`) into `build/{{NAME}}.bin`, {{ROM_BYTES}} bytes. F5 runs it.
 
 ## Do not touch
 - `2600.h` (register addresses).

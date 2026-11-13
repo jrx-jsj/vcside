@@ -4,5 +4,5 @@
  "ace/ace.ld": {"from": "ace/ace.ld"},
  "ace/memory.c": {"from": "ace/src/memory.c"},
  "ace/start.S": {"from": "ace/src/start.S"},
- "src/theme.vcsmusic": {"from": "shared/theme.vcsmusic"}
+ "resources/music/theme.vcsmusic": {"from": "shared/theme.vcsmusic"}
 }

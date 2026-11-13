@@ -16,9 +16,12 @@ VCSIDE The Game in C on an ACE cartridge (PlusCart, UnoCart; Gopher2600): a room
 - Sound: `music_effect(MUSIC_EFFECT_SHOT / _HIT / _LOSE)` from `game_frame`'s events; "hit" plays on the TIA's channel 1 (`music_tia`). A song with a TIA track (*TIA track* in the music editor) plays it there too, through the same `music_tia`, when no effect sounds there.
 - RESET in the game: back to the title.
 
+## Folders
+- `src/`: programs; `resources/gfx/`, `resources/music/`: `.vcsgfx`, `.vcsmusic`; `generated/`: what VCSIDE writes from them; `build/`: the build's. Set in the `.vcsproj` (`*_dir`).
+
 ## Build
 - F7 runs `make`: `build/{{NAME}}.ace` and `build/ACE_debugging.elf` (for Gopher2600's debugger). Runs in Gopher2600 only (Stella has no ACE).
 
 ## Do not touch
 - `include/ace.h`, `src/ace.c`, `src/start.S`, `src/memory.c`, `ace.ld`.
-- `*.gfx.h` and `music.h`: written by VCSIDE when `hero.vcsgfx`, `enemy.vcsgfx`, `room.vcsgfx`, `title.vcsgfx` and `theme.vcsmusic` are saved. Every `.vcsmusic` of that folder exported the same way goes into it, with one player: `music_play(MUSIC_SONG_<NAME>)` starts another song, `music_stop()` stops it.
+- `generated/gfx/*.gfx.h` and `generated/music/music.h`: written by VCSIDE when `hero.vcsgfx`, `enemy.vcsgfx`, `room.vcsgfx`, `title.vcsgfx` and `theme.vcsmusic` are saved. Every `.vcsmusic` of that folder exported the same way goes into it, with one player: `music_play(MUSIC_SONG_<NAME>)` starts another song, `music_stop()` stops it.

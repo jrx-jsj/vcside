@@ -19,6 +19,8 @@ class MusicEditor {
   ~MusicEditor();
   bool load(const std::string& path, std::string* error);
   bool save(const std::string& path, std::string* error);
+  // Where the export goes (the project's generated music folder); empty: next to the song.
+  void setExportFolder(const std::string& folder) { exportFolder_ = folder; }
   // tv: the project's TV standard ("AUTO" is played and tuned as NTSC).
   void render(const std::string& tv);
   bool dirty() const { return dirty_; }
@@ -63,7 +65,7 @@ class MusicEditor {
   void changed() { changed_ = true, dirty_ = true, revision_++; }
   void endFrame();
 
-  std::string path_, tv_ = "NTSC";
+  std::string path_, tv_ = "NTSC", exportFolder_;
   double clock_ = 31399.5;
   Song song_, committed_;
   std::vector<Song> undo_, redo_;

@@ -14,8 +14,11 @@ A 32K CDFJ program from VCSIDE's CDFJ example: the 6507 draws (`main.asm`), the 
 - What the 6507 and the ARM share: `layout.h` (offsets in the display data, one `#define NAME number` per line, decimal).
 - Music: `music_init`, `music_frame`, `music_effect(MUSIC_EFFECT_FIRE / _BUMP)` in `game.c`; "bump" plays on the TIA's channel 1 from `LAYOUT_TIA`. A song with a TIA track (*TIA track* in the music editor) plays it there too, through the same `music_tia`, when no effect sounds there.
 
+## Folders
+- `src/`: programs; `resources/gfx/`, `resources/music/`: `.vcsgfx`, `.vcsmusic`; `generated/`: what VCSIDE writes from them; `build/`: the build's. Set in the `.vcsproj` (`*_dir`).
+
 ## Build
 - F7 runs `make`: `build/{{NAME}}.bin` (32K). Needs DASM, `arm-none-eabi-gcc` and `cdfj_driver.bin` (CDFJ's 2K driver, not included). PAL: `make DASMFLAGS=-DPAL=1`.
 
 ## Do not touch
-- `cdfj_driver.bin`; `build/layout.asm` (made from `layout.h`); `music.h` (written when `theme.vcsmusic` is saved). Every `.vcsmusic` of that folder exported the same way goes into it, with one player: `music_play(MUSIC_SONG_<NAME>)` starts another song, `music_stop()` stops it.
+- `cdfj_driver.bin`; `build/layout.asm` (made from `layout.h`); `generated/music/music.h` (written when `theme.vcsmusic` is saved). Every `.vcsmusic` of that folder exported the same way goes into it, with one player: `music_play(MUSIC_SONG_<NAME>)` starts another song, `music_stop()` stops it.

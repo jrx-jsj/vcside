@@ -2018,10 +2018,10 @@ ExportResult exportSongs(const std::vector<NamedSong>& songs, double audioClock,
 }
 
 FolderExport exportFolder(const std::string& folder, ExportTarget target, double audioClock, const ExportOptions& options, const std::string& editedPath,
-                          const Song* edited) {
+                          const Song* edited, const std::string& outputFolder) {
   namespace fs = std::filesystem;
   FolderExport folderExport;
-  folderExport.path = (fs::path(folder) / exportFileName(target)).string();
+  folderExport.path = (fs::path(outputFolder.empty() ? folder : outputFolder) / exportFileName(target)).string();
   std::vector<fs::path> files;
   std::error_code errorCode;
   for (auto& entry : fs::directory_iterator(folder, errorCode))
@@ -2064,6 +2064,8 @@ bool writeFolderExport(const FolderExport& folderExport, std::string* error) {
     if (error) *error = folderExport.result.problems.empty() ? std::string() : folderExport.result.problems[0];
     return false;
   }
+  std::error_code errorCode;
+  std::filesystem::create_directories(std::filesystem::path(folderExport.path).parent_path(), errorCode);
   std::ofstream file(folderExport.path, std::ios::binary);
   if (!file || !(file << folderExport.result.text)) {
     if (error) *error = F("Cannot write {0}", {folderExport.path});

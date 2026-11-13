@@ -84,7 +84,7 @@ struct FolderExport {
   std::vector<std::string> songs;  // the songs in it, in their numbers' order
 };
 FolderExport exportFolder(const std::string& folder, ExportTarget target, double audioClock, const ExportOptions& options,
-                          const std::string& editedPath = "", const Song* edited = nullptr);
+                          const std::string& editedPath = "", const Song* edited = nullptr, const std::string& outputFolder = "");
 // Writes it; false (and *error) if it cannot be written or nothing could be exported.
 bool writeFolderExport(const FolderExport& folderExport, std::string* error);
 

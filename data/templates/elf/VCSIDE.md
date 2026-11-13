@@ -15,9 +15,12 @@ An ELF cartridge game in C from VCSIDE's template: the cartridge's ARM feeds the
 - Joystick, switches, button: read by `kernel()` after the visible lines (`swcha`, `swchb`, `inpt4`), used in `elf_main`'s loop.
 - Music: `music_init`, `music_frame(lines + MUSIC_OVERBLANK_LINES)` once a frame, `music_effect(MUSIC_EFFECT_FIRE / _BUMP)`; "bump" plays on the TIA's channel 1 from `music_tia`. A song with a TIA track (*TIA track* in the music editor) plays it there too, through the same `music_tia`, when no effect sounds there.
 
+## Folders
+- `src/`: programs; `resources/gfx/`, `resources/music/`: `.vcsgfx`, `.vcsmusic`; `generated/`: what VCSIDE writes from them; `build/`: the build's. Set in the `.vcsproj` (`*_dir`).
+
 ## Build
 - F7 runs `make`: `build/{{NAME}}.bin`, the ELF ROM (Stella, Gopher2600, PlusCart, UnoCart). `make ace`: the same game as `build/{{NAME}}.ace` (vcsLib on VCSIDE's ACE bus library in `ace/`); a project made as the ACE example "the ELF game on vcsLib" builds with `make ace`. `make chameleon CHAMELEON_FW=...`: the Chameleon Cart image.
 
 ## Do not touch
 - `include/vcsLib.h` (the loader's interface), `src/memcpy_long.S`, `ace/` and `chameleon/` (the other cartridges' glue), and the Makefile's checks.
-- `music.h` (and any `*.gfx.h`): written by VCSIDE when the `.vcsmusic`/`.vcsgfx` files are saved. Every `.vcsmusic` of that folder exported the same way goes into it, with one player: `music_play(MUSIC_SONG_<NAME>)` starts another song, `music_stop()` stops it.
+- `generated/music/music.h` (and any `generated/gfx/*.gfx.h`): written by VCSIDE when the `.vcsmusic`/`.vcsgfx` files are saved. Every `.vcsmusic` of that folder exported the same way goes into it, with one player: `music_play(MUSIC_SONG_<NAME>)` starts another song, `music_stop()` stops it.

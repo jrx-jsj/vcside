@@ -1,9 +1,9 @@
 {
- "enemy.vcsgfx": {"from": "bb-pxe-game/enemy.vcsgfx"},
- "hero.vcsgfx": {"from": "bb-pxe-game/hero.vcsgfx"},
- "pxe.c": {"from": "bb-pxe-game/pxe.c"},
- "room.vcsgfx": {"from": "bb-game/room.vcsgfx"},
- "theme.vcsmusic": {"from": "shared/theme-tia.vcsmusic", "change": {
+ "resources/gfx/enemy.vcsgfx": {"from": "bb-pxe-game/enemy.vcsgfx"},
+ "resources/gfx/hero.vcsgfx": {"from": "bb-pxe-game/hero.vcsgfx"},
+ "src/pxe.c": {"from": "bb-pxe-game/pxe.c"},
+ "resources/gfx/room.vcsgfx": {"from": "bb-game/room.vcsgfx"},
+ "resources/music/theme.vcsmusic": {"from": "shared/theme-tia.vcsmusic", "change": {
   "effects": [
    {"channel": 1, "instrument": 3, "name": "shot", "note": 72},
    {"channel": 1, "instrument": 4, "name": "hit", "note": 60},
@@ -12,5 +12,5 @@
   "export": {"to": "c"},
   "name": "game theme"
  }},
- "title.vcsgfx": {"from": "bb-pxe-game/title.vcsgfx"}
+ "resources/gfx/title.vcsgfx": {"from": "bb-pxe-game/title.vcsgfx"}
 }

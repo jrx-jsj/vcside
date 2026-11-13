@@ -12,7 +12,7 @@ VCSIDE The Game in batari Basic for the PXE kernel (batari Basic's ELF kernel, b
 - RAM: the game has `a` to `k`; `z` is `musicCommand`.
 
 ## Music
-- `theme.vcsmusic` exports `music.h` (a TIA player in C) when it is saved. `pxe.c` is compiled and linked into the kernel's ELF after batari Basic builds the program: it wraps `vcsEndOverblank`, which the kernel calls once per frame, and there plays the music and writes AUDC, AUDF and AUDV of both channels through the kernel's CPU.
+- `resources/music/theme.vcsmusic` exports `generated/music/music.h` (a TIA player in C) when it is saved. `pxe.c` is compiled and linked into the kernel's ELF after batari Basic builds the program: it wraps `vcsEndOverblank`, which the kernel calls once per frame, and there plays the music and writes AUDC, AUDF and AUDV of both channels through the kernel's CPU.
 - The game asks for music with `musicCommand`: `musicShot`, `musicHit`, `musicLose` (1 + the effect's place in `theme.vcsmusic`), `musicTheme` (128 + the song), 255 stops. `pxe.c` reads it once per frame and sets it back to 0.
 
 ## Where things live
@@ -20,9 +20,12 @@ VCSIDE The Game in batari Basic for the PXE kernel (batari Basic's ELF kernel, b
 - Hero: `placeHero`, `heroLook` (its frames: walking, standing, blinking); enemies: `newWave`, `moveEnemy`, `enemyCrawl1`/`2`; hits and walls: after `drawscreen`.
 - Score: `score` (`scoreWhite`); lives: `pfscore1`.
 
+## Folders
+- `src/`: programs; `resources/gfx/`, `resources/music/`: `.vcsgfx`, `.vcsmusic`; `generated/`: what VCSIDE writes from them; `build/`: the build's. Set in the `.vcsproj` (`*_dir`).
+
 ## Build
-- F7 compiles `main.bas` with batari Basic into `main.bas.bin`, then links `pxe.c` and `music.h` into it with the Arm GNU toolchain (`arm-none-eabi-gcc`). F5 runs it.
+- F7 compiles `src/main.bas` with batari Basic into `build/{{NAME}}.bin`, then links `pxe.c` and `music.h` into it with the Arm GNU toolchain (`arm-none-eabi-gcc`). F5 runs it.
 
 ## Do not touch
-- `music.h`: written by VCSIDE when `theme.vcsmusic` is saved.
+- `generated/music/music.h`: written by VCSIDE when `theme.vcsmusic` is saved.
 - Lines between `rem vcsgfx` and `rem vcsgfx end`: VCSIDE rewrites them when the `.vcsgfx` is saved; change the `.vcsgfx` instead. `as player2` draws a sprite with another player.

@@ -11,8 +11,11 @@ An empty batari Basic program for a {{FORMAT}} cartridge, from VCSIDE's template
 ## Where things live
 - `main`: the frame loop.
 
+## Folders
+- `src/`: programs; `resources/gfx/`, `resources/music/`: `.vcsgfx`, `.vcsmusic`; `generated/`: what VCSIDE writes from them; `build/`: the build's. Set in the `.vcsproj` (`*_dir`).
+
 ## Build
-- F7 compiles `main.bas` with batari Basic into `main.bas.bin`. F5 runs it.
+- F7 compiles `src/main.bas` with batari Basic into `build/{{NAME}}.bin`. F5 runs it.
 
 ## Do not touch
 - Lines between `rem vcsgfx` and `rem vcsgfx end`, if any: VCSIDE rewrites them when the `.vcsgfx` is saved.

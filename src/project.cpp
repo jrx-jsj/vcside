@@ -59,7 +59,7 @@ IllegalOpcodes illegalFromId(const std::string& id) {
 static const char* kKnownKeys[] = {"name", "language", "main", "output", "format", "tv", "emulator", "illegal_opcodes",
                                    "include_dirs", "build_command", "tool_paths", "build_flags", "space_warn_percent",
                                    "stack_reserve", "elf_cartridge", "elf_flash_kb", "elf_ram_kb", "emulator_options",
-                                   "emulator_args"};
+                                   "emulator_args", "source_dir", "resources_dir", "generated_dir", "build_dir"};
 
 bool Project::fromJson(const std::string& text, const std::string& path, std::string* error) {
   try {
@@ -78,6 +78,10 @@ bool Project::fromJson(const std::string& text, const std::string& path, std::st
     parsed.illegal = illegalFromId(document.value("illegal_opcodes", "warn"));
     parsed.includeDirs = document.value("include_dirs", std::vector<std::string>{});
     parsed.buildCommand = document.value("build_command", "");
+    parsed.sourceDir = document.value("source_dir", "");
+    parsed.resourcesDir = document.value("resources_dir", "");
+    parsed.generatedDir = document.value("generated_dir", "");
+    parsed.buildDir = document.value("build_dir", "");
     if (document.contains("tool_paths") && document["tool_paths"].is_object())
       for (auto& [key, value] : document["tool_paths"].items())
         if (value.is_string() && !value.get<std::string>().empty()) parsed.toolPaths[key] = value.get<std::string>();
@@ -122,6 +126,8 @@ std::string Project::toJson() const {
             {"emulator", emulator},   {"illegal_opcodes", illegalId(illegal)},
             {"include_dirs", includeDirs}};
   if (!buildCommand.empty()) document["build_command"] = buildCommand;
+  for (auto [key, value] : {std::pair{"source_dir", &sourceDir}, {"resources_dir", &resourcesDir}, {"generated_dir", &generatedDir}, {"build_dir", &buildDir}})
+    if (!value->empty()) document[key] = *value;
   json toolPathsJson = json::object();
   for (auto& [key, value] : toolPaths)
     if (!value.empty()) toolPathsJson[key] = value;
@@ -161,6 +167,45 @@ std::string Project::abs(const std::string& relativePath) const {
   return (path.is_absolute() ? path : fs::path(dir) / path).lexically_normal().string();
 }
 
+std::string Project::generatedFolder(const std::string& sourcePath, const std::string& kind) const {
+  std::error_code errorCode;
+  fs::path sourceFolder = fs::weakly_canonical(fs::path(sourcePath).parent_path(), errorCode);
+  fs::path projectFolder = fs::weakly_canonical(dir, errorCode);
+  auto inside = [](const fs::path& relative) { return !relative.empty() && *relative.begin() != ".."; };
+  if (generatedDir.empty() || dir.empty() || !inside(sourceFolder.lexically_relative(projectFolder))) return fs::path(sourcePath).parent_path().string();
+  fs::path folder = fs::path(abs(generatedDir)) / kind;
+  // resources/music/level1/a.vcsmusic exports to generated/music/level1/music.asm
+  fs::path relative = sourceFolder.lexically_relative(fs::weakly_canonical(abs(resourcesDir.empty() ? "resources" : resourcesDir), errorCode) / kind);
+  if (inside(relative) && relative != ".") folder /= relative;
+  return folder.lexically_normal().string();
+}
+
+std::string Project::buildFolder() const { return buildDir.empty() ? fs::path(outputPath()).parent_path().string() : abs(buildDir); }
+
+std::vector<std::string> Project::layoutIncludeDirs() const {
+  std::vector<std::string> folders;
+  if (!sourceDir.empty()) folders.push_back(abs(sourceDir));
+  if (!generatedDir.empty()) folders.push_back(abs(generatedDir + "/gfx")), folders.push_back(abs(generatedDir + "/music"));
+  return folders;
+}
+
+std::string Project::basicOutput(const std::string& suffix) const {
+  if (buildDir.empty()) return basicWritten(suffix);
+  return (fs::path(buildFolder()) / (fs::path(main).filename().string() + suffix)).string();
+}
+
+void Project::collectBasicOutputs() const {
+  if (buildDir.empty()) return;
+  std::error_code errorCode;
+  fs::path to = buildFolder();
+  fs::create_directories(to, errorCode);
+  for (auto suffix : {".bin", ".asm", ".list.txt", ".symbol.txt", ".lst", ".sym", "-cc.elf"})
+    if (fs::exists(basicWritten(suffix), errorCode)) fs::rename(basicWritten(suffix), basicOutput(suffix), errorCode);
+  // what batari Basic leaves where it runs (the project's folder) on the way
+  for (auto name : {"bB.asm", "includes.bB", "2600basic_variable_redefs.h"})
+    if (fs::exists(fs::path(dir) / name, errorCode)) fs::rename(fs::path(dir) / name, to / name, errorCode);
+}
+
 std::string Project::stem() const {
   fs::path outputFile(outputPath());
   return (outputFile.parent_path() / outputFile.stem()).string();
@@ -185,6 +230,7 @@ std::vector<std::string> Project::rasArgs(Toolchain& toolchain) const {
   std::string dasm = toolPath(toolchain, "dasm");
   if (dasm.empty()) return {};
   std::vector<std::string> arguments = {dasm, abs(main), "-f2", "-v0", "-o" + stem() + ".ras", "-I" + dir};
+  for (auto& folder : layoutIncludeDirs()) arguments.push_back("-I" + folder);
   for (auto& includeDir : includeDirs) arguments.push_back("-I" + abs(includeDir));
   for (auto& flag : splitCommand(buildFlags))
     if (flag.rfind("-D", 0) == 0 || flag.rfind("-M", 0) == 0 || flag.rfind("-I", 0) == 0) arguments.push_back(flag);  // what changes the code
@@ -239,6 +285,9 @@ std::vector<std::string> Project::buildArgs(Toolchain& toolchain, std::string* e
         if ((pathSeparator + extra + pathSeparator).find(pathSeparator + folder + pathSeparator) == std::string::npos) extra += (extra.empty() ? "" : std::string(1, pathSeparator)) + folder;
       }
       if (!extra.empty()) env->push_back({"PATH", extra + pathSeparator + path});
+      // the project's folders, for a Makefile that takes them (SRC_DIR ?= src)
+      for (auto [variable, value] : {std::pair{"SRC_DIR", &sourceDir}, {"GENERATED_DIR", &generatedDir}, {"BUILD_DIR", &buildDir}})
+        if (!value->empty()) env->push_back({variable, *value});
     }
     // several commands, pipes or redirections: the system's shell runs the line
     if (buildCommand.find_first_of("&|;><") != std::string::npos) {
@@ -263,6 +312,7 @@ std::vector<std::string> Project::buildArgs(Toolchain& toolchain, std::string* e
       }
       std::vector<std::string> arguments = {dasm, abs(main), "-f3", "-v0", "-o" + outputPath(),
                                     "-l" + stem() + ".lst", "-s" + stem() + ".sym", "-I" + dir};
+      for (auto& folder : layoutIncludeDirs()) arguments.push_back("-I" + folder);
       for (auto& includeDir : includeDirs) arguments.push_back("-I" + abs(includeDir));
       for (auto& flag : splitCommand(buildFlags)) arguments.push_back(flag);
       return arguments;
@@ -278,8 +328,12 @@ std::vector<std::string> Project::buildArgs(Toolchain& toolchain, std::string* e
       // Its script runs in the source's folder (1.9 only lets wasmtime see "."), takes the
       // file name, and finds its own files through the bB variable. wasmtime has to be in
       // PATH: an app started from the desktop may not have the shell's PATH.
+      // A project with a generated folder runs it in its own folder instead, with the source's
+      // path, so that the program's asm blocks can include generated/music/music.asm.
       fs::path source = abs(main);
-      if (workDir) *workDir = source.parent_path().string();
+      const bool fromProject = !generatedDir.empty();
+      if (workDir) *workDir = fromProject ? dir : source.parent_path().string();
+      const std::string sourceArgument = fromProject ? fs::path(main).lexically_normal().generic_string() : source.filename().string();
       if (env) {
         env->push_back({"bB", fs::path(bbPath).parent_path().string()});
         std::string path = std::getenv("PATH") ? std::getenv("PATH") : "";
@@ -287,9 +341,9 @@ std::vector<std::string> Project::buildArgs(Toolchain& toolchain, std::string* e
         env->push_back({"PATH", path});
       }
 #ifdef _WIN32
-      return {"cmd.exe", "/c", bbPath, source.filename().string()};
+      return {"cmd.exe", "/c", bbPath, sourceArgument};
 #else
-      return {"/bin/sh", bbPath, source.filename().string()};
+      return {"/bin/sh", bbPath, sourceArgument};
 #endif
     }
     case Language::ElfC:
@@ -321,8 +375,8 @@ std::vector<std::string> Project::pxeLinkArgs(Toolchain& toolchain, std::string*
   // long calls (vcsLib may be far away), and the kernel's call to vcsEndOverblank sent to
   // __wrap_vcsEndOverblank, which calls __real_vcsEndOverblank
   return {gcc, "-mcpu=cortex-m0", "-mthumb", "-O2", "-std=c11", "-Wall", "-ffreestanding", "-fno-builtin", "-mlong-calls",
-          "-nostdlib", "-r", "-Wl,--wrap=vcsEndOverblank", "-I" + fs::path(source).parent_path().string(), "-o", basicOutput(".linked"), source,
-          basicOutput(".bin")};
+          "-nostdlib", "-r", "-Wl,--wrap=vcsEndOverblank", "-I" + fs::path(source).parent_path().string(), "-I" + generatedFolder(source, "music"),
+          "-o", basicOutput(".linked"), source, basicOutput(".bin")};
 }
 
 std::string Project::toolPath(Toolchain& toolchain, const std::string& id) const {
@@ -674,12 +728,12 @@ static void graphicsToPal(const fs::path& dir) {
 
 // The `rem vcsgfx` regions of a batari Basic program, filled from the project's .vcsgfx
 // files as the graphics editor fills them on save, for the kernel the program sets.
-static void fillBasicRegions(const fs::path& program) {
+static void fillBasicRegions(const fs::path& program, const fs::path& gfxDir) {
   std::string text = readFile(program.string());
   if (text.find("rem vcsgfx") == std::string::npos) return;
   gfx::Profile profile = gfx::profileFromBasic(text);
   std::error_code errorCode;
-  for (auto& entry : fs::directory_iterator(program.parent_path(), errorCode)) {
+  for (auto& entry : fs::directory_iterator(gfxDir, errorCode)) {
     if (entry.path().extension() != ".vcsgfx") continue;
     gfx::Asset asset;
     if (!gfx::fromJson(readFile(entry.path().string()), &asset, nullptr)) continue;
@@ -775,24 +829,26 @@ bool Project::addCdfjDriver(const std::string& path, const std::string& projectD
 }
 
 // A .vcsgfx of an example comes with the tables its program includes (.gfx.asm, or .gfx.h
-// for C), written as the graphics editor writes them on save.
-static void writeGfxIncludes(const fs::path& dir, bool isC) {
+// for C), written as the graphics editor writes them on save, from resources/gfx to
+// generated/gfx.
+static void writeGfxIncludes(const fs::path& dir, const fs::path& outputDir, bool isC) {
   std::error_code errorCode;
+  fs::create_directories(outputDir, errorCode);
   for (auto& entry : fs::directory_iterator(dir, errorCode)) {
     if (entry.path().extension() != ".vcsgfx") continue;
     gfx::Asset asset;
     std::string error;
     if (!gfx::fromJson(readFile(entry.path().string()), &asset, &error)) continue;
     std::string sourceName = entry.path().filename().string();
-    std::ofstream(dir / (entry.path().stem().string() + (isC ? ".gfx.h" : ".gfx.asm")), std::ios::binary)
+    std::ofstream(outputDir / (entry.path().stem().string() + (isC ? ".gfx.h" : ".gfx.asm")), std::ios::binary)
         << (isC ? gfx::cInclude(asset, sourceName) : gfx::dasmInclude(asset, sourceName));
   }
 }
 
 // The .vcsmusic files of an example come with their export (music.asm, or music.h for C:
 // every song of the folder with one player), written as the music editor writes it on
-// save, tuned for the project's TV standard.
-static void writeMusicIncludes(const fs::path& dir, const std::string& tvStandard) {
+// save, tuned for the project's TV standard, from resources/music to generated/music.
+static void writeMusicIncludes(const fs::path& dir, const fs::path& outputDir, const std::string& tvStandard) {
   std::error_code errorCode;
   std::set<std::string> written;
   for (auto& entry : fs::directory_iterator(dir, errorCode)) {
@@ -805,7 +861,7 @@ static void writeMusicIncludes(const fs::path& dir, const std::string& tvStandar
     std::string tv = tvStandard == "AUTO" ? "NTSC" : tvStandard;
     options.tv = tv;
     if (options.target == music::ExportTarget::BatariBasic) options.ramStart = song.exportRam;
-    music::writeFolderExport(music::exportFolder(dir.string(), options.target, music::audioClockHz(tv), options), &error);
+    music::writeFolderExport(music::exportFolder(dir.string(), options.target, music::audioClockHz(tv), options, "", nullptr, outputDir.string()), &error);
   }
 }
 
@@ -825,6 +881,12 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
   newProject.language = projectLanguage;
   newProject.tv = tvStandard;
   newProject.output = "build/" + projName + ".bin";
+  // the folders: programs, graphics and music, what their editors export, what the build writes
+  newProject.sourceDir = "src", newProject.resourcesDir = "resources", newProject.generatedDir = "generated", newProject.buildDir = "build";
+  const fs::path sourceFolder = fs::path(newProject.dir) / "src", gfxFolder = fs::path(newProject.dir) / "resources" / "gfx",
+                 musicFolder = fs::path(newProject.dir) / "resources" / "music", generatedGfx = fs::path(newProject.dir) / "generated" / "gfx",
+                 generatedMusic = fs::path(newProject.dir) / "generated" / "music";
+  fs::create_directories(sourceFolder, errorCode);
   if (fs::exists(newProject.file)) {
     if (error) *error = F("{0} already exists.", {newProject.file});
     return false;
@@ -910,14 +972,14 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
     // the project's: 0 NTSC, 1 PAL60, 2 PAL (50 Hz)
     replaceAll(asmText, "{{TV_SYSTEM}}", tvStandard == "PAL60" ? "1" : pal ? "2" : "0");
     replaceAll(asmText, "{{TV}}", tvStandard == "AUTO" ? "NTSC" : tvStandard);
-    fs::path mainFile = fs::path(newProject.dir) / "main.asm";
+    fs::path mainFile = sourceFolder / "main.asm";
     if (!fs::exists(mainFile)) std::ofstream(mainFile) << asmText;
-    fs::path headerFile = fs::path(newProject.dir) / "2600.h";
+    fs::path headerFile = sourceFolder / "2600.h";
     if (!fs::exists(headerFile)) fs::copy_file(templateDir / "2600.h", headerFile, errorCode);
     // the example's graphics and music (shared.json), and the tables they give
     std::set<std::string> leaveOut;  // what the game's switches leave unused
-    if (dasmExample && !dasmExample->titleScreen) leaveOut.insert("title.vcsgfx");
-    if (dasmExample && !dasmExample->music) leaveOut.insert("theme.vcsmusic");
+    if (dasmExample && !dasmExample->titleScreen) leaveOut.insert("resources/gfx/title.vcsgfx");
+    if (dasmExample && !dasmExample->music) leaveOut.insert("resources/music/theme.vcsmusic");
     if (!copySharedFiles(exampleDir, newProject.dir, {{"{{NAME}}", projName}}, error, leaveOut)) return false;
     // CDFJ: the C code, its linker script and the Makefile that builds both (the driver
     // is not included: the Makefile says where it comes from); the templates take the
@@ -926,7 +988,8 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
       for (auto& entry : fs::directory_iterator(exampleDir, errorCode)) {
         std::string extension = entry.path().extension().string(), fileName = entry.path().filename().string();
         if (fileName != "Makefile" && extension != ".c" && extension != ".h" && extension != ".S" && extension != ".ld") continue;
-        fs::path target = fs::path(newProject.dir) / fileName;
+        // the Makefile and the linker script in the project's folder, the code in src/
+        fs::path target = (fileName == "Makefile" || extension == ".ld" ? fs::path(newProject.dir) : sourceFolder) / fileName;
         if (fs::exists(target)) continue;
         std::string text = readFile(entry.path().string());
         replaceAll(text, "{{NAME}}", projName);
@@ -936,13 +999,12 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
     }
     if (!dpcDriver.empty() && !fs::exists(fs::path(newProject.dir) / "DPCplus.arm"))
       fs::copy_file(dpcDriver, fs::path(newProject.dir) / "DPCplus.arm", errorCode);
-    writeGfxIncludes(newProject.dir, cdfj);  // CDFJ: its graphics are the C code's (.gfx.h)
-    writeMusicIncludes(newProject.dir, tvStandard);
+    writeGfxIncludes(gfxFolder, generatedGfx, cdfj);  // CDFJ: its graphics are the C code's (.gfx.h)
+    writeMusicIncludes(musicFolder, generatedMusic, tvStandard);
     copyProjectNotes({exampleDir, templateDir}, newProject.dir, projName, cartridgeText);
-    newProject.main = "main.asm";
+    newProject.main = "src/main.asm";
   } else if (projectLanguage == Language::BatariBasic) {
-    newProject.main = "main.bas";
-    newProject.output = "main.bas.bin";
+    newProject.main = "src/main.bas";
     // the cartridge: set romsize in the game, and the same format in the project
     // (none chosen: AUTO, the emulators detect it)
     // PXE: batari Basic's ELF kernel, a relocatable ELF the emulators and carts run as ELF
@@ -975,22 +1037,22 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
     // batari Basic times the frame for NTSC unless told otherwise (PAL60 keeps NTSC timing)
     // (PXE times its frame itself, for the console it finds itself on)
     if (tvIs50Hz(tvStandard) && !pxe) replaceAll(text, "\tset romsize " + romSize + "\n", "\tset romsize " + romSize + "\n\tset tv pal\n");
-    fs::path mainFile = fs::path(newProject.dir) / "main.bas";
+    fs::path mainFile = sourceFolder / "main.bas";
     if (!fs::exists(mainFile)) std::ofstream(mainFile, std::ios::binary) << text;
     // its graphics and music (shared.json), the regions of main.bas they fill, and the
     // music player and tables it includes
     std::set<std::string> leaveOut;
-    if (!titleScreen) leaveOut.insert("title.vcsgfx");
+    if (!titleScreen) leaveOut.insert("resources/gfx/title.vcsgfx");
     if (!copySharedFiles(templateDir, newProject.dir, {}, error, leaveOut)) return false;
     // (PXE turns NTSC colours into PAL ones itself on a PAL console)
-    if (gfx::tvFromProject(tvStandard) == gfx::Tv::PAL && !pxe) graphicsToPal(newProject.dir);
+    if (gfx::tvFromProject(tvStandard) == gfx::Tv::PAL && !pxe) graphicsToPal(gfxFolder);
     // the game's pfscorecolor: the top row's colour of the title and of the room
     for (auto [placeholder, fileName] : {std::pair{"{{TITLE_TOP_COLOUR}}", "title.vcsgfx"}, {"{{ROOM_TOP_COLOUR}}", "room.vcsgfx"}}) {
       std::string program = readFile(mainFile.string());
       if (program.find(placeholder) == std::string::npos) continue;
       gfx::Asset asset;
       int colour = 0x0E;
-      if (gfx::fromJson(readFile((fs::path(newProject.dir) / fileName).string()), &asset, nullptr) && !asset.playfields.empty())
+      if (gfx::fromJson(readFile((gfxFolder / fileName).string()), &asset, nullptr) && !asset.playfields.empty())
         colour = asset.playfields[0].pfAt(0);
       replaceAll(program, placeholder, gfx::hexColour(colour));
       std::ofstream(mainFile, std::ios::binary) << program;
@@ -1002,8 +1064,8 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
       replaceAll(program, "{{SECOND_ENEMY_COLOUR}}", gfx::hexColour(blue));
       std::ofstream(mainFile, std::ios::binary) << program;
     }
-    fillBasicRegions(mainFile);
-    writeMusicIncludes(newProject.dir, tvStandard);
+    fillBasicRegions(mainFile, gfxFolder);
+    writeMusicIncludes(musicFolder, generatedMusic, tvStandard);
     copyProjectNotes({templateDir}, newProject.dir, projName,
                      {{"{{FORMAT}}", newProject.format},
                       {"{{ROMSIZE}}", romSize},
@@ -1053,8 +1115,8 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
       // library, start code and linker script in ace/, for make ace (next to vcslib_ace.c)
       if (!copySharedFiles(sourceDir, newProject.dir, substitutions, error)) return false;
     }
-    writeGfxIncludes(fs::path(newProject.dir) / "src", true);
-    writeMusicIncludes(fs::path(newProject.dir) / "src", tvStandard);
+    writeGfxIncludes(gfxFolder, generatedGfx, true);
+    writeMusicIncludes(musicFolder, generatedMusic, tvStandard);
     newProject.main = "src/main.c";
     newProject.buildCommand = "make";
     newProject.format = ace ? "ACE" : "ELF";
@@ -1065,6 +1127,9 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
       newProject.emulatorOptions["gopher2600"]["armClock"] = "168";  // the STM32F407's MHz
     }
   }
+  // what git leaves out: each person's state of the project (.vcsproj.user) and the build
+  if (fs::path ignore = fs::path(newProject.dir) / ".gitignore"; !fs::exists(ignore))
+    std::ofstream(ignore, std::ios::binary) << "# Each person's state of the project (open files, layout), and what the build writes\n*.vcsproj.user\n/build/\n";
   if (!newProject.save(error)) return false;
   if (result) *result = newProject;
   return true;

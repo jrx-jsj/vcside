@@ -16,9 +16,12 @@ VCSIDE The Game in DASM, on a {{FORMAT}} cartridge: a room with a hero, two enem
 - Hero: `MoveHero`, `Animate`; enemies: `MoveEnemy`, `NewWave`; hits and walls: `Collisions` (overscan, TIA collision registers).
 - Sound: `MusicInit`, `MusicFrame` every frame, `MusicEffect` with `MUSIC_EFFECT_SHOT`, `MUSIC_EFFECT_HIT` or `MUSIC_EFFECT_LOSE`.
 
+## Folders
+- `src/`: programs; `resources/gfx/`, `resources/music/`: `.vcsgfx`, `.vcsmusic`; `generated/`: what VCSIDE writes from them; `build/`: the build's. Set in the `.vcsproj` (`*_dir`).
+
 ## Build
-- F7 assembles `main.asm` with DASM (`-f3`) into `build/{{NAME}}.bin`, {{ROM_BYTES}} bytes. With the title and the music, 4K has about 350 bytes free; on F8, F6 and F4 the game is all in bank 0 and the other banks are empty (the end of `main.asm` closes every bank: the vectors switch to bank 0 whatever bank the cartridge starts in).
+- F7 assembles `src/main.asm` with DASM (`-f3`) into `build/{{NAME}}.bin`, {{ROM_BYTES}} bytes. With the title and the music, 4K has about 350 bytes free; on F8, F6 and F4 the game is all in bank 0 and the other banks are empty (the end of `main.asm` closes every bank: the vectors switch to bank 0 whatever bank the cartridge starts in).
 
 ## Do not touch
-- `*.gfx.asm` and `music.asm`: written by VCSIDE when the `.vcsgfx` and `.vcsmusic` files are saved; change those instead. Every `.vcsmusic` of that folder exported the same way goes into it, with one player: `MusicPlay` with `MUSIC_SONG_<NAME>` in A starts another song, `MusicStop` stops it.
+- `generated/gfx/*.gfx.asm` and `generated/music/music.asm`: written by VCSIDE when the `.vcsgfx` and `.vcsmusic` files are saved; change those instead. Every `.vcsmusic` of that folder exported the same way goes into it, with one player: `MusicPlay` with `MUSIC_SONG_<NAME>` in A starts another song, `MusicStop` stops it.
 - `2600.h` (register addresses).

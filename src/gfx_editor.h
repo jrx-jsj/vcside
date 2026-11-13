@@ -18,7 +18,9 @@ class GfxEditor {
   // Writes the .vcsgfx and, for a kernel of one's own, the tables next to it
   // (<name>.gfx.asm) for the program to include. *generated: the file written, if any.
   // project: what the project's program draws with; the asset may choose another kernel.
-  bool save(const std::string& path, const gfx::Profile& project, std::string* error, std::string* generated = nullptr);
+  // outputFolder: where the tables go (the project's generated gfx folder); empty: next to the file.
+  bool save(const std::string& path, const gfx::Profile& project, std::string* error, std::string* generated = nullptr,
+            const std::string& outputFolder = "");
   void render(gfx::Tv tv, const gfx::Profile& project);
   gfx::Profile profile(const gfx::Profile& project) const;  // the asset's kernel, or the project's
   bool dirty() const { return dirty_; }

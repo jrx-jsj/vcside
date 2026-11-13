@@ -12,26 +12,31 @@
 # Needs the Arm GNU toolchain (arm-none-eabi-gcc) in PATH.
 
 NAME  = {{NAME}}
-GAME  = build/$(NAME).bin
-OUT   = build/elf
+# The project's folders (VCSIDE passes its own): sources, what its graphics and music editors
+# export, and what the build writes.
+SRC_DIR       ?= src
+GENERATED_DIR ?= generated
+BUILD_DIR     ?= build
+GAME  = $(BUILD_DIR)/$(NAME).bin
+OUT   = $(BUILD_DIR)/elf
 CC    = arm-none-eabi-gcc
 # Cortex-M0 code runs on every ELF cartridge (and is what Stella emulates).
 # -fdata-sections without -ffunction-sections: constants without pointers stay in flash on
 # the PlusCart, and the code stays in one section per file.
 CFLAGS = -mcpu=cortex-m0 -mthumb -O2 -std=c11 -Wall -Wextra -ffreestanding -fno-builtin \
-	-fno-common -fdata-sections -Iinclude
+	-fno-common -fdata-sections -Iinclude -I$(GENERATED_DIR)/gfx -I$(GENERATED_DIR)/music
 
-SOURCES = $(wildcard src/*.c)
-OBJS    = $(SOURCES:src/%.c=$(OUT)/%.o) $(OUT)/memcpy_long.o
+SOURCES = $(wildcard $(SRC_DIR)/*.c)
+OBJS    = $(SOURCES:$(SRC_DIR)/%.c=$(OUT)/%.o) $(OUT)/memcpy_long.o
 
 all: $(GAME)
 
 # memcpy/memset that the compiler calls by itself go through the long jumps of memcpy_long.S.
-$(OUT)/%.o: src/%.c $(wildcard include/*.h src/*.h) | $(OUT)
+$(OUT)/%.o: $(SRC_DIR)/%.c $(wildcard include/*.h $(SRC_DIR)/*.h $(GENERATED_DIR)/*/*.h) | $(OUT)
 	$(CC) $(CFLAGS) -c $< -o $@
 	arm-none-eabi-objcopy --redefine-sym memcpy=memcpy_long --redefine-sym memset=memset_long $@
 
-$(OUT)/memcpy_long.o: src/memcpy_long.S | $(OUT)
+$(OUT)/memcpy_long.o: $(SRC_DIR)/memcpy_long.S | $(OUT)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 # Partial link with libgcc (the M0 has no divide instruction), then only what relocation
@@ -48,7 +53,7 @@ $(GAME): $(OBJS)
 	@bad=$$(arm-none-eabi-nm $@ | awk '$$1 == "U" {print $$2}' | grep -v -E '^(vcs[A-Za-z0-9]+|memset|memcpy|randint|ColorLookup|ReverseByte)$$'); \
 	if [ -n "$$bad" ]; then \
 		for s in $$bad; do for o in $$(arm-none-eabi-nm -A $(OBJS) | grep " U $$s$$" | cut -d: -f1); do \
-			echo "$$o" | sed "s|^$(OUT)/\(.*\)\.o$$|src/\1.c: error: undefined symbol '$$s' (only vcsLib functions may be left undefined)|"; \
+			echo "$$o" | sed "s|^$(OUT)/\(.*\)\.o$$|$(SRC_DIR)/\1.c: error: undefined symbol '$$s' (only vcsLib functions may be left undefined)|"; \
 		done; done; rm -f $@; exit 1; fi
 	@# Calls to the loader must be long (vcsLib.h between #pragma long_calls ... long_calls_off).
 	@if arm-none-eabi-readelf -r -W $@ | awk '$$3 ~ /THM_CALL|THM_JUMP24/' | grep -E ' (vcs[A-Za-z0-9]+|memset|memcpy|randint)$$'; then \
@@ -56,7 +61,7 @@ $(GAME): $(OBJS)
 
 # Chameleon Cart (STM32G070RB: 128 KB of flash and 36 KB of RAM, firmware included).
 CHAMELEON_FW ?=
-GAME_CC = build/$(NAME)-chameleon.elf
+GAME_CC = $(BUILD_DIR)/$(NAME)-chameleon.elf
 chameleon: $(GAME_CC)
 $(GAME_CC): $(GAME) chameleon/support.c
 	@if [ -z "$(CHAMELEON_FW)" ]; then echo "Makefile: error: set CHAMELEON_FW to the chameleon_cart folder of the Chameleon's ELF template"; exit 1; fi
@@ -72,17 +77,17 @@ $(GAME_CC): $(GAME) chameleon/support.c
 # which takes the 6507 over and gives elf_main the vcsLib functions. The program runs from
 # the cartridge's SRAM (ace/ace.ld). ACE_SYSTEM: the TV system elf_main is given.
 ACE_SYSTEM ?= {{ACE_SYSTEM}}
-ACE_OUT    = build/ace
-ACE_GAME   = build/$(NAME).ace
-ACE_DEBUG  = build/ACE_debugging.elf
+ACE_OUT    = $(BUILD_DIR)/ace
+ACE_GAME   = $(BUILD_DIR)/$(NAME).ace
+ACE_DEBUG  = $(BUILD_DIR)/ACE_debugging.elf
 ACE_CFLAGS = -mcpu=cortex-m4 -mthumb -mfpu=fpv4-sp-d16 -mfloat-abi=hard -O2 -gdwarf-4 -gstrict-dwarf -std=c11 \
 	-Wall -Wextra -ffreestanding -fno-builtin -fno-common -ffunction-sections -fdata-sections \
-	-fno-tree-loop-distribute-patterns -Iinclude -Iace -DACE_SYSTEM=$(ACE_SYSTEM)
-ACE_OBJS   = $(SOURCES:src/%.c=$(ACE_OUT)/game/%.o) $(patsubst ace/%.c,$(ACE_OUT)/%.o,$(wildcard ace/*.c)) $(ACE_OUT)/start.o
+	-fno-tree-loop-distribute-patterns -Iinclude -Iace -I$(GENERATED_DIR)/gfx -I$(GENERATED_DIR)/music -DACE_SYSTEM=$(ACE_SYSTEM)
+ACE_OBJS   = $(SOURCES:$(SRC_DIR)/%.c=$(ACE_OUT)/game/%.o) $(patsubst ace/%.c,$(ACE_OUT)/%.o,$(wildcard ace/*.c)) $(ACE_OUT)/start.o
 
 ace: $(ACE_GAME)
 
-$(ACE_OUT)/game/%.o: src/%.c $(wildcard include/*.h src/*.h) | $(ACE_OUT)
+$(ACE_OUT)/game/%.o: $(SRC_DIR)/%.c $(wildcard include/*.h $(SRC_DIR)/*.h $(GENERATED_DIR)/*/*.h) | $(ACE_OUT)
 	$(CC) $(ACE_CFLAGS) -c $< -o $@
 
 $(ACE_OUT)/%.o: ace/%.c $(wildcard ace/*.h) | $(ACE_OUT)
@@ -92,7 +97,7 @@ $(ACE_OUT)/start.o: ace/start.S | $(ACE_OUT)
 	$(CC) $(ACE_CFLAGS) -c $< -o $@
 
 $(ACE_DEBUG): $(ACE_OBJS) ace/ace.ld
-	$(CC) $(ACE_CFLAGS) -nostdlib -T ace/ace.ld -Wl,--gc-sections -Wl,-Map=build/$(NAME)-ace.map \
+	$(CC) $(ACE_CFLAGS) -nostdlib -T ace/ace.ld -Wl,--gc-sections -Wl,-Map=$(BUILD_DIR)/$(NAME)-ace.map \
 		-Wl,--print-memory-usage -Wl,--no-warn-rwx-segments -o $@ $(ACE_OBJS) -lgcc
 	@# The start code must follow the 40-byte header: the firmware's entry is an offset.
 	@if [ "$$(arm-none-eabi-nm $@ | awk '$$3 == "ace_entry" {print $$1}')" != "08020028" ]; then \
@@ -108,6 +113,6 @@ $(OUT):
 	mkdir -p $@
 
 clean:
-	rm -rf build
+	rm -rf $(BUILD_DIR)
 
 .PHONY: all chameleon ace clean

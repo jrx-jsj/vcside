@@ -169,6 +169,23 @@ void ProjectForm::render(TextEditor& text, ImFont* mono, const KnowledgeBase& kb
     row(T("ROM"), T("Where the build leaves the ROM, relative to the project. Run and debug open it."));
     text1("##output", project_.output);
 
+    section(T("Folders"));
+    row(T("Sources"), T("Where the programs are, relative to the project. DASM looks for includes there; a Makefile gets it as SRC_DIR. Empty: no folder of its own."));
+    text1("##srcdir", project_.sourceDir, "src");
+    row(T("Resources"), T("Where the graphics and music are, in its gfx and music folders. Empty: no folder of its own."));
+    text1("##resdir", project_.resourcesDir, "resources");
+    row(T("Generated"), T("Where saving a .vcsgfx or .vcsmusic writes what it exports (.gfx.asm, .gfx.h, music.asm, music.h), in its gfx and music folders. DASM looks for includes in them; a Makefile gets it as GENERATED_DIR. Empty: next to each file."));
+    text1("##gendir", project_.generatedDir, T("(next to each file)"));
+    row(T("Build output"), T("Where the build leaves what it writes: a Makefile gets it as BUILD_DIR, and batari Basic's files are moved there. Empty: the ROM's folder."));
+    {
+      std::string before = project_.buildDir;
+      text1("##builddir", project_.buildDir, T("(the ROM's folder)"));
+      // the ROM goes with it when it was in the old one
+      std::string oldPrefix = (before.empty() ? std::string("build") : before) + "/";
+      if (project_.buildDir != before && !project_.buildDir.empty() && project_.output.rfind(oldPrefix, 0) == 0)
+        project_.output = project_.buildDir + "/" + project_.output.substr(oldPrefix.size());
+    }
+
     section(T("Cartridge and TV"));
     row(T("Format"), nullptr);
     {

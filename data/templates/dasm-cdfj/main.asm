@@ -23,7 +23,7 @@
 
 	processor 6502
 	include "2600.h"
-	include "build/layout.asm"     ; the display data's offsets, from layout.h
+	include "layout.asm"        ; the display data's offsets, from layout.h
 
 ; ---- CDFJ registers ----------------------------------------------------------
 DSWRITE        = $1FF0          ; write: a byte to the display data, at DSCOMM's pointer, which moves on
@@ -55,7 +55,7 @@ Temp    ds 1
 	ORG $0000
 	incbin "cdfj_driver.bin"
 	ORG $0800
-	incbin "build/arm.bin"
+	incbin "arm.bin"
 
 ; ---- Bank 6: the 6507's program ----------------------------------------------
 	ORG $7000

@@ -1277,7 +1277,16 @@
     "CDFJ and DPC+ export are for songs played as samples; a TIA song is exported for DASM, batari Basic or C.": "Las exportaciones CDFJ y DPC+ son para canciones tocadas con muestras; una canción del TIA se exporta para DASM, batari Basic o C.",
     "{0} (the Chameleon Cart image) has a kernel of its own: pxe.c is not in it.": "{0} (la imagen para el Chameleon Cart) lleva un kernel propio: pxe.c no está en ella.",
     "The PXE beta of batari Basic not found. Unpack it into the bb-pxe folder of VCSIDE's tools folder or set its path in Settings > Tools.": "No se encuentra la beta PXE de batari Basic. Descomprímela en la carpeta bb-pxe de la carpeta de herramientas de VCSIDE o pon su ruta en Ajustes > Herramientas.",
-    "PXE projects build with the PXE beta of batari Basic (ZackAttack's), whose kernel runs programs that 1.9's does not. Unpack its release (bB-1.9-PXE-beta-...-wasm) into the bb-pxe folder of VCSIDE's tools folder, or choose its 2600basic.sh (2600bas.bat on Windows). It needs wasmtime too.": "Los proyectos PXE se compilan con la beta PXE de batari Basic (la de ZackAttack), cuyo kernel ejecuta programas que el de la 1.9 no. Descomprime su release (bB-1.9-PXE-beta-...-wasm) en la carpeta bb-pxe de la carpeta de herramientas de VCSIDE, o elige su 2600basic.sh (2600bas.bat en Windows). También necesita wasmtime."
+    "PXE projects build with the PXE beta of batari Basic (ZackAttack's), whose kernel runs programs that 1.9's does not. Unpack its release (bB-1.9-PXE-beta-...-wasm) into the bb-pxe folder of VCSIDE's tools folder, or choose its 2600basic.sh (2600bas.bat on Windows). It needs wasmtime too.": "Los proyectos PXE se compilan con la beta PXE de batari Basic (la de ZackAttack), cuyo kernel ejecuta programas que el de la 1.9 no. Descomprime su release (bB-1.9-PXE-beta-...-wasm) en la carpeta bb-pxe de la carpeta de herramientas de VCSIDE, o elige su 2600basic.sh (2600bas.bat en Windows). También necesita wasmtime.",
+    "Resources": "Recursos",
+    "Generated": "Generados",
+    "Build output": "Salida de la compilación",
+    "Where the programs are, relative to the project. DASM looks for includes there; a Makefile gets it as SRC_DIR. Empty: no folder of its own.": "Dónde están los programas, relativo al proyecto. DASM busca ahí los include; un Makefile lo recibe como SRC_DIR. Vacío: sin carpeta propia.",
+    "Where the graphics and music are, in its gfx and music folders. Empty: no folder of its own.": "Dónde están los gráficos y la música, en sus carpetas gfx y music. Vacío: sin carpeta propia.",
+    "Where saving a .vcsgfx or .vcsmusic writes what it exports (.gfx.asm, .gfx.h, music.asm, music.h), in its gfx and music folders. DASM looks for includes in them; a Makefile gets it as GENERATED_DIR. Empty: next to each file.": "Dónde escribe lo que exporta guardar un .vcsgfx o un .vcsmusic (.gfx.asm, .gfx.h, music.asm, music.h), en sus carpetas gfx y music. DASM busca ahí los include; un Makefile lo recibe como GENERATED_DIR. Vacío: junto a cada archivo.",
+    "(next to each file)": "(junto a cada archivo)",
+    "Where the build leaves what it writes: a Makefile gets it as BUILD_DIR, and batari Basic's files are moved there. Empty: the ROM's folder.": "Dónde deja la compilación lo que escribe: un Makefile lo recibe como BUILD_DIR, y los archivos de batari Basic se mueven ahí. Vacío: la carpeta de la ROM.",
+    "(the ROM's folder)": "(la carpeta de la ROM)"
   },
   "total": 1171
 }

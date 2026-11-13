@@ -91,6 +91,23 @@ static int failures = 0, checks = 0;
 
 using namespace vcs;
 
+// Where a new project keeps a file: programs in src/, .vcsgfx and .vcsmusic in resources/gfx
+// and resources/music, what they export in generated/gfx and generated/music. A C project's
+// "src/<file>" is taken the same way; other folders' files are where they are named.
+static std::filesystem::path inProject(const std::filesystem::path& project, const std::string& name) {
+  std::string base = name;
+  if (name.rfind("src/", 0) == 0) base = name.substr(4);
+  else if (name.find('/') != std::string::npos) return project / name;
+  auto ends = [&](const std::string& suffix) { return base.size() >= suffix.size() && base.compare(base.size() - suffix.size(), suffix.size(), suffix) == 0; };
+  if (ends(".vcsgfx")) return project / "resources" / "gfx" / base;
+  if (ends(".vcsmusic")) return project / "resources" / "music" / base;
+  if (ends(".gfx.asm") || ends(".gfx.h")) return project / "generated" / "gfx" / base;
+  if (base == "music.asm" || base == "music.h") return project / "generated" / "music" / base;
+  for (const char* source : {".asm", ".h", ".c", ".S", ".bas"})
+    if (ends(source)) return project / "src" / base;
+  return project / name;
+}
+
 static void testKb(const KnowledgeBase& kb) {
   CHECK(kb.instructions().size() >= 56);
   const Opcode* opcode = kb.opcode("lda", "absy");
@@ -882,9 +899,21 @@ static void testElfSpace() {
     CHECK(reread.fromJson(project.toJson(), project.file, &error));
     CHECK(reread.elfCartridge == "pluscart" && reread.elfFlashKb == 0 && reread.elfRamKb == 64 && reread.otherKeys.empty());
   }
-  for (auto fileName : {"Makefile", "include/vcsLib.h", "src/main.c", "src/memcpy_long.S", "chameleon/support.c", "src/theme.vcsmusic"}) CHECK(fs::exists(dir / fileName));
+  {  // the project's folders: kept in the .vcsproj; exports go to generated/<kind>, with the
+     // subfolder of resources/<kind> they come from; none set: next to the file
+    CHECK(project.sourceDir == "src" && project.resourcesDir == "resources" && project.generatedDir == "generated" && project.buildDir == "build");
+    Project reread;
+    CHECK(reread.fromJson(project.toJson(), project.file, &error) && reread.generatedDir == "generated" && reread.buildDir == "build" && reread.otherKeys.empty());
+    CHECK(fs::path(project.generatedFolder((dir / "resources" / "music" / "theme.vcsmusic").string(), "music")) == (dir / "generated" / "music").lexically_normal());
+    CHECK(fs::path(project.generatedFolder((dir / "resources" / "gfx" / "level1" / "a.vcsgfx").string(), "gfx")) == (dir / "generated" / "gfx" / "level1").lexically_normal());
+    CHECK(project.generatedFolder("/elsewhere/a.vcsgfx", "gfx") == "/elsewhere");
+    reread.generatedDir.clear();
+    CHECK(reread.generatedFolder((dir / "resources" / "gfx" / "a.vcsgfx").string(), "gfx") == (dir / "resources" / "gfx").string());
+    CHECK(fs::exists(dir / ".gitignore"));
+  }
+  for (auto fileName : {"Makefile", "include/vcsLib.h", "src/main.c", "src/memcpy_long.S", "chameleon/support.c", "src/theme.vcsmusic"}) CHECK(fs::exists(inProject(dir, fileName)));
   {  // its music, exported as the C player (the editor writes it on every save)
-    std::ifstream musicHeader(dir / "src" / "music.h");
+    std::ifstream musicHeader(inProject(dir, "src/music.h"));
     std::string musicText((std::istreambuf_iterator<char>(musicHeader)), {});
     CHECK(musicText.find("#define MUSIC_EFFECT_FIRE 0") != std::string::npos && musicText.find("void music_frame(int lines)") != std::string::npos);
     CHECK(musicText.find("Tuned for NTSC") != std::string::npos);
@@ -895,21 +924,21 @@ static void testElfSpace() {
   CHECK(makefileText.find("NAME  = rainbow") != std::string::npos && makefileText.find("{{") == std::string::npos);
   CHECK(!Project::create((dir / "b").string(), "two words", Language::ElfC, "NTSC", nullptr, &error));
   CHECK(Project::create((dir / "bb").string(), "Square Run", Language::BatariBasic, "NTSC", &project, &error));
-  CHECK(project.main == "main.bas" && project.output == "main.bas.bin" && project.format == "AUTO" && project.buildCommand.empty());
-  std::ifstream basFile(dir / "bb" / "main.bas");
+  CHECK(project.main == "src/main.bas" && project.output == "build/Square Run.bin" && project.format == "AUTO" && project.buildCommand.empty());
+  std::ifstream basFile(inProject(dir / "bb", "main.bas"));
   std::string basicText((std::istreambuf_iterator<char>(basFile)), {});
   CHECK(basicText.find("rem Square Run - batari Basic") != std::string::npos && basicText.find("drawscreen") != std::string::npos);
   CHECK(basicText.find("set tv") == std::string::npos);  // NTSC: batari Basic's own timing
-  CHECK(basicText.find("inline") == std::string::npos && !fs::exists(dir / "bb" / "theme.vcsmusic"));  // empty: the loop alone
+  CHECK(basicText.find("inline") == std::string::npos && !fs::exists(inProject(dir / "bb", "theme.vcsmusic")));  // empty: the loop alone
   {  // the square example's music: the song, and the player and tables main.bas inlines (h to z)
     CHECK(Project::create((dir / "bbsquare").string(), "Square Run", Language::BatariBasic, "NTSC", &project, &error, "square"));
-    std::ifstream squareFile(dir / "bbsquare" / "main.bas"), musicFile(dir / "bbsquare" / "music.asm");
+    std::ifstream squareFile(inProject(dir / "bbsquare", "main.bas")), musicFile(inProject(dir / "bbsquare", "music.asm"));
     std::string squareText((std::istreambuf_iterator<char>(squareFile)), {}), musicText((std::istreambuf_iterator<char>(musicFile)), {});
-    CHECK(fs::exists(dir / "bbsquare" / "theme.vcsmusic") && squareText.find("inline music.asm") != std::string::npos);
+    CHECK(fs::exists(inProject(dir / "bbsquare", "theme.vcsmusic")) && squareText.find("include \"generated/music/music.asm\"") != std::string::npos);
     CHECK(musicText.find("MUSIC_RAM = h") != std::string::npos && musicText.find("MUSIC_EFFECT_BLIP") != std::string::npos);
   }
   CHECK(Project::create((dir / "bbpal").string(), "Pal Run", Language::BatariBasic, "PAL", &project, &error));
-  std::ifstream palFile(dir / "bbpal" / "main.bas");
+  std::ifstream palFile(inProject(dir / "bbpal", "main.bas"));
   std::string palText((std::istreambuf_iterator<char>(palFile)), {});
   CHECK(palText.find("\tset romsize 4k\n\tset tv pal\n") != std::string::npos);
   CHECK(tvStandardsFor(Language::BatariBasic) == std::vector<std::string>({"NTSC", "PAL", "PAL60"}));
@@ -1018,7 +1047,7 @@ static void testElfSpace() {
   {
     fs::path pxeDir = dir / "pxe-empty";
     CHECK(Project::create(pxeDir.string(), "p", Language::BatariBasic, "PAL", &project, &error, "", "PXE"));
-    std::ifstream programFile(pxeDir / "main.bas");
+    std::ifstream programFile(inProject(pxeDir, "main.bas"));
     const std::string program((std::istreambuf_iterator<char>(programFile)), std::istreambuf_iterator<char>());
     CHECK(project.format == "ELF" && program.find("set kernel PXE") != std::string::npos &&
           program.find("romsize") == std::string::npos && program.find("set tv") == std::string::npos);
@@ -1029,10 +1058,10 @@ static void testElfSpace() {
     CHECK(Project::examples(Language::BatariBasic, "PXE").size() == 2 && Project::examples(Language::BatariBasic, "PXE")[0].first == "game");
     fs::path gameDir = dir / "pxe-game";
     CHECK(Project::create(gameDir.string(), "g", Language::BatariBasic, "NTSC", &project, &error, "game", "PXE"));
-    std::ifstream programFile(gameDir / "main.bas"), musicFile(gameDir / "music.h");
+    std::ifstream programFile(inProject(gameDir, "main.bas")), musicFile(inProject(gameDir, "music.h"));
     const std::string program((std::istreambuf_iterator<char>(programFile)), std::istreambuf_iterator<char>());
     const std::string music((std::istreambuf_iterator<char>(musicFile)), std::istreambuf_iterator<char>());
-    CHECK(fs::exists(gameDir / "pxe.c") && music.find("#define MUSIC_TIA 1") != std::string::npos && music.find("music_audio") != std::string::npos);
+    CHECK(fs::exists(inProject(gameDir, "pxe.c")) && music.find("#define MUSIC_TIA 1") != std::string::npos && music.find("music_audio") != std::string::npos);
     CHECK(program.find("set kernel PXE") != std::string::npos && program.find("player2:") != std::string::npos &&
           program.find("player2color:") != std::string::npos && program.find("{{") == std::string::npos);
     CHECK(project.pxe() && project.basicTool() == "bb-pxe" && !project.pxeSource().empty());
@@ -1044,7 +1073,7 @@ static void testElfSpace() {
     CHECK(listed);
     std::string gcc = findInPath("arm-none-eabi-gcc");
     if (!gcc.empty()) {  // pxe.c and the exported player compile for the cartridge's ARM
-      std::string command = "cd \"" + gameDir.string() + "\" && \"" + gcc + "\" -mcpu=cortex-m0 -mthumb -O2 -std=c11 -Wall -Werror -ffreestanding -c pxe.c -o pxe.o";
+      std::string command = "cd \"" + gameDir.string() + "\" && \"" + gcc + "\" -mcpu=cortex-m0 -mthumb -O2 -std=c11 -Wall -Werror -ffreestanding -Igenerated/music -c src/pxe.c -o pxe.o";
       CHECK(std::system(command.c_str()) == 0);
     }
   }
@@ -1060,14 +1089,14 @@ static void testElfSpace() {
                                                {"game-notitle", "F4", 32768, false}, {"game-2k", "2K", 2048, false}}) {
     fs::path variantDir = dir / (std::string("variant-") + example + "-" + format);
     CHECK(Project::create(variantDir.string(), "v", Language::Dasm, "PAL", &project, &error, example, format));
-    CHECK(project.format == format && fs::exists(variantDir / "title.vcsgfx") == title &&
-          fs::exists(variantDir / "theme.vcsmusic") == (std::string(example) != "game-2k"));
-    std::ifstream sourceFile(variantDir / "main.asm");
+    CHECK(project.format == format && fs::exists(inProject(variantDir, "title.vcsgfx")) == title &&
+          fs::exists(inProject(variantDir, "theme.vcsmusic")) == (std::string(example) != "game-2k"));
+    std::ifstream sourceFile(inProject(variantDir, "main.asm"));
     std::string sourceText((std::istreambuf_iterator<char>(sourceFile)), {});
     CHECK(sourceText.find("{{") == std::string::npos && sourceText.find(title ? "TITLE_SCREEN   = 1" : "TITLE_SCREEN   = 0") != std::string::npos);
     std::string dasm = findInPath("dasm");
     if (!dasm.empty()) {
-      std::string command = "cd \"" + variantDir.string() + "\" && \"" + dasm + "\" main.asm -f3 -ov.bin > dasm.log 2>&1";
+      std::string command = "cd \"" + variantDir.string() + "\" && \"" + dasm + "\" src/main.asm -Isrc -Igenerated/gfx -Igenerated/music -f3 -ov.bin > dasm.log 2>&1";
       CHECK(std::system(command.c_str()) == 0 && fs::file_size(variantDir / "v.bin", errorCode) == (uintmax_t)bytes);
     }
   }
@@ -1076,20 +1105,20 @@ static void testElfSpace() {
     fs::path cartDir = dir / (std::string("cart-") + format);
     CHECK(Project::create(cartDir.string(), "c", Language::Dasm, "PAL", &project, &error, "", format));
     CHECK(project.format == format);
-    std::ifstream sourceFile(cartDir / "main.asm"), notesFile(cartDir / "VCSIDE.md");
+    std::ifstream sourceFile(inProject(cartDir, "main.asm")), notesFile(cartDir / "VCSIDE.md");
     std::string sourceText((std::istreambuf_iterator<char>(sourceFile)), {}), notesText((std::istreambuf_iterator<char>(notesFile)), {});
     CHECK(sourceText.find("{{") == std::string::npos && notesText.find("{{") == std::string::npos);
     CHECK(notesText.find(std::to_string(bytes) + " bytes") != std::string::npos);
     std::string dasm = findInPath("dasm");
     if (!dasm.empty()) {
-      std::string command = "cd \"" + cartDir.string() + "\" && \"" + dasm + "\" main.asm -f3 -oc.bin > dasm.log 2>&1";
+      std::string command = "cd \"" + cartDir.string() + "\" && \"" + dasm + "\" src/main.asm -Isrc -Igenerated/gfx -Igenerated/music -f3 -oc.bin > dasm.log 2>&1";
       CHECK(std::system(command.c_str()) == 0 && fs::file_size(cartDir / "c.bin", errorCode) == (uintmax_t)bytes);
     }
   }
   for (auto [format, romSize] : {std::pair{"4K", "4k"}, {"F8", "8k"}, {"F6", "16k"}, {"F4", "32k"}}) {
     fs::path cartDir = dir / (std::string("bbcart-") + format);
     CHECK(Project::create(cartDir.string(), "c", Language::BatariBasic, "PAL", &project, &error, "", format));
-    std::ifstream basFile(cartDir / "main.bas"), notesFile(cartDir / "VCSIDE.md");
+    std::ifstream basFile(inProject(cartDir, "main.bas")), notesFile(cartDir / "VCSIDE.md");
     std::string basText((std::istreambuf_iterator<char>(basFile)), {}), notesText((std::istreambuf_iterator<char>(notesFile)), {});
     CHECK(project.format == format && basText.find(std::string("\tset romsize ") + romSize + "\n\tset tv pal\n") != std::string::npos);
     CHECK(notesText.find(std::string("set romsize ") + romSize) != std::string::npos && notesText.find("{{") == std::string::npos);
@@ -1107,7 +1136,7 @@ static void testElfSpace() {
         for (const char* tv : {"NTSC", "PAL"}) {
           fs::path startDir = dir / ("bbstart-" + std::to_string(startIndex++));
           CHECK(Project::create(startDir.string(), "s", Language::BatariBasic, tv, &project, &error, example, format));
-          std::ifstream basFile(startDir / "main.bas");
+          std::ifstream basFile(inProject(startDir, "main.bas"));
           std::string basText((std::istreambuf_iterator<char>(basFile)), {});
           const std::string exampleId = example;
           CHECK(project.format == format && basText.find("{{") == std::string::npos && basText.find("rem s - ") != std::string::npos);
@@ -1115,8 +1144,8 @@ static void testElfSpace() {
           CHECK(basText.find("rem vcsgfx end\n  rem vcsgfx end") == std::string::npos);
           if (exampleId.rfind("game", 0) == 0) {
             const bool title = exampleId == "game";
-            CHECK(fs::exists(startDir / "title.vcsgfx") == title && (basText.find("goto title") != std::string::npos) == title);
-            CHECK(fs::exists(startDir / "hero.vcsgfx") && fs::exists(startDir / "enemy.vcsgfx") && fs::exists(startDir / "room.vcsgfx"));
+            CHECK(fs::exists(inProject(startDir, "title.vcsgfx")) == title && (basText.find("goto title") != std::string::npos) == title);
+            CHECK(fs::exists(inProject(startDir, "hero.vcsgfx")) && fs::exists(inProject(startDir, "enemy.vcsgfx")) && fs::exists(inProject(startDir, "room.vcsgfx")));
             // every region holds the export of its frame or playfield
             for (const char* filled : {"\trem vcsgfx hero.vcsgfx hero frame 4\n\trem hero, frame 4", "\trem vcsgfx enemy.vcsgfx enemy frame 2\n\trem enemy, frame 2",
                                        "\trem vcsgfx room.vcsgfx room\n\trem room;"})
@@ -1128,18 +1157,18 @@ static void testElfSpace() {
             CHECK((basText.find("\t$F4\nend\n") != std::string::npos) == ntsc);
             CHECK((basText.find("in enemy.vcsgfx.\n\tplayer1color:\n\t$86\n") != std::string::npos) == ntsc &&
                   basText.find("{{SECOND_ENEMY_COLOUR}}") == std::string::npos);
-            std::ifstream musicFile(startDir / "music.asm");
+            std::ifstream musicFile(inProject(startDir, "music.asm"));
             std::string musicText((std::istreambuf_iterator<char>(musicFile)), {});
             CHECK(musicText.find("MUSIC_RAM = h") != std::string::npos && musicText.find("MUSIC_EFFECT_LOSE") != std::string::npos);
           }
           if (!canCompile) continue;
-          std::string command = "cd \"" + startDir.string() + "\" && sh \"" + bbScript + "\" main.bas > bb.log 2>&1";
+          std::string command = "cd \"" + startDir.string() + "\" && sh \"" + bbScript + "\" src/main.bas > bb.log 2>&1";
           CHECK(std::system(command.c_str()) == 0);
           std::ifstream logFile(startDir / "bb.log");
           std::string logText((std::istreambuf_iterator<char>(logFile)), {});
           CHECK(logText.find("compilation complete") != std::string::npos && logText.find("rror") == std::string::npos);
           int romBytes = std::string(format) == "4K" ? 4096 : std::string(format) == "F8" ? 8192 : std::string(format) == "F6" ? 16384 : 32768;
-          CHECK(fs::file_size(startDir / "main.bas.bin", errorCode) == (uintmax_t)romBytes);
+          CHECK(fs::file_size(startDir / "src" / "main.bas.bin", errorCode) == (uintmax_t)romBytes);
         }
   }
   // the DASM game: the shared graphics and song, the menu's first TV system from the
@@ -1149,22 +1178,22 @@ static void testElfSpace() {
     CHECK(Project::create(gameDir.string(), "my game", Language::Dasm, tvStandard, &project, &error, "game"));
     for (auto fileName : {"main.asm", "2600.h", "hero.vcsgfx", "enemy.vcsgfx", "room.vcsgfx", "title.vcsgfx", "hero.gfx.asm",
                           "enemy.gfx.asm", "room.gfx.asm", "title.gfx.asm", "theme.vcsmusic", "music.asm"})
-      CHECK(fs::exists(gameDir / fileName));
-    std::ifstream sourceFile(gameDir / "main.asm");
+      CHECK(fs::exists(inProject(gameDir, fileName)));
+    std::ifstream sourceFile(inProject(gameDir, "main.asm"));
     std::string sourceText((std::istreambuf_iterator<char>(sourceFile)), {});
     const std::string expectedSystem = std::string(tvStandard) == "PAL60" ? "1" : std::string(tvStandard) == "PAL" ? "2" : "0";
     CHECK(sourceText.find("DEFAULT_SYSTEM = " + expectedSystem) != std::string::npos && sourceText.find("{{") == std::string::npos);
-    std::ifstream musicFile(gameDir / "music.asm");
+    std::ifstream musicFile(inProject(gameDir, "music.asm"));
     std::string musicText((std::istreambuf_iterator<char>(musicFile)), {});
     CHECK(musicText.find("MUSIC_EFFECT_SHOT") != std::string::npos && musicText.find("MUSIC_EFFECT_LOSE") != std::string::npos);
     // its effects all end (one that holds its volume keeps the channel for good)
-    std::ifstream songFile(gameDir / "theme.vcsmusic");
+    std::ifstream songFile(inProject(gameDir, "theme.vcsmusic"));
     vcs::music::Song gameSong;
     CHECK(vcs::music::fromJson(std::string((std::istreambuf_iterator<char>(songFile)), {}), &gameSong, &error));
     CHECK(vcs::music::exportSong(gameSong, vcs::music::audioClockHz("NTSC"), {}).problems.empty());
     std::string dasm = findInPath("dasm");
     if (!dasm.empty()) {
-      std::string command = "cd \"" + gameDir.string() + "\" && \"" + dasm + "\" main.asm -f3 -ogame.bin > dasm.log 2>&1";
+      std::string command = "cd \"" + gameDir.string() + "\" && \"" + dasm + "\" src/main.asm -Isrc -Igenerated/gfx -Igenerated/music -f3 -ogame.bin > dasm.log 2>&1";
       CHECK(std::system(command.c_str()) == 0 && fs::file_size(gameDir / "game.bin", errorCode) == 4096);
     }
   }
@@ -1172,19 +1201,19 @@ static void testElfSpace() {
     fs::path animationDir = dir / (std::string("anim-") + tvStandard);
     CHECK(Project::create(animationDir.string(), "walker", Language::Dasm, tvStandard, &project, &error, "animation"));
     for (auto fileName : {"main.asm", "2600.h", "hero.vcsgfx", "hero.gfx.asm", "theme.vcsmusic", "music.asm"})
-      CHECK(fs::exists(animationDir / fileName));
-    std::ifstream musicFile(animationDir / "music.asm");
+      CHECK(fs::exists(inProject(animationDir, fileName)));
+    std::ifstream musicFile(inProject(animationDir, "music.asm"));
     std::string musicText((std::istreambuf_iterator<char>(musicFile)), {});
     CHECK(musicText.find("MUSIC_EFFECT_JUMP") != std::string::npos && musicText.find("MusicFrame") != std::string::npos);
-    std::ifstream includeFile(animationDir / "hero.gfx.asm");
+    std::ifstream includeFile(inProject(animationDir, "hero.gfx.asm"));
     std::string includeText((std::istreambuf_iterator<char>(includeFile)), {});
     CHECK(includeText.find("hero_walk_FRAME") != std::string::npos && includeText.find("hero_P0_FramePtrLo") != std::string::npos);
     std::string dasm = findInPath("dasm");
     if (!dasm.empty()) {
-      std::string command = "cd \"" + animationDir.string() + "\" && \"" + dasm + "\" main.asm -f3 -oexample.bin > dasm.log 2>&1";
+      std::string command = "cd \"" + animationDir.string() + "\" && \"" + dasm + "\" src/main.asm -Isrc -Igenerated/gfx -Igenerated/music -f3 -oexample.bin > dasm.log 2>&1";
       CHECK(std::system(command.c_str()) == 0 && fs::file_size(animationDir / "example.bin", errorCode) == 4096);
       if (std::string(tvStandard) == "AUTO") {  // both systems from one source: -DPAL=1 gives the 50 Hz one
-        std::string pal = "cd \"" + animationDir.string() + "\" && \"" + dasm + "\" main.asm -f3 -DPAL=1 -opal.bin > dasm.log 2>&1";
+        std::string pal = "cd \"" + animationDir.string() + "\" && \"" + dasm + "\" src/main.asm -Isrc -Igenerated/gfx -Igenerated/music -f3 -DPAL=1 -opal.bin > dasm.log 2>&1";
         CHECK(std::system(pal.c_str()) == 0 && fs::file_size(animationDir / "pal.bin", errorCode) == 4096);
         std::ifstream exampleRomFile(animationDir / "example.bin", std::ios::binary), palRomFile(animationDir / "pal.bin", std::ios::binary);
         std::string exampleBytes((std::istreambuf_iterator<char>(exampleRomFile)), {}), palBytes((std::istreambuf_iterator<char>(palRomFile)), {});
@@ -1232,25 +1261,25 @@ static void testElfSpace() {
         fs::path dpcDir = dir / ("dpc-" + (example.empty() ? std::string("empty") : example) + "-" + tvStandard);
         CHECK(Project::create(dpcDir.string(), "voices", Language::Dasm, tvStandard, &project, &error, example, "DPC+"));
         CHECK(project.format == "DPC+");
-        for (auto fileName : {"main.asm", "2600.h", "DPCplus.arm", "VCSIDE.md"}) CHECK(fs::exists(dpcDir / fileName));
-        std::ifstream sourceFile(dpcDir / "main.asm"), notesFile(dpcDir / "VCSIDE.md");
+        for (auto fileName : {"main.asm", "2600.h", "DPCplus.arm", "VCSIDE.md"}) CHECK(fs::exists(inProject(dpcDir, fileName)));
+        std::ifstream sourceFile(inProject(dpcDir, "main.asm")), notesFile(dpcDir / "VCSIDE.md");
         std::string sourceText((std::istreambuf_iterator<char>(sourceFile)), {}), notesText((std::istreambuf_iterator<char>(notesFile)), {});
         CHECK(sourceText.find("{{") == std::string::npos && notesText.find("# voices: notes for the assistant") == 0 &&
               notesText.find("{{") == std::string::npos && notesText.find("## Kernel rules") != std::string::npos &&
               notesText.size() <= 4000);
-        CHECK(fs::exists(dpcDir / "music.asm") == !example.empty());
+        CHECK(fs::exists(inProject(dpcDir, "music.asm")) == !example.empty());
         if (!example.empty()) {
-          std::ifstream musicFile(dpcDir / "music.asm");
+          std::ifstream musicFile(inProject(dpcDir, "music.asm"));
           std::string musicText((std::istreambuf_iterator<char>(musicFile)), {});
           CHECK(musicText.find("MUSIC_PART = 3") != std::string::npos);
           CHECK(musicText.find("MUSIC_TIA_EFFECTS = 1 ") != std::string::npos);  // "bump" or "hit", on the TIA's channel 1
           CHECK(musicText.find(example == "dpcplus" ? "MUSIC_EFFECT_FIRE" : "MUSIC_EFFECT_SHOT") != std::string::npos);
         }
         if (example == "game-dpcplus")
-          for (auto fileName : {"hero.gfx.asm", "enemy.gfx.asm", "room.gfx.asm", "title.gfx.asm"}) CHECK(fs::exists(dpcDir / fileName));
+          for (auto fileName : {"hero.gfx.asm", "enemy.gfx.asm", "room.gfx.asm", "title.gfx.asm"}) CHECK(fs::exists(inProject(dpcDir, fileName)));
         std::string dasm = findInPath("dasm");
         if (!dasm.empty()) {
-          std::string command = "cd \"" + dpcDir.string() + "\" && \"" + dasm + "\" main.asm -f3 -oexample.bin > dasm.log 2>&1";
+          std::string command = "cd \"" + dpcDir.string() + "\" && \"" + dasm + "\" src/main.asm -Isrc -Igenerated/gfx -Igenerated/music -f3 -oexample.bin > dasm.log 2>&1";
           CHECK(std::system(command.c_str()) == 0 && fs::file_size(dpcDir / "example.bin", errorCode) == 32768);
         }
       }
@@ -1270,21 +1299,21 @@ static void testElfSpace() {
     CHECK(Project::create(cdfjDir.string(), "voices", Language::Dasm, tvStandard, &project, &error, example, "CDFJ"));
     CHECK(project.format == "CDFJ" && project.buildCommand == "make" && project.output == "build/voices.bin");
     for (auto fileName : {"main.asm", "2600.h", "Makefile", "game.c", "divide.c", "cdfj.h", "layout.h", "start.S", "arm.ld", "VCSIDE.md"})
-      CHECK(fs::exists(cdfjDir / fileName));
+      CHECK(fs::exists(inProject(cdfjDir, fileName)));
     std::ifstream makefile(cdfjDir / "Makefile"), notesFile(cdfjDir / "VCSIDE.md");
     std::string makeText((std::istreambuf_iterator<char>(makefile)), {}), notesText((std::istreambuf_iterator<char>(notesFile)), {});
     CHECK(makeText.find("NAME      = voices") != std::string::npos);
     CHECK(notesText.find("# voices: notes for the assistant") == 0 && notesText.find("{{") == std::string::npos &&
           notesText.find("## Kernel rules") != std::string::npos && notesText.size() <= 4000);
-    CHECK(fs::exists(cdfjDir / "music.h") == !example.empty() && fs::exists(cdfjDir / "theme.vcsmusic") == !example.empty());
+    CHECK(fs::exists(inProject(cdfjDir, "music.h")) == !example.empty() && fs::exists(inProject(cdfjDir, "theme.vcsmusic")) == !example.empty());
     if (!example.empty()) {
-      std::ifstream musicFile(cdfjDir / "music.h");
+      std::ifstream musicFile(inProject(cdfjDir, "music.h"));
       std::string musicText((std::istreambuf_iterator<char>(musicFile)), {});
       CHECK(musicText.find("#define MUSIC_CDFJ 1") != std::string::npos);
       CHECK(musicText.find("#define MUSIC_TIA_EFFECTS 1 ") != std::string::npos);
     }
     if (example == "game-cdfj")  // its graphics are the C code's
-      for (auto fileName : {"hero.gfx.h", "enemy.gfx.h", "room.gfx.h", "title.gfx.h"}) CHECK(fs::exists(cdfjDir / fileName));
+      for (auto fileName : {"hero.gfx.h", "enemy.gfx.h", "room.gfx.h", "title.gfx.h"}) CHECK(fs::exists(inProject(cdfjDir, fileName)));
     std::string make = findInPath("make"), dasm = findInPath("dasm"), gcc = findInPath("arm-none-eabi-gcc");
     if (make.empty() || dasm.empty() || gcc.empty()) {
       std::printf("  (no make, dasm or arm-none-eabi-gcc: the CDFJ example is not built)\n");
@@ -1336,8 +1365,8 @@ static void testElfSpace() {
   fs::path elfDir = dir / "anim-elf";
   CHECK(Project::create(elfDir.string(), "walker", Language::ElfC, "NTSC", &project, &error, "animation"));
   for (auto fileName : {"Makefile", "include/vcsLib.h", "src/main.c", "src/memcpy_long.S", "src/hero.vcsgfx", "src/hero.gfx.h", "src/theme.vcsmusic", "src/music.h"})
-    CHECK(fs::exists(elfDir / fileName));
-  std::ifstream mainFile(elfDir / "src" / "main.c"), headerFile(elfDir / "src" / "hero.gfx.h"), elfMusicFile(elfDir / "src" / "music.h");
+    CHECK(fs::exists(inProject(elfDir, fileName)));
+  std::ifstream mainFile(inProject(elfDir, "src/main.c")), headerFile(inProject(elfDir, "src/hero.gfx.h")), elfMusicFile(inProject(elfDir, "src/music.h"));
   std::string mainText((std::istreambuf_iterator<char>(mainFile)), {}), headerText((std::istreambuf_iterator<char>(headerFile)), {});
   std::string elfMusicText((std::istreambuf_iterator<char>(elfMusicFile)), {});
   CHECK(elfMusicText.find("#define MUSIC_TIA_EFFECTS 1 ") != std::string::npos && mainText.find("vcsWrite5(AUDV1, music_tia[2]);") != std::string::npos);
@@ -1366,14 +1395,14 @@ static void testElfSpace() {
     for (auto fileName : {"Makefile", "include/vcsLib.h", "src/main.c", "src/game.c", "src/game.h", "src/menu.c", "src/menu.h", "src/screen.c",
                           "src/screen.h", "src/hero.gfx.h", "src/enemy.gfx.h", "src/room.gfx.h", "src/title.gfx.h", "src/music.h",
                           "ace/vcslib_ace.c", "chameleon/support.c"})
-      CHECK(fs::exists(gameDir / fileName));
+      CHECK(fs::exists(inProject(gameDir, fileName)));
     {  // its effects all end (one that holds its volume keeps its voice for good)
-      std::ifstream songFile(gameDir / "src" / "theme.vcsmusic");
+      std::ifstream songFile(inProject(gameDir, "src/theme.vcsmusic"));
       vcs::music::Song gameSong;
       CHECK(vcs::music::fromJson(std::string((std::istreambuf_iterator<char>(songFile)), {}), &gameSong, &error));
       CHECK(vcs::music::exportSong(gameSong, vcs::music::audioClockHz("NTSC"), {vcs::music::ExportTarget::C, "", "NTSC"}).problems.empty());
     }
-    std::ifstream gameMain(gameDir / "src" / "main.c"), gameMusic(gameDir / "src" / "music.h"), gameRules(gameDir / "src" / "game.c");
+    std::ifstream gameMain(inProject(gameDir, "src/main.c")), gameMusic(inProject(gameDir, "src/music.h")), gameRules(inProject(gameDir, "src/game.c"));
     std::string gameMainText((std::istreambuf_iterator<char>(gameMain)), {}), gameMusicText((std::istreambuf_iterator<char>(gameMusic)), {});
     std::string gameRulesText((std::istreambuf_iterator<char>(gameRules)), {});
     const std::string expectedSystem = std::string(tvStandard) == "PAL" ? "SYSTEM_PAL" : std::string(tvStandard) == "PAL60" ? "SYSTEM_PAL60" : "SYSTEM_NTSC";
@@ -1388,7 +1417,7 @@ static void testElfSpace() {
   }
   // the ACE files an ELF project gets for make ace, and its TV system
   for (auto fileName : {"ace/ace.h", "ace/ace.c", "ace/start.S", "ace/memory.c", "ace/ace.ld", "ace/vcslib_ace.c", "ace/main_ace.c"})
-    CHECK(fs::exists(elfDir / fileName));
+    CHECK(fs::exists(inProject(elfDir, fileName)));
   {
     std::ifstream elfMakefile(elfDir / "Makefile"), elfStart(elfDir / "ace" / "start.S");
     std::string makefileText((std::istreambuf_iterator<char>(elfMakefile)), {}), startText((std::istreambuf_iterator<char>(elfStart)), {});
@@ -1407,8 +1436,8 @@ static void testElfSpace() {
   CHECK(project.format == "ACE" && project.output == "build/beam.ace" && project.emulator == "gopher2600" && project.buildCommand == "make");
   CHECK(project.emulatorOptions["gopher2600"]["armClock"] == "168" && languageFromId(languageId(Language::AceC)) == Language::AceC);
   for (auto fileName : {"Makefile", "ace.ld", "include/ace.h", "src/ace.c", "src/start.S", "src/main.c", "src/theme.vcsmusic", "src/music.h"})
-    CHECK(fs::exists(aceDir / fileName));
-  std::ifstream aceStart(aceDir / "src" / "start.S"), aceMain(aceDir / "src" / "main.c");
+    CHECK(fs::exists(inProject(aceDir, fileName)));
+  std::ifstream aceStart(inProject(aceDir, "src/start.S")), aceMain(inProject(aceDir, "src/main.c"));
   std::string aceStartText((std::istreambuf_iterator<char>(aceStart)), {}), aceMainText((std::istreambuf_iterator<char>(aceMain)), {});
   CHECK(aceStartText.find("\"beam            \"") != std::string::npos && aceMainText.find("lines = 249;") != std::string::npos);
   CHECK(tvStandardsFor(Language::AceC) == tvStandardsFor(Language::ElfC) && isC(Language::AceC) && !isC(Language::Dasm));
@@ -1431,8 +1460,8 @@ static void testElfSpace() {
   fs::path aceAnimationDir = dir / "ace-animation";
   CHECK(Project::create(aceAnimationDir.string(), "walker", Language::AceC, "NTSC", &project, &error, "animation"));
   for (auto fileName : {"src/hero.vcsgfx", "src/hero.gfx.h", "src/music.h", "src/ace.c", "src/start.S"})
-    CHECK(fs::exists(aceAnimationDir / fileName));
-  std::ifstream aceAnimationMain(aceAnimationDir / "src" / "main.c");
+    CHECK(fs::exists(inProject(aceAnimationDir, fileName)));
+  std::ifstream aceAnimationMain(inProject(aceAnimationDir, "src/main.c"));
   std::string aceAnimationText((std::istreambuf_iterator<char>(aceAnimationMain)), {});
   CHECK(aceAnimationText.find("hero.gfx.h") != std::string::npos && aceAnimationText.find("lines = 199;") != std::string::npos);
   if (!gcc.empty() && !make.empty()) {
@@ -1446,9 +1475,9 @@ static void testElfSpace() {
   CHECK(project.format == "ACE" && project.output == "build/game.ace" && project.buildCommand == "make" && project.emulator == "gopher2600");
   for (auto fileName : {"Makefile", "include/ace.h", "src/ace.c", "src/start.S", "src/main.c", "src/game.c", "src/menu.c", "src/screen.c",
                         "src/hero.gfx.h", "src/enemy.gfx.h", "src/room.gfx.h", "src/title.gfx.h", "src/music.h"})
-    CHECK(fs::exists(aceGameDir / fileName));
+    CHECK(fs::exists(inProject(aceGameDir, fileName)));
   CHECK(!fs::exists(aceGameDir / "include" / "vcsLib.h"));
-  std::ifstream aceGameMain(aceGameDir / "src" / "main.c");
+  std::ifstream aceGameMain(inProject(aceGameDir, "src/main.c"));
   std::string aceGameText((std::istreambuf_iterator<char>(aceGameMain)), {});
   CHECK(aceGameText.find("#define DEFAULT_SYSTEM SYSTEM_PAL ") != std::string::npos && aceGameText.find("ace_overblank_end") != std::string::npos);
   if (!gcc.empty() && !make.empty()) {
@@ -1460,7 +1489,7 @@ static void testElfSpace() {
   CHECK(Project::create(aceVcsLibDir.string(), "both", Language::AceC, "PAL", &project, &error, "vcslib"));
   CHECK(project.format == "ACE" && project.output == "build/both.ace" && project.emulator == "gopher2600" && project.buildCommand == "make ace");
   for (auto fileName : {"Makefile", "include/vcsLib.h", "src/main.c", "src/music.h", "ace/vcslib_ace.c", "ace/main_ace.c", "ace/ace.c", "ace/start.S"})
-    CHECK(fs::exists(aceVcsLibDir / fileName));
+    CHECK(fs::exists(inProject(aceVcsLibDir, fileName)));
   CHECK(!fs::exists(aceVcsLibDir / "include" / "ace.h") && !fs::exists(aceVcsLibDir / "shared.json"));
   if (!gcc.empty() && !make.empty()) {
     std::string command = "cd \"" + aceVcsLibDir.string() + "\" && \"" + make + "\" ace > make-ace.log 2>&1 && \"" + make + "\" > make.log 2>&1";
@@ -2297,10 +2326,10 @@ static void testHeader(const KnowledgeBase& kb, const std::string& data) {
   Project project;
   std::string error;
   CHECK(Project::create(dir.string(), "plain", Language::Dasm, "NTSC", &project, &error));
-  CHECK(fs::exists(dir / "2600.h") && !fs::exists(dir / "hardware.h"));
+  CHECK(fs::exists(inProject(dir, "2600.h")) && !fs::exists(inProject(dir, "hardware.h")));
   std::string dasm = findInPath("dasm");
   if (!dasm.empty()) {
-    std::string command = "cd \"" + dir.string() + "\" && \"" + dasm + "\" main.asm -f3 -oplain.bin > dasm.log 2>&1";
+    std::string command = "cd \"" + dir.string() + "\" && \"" + dasm + "\" src/main.asm -Isrc -Igenerated/gfx -Igenerated/music -f3 -oplain.bin > dasm.log 2>&1";
     CHECK(std::system(command.c_str()) == 0 && fs::file_size(dir / "plain.bin", errorCode) == 4096);
   }
   fs::remove_all(dir, errorCode);

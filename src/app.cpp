@@ -358,6 +358,7 @@ OpenFile* App::openFile(const std::string& pathIn, int line) {
     newFile->asmSyntax = false;
     newFile->music = std::make_unique<music::MusicEditor>();
     std::string error;
+    if (project_) newFile->music->setExportFolder(project_->generatedFolder(path, "music"));
     if (!newFile->music->load(path, &error)) {
       output_ += F("Cannot read {0}: {1}", {path, error}) + "\n";
       return nullptr;
@@ -467,6 +468,7 @@ bool App::saveFile(OpenFile& file) {
   }
   if (file.music) {
     std::string error;
+    file.music->setExportFolder(project_ ? project_->generatedFolder(file.path, "music") : "");
     if (!file.music->save(file.path, &error)) {
       output_ += error + "\n";
       return false;
@@ -476,7 +478,7 @@ bool App::saveFile(OpenFile& file) {
   }
   if (file.gfx) {
     std::string error, generated;
-    if (!file.gfx->save(file.path, gfxProfile(), &error, &generated)) {
+    if (!file.gfx->save(file.path, gfxProfile(), &error, &generated, project_ ? project_->generatedFolder(file.path, "gfx") : "")) {
       output_ += error + "\n";
       return false;
     }
@@ -600,8 +602,8 @@ void App::build(int thenRun) {
   if (project_->language == Language::BatariBasic && project_->buildCommand.empty()) {
     // its script ends with 0 even when it fails: whatever is left from the last build must go
     std::error_code errorCode;
-    for (auto suffix : {".bin", ".asm", ".list.txt", ".symbol.txt", ".lst", ".sym"})
-      fs::remove(project_->basicOutput(suffix), errorCode);
+    for (auto suffix : {".bin", ".asm", ".list.txt", ".symbol.txt", ".lst", ".sym", "-cc.elf"})
+      fs::remove(project_->basicOutput(suffix), errorCode), fs::remove(project_->basicWritten(suffix), errorCode);
   }
   job_.start(args, workDir, env);
 }
@@ -624,6 +626,7 @@ void App::pollBuild() {
     auto linkDiagnostics = parseGccOutput(printed);
     diagnostics_.insert(diagnostics_.end(), linkDiagnostics.begin(), linkDiagnostics.end());
   } else if (basic) {
+    project_->collectBasicOutputs();  // to the build folder, when the project has one
     diagnostics_ = parseBasicOutput(printed, project_->main, readFile(project_->basicOutput(".asm")));
   } else {
     diagnostics_ = gcc ? parseGccOutput(printed) : parseDasmOutput(printed);

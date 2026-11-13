@@ -1,13 +1,13 @@
 {
  "Makefile": {"from": "dasm-cdfj/Makefile"},
  "arm.ld": {"from": "dasm-cdfj/arm.ld"},
- "cdfj.h": {"from": "dasm-cdfj/cdfj.h"},
- "divide.c": {"from": "dasm-cdfj/divide.c"},
- "enemy.vcsgfx": {"from": "shared/enemy.vcsgfx"},
- "hero.vcsgfx": {"from": "shared/hero.vcsgfx"},
- "room.vcsgfx": {"from": "shared/room.vcsgfx"},
- "start.S": {"from": "dasm-cdfj/start.S"},
- "theme.vcsmusic": {"from": "shared/theme.vcsmusic", "change": {
+ "src/cdfj.h": {"from": "dasm-cdfj/cdfj.h"},
+ "src/divide.c": {"from": "dasm-cdfj/divide.c"},
+ "resources/gfx/enemy.vcsgfx": {"from": "shared/enemy.vcsgfx"},
+ "resources/gfx/hero.vcsgfx": {"from": "shared/hero.vcsgfx"},
+ "resources/gfx/room.vcsgfx": {"from": "shared/room.vcsgfx"},
+ "src/start.S": {"from": "dasm-cdfj/start.S"},
+ "resources/music/theme.vcsmusic": {"from": "shared/theme.vcsmusic", "change": {
   "effects": [
    {"channel": 2, "instrument": 4, "name": "shot", "note": 72},
    {"channel": 1, "instrument": 5, "name": "hit", "note": 40, "tia": true},
@@ -16,5 +16,5 @@
   "export": {"to": "cdfj"},
   "name": "game theme"
  }},
- "title.vcsgfx": {"from": "shared/title.vcsgfx"}
+ "resources/gfx/title.vcsgfx": {"from": "shared/title.vcsgfx"}
 }

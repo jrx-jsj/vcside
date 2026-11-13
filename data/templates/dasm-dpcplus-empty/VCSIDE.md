@@ -15,8 +15,11 @@ A 32K DPC+ program from VCSIDE's empty DPC+ template: the ARM driver, the cartri
 - The frequency table (`ORG $8000`): one 4-byte entry per note.
 - Joystick, button, sound: not read or played yet.
 
+## Folders
+- `src/`: programs; `resources/gfx/`, `resources/music/`: `.vcsgfx`, `.vcsmusic`; `generated/`: what VCSIDE writes from them; `build/`: the build's. Set in the `.vcsproj` (`*_dir`).
+
 ## Build
-- F7 assembles `main.asm` with DASM (`-f3`) into `build/{{NAME}}.bin`, 32768 bytes. F5 runs it.
+- F7 assembles `src/main.asm` with DASM (`-f3`) into `build/{{NAME}}.bin`, 32768 bytes. F5 runs it.
 
 ## Do not touch
 - `DPCplus.arm`: DPC+'s ARM driver, copied from batari Basic.

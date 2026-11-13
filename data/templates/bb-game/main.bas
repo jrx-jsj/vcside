@@ -17,9 +17,9 @@
 	rem Graphics: hero.vcsgfx, enemy.vcsgfx and room.vcsgfx{{TITLE_FILE}} (open them
 	rem from the project panel). Saving one rewrites the lines between its
 	rem `rem vcsgfx` and `rem vcsgfx end` below.
-	rem Music and sound: theme.vcsmusic is the song and its three effects (shot,
-	rem hit, lose); saving it writes music.asm, the player and the song,
-	rem included at the end with inline. MusicInit starts the song, MusicFrame
+	rem Music and sound: resources/music/theme.vcsmusic is the song and its three
+	rem effects (shot, hit, lose); saving it writes generated/music/music.asm,
+	rem the player and the song, included at the end. MusicInit starts the song, MusicFrame
 	rem plays it once per frame, and MusicEffect plays an effect; while an
 	rem effect sounds, the song's notes on its channel wait.
 
@@ -347,4 +347,7 @@ enemyCrawl2
 	rem vcsgfx end
 	return
 
-	inline music.asm
+	rem generated/music/music.asm: asm, since inline takes no folders
+	asm
+	include "generated/music/music.asm"
+end

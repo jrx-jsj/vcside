@@ -83,7 +83,7 @@ static bool endsWith(const std::string& text, const std::string& suffix) {
   return text.size() >= suffix.size() && text.compare(text.size() - suffix.size(), suffix.size(), suffix) == 0;
 }
 
-bool GfxEditor::save(const std::string& path, const Profile& project, std::string* error, std::string* generated) {
+bool GfxEditor::save(const std::string& path, const Profile& project, std::string* error, std::string* generated, const std::string& outputFolder) {
   std::ofstream out(path, std::ios::binary);
   if (!out) {
     if (error) *error = F("Cannot write {0}", {path});
@@ -93,13 +93,16 @@ bool GfxEditor::save(const std::string& path, const Profile& project, std::strin
   out.close();
   path_ = path;
   if (Profile kernelProfile = profile(project); !kernelProfile.basic()) {
-    // the tables for the program, next to the .vcsgfx
+    // the tables for the program, in the generated folder or next to the .vcsgfx
     fs::path sourcePath(path);
+    fs::path folder = outputFolder.empty() ? sourcePath.parent_path() : fs::path(outputFolder);
+    std::error_code ec;
+    if (!folder.empty()) fs::create_directories(folder, ec);
     std::string source = sourcePath.filename().string();
     auto files = generatedFiles(asset_, source, kernelProfile.usesC);
     std::set<std::string> now;
     for (auto& generatedFile : files) {
-      std::string includePath = (sourcePath.parent_path() / generatedFile.name).string();
+      std::string includePath = (folder / generatedFile.name).string();
       std::ofstream output(includePath, std::ios::binary);
       if (!output) continue;
       output << generatedFile.text;
@@ -108,8 +111,7 @@ bool GfxEditor::save(const std::string& path, const Profile& project, std::strin
     }
     // what an earlier split generated from this file and no longer does
     std::string stem = sourcePath.stem().string() + ".";
-    std::error_code ec;
-    for (auto& entry : fs::directory_iterator(sourcePath.parent_path().empty() ? fs::path(".") : sourcePath.parent_path(), ec)) {
+    for (auto& entry : fs::directory_iterator(folder.empty() ? fs::path(".") : folder, ec)) {
       std::string filename = entry.path().filename().string();
       bool ours = filename.rfind(stem, 0) == 0 && (endsWith(filename, ".gfx.asm") || endsWith(filename, ".gfx.h"));
       if (!ours || now.count(filename)) continue;

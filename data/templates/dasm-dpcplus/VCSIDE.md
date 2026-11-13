@@ -12,10 +12,13 @@ A 32K DPC+ program from VCSIDE's DPC+ music example: a square moved with the joy
 - Music: `MusicInit`, `MusicFrame` once a frame (sets the voices' waveforms and notes), `MusicEffect` with `MUSIC_EFFECT_FIRE` (takes the third voice) or `MUSIC_EFFECT_BUMP` (TIA channel 1).
 - `music.asm` is included three times (`MUSIC_PART` 1, 2, 3): player and song, waveforms in the display data, frequencies.
 
+## Folders
+- `src/`: programs; `resources/gfx/`, `resources/music/`: `.vcsgfx`, `.vcsmusic`; `generated/`: what VCSIDE writes from them; `build/`: the build's. Set in the `.vcsproj` (`*_dir`).
+
 ## Build
-- F7 assembles `main.asm` with DASM (`-f3`) into `build/{{NAME}}.bin`, 32768 bytes. F5 runs it.
+- F7 assembles `src/main.asm` with DASM (`-f3`) into `build/{{NAME}}.bin`, 32768 bytes. F5 runs it.
 
 ## Do not touch
 - `DPCplus.arm`: DPC+'s ARM driver, copied from batari Basic.
-- `music.asm`: written by VCSIDE when `theme.vcsmusic` is saved. Every `.vcsmusic` of that folder exported the same way goes into it, with one player: `MusicPlay` with `MUSIC_SONG_<NAME>` in A starts another song, `MusicStop` stops it.
+- `generated/music/music.asm`: written by VCSIDE when `theme.vcsmusic` is saved. Every `.vcsmusic` of that folder exported the same way goes into it, with one player: `MusicPlay` with `MUSIC_SONG_<NAME>` in A starts another song, `MusicStop` stops it.
 - `2600.h` and the register addresses at the top of `main.asm`.

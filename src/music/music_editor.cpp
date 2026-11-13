@@ -71,8 +71,8 @@ ExportTarget MusicEditor::exportTarget() const {
   return target;
 }
 
-static std::string exportPath(const std::string& songPath, ExportTarget target) {
-  return (fs::path(songPath).parent_path() / exportFileName(target)).string();
+static std::string exportPath(const std::string& songPath, const std::string& exportFolder, ExportTarget target) {
+  return ((exportFolder.empty() ? fs::path(songPath).parent_path() : fs::path(exportFolder)) / exportFileName(target)).string();
 }
 
 bool MusicEditor::exportSongFile(bool quiet) {
@@ -88,7 +88,7 @@ bool MusicEditor::exportFolderFile(ExportTarget target, bool quiet) {
   options.tv = tv_;
   std::string folder = path_.empty() ? std::string(".") : fs::path(path_).parent_path().string();
   if (folder.empty()) folder = ".";
-  FolderExport folderExport = exportFolder(folder, target, audioClockHz(tv_), options, path_, &song_);
+  FolderExport folderExport = exportFolder(folder, target, audioClockHz(tv_), options, path_, &song_, exportFolder_);
   ExportResult& result = folderExport.result;
   exportProblems_ = result.problems;
   std::string error;
@@ -299,7 +299,7 @@ void MusicEditor::toolbar() {
   ImGui::SameLine();
   if (ImGui::Button(T("Export..."))) ImGui::OpenPopup("##export");
   if (ImGui::IsItemHovered())
-    ImGui::SetTooltip("%s", F("{0}: this folder's songs and VCSIDE's player for the console, kept up to date on every save.", {fs::path(exportPath(path_, exportTarget())).filename().string()}).c_str());
+    ImGui::SetTooltip("%s", F("{0}: this folder's songs and VCSIDE's player for the console, kept up to date on every save.", {fs::path(exportPath(path_, exportFolder_, exportTarget())).filename().string()}).c_str());
   exportPopup();
   if (!message_.empty()) {
     ImGui::SameLine();

@@ -28,6 +28,15 @@ struct Project {
   std::string emulator = "gopher2600";
   IllegalOpcodes illegal = IllegalOpcodes::Warn;
   std::vector<std::string> includeDirs;
+  // The project's folders, relative to it (new projects: src, resources, generated and
+  // build; empty in older ones, which keep everything where it is):
+  // - sourceDir: the programs (DASM looks for includes there; make gets SRC_DIR);
+  // - resourcesDir: the graphics and music, in its gfx/ and music/ folders;
+  // - generatedDir: what the graphics and music editors export on save (.gfx.asm, .gfx.h,
+  //   music.asm, music.h), in its gfx/ and music/ folders; empty: next to each file;
+  // - buildDir: what the build writes (make gets BUILD_DIR; batari Basic's files are moved
+  //   there); empty: the ROM's folder.
+  std::string sourceDir, resourcesDir, generatedDir, buildDir;
   // optional: a command of the project's own (e.g. "make" or "sh build.sh") instead of the
   // tool; with &&, |, ; or > it runs through the shell
   std::string buildCommand;
@@ -54,6 +63,10 @@ struct Project {
   bool fromJson(const std::string& text, const std::string& path, std::string* error);
 
   std::string abs(const std::string& relativePath) const;
+  // The folder where the export of a .vcsgfx ("gfx") or .vcsmusic ("music") goes:
+  // <generatedDir>/<kind>, plus the subfolder of <resourcesDir>/<kind> the file is in; next to
+  // the file when the project has no generatedDir or the file is not in the project.
+  std::string generatedFolder(const std::string& sourcePath, const std::string& kind) const;
   std::string outputPath() const { return abs(output); }
   std::string stem() const;  // output path without extension (for .lst/.sym)
 
@@ -66,8 +79,17 @@ struct Project {
   std::vector<std::string> buildArgs(Toolchain& toolchain, std::string* error, std::string* workDir = nullptr,
                                      EnvVars* env = nullptr) const;
   // batari Basic writes <main>.bin, .asm, .list.txt (.lst before 1.9) and .symbol.txt (.sym)
-  // next to the source; these are the paths.
-  std::string basicOutput(const std::string& suffix) const { return abs(main) + suffix; }
+  // next to the source (basicWritten); in a project with a buildDir they are moved there
+  // after it runs, with the files it leaves in the folder it runs in (collectBasicOutputs).
+  // basicOutput is where they are then.
+  std::string basicWritten(const std::string& suffix) const { return abs(main) + suffix; }
+  std::string basicOutput(const std::string& suffix) const;
+  // The build folder: buildDir, or the ROM's folder.
+  std::string buildFolder() const;
+  // Folders DASM looks in besides the project's own and include_dirs: the source folder and
+  // the generated gfx/ and music/ folders, when the project has them.
+  std::vector<std::string> layoutIncludeDirs() const;
+  void collectBasicOutputs() const;
   // batari Basic's PXE kernel (format ELF) with a pxe.c in the project's folder: that C is
   // compiled and linked into the ELF batari Basic wrote, at <main>.bas.linked; it wraps
   // vcsEndOverblank, which the kernel calls once per frame (see the PXE template).

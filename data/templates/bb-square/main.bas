@@ -2,9 +2,9 @@
 	rem Move the square with the joystick; the button changes the colour.
 	rem The playfield wall stops it. RESET starts again.
 	rem
-	rem Music and sound: theme.vcsmusic (open it from the project panel) is the
-	rem song and its two sound effects; saving it writes music.asm, the
-	rem player and the song, included at the end with inline. The player uses
+	rem Music and sound: resources/music/theme.vcsmusic is the song and its two
+	rem sound effects; saving it writes generated/music/music.asm, the player
+	rem and the song, included at the end. The player uses
 	rem the variables h to z. MusicInit starts the song, MusicFrame plays it once
 	rem per frame, and MusicEffect plays an effect: blip on the button, bump on
 	rem the wall. While an effect sounds, the song's notes on its channel wait.
@@ -93,4 +93,7 @@ moved
 	if switchreset then goto start
 	goto main
 
-	inline music.asm
+	rem generated/music/music.asm: asm, since inline takes no folders
+	asm
+	include "generated/music/music.asm"
+end

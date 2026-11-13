@@ -1,3 +1,3 @@
 {
- "theme.vcsmusic": {"from": "shared/theme.vcsmusic", "change": {"export": {"to": "dpc"}}}
+ "resources/music/theme.vcsmusic": {"from": "shared/theme.vcsmusic", "change": {"export": {"to": "dpc"}}}
 }

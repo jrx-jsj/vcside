@@ -16,10 +16,13 @@ VCSIDE The Game on a 32K DPC+ cartridge: a title screen with a menu (PLAY, TV: N
 - The display data: the waveforms, the playfields (`CopyTables` writes them at power on, top row first), the hero's and the enemy's frames (`Animate`, `GameLogic`, through `DF7WRITE`), `TheGame0D-5D`.
 - Joystick and button: `StickPresses`, `ButtonPress` (menu), `MoveHero`, `Shoot`. Hits and walls: `Collisions` (overscan). Effects: `PlayerEffect` with `MUSIC_EFFECT_SHOT`, `_HIT` (TIA channel 1) or `_LOSE`.
 
+## Folders
+- `src/`: programs; `resources/gfx/`, `resources/music/`: `.vcsgfx`, `.vcsmusic`; `generated/`: what VCSIDE writes from them; `build/`: the build's. Set in the `.vcsproj` (`*_dir`).
+
 ## Build
-- F7 assembles `main.asm` with DASM (`-f3`) into `build/{{NAME}}.bin`, 32768 bytes. F5 runs it.
+- F7 assembles `src/main.asm` with DASM (`-f3`) into `build/{{NAME}}.bin`, 32768 bytes. F5 runs it.
 
 ## Do not touch
 - `DPCplus.arm`: DPC+'s ARM driver, copied from batari Basic.
-- `*.gfx.asm` and `music.asm`: written by VCSIDE when the `.vcsgfx` and `.vcsmusic` files are saved. Every `.vcsmusic` of that folder exported the same way goes into it, with one player: `MusicPlay` with `MUSIC_SONG_<NAME>` in A starts another song, `MusicStop` stops it.
+- `generated/gfx/*.gfx.asm` and `generated/music/music.asm`: written by VCSIDE when the `.vcsgfx` and `.vcsmusic` files are saved. Every `.vcsmusic` of that folder exported the same way goes into it, with one player: `MusicPlay` with `MUSIC_SONG_<NAME>` in A starts another song, `MusicStop` stops it.
 - `2600.h` and the register addresses at the top of `main.asm`.
