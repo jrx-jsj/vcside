@@ -3648,7 +3648,7 @@ void App::newProjectDialog() {
   auto formatLabel = [](const std::string& format) {  // the size, for the banked ones
     for (auto [id, size] : {std::pair{"F8", "8K"}, {"F6", "16K"}, {"F4", "32K"}, {"DPC+", "32K"}, {"CDFJ", "32K"}})
       if (format == id) return format + " (" + size + ")";
-    if (format == "PXE") return std::string("PXE (ELF, 60K)");
+    if (format == "PXE") return std::string("PXE (ELF, 60K) (BETA)");  // not polished yet
     return format;
   };
   {
