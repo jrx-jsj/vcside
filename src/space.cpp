@@ -301,6 +301,7 @@ SpaceReport parseBasicSpace(const std::string& output, long romFileSize, const S
   }
   if (left.empty() && hasSingle) left[0] = single;
   long bankSize = left.size() > 1 ? 4096 : (romFileSize > 0 && romFileSize < 4096 ? romFileSize : 4096);
+  if (options.basicRomSize > 0 && left.size() == 1) bankSize = options.basicRomSize;
   for (auto& [bank, free] : left) {
     SpaceReport::Area area;
     area.name = left.size() > 1 ? F("Bank {0}", {std::to_string(bank)}) : T("ROM");

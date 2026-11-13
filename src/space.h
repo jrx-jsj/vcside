@@ -47,6 +47,7 @@ std::vector<CodeLine> parseDasmListingCode(const std::string& listing);
 struct SpaceOptions {
   int warnPercent = 90;   // warn when a bank or a RAM area is fuller than this
   int stackReserve = 8;   // bytes of 2600 RAM kept free above the variables for the stack
+  long basicRomSize = 0;  // batari Basic: the ROM's size when it is not banks of 4K (PXE: 60K)
 };
 
 struct SpaceReport {

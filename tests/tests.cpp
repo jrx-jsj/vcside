@@ -1013,7 +1013,16 @@ static void testElfSpace() {
   // the cartridge of a new project: the examples made for it, and an empty template that
   // assembles to its size (2K and 4K, and F8, F6 and F4 with their banks)
   CHECK(Project::cartridgeFormats(Language::Dasm) == std::vector<std::string>({"2K", "4K", "F8", "F6", "F4", "DPC+", "CDFJ"}));
-  CHECK(Project::cartridgeFormats(Language::BatariBasic) == std::vector<std::string>({"4K", "F8", "F6", "F4"}));
+  CHECK(Project::cartridgeFormats(Language::BatariBasic) == std::vector<std::string>({"4K", "F8", "F6", "F4", "PXE"}));
+  // PXE: an ELF project with its own empty program, which neither sets a ROM size nor the TV
+  {
+    fs::path pxeDir = dir / "pxe-empty";
+    CHECK(Project::create(pxeDir.string(), "p", Language::BatariBasic, "PAL", &project, &error, "", "PXE"));
+    std::ifstream programFile(pxeDir / "main.bas");
+    const std::string program((std::istreambuf_iterator<char>(programFile)), std::istreambuf_iterator<char>());
+    CHECK(project.format == "ELF" && program.find("set kernel PXE") != std::string::npos &&
+          program.find("romsize") == std::string::npos && program.find("set tv") == std::string::npos);
+  }
   CHECK(Project::cartridgeFormats(Language::ElfC).empty());
   CHECK(Project::examples(Language::Dasm, "4K").size() == 3 && Project::examples(Language::Dasm, "F8").size() == 2 &&
         Project::examples(Language::Dasm, "2K").size() == 1 && Project::examples(Language::Dasm, "DPC+").size() == 2 &&

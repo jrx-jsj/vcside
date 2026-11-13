@@ -587,6 +587,10 @@ static const BasicExample kBasicExamples[] = {
     {"game", N_("VCSIDE The Game"), "bb-game"},
     {"game-notitle", N_("VCSIDE The Game, without the title screen"), "bb-game", false},
     {"square", N_("Example: a square in a room, with music"), "bb-square"}};
+// PXE (batari Basic's ELF kernel) has a program of its own: no banks, 17 sprites, its colours.
+static const BasicExample kPxeExamples[] = {
+    {"game", N_("VCSIDE The Game"), "bb-pxe-game"},
+    {"game-notitle", N_("VCSIDE The Game, without the title screen"), "bb-pxe-game", false}};
 
 // A template's optional parts: the lines between {{TAG}} and {{/TAG}} (each on a line of its
 // own) stay without the two markers, or go with them.
@@ -661,7 +665,7 @@ static void fillBasicRegions(const fs::path& program) {
 
 std::vector<std::string> Project::cartridgeFormats(Language language) {
   if (language == Language::Dasm) return {"2K", "4K", "F8", "F6", "F4", "DPC+", "CDFJ"};
-  if (language == Language::BatariBasic) return {"4K", "F8", "F6", "F4"};
+  if (language == Language::BatariBasic) return {"4K", "F8", "F6", "F4", "PXE"};
   return {};
 }
 
@@ -678,7 +682,10 @@ std::vector<std::pair<std::string, const char*>> Project::examples(Language lang
   }
   if (language == Language::BatariBasic) {
     std::vector<std::pair<std::string, const char*>> all;
-    for (auto& entry : kBasicExamples) all.push_back({entry.id, entry.name});
+    if (format == "PXE")
+      for (auto& entry : kPxeExamples) all.push_back({entry.id, entry.name});
+    else
+      for (auto& entry : kBasicExamples) all.push_back({entry.id, entry.name});
     return all;
   }
   if (language == Language::ElfC) return {{"game", N_("VCSIDE The Game")}, {"animation", N_("Example: an animated sprite")}};
@@ -913,18 +920,22 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
     newProject.output = "main.bas.bin";
     // the cartridge: set romsize in the game, and the same format in the project
     // (none chosen: AUTO, the emulators detect it)
-    newProject.format = format.empty() ? "AUTO" : format;
+    // PXE: batari Basic's ELF kernel, a relocatable ELF the emulators and carts run as ELF
+    const bool pxe = format == "PXE";
+    newProject.format = format.empty() ? "AUTO" : pxe ? "ELF" : format;
     std::string romSize = "4k";
     for (auto& [formatId, size] : kBasicRomSizes)
       if (newProject.format == formatId) romSize = size;
     const BasicExample* basicExample = nullptr;
     for (auto& entry : kBasicExamples)
-      if (example == entry.id) basicExample = &entry;
+      if (!pxe && example == entry.id) basicExample = &entry;
+    for (auto& entry : kPxeExamples)
+      if (pxe && example == entry.id) basicExample = &entry;
     if (!example.empty() && !basicExample) {
       if (error) *error = F("Template not found in {0}", {example});
       return false;
     }
-    fs::path templateDir = fs::path(dataDir()) / "templates" / (basicExample ? basicExample->folder : "bb");
+    fs::path templateDir = fs::path(dataDir()) / "templates" / (basicExample ? basicExample->folder : pxe ? "bb-pxe" : "bb");
     std::string text = readFile((templateDir / "main.bas").string());
     if (text.empty()) {
       if (error) *error = F("Template not found in {0}", {(templateDir / "main.bas").string()});
@@ -937,7 +948,8 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
     replaceAll(text, "{{NAME}}", projName);
     replaceAll(text, "\tset romsize 4k\n", "\tset romsize " + romSize + "\n");
     // batari Basic times the frame for NTSC unless told otherwise (PAL60 keeps NTSC timing)
-    if (tvIs50Hz(tvStandard)) replaceAll(text, "\tset romsize " + romSize + "\n", "\tset romsize " + romSize + "\n\tset tv pal\n");
+    // (PXE times its frame itself, for the console it finds itself on)
+    if (tvIs50Hz(tvStandard) && !pxe) replaceAll(text, "\tset romsize " + romSize + "\n", "\tset romsize " + romSize + "\n\tset tv pal\n");
     fs::path mainFile = fs::path(newProject.dir) / "main.bas";
     if (!fs::exists(mainFile)) std::ofstream(mainFile, std::ios::binary) << text;
     // its graphics and music (shared.json), the regions of main.bas they fill, and the
@@ -945,7 +957,8 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
     std::set<std::string> leaveOut;
     if (!titleScreen) leaveOut.insert("title.vcsgfx");
     if (!copySharedFiles(templateDir, newProject.dir, {}, error, leaveOut)) return false;
-    if (gfx::tvFromProject(tvStandard) == gfx::Tv::PAL) graphicsToPal(newProject.dir);
+    // (PXE turns NTSC colours into PAL ones itself on a PAL console)
+    if (gfx::tvFromProject(tvStandard) == gfx::Tv::PAL && !pxe) graphicsToPal(newProject.dir);
     // the game's pfscorecolor: the top row's colour of the title and of the room
     for (auto [placeholder, fileName] : {std::pair{"{{TITLE_TOP_COLOUR}}", "title.vcsgfx"}, {"{{ROOM_TOP_COLOUR}}", "room.vcsgfx"}}) {
       std::string program = readFile(mainFile.string());
@@ -960,7 +973,7 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
     // the game's second enemy: the first one's red ($46) plus $40, a blue, for the TV standard
     if (std::string program = readFile(mainFile.string()); program.find("{{SECOND_ENEMY_COLOUR}}") != std::string::npos) {
       int blue = 0x86;
-      if (gfx::tvFromProject(tvStandard) == gfx::Tv::PAL) blue = palColourFor(blue);
+      if (gfx::tvFromProject(tvStandard) == gfx::Tv::PAL && !pxe) blue = palColourFor(blue);
       replaceAll(program, "{{SECOND_ENEMY_COLOUR}}", gfx::hexColour(blue));
       std::ofstream(mainFile, std::ios::binary) << program;
     }

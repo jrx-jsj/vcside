@@ -670,6 +670,7 @@ bool App::finishBasicBuild() {
 void App::measureBasic(long romSize) {
   SpaceOptions options;
   options.warnPercent = project_->spaceWarnPercent;
+  if (project_->format == "ELF") options.basicRomSize = 60 * 1024;  // PXE: 60K and no banks
   space_ = parseBasicSpace(output_, romSize, options);
   if (space_->banks.empty()) {
     space_.reset();
@@ -3607,6 +3608,7 @@ void App::newProjectDialog() {
   auto formatLabel = [](const std::string& format) {  // the size, for the banked ones
     for (auto [id, size] : {std::pair{"F8", "8K"}, {"F6", "16K"}, {"F4", "32K"}, {"DPC+", "32K"}, {"CDFJ", "32K"}})
       if (format == id) return format + " (" + size + ")";
+    if (format == "PXE") return std::string("PXE (ELF, 60K)");
     return format;
   };
   {
