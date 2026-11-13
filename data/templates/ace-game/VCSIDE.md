@@ -21,4 +21,4 @@ VCSIDE The Game in C on an ACE cartridge (PlusCart, UnoCart; Gopher2600): a room
 
 ## Do not touch
 - `include/ace.h`, `src/ace.c`, `src/start.S`, `src/memory.c`, `ace.ld`.
-- `*.gfx.h` and `theme.music.h`: written by VCSIDE when `hero.vcsgfx`, `enemy.vcsgfx`, `room.vcsgfx`, `title.vcsgfx` and `theme.vcsmusic` are saved.
+- `*.gfx.h` and `music.h`: written by VCSIDE when `hero.vcsgfx`, `enemy.vcsgfx`, `room.vcsgfx`, `title.vcsgfx` and `theme.vcsmusic` are saved. Every `.vcsmusic` of that folder exported the same way goes into it, with one player: `music_play(MUSIC_SONG_<NAME>)` starts another song, `music_stop()` stops it.

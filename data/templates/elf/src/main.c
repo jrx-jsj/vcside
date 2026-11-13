@@ -2,7 +2,7 @@
  * {{NAME}} - made with VCSIDE (ELF cartridge, C on the cartridge's ARM).
  *
  * A scrolling rainbow with a white bar you move with the joystick, and music: the song in
- * theme.vcsmusic (open it with the music editor; saving it writes theme.music.h), with a
+ * theme.vcsmusic (open it with the music editor; saving it writes music.h), with a
  * sound when the bar reaches an edge and another on the fire button. The ARM feeds the
  * 6507 every instruction of the visible lines; during the overblank the 6507 runs VSYNC,
  * VBLANK and overscan by itself and the ARM is free for the game logic.
@@ -16,7 +16,7 @@
  * Build: F7 (runs make). Run: F5. This template is CC0: use it as you like.
  */
 #include "vcsLib.h"
-#include "theme.music.h"
+#include "music.h"
 
 static int lines = 199;          /* visible lines: 262 - 63 of overblank (NTSC, PAL60) */
 static int multicart;            /* started from a menu (PlusCart, UnoCart): can go back */

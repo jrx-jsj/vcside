@@ -3,7 +3,7 @@
 	rem The playfield wall stops it. RESET starts again.
 	rem
 	rem Music and sound: theme.vcsmusic (open it from the project panel) is the
-	rem song and its two sound effects; saving it writes theme.music.asm, the
+	rem song and its two sound effects; saving it writes music.asm, the
 	rem player and the song, included at the end with inline. The player uses
 	rem the variables h to z. MusicInit starts the song, MusicFrame plays it once
 	rem per frame, and MusicEffect plays an effect: blip on the button, bump on
@@ -93,4 +93,4 @@ moved
 	if switchreset then goto start
 	goto main
 
-	inline theme.music.asm
+	inline music.asm

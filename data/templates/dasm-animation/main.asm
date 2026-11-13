@@ -11,7 +11,7 @@
 ; it lasts (_TICKS).
 ;
 ; Music and sound: theme.vcsmusic (open it from the project panel) is the song
-; and its two sound effects; saving it writes theme.music.asm, the player and
+; and its two sound effects; saving it writes music.asm, the player and
 ; the song's tables, included below. MusicInit starts the song, MusicFrame
 ; plays it once per frame, and MusicEffect plays an effect: jump on the fire
 ; button, bump when the hero reaches an edge. While an effect sounds, the
@@ -257,7 +257,7 @@ AnimSteps       .byte hero_idle_STEPS, hero_walk_STEPS
 AnimLoop        .byte hero_idle_LOOP, hero_walk_LOOP
 
 	include "hero.gfx.asm"
-	include "theme.music.asm"
+	include "music.asm"
 
 	ORG $FFFC
 	.word Reset

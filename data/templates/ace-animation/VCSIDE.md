@@ -18,4 +18,4 @@ An ACE cartridge game in C (PlusCart, UnoCart) from VCSIDE's animated sprite exa
 
 ## Do not touch
 - `include/ace.h`, `src/ace.c`, `src/start.S`, `src/memory.c`, `ace.ld`.
-- `src/hero.gfx.h`, `src/theme.music.h`: written by VCSIDE when `hero.vcsgfx` / `theme.vcsmusic` are saved.
+- `src/hero.gfx.h`, `src/music.h`: written by VCSIDE when `hero.vcsgfx` / `theme.vcsmusic` are saved. Every `.vcsmusic` of that folder exported the same way goes into it, with one player: `music_play(MUSIC_SONG_<NAME>)` starts another song, `music_stop()` stops it.

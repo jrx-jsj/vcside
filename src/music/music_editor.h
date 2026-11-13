@@ -43,8 +43,11 @@ class MusicEditor {
   void waveEditor(Instrument& instrument);
   bool drum(const Instrument& instrument) const { return !song_.samples() && instrument.drum; }
   void exportPopup();
-  // Writes <name>.music.asm (or .music.h for C) as the song says (Song::exportTo); quiet: only problems are said.
+  // Writes the folder's music.asm (or music.h for C) with this song and every other one
+  // there exported the same way (Song::exportTo); quiet: only problems are said.
+  // target: the export to write (a song that stops exporting leaves the others in it).
   bool exportSongFile(bool quiet);
+  bool exportFolderFile(ExportTarget target, bool quiet);
   ExportTarget exportTarget() const;  // Song::exportTo, or what the song's sound is exported as by default
   void keyboard();
   void gridKeys();
@@ -92,6 +95,7 @@ class MusicEditor {
   bool scrollToCursor_ = false;
   std::string message_;
   std::vector<std::string> exportProblems_;
+  std::string exportedTo_;  // Song::exportTo as last saved: stopping removes the song from that file
   int effect_ = 0;  // the sound effect shown
 };
 

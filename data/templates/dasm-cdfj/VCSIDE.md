@@ -18,4 +18,4 @@ A 32K CDFJ program from VCSIDE's CDFJ example: the 6507 draws (`main.asm`), the 
 - F7 runs `make`: `build/{{NAME}}.bin` (32K). Needs DASM, `arm-none-eabi-gcc` and `cdfj_driver.bin` (CDFJ's 2K driver, not included). PAL: `make DASMFLAGS=-DPAL=1`.
 
 ## Do not touch
-- `cdfj_driver.bin`; `build/layout.asm` (made from `layout.h`); `theme.music.h` (written when `theme.vcsmusic` is saved).
+- `cdfj_driver.bin`; `build/layout.asm` (made from `layout.h`); `music.h` (written when `theme.vcsmusic` is saved). Every `.vcsmusic` of that folder exported the same way goes into it, with one player: `music_play(MUSIC_SONG_<NAME>)` starts another song, `music_stop()` stops it.

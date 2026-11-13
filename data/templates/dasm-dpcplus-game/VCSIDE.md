@@ -21,5 +21,5 @@ VCSIDE The Game on a 32K DPC+ cartridge: a title screen with a menu (PLAY, TV: N
 
 ## Do not touch
 - `DPCplus.arm`: DPC+'s ARM driver, copied from batari Basic.
-- `*.gfx.asm` and `theme.music.asm`: written by VCSIDE when the `.vcsgfx` and `.vcsmusic` files are saved.
+- `*.gfx.asm` and `music.asm`: written by VCSIDE when the `.vcsgfx` and `.vcsmusic` files are saved. Every `.vcsmusic` of that folder exported the same way goes into it, with one player: `MusicPlay` with `MUSIC_SONG_<NAME>` in A starts another song, `MusicStop` stops it.
 - `2600.h` and the register addresses at the top of `main.asm`.

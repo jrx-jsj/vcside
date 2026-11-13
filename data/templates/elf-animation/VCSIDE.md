@@ -21,4 +21,4 @@ An ELF cartridge game in C from VCSIDE's animated sprite example: a hero that wa
 
 ## Do not touch
 - `include/vcsLib.h`, `src/memcpy_long.S`, `ace/`, `chameleon/`, the Makefile's checks.
-- `src/hero.gfx.h`, `src/theme.music.h`: written by VCSIDE when `hero.vcsgfx` / `theme.vcsmusic` are saved.
+- `src/hero.gfx.h`, `src/music.h`: written by VCSIDE when `hero.vcsgfx` / `theme.vcsmusic` are saved. Every `.vcsmusic` of that folder exported the same way goes into it, with one player: `music_play(MUSIC_SONG_<NAME>)` starts another song, `music_stop()` stops it.

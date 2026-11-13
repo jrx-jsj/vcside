@@ -1789,8 +1789,24 @@ void App::frame() {
       else if (kind == "newmusic") {
         std::string musicPath = path;
         if (lower(fs::path(musicPath).extension().string()) != ".vcsmusic") musicPath += ".vcsmusic";
+        // a song next to others that are exported joins them: the same export, sound and voices
+        music::Song song = music::blankSong();
+        std::error_code errorCode;
+        std::vector<fs::path> siblings;
+        for (auto& entry : fs::directory_iterator(fs::path(musicPath).parent_path(), errorCode))
+          if (entry.path().extension() == ".vcsmusic" && entry.path() != fs::path(musicPath)) siblings.push_back(entry.path());
+        std::sort(siblings.begin(), siblings.end());
+        for (auto& sibling : siblings) {
+          std::ifstream file(sibling, std::ios::binary);
+          std::string text((std::istreambuf_iterator<char>(file)), {}), error;
+          music::Song other;
+          if (!music::fromJson(text, &other, &error) || other.exportTo.empty()) continue;
+          song.exportTo = other.exportTo, song.exportRam = other.exportRam;
+          if (other.samples()) song.target = other.target, song.voices = other.voices, song.gain = other.gain;
+          break;
+        }
         std::ofstream out(musicPath, std::ios::binary);
-        if (out << music::toJson(music::blankSong())) out.close(), openFile(musicPath);
+        if (out << music::toJson(song)) out.close(), openFile(musicPath);
         else output_ += F("Cannot write {0}", {musicPath}) + "\n";
       }
       else if (kind == "newgfx") {

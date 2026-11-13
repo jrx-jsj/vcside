@@ -18,7 +18,7 @@
 	rem from the project panel). Saving one rewrites the lines between its
 	rem `rem vcsgfx` and `rem vcsgfx end` below.
 	rem Music and sound: theme.vcsmusic is the song and its three effects (shot,
-	rem hit, lose); saving it writes theme.music.asm, the player and the song,
+	rem hit, lose); saving it writes music.asm, the player and the song,
 	rem included at the end with inline. MusicInit starts the song, MusicFrame
 	rem plays it once per frame, and MusicEffect plays an effect; while an
 	rem effect sounds, the song's notes on its channel wait.
@@ -347,4 +347,4 @@ enemyCrawl2
 	rem vcsgfx end
 	return
 
-	inline theme.music.asm
+	inline music.asm

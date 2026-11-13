@@ -17,7 +17,7 @@
  * cartridge and the menu's texts). THE GAME is written below (the_game).
  * The music: theme.vcsmusic is the song, played as samples with three voices, and three
  * effects: shot (takes the third voice), hit (on the TIA's channel 1) and lose (the third
- * voice); saving it writes theme.music.h. The cartridge plays the voices: each one's
+ * voice); saving it writes music.h. The cartridge plays the voices: each one's
  * waveform (32 samples) in the display data, its note set with the driver.
  */
 #include <stdint.h>
@@ -33,7 +33,7 @@ static void voice_waveform(int voice, const uint8_t *samples);
 static void voice_note(int voice, uint32_t frequency, int restart);
 #define MUSIC_CDFJ_WAVE(voice, samples) voice_waveform(voice, samples)
 #define MUSIC_CDFJ_NOTE(voice, frequency, restart) voice_note(voice, frequency, restart)
-#include "theme.music.h"
+#include "music.h"
 
 #define LIVES 3
 #define ROOM_PAIRS (ROOM_ROWS * ROOM_LINES / 2)    /* 88 line pairs of room */

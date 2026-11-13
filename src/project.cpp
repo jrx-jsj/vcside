@@ -757,22 +757,23 @@ static void writeGfxIncludes(const fs::path& dir, bool isC) {
   }
 }
 
-// A .vcsmusic of an example comes with its export (<name>.music.asm, or <name>.music.h for
-// C), written as the music editor writes it on save, tuned for the project's TV standard.
+// The .vcsmusic files of an example come with their export (music.asm, or music.h for C:
+// every song of the folder with one player), written as the music editor writes it on
+// save, tuned for the project's TV standard.
 static void writeMusicIncludes(const fs::path& dir, const std::string& tvStandard) {
   std::error_code errorCode;
+  std::set<std::string> written;
   for (auto& entry : fs::directory_iterator(dir, errorCode)) {
     if (entry.path().extension() != ".vcsmusic") continue;
     music::Song song;
     std::string error;
     music::ExportOptions options;
     if (!music::fromJson(readFile(entry.path().string()), &song, &error) || !music::exportTargetOf(song.exportTo, &options.target)) continue;
+    if (!written.insert(music::exportFileName(options.target)).second) continue;
     std::string tv = tvStandard == "AUTO" ? "NTSC" : tvStandard;
     options.tv = tv;
     if (options.target == music::ExportTarget::BatariBasic) options.ramStart = song.exportRam;
-    music::ExportResult result = music::exportSong(song, music::audioClockHz(tv), options);
-    std::string extension = music::exportExtension(options.target);
-    if (result.ok) std::ofstream(dir / (entry.path().stem().string() + extension), std::ios::binary) << result.text;
+    music::writeFolderExport(music::exportFolder(dir.string(), options.target, music::audioClockHz(tv), options), &error);
   }
 }
 

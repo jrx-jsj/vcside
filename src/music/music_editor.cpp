@@ -44,6 +44,7 @@ bool MusicEditor::load(const std::string& path, std::string* error) {
   }
   if (song_.instruments.empty()) song_.instruments = blankSong().instruments;
   committed_ = song_;
+  exportedTo_ = song_.exportTo;
   undo_.clear(), redo_.clear();
   dirty_ = changed_ = false;
   revision_++;
@@ -58,7 +59,9 @@ bool MusicEditor::save(const std::string& path, std::string* error) {
   }
   path_ = path;
   dirty_ = false;
+  ExportTarget before;
   if (!song_.exportTo.empty()) exportSongFile(true);  // kept up to date
+  else if (exportTargetOf(exportedTo_, &before)) exportFolderFile(before, true), exportedTo_.clear();  // the others there, without this one
   return true;
 }
 
@@ -69,30 +72,35 @@ ExportTarget MusicEditor::exportTarget() const {
 }
 
 static std::string exportPath(const std::string& songPath, ExportTarget target) {
-  fs::path path(songPath);
-  return (path.parent_path() / (path.stem().string() + exportExtension(target))).string();
+  return (fs::path(songPath).parent_path() / exportFileName(target)).string();
 }
 
 bool MusicEditor::exportSongFile(bool quiet) {
+  bool written = exportFolderFile(exportTarget(), quiet);
+  exportedTo_ = song_.exportTo;
+  return written;
+}
+
+bool MusicEditor::exportFolderFile(ExportTarget target, bool quiet) {
   ExportOptions options;
-  options.target = exportTarget();
-  options.ramStart = options.target == ExportTarget::BatariBasic ? song_.exportRam : "";
+  options.target = target;
+  options.ramStart = target == ExportTarget::BatariBasic ? song_.exportRam : "";
   options.tv = tv_;
-  ExportResult result = exportSong(song_, audioClockHz(tv_), options);
+  std::string folder = path_.empty() ? std::string(".") : fs::path(path_).parent_path().string();
+  if (folder.empty()) folder = ".";
+  FolderExport folderExport = exportFolder(folder, target, audioClockHz(tv_), options, path_, &song_);
+  ExportResult& result = folderExport.result;
   exportProblems_ = result.problems;
-  std::string path = exportPath(path_, options.target);
-  if (!result.ok) {
-    message_ = F("Not exported: {0}", {result.problems.empty() ? std::string() : result.problems[0]});
-    return false;
-  }
-  std::ofstream file(path, std::ios::binary);
-  if (!file || !(file << result.text)) {
-    message_ = F("Cannot write {0}", {path});
+  std::string error;
+  if (!writeFolderExport(folderExport, &error)) {
+    if (song_.exportTo.empty() && folderExport.songs.empty()) return true;  // no song is left there: the file stays as it was
+    message_ = F("Not exported: {0}", {error});
     return false;
   }
   if (!quiet || !result.problems.empty())
-    message_ = F("Exported {0}: {1} bytes of song, {2} sounds{3}", {fs::path(path).filename().string(), std::to_string(result.dataBytes), std::to_string(result.sounds),
-                                                                    result.problems.empty() ? std::string() : F("; {0} warnings", {std::to_string(result.problems.size())})});
+    message_ = F("Exported {0}: {1} songs, {2} bytes of songs, {3} sounds{4}",
+                 {fs::path(folderExport.path).filename().string(), std::to_string(folderExport.songs.size()), std::to_string(result.dataBytes), std::to_string(result.sounds),
+                  result.problems.empty() ? std::string() : F("; {0} warnings", {std::to_string(result.problems.size())})});
   return true;
 }
 
@@ -287,7 +295,7 @@ void MusicEditor::toolbar() {
   ImGui::SameLine();
   if (ImGui::Button(T("Export..."))) ImGui::OpenPopup("##export");
   if (ImGui::IsItemHovered())
-    ImGui::SetTooltip("%s", F("{0}: the song and VCSIDE's player for the console, kept up to date on every save.", {fs::path(exportPath(path_, exportTarget())).filename().string()}).c_str());
+    ImGui::SetTooltip("%s", F("{0}: this folder's songs and VCSIDE's player for the console, kept up to date on every save.", {fs::path(exportPath(path_, exportTarget())).filename().string()}).c_str());
   exportPopup();
   if (!message_.empty()) {
     ImGui::SameLine();
@@ -1173,14 +1181,14 @@ void MusicEditor::exportPopup() {
     if (ImGui::RadioButton(T("DASM for a DPC+ cartridge"), chosen == "dpc")) chosen = "dpc";
     ImGui::Spacing();
     if (chosen == "c") {
-      ImGui::TextDisabled("%s", T("Calls: music_init() once; music_frame() once per frame, in the overblank; music_effect(n);"));
+      ImGui::TextDisabled("%s", T("music.h, with every song of this folder. Calls: music_init() once; music_play(MUSIC_SONG_x) for another song; music_stop(); music_frame() once per frame, in the overblank; music_effect(n);"));
       ImGui::TextDisabled("%s", T("then music_level[line] to AUDV0 on every line of the kernel, and music_nibbles to $E0-$FE for the 63 lines of the overblank."));
     } else if (chosen == "cdfj") {
-      ImGui::TextDisabled("%s", T("<name>.music.h for the ARM code. Define MUSIC_CDFJ_WAVE(voice, samples) and MUSIC_CDFJ_NOTE(voice, frequency, restart) first:"));
+      ImGui::TextDisabled("%s", T("music.h for the ARM code, with every song of this folder (music_play(MUSIC_SONG_x)). Define MUSIC_CDFJ_WAVE(voice, samples) and MUSIC_CDFJ_NOTE(voice, frequency, restart) first:"));
       ImGui::TextDisabled("%s", T("copy the samples to the voice's wave in display RAM, and give the frequency to setNote. The kernel copies the amplitude to AUDV0 on every line."));
     } else {
-      ImGui::TextDisabled("%s", T("<name>.music.asm, included three times: MUSIC_PART 1 with the code, 2 in the display data, 3 as the frequency table."));
-      ImGui::TextDisabled("%s", T("Calls: MusicInit once, MusicFrame once per frame; the kernel does lda AMPLITUDE / sta AUDV0 on every line, with AUDC0 = 0."));
+      ImGui::TextDisabled("%s", T("music.asm, with every song of this folder, included three times: MUSIC_PART 1 with the code, 2 in the display data, 3 as the frequency table."));
+      ImGui::TextDisabled("%s", T("Calls: MusicInit once, MusicPlay with a song (MUSIC_SONG_x) in A, MusicStop, MusicFrame once per frame; the kernel does lda AMPLITUDE / sta AUDV0 on every line, with AUDC0 = 0."));
     }
     if (chosen != "c") {
       ImGui::TextDisabled("%s", T("Up to 3 voices; each voice's volume has 15 / voices steps, and noise repeats every 32 steps."));
@@ -1214,7 +1222,7 @@ void MusicEditor::exportPopup() {
   } else {
     ImGui::TextDisabled("%s", F("Define MUSIC_RAM, {0} bytes of zero page, before the include.", {std::to_string(kMusicRamBytes)}).c_str());
   }
-  ImGui::TextDisabled("%s", T("Calls: MusicInit once, MusicFrame once per frame, MusicEffect with an effect in A."));
+  ImGui::TextDisabled("%s", T("music.asm, with every song of this folder. Calls: MusicInit once, MusicPlay with a song (MUSIC_SONG_x) in A, MusicStop, MusicFrame once per frame, MusicEffect with an effect in A."));
   ImGui::Spacing();
   if (theme::primaryButton(T("Export"))) {
     std::string target = basic ? "bb" : "dasm";
@@ -1225,7 +1233,7 @@ void MusicEditor::exportPopup() {
   if (!song_.exportTo.empty()) {
     ImGui::SameLine();
     if (ImGui::Button(T("Stop exporting"))) song_.exportTo.clear(), changed(), ImGui::CloseCurrentPopup();
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", T("Saving no longer writes the .music.asm (the file stays)."));
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", T("Saving takes this song out of music.asm; the other songs of the folder stay in it."));
   }
   if (!exportProblems_.empty()) {
     ImGui::SeparatorText(T("Last export"));

@@ -20,5 +20,5 @@ VCSIDE The Game in DASM, on a {{FORMAT}} cartridge: a room with a hero, two enem
 - F7 assembles `main.asm` with DASM (`-f3`) into `build/{{NAME}}.bin`, {{ROM_BYTES}} bytes. With the title and the music, 4K has about 350 bytes free; on F8, F6 and F4 the game is all in bank 0 and the other banks are empty (the end of `main.asm` closes every bank: the vectors switch to bank 0 whatever bank the cartridge starts in).
 
 ## Do not touch
-- `*.gfx.asm` and `theme.music.asm`: written by VCSIDE when the `.vcsgfx` and `.vcsmusic` files are saved; change those instead.
+- `*.gfx.asm` and `music.asm`: written by VCSIDE when the `.vcsgfx` and `.vcsmusic` files are saved; change those instead. Every `.vcsmusic` of that folder exported the same way goes into it, with one player: `MusicPlay` with `MUSIC_SONG_<NAME>` in A starts another song, `MusicStop` stops it.
 - `2600.h` (register addresses).

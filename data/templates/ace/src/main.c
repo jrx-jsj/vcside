@@ -2,7 +2,7 @@
  * {{NAME}} - made with VCSIDE (ACE cartridge: C on the PlusCart's or UnoCart's ARM).
  *
  * A scrolling rainbow with a white bar you move with the joystick, and music: the song in
- * theme.vcsmusic (open it with the music editor; saving it writes theme.music.h), with a
+ * theme.vcsmusic (open it with the music editor; saving it writes music.h), with a
  * sound when the bar reaches an edge and another on the fire button. The ARM feeds the
  * 6507 every instruction of the visible lines (ace.h); during the overblank the 6507 runs
  * VSYNC and the blank lines from its own RAM and the ARM is free for the game logic.
@@ -16,7 +16,7 @@
  * Build: F7 (runs make). Run: F5 (Gopher2600). This template is CC0: use it as you like.
  */
 #include "ace.h"
-#include "theme.music.h"
+#include "music.h"
 
 static int lines = {{VISIBLE_LINES}};    /* visible lines: the frame's lines - 63 of overblank */
 static uint8_t swcha = 0xFF, swchb = 0xFF;  /* joysticks and console switches, read after the kernel

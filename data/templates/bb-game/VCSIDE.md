@@ -17,11 +17,11 @@ VCSIDE The Game in batari Basic, on a {{FORMAT}} cartridge, in the standard kern
 - Joystick and button: the start of `main` (the hero, then the shot, `shotSpeed`){{TITLE_WHERE}}.
 - Hero: `placeHero`, `heroLook` (its frames: walking, standing, blinking); enemies: `newWave`, `moveEnemy`, `enemyCrawl1`/`2`; hits and walls: after `drawscreen`.
 - Score: `score`; lives: `pfscore1`.
-- Sound: `MusicInit` at `start`, `MusicFrame` before every `drawscreen`, `MusicEffect` with `MUSIC_EFFECT_SHOT`, `MUSIC_EFFECT_HIT` or `MUSIC_EFFECT_LOSE`; `inline theme.music.asm` at the end.
+- Sound: `MusicInit` at `start`, `MusicFrame` before every `drawscreen`, `MusicEffect` with `MUSIC_EFFECT_SHOT`, `MUSIC_EFFECT_HIT` or `MUSIC_EFFECT_LOSE`; `inline music.asm` at the end.
 
 ## Build
 - F7 compiles `main.bas` with batari Basic into `main.bas.bin`. F5 runs it.
 
 ## Do not touch
-- `theme.music.asm`: written by VCSIDE when `theme.vcsmusic` is saved.
+- `music.asm`: written by VCSIDE when `theme.vcsmusic` is saved. Every `.vcsmusic` of that folder exported the same way goes into it, with one player: `MusicPlay` with `MUSIC_SONG_<NAME>` in A starts another song, `MusicStop` stops it.
 - Lines between `rem vcsgfx` and `rem vcsgfx end`: VCSIDE rewrites them when the `.vcsgfx` is saved; change the `.vcsgfx` instead.

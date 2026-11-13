@@ -16,5 +16,5 @@ A 4K DASM program from VCSIDE's animated sprite example: a hero that walks left 
 - F7 assembles `main.asm` with DASM (`-f3`) into `build/{{NAME}}.bin`, 4096 bytes. F5 runs it.
 
 ## Do not touch
-- `hero.gfx.asm` and `theme.music.asm`: written by VCSIDE when `hero.vcsgfx` or `theme.vcsmusic` is saved; change those instead.
+- `hero.gfx.asm` and `music.asm`: written by VCSIDE when `hero.vcsgfx` or `theme.vcsmusic` is saved; change those instead. Every `.vcsmusic` of that folder exported the same way goes into it, with one player: `MusicPlay` with `MUSIC_SONG_<NAME>` in A starts another song, `MusicStop` stops it.
 - `2600.h` (register addresses).

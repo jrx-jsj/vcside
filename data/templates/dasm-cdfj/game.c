@@ -7,7 +7,7 @@
  * (data stream 0, one byte per line).
  *
  * The music: theme.vcsmusic (open it from the project panel) is the song, played as
- * samples with three voices, and its two sound effects; saving it writes theme.music.h.
+ * samples with three voices, and its two sound effects; saving it writes music.h.
  * The cartridge plays the voices: each one's waveform (32 samples) in the display data,
  * its note set with the driver. The two macros below are how the player gives them.
  * "fire" takes a voice while it sounds; "bump" plays on the TIA's channel 1 instead, as a
@@ -22,7 +22,7 @@ static void voice_waveform(int voice, const uint8_t *samples);
 static void voice_note(int voice, uint32_t frequency, int restart);
 #define MUSIC_CDFJ_WAVE(voice, samples) voice_waveform(voice, samples)
 #define MUSIC_CDFJ_NOTE(voice, frequency, restart) voice_note(voice, frequency, restart)
-#include "theme.music.h"
+#include "music.h"
 
 #define HERO_STREAM 0           /* data stream 0: the square, read by the kernel */
 #define HERO_HEIGHT 12          /* lines */

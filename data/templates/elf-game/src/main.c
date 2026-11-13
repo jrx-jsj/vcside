@@ -13,7 +13,7 @@
  *
  * Graphics: hero.vcsgfx (player 0, idle and walk), enemy.vcsgfx (player 1), room.vcsgfx
  * (the room's playfield) and title.vcsgfx (the title's cartridge); saving one writes its
- * .gfx.h. Music: theme.vcsmusic (saving it writes theme.music.h), with the effects shot,
+ * .gfx.h. Music: theme.vcsmusic (saving it writes music.h), with the effects shot,
  * hit and lose. It is played as samples: the ARM mixes the song's voices into one level per
  * scanline, written to AUDV0 (with AUDC0 = 0) on every line of the kernel and by the
  * overblank program on its own lines; "hit" plays on the TIA's channel 1 (music_tia).
@@ -27,7 +27,7 @@
 #include "game.h"
 #include "menu.h"
 #include "screen.h"
-#include "theme.music.h"
+#include "music.h"
 
 #define DEFAULT_SYSTEM {{MENU_SYSTEM}}   /* the project's TV standard, when the cartridge says nothing */
 

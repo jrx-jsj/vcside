@@ -6,7 +6,7 @@
  * includes. The "idle" animation blinks now and then; "walk" plays while it moves.
  *
  * The music is the song in theme.vcsmusic (open it with the music editor; saving it writes
- * theme.music.h): a sound plays when the hero reaches an edge and another on the fire
+ * music.h): a sound plays when the hero reaches an edge and another on the fire
  * button. It is played as samples: the ARM mixes the song's voices into one level per
  * scanline, written to AUDV0 (with AUDC0 = 0) on every line of the kernel and by the
  * overblank program on its lines. "fire" takes a voice while it sounds; "bump" plays on
@@ -21,7 +21,7 @@
  */
 #include "ace.h"
 #include "hero.gfx.h"
-#include "theme.music.h"
+#include "music.h"
 
 #define LINES_PER_ROW 2          /* each row of the sprite is drawn on two lines */
 

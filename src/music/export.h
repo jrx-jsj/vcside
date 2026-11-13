@@ -64,10 +64,34 @@ uint32_t dpcFrequency(uint32_t stepPerLine, double audioClock);
 
 ExportResult exportSong(const Song& song, double audioClock, const ExportOptions& options);
 
+// Several songs with one player: the order lists one after another, the tables shared.
+// MusicPlay (music_play in C) takes MUSIC_SONG_<NAME>, the songs numbered in this order;
+// MusicInit plays the first one. Songs that cannot go with the first (another kind, other
+// voices or loudness, the same name) are left out and reported.
+struct NamedSong {
+  std::string name;  // the file's name without its ending: MUSIC_SONG_<NAME>
+  const Song* song = nullptr;
+};
+ExportResult exportSongs(const std::vector<NamedSong>& songs, double audioClock, const ExportOptions& options);
+std::string songSymbol(const std::string& name);  // MUSIC_SONG_<NAME> (letters, digits, _)
+
+// The music of a folder: every .vcsmusic in it that exports to the same file goes into
+// music.asm (DASM, batari Basic, DPC+) or music.h (C, CDFJ), sorted by file name. The song
+// being edited is passed as it is in the editor (the others are read from their files).
+struct FolderExport {
+  ExportResult result;
+  std::string path;                // the file written (or that would be)
+  std::vector<std::string> songs;  // the songs in it, in their numbers' order
+};
+FolderExport exportFolder(const std::string& folder, ExportTarget target, double audioClock, const ExportOptions& options,
+                          const std::string& editedPath = "", const Song* edited = nullptr);
+// Writes it; false (and *error) if it cannot be written or nothing could be exported.
+bool writeFolderExport(const FolderExport& folderExport, std::string* error);
+
 // What Song::exportTo names: "dasm", "bb", "c", "dpc" or "cdfj"; false for anything else.
 bool exportTargetOf(const std::string& name, ExportTarget* target);
-// The export's file ending: ".music.h" for C and CDFJ, ".music.asm" for the rest.
-const char* exportExtension(ExportTarget target);
+// The export's file: "music.h" for C and CDFJ, "music.asm" for the rest.
+const char* exportFileName(ExportTarget target);
 
 // The sound effects' constants in the export: MUSIC_EFFECT_<NAME> (letters, digits, _).
 std::string effectSymbol(const std::string& name);

@@ -10,11 +10,11 @@ An example batari Basic program for a {{FORMAT}} cartridge, from VCSIDE: a squar
 ## Where things live
 - Joystick and button: `joy0left`/`right`/`up`/`down`, `joy0fire` in `main`.
 - The square: `player0`, `player0x`, `player0y`; the room: `playfield:`; the wall: `collision(player0, playfield)` after `drawscreen`.
-- Music: `asm` blocks call `MusicInit` (at `start`), `MusicFrame` (every frame) and `MusicEffect` with `MUSIC_EFFECT_BLIP` or `MUSIC_EFFECT_BUMP`; the player comes from `inline theme.music.asm` at the end.
+- Music: `asm` blocks call `MusicInit` (at `start`), `MusicFrame` (every frame) and `MusicEffect` with `MUSIC_EFFECT_BLIP` or `MUSIC_EFFECT_BUMP`; the player comes from `inline music.asm` at the end.
 
 ## Build
 - F7 compiles `main.bas` with batari Basic into `main.bas.bin`. F5 runs it.
 
 ## Do not touch
-- `theme.music.asm`: written by VCSIDE when `theme.vcsmusic` is saved.
+- `music.asm`: written by VCSIDE when `theme.vcsmusic` is saved. Every `.vcsmusic` of that folder exported the same way goes into it, with one player: `MusicPlay` with `MUSIC_SONG_<NAME>` in A starts another song, `MusicStop` stops it.
 - Lines between `rem vcsgfx` and `rem vcsgfx end`, if any: VCSIDE rewrites them.

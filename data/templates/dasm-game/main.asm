@@ -19,7 +19,7 @@
 ;   title.vcsgfx  the title's cartridge (VCSIDE's icon) and the menu's texts,
 ;                 as playfields
 ; THE GAME is written in main.asm (TheGame0-5), six columns of 8 pixels.
-; Music and sound (MUSIC = 1): theme.vcsmusic (saving it writes theme.music.asm)
+; Music and sound (MUSIC = 1): theme.vcsmusic (saving it writes music.asm)
 ; is the song, played on both screens, and three effects: shot, hit and lose.
 ;
 ; How it works:
@@ -1273,7 +1273,7 @@ PosObject SUBROUTINE
 	include "title.gfx.asm"
 	ENDIF
 	IF MUSIC
-	include "theme.music.asm"
+	include "music.asm"
 	ELSE
 ; ---- SoundEffects: the three effects without the music player, on channel 0:
 ; a tone or a noise that fades out. MusicInit, MusicFrame and MusicEffect work

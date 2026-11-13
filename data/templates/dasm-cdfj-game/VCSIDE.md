@@ -21,4 +21,4 @@ VCSIDE The Game on a 32K CDFJ cartridge: a title screen with a menu (PLAY, TV: N
 - F7 runs `make`: `build/{{NAME}}.bin` (32K). Needs DASM, `arm-none-eabi-gcc` and `cdfj_driver.bin` (CDFJ's 2K driver, not included).
 
 ## Do not touch
-- `cdfj_driver.bin`; `build/layout.asm` (made from `layout.h`); `*.gfx.h` and `theme.music.h` (written when the `.vcsgfx` and `.vcsmusic` files are saved); `start.S`, `arm.ld`, `cdfj.h`.
+- `cdfj_driver.bin`; `build/layout.asm` (made from `layout.h`); `*.gfx.h` and `music.h` (written when the `.vcsgfx` and `.vcsmusic` files are saved); `start.S`, `arm.ld`, `cdfj.h`. Every `.vcsmusic` of that folder exported the same way goes into it, with one player: `music_play(MUSIC_SONG_<NAME>)` starts another song, `music_stop()` stops it.

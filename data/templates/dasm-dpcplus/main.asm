@@ -6,7 +6,7 @@
 ; three voices with 32-sample waveforms and adds them up; the 6507 only copies
 ; that sum (AMPLITUDE) to AUDV0 on every line, with AUDC0 = 0. theme.vcsmusic
 ; (open it from the project panel) is the song, played as samples with three
-; voices, and its two sound effects; saving it writes theme.music.asm, which is
+; voices, and its two sound effects; saving it writes music.asm, which is
 ; included three times below: the player and the song in the code, the
 ; waveforms in the display data, the frequencies in the frequency table.
 ;
@@ -285,7 +285,7 @@ PosObject
 
 ; the player and the song
 MUSIC_PART SET 1
-	include "theme.music.asm"
+	include "music.asm"
 	IF MusicRam + MUSIC_RAM_BYTES > MusicRamEnd
 	ERR                     ; MusicRam is too small: make it MUSIC_RAM_BYTES long
 	ENDIF
@@ -302,12 +302,12 @@ MUSIC_PART SET 1
 	ORG $7000
 	RORG $D000
 MUSIC_PART SET 2
-	include "theme.music.asm"
+	include "music.asm"
 
 ; ---- Frequency table (1K) ------------------------------------------------------
 	ORG $8000
 	RORG $1000
 MUSIC_PART SET 3
-	include "theme.music.asm"
+	include "music.asm"
 	ORG $83FF
 	.byte 0                 ; the image ends at 32K

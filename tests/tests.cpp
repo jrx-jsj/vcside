@@ -884,7 +884,7 @@ static void testElfSpace() {
   }
   for (auto fileName : {"Makefile", "include/vcsLib.h", "src/main.c", "src/memcpy_long.S", "chameleon/support.c", "src/theme.vcsmusic"}) CHECK(fs::exists(dir / fileName));
   {  // its music, exported as the C player (the editor writes it on every save)
-    std::ifstream musicHeader(dir / "src" / "theme.music.h");
+    std::ifstream musicHeader(dir / "src" / "music.h");
     std::string musicText((std::istreambuf_iterator<char>(musicHeader)), {});
     CHECK(musicText.find("#define MUSIC_EFFECT_FIRE 0") != std::string::npos && musicText.find("void music_frame(int lines)") != std::string::npos);
     CHECK(musicText.find("Tuned for NTSC") != std::string::npos);
@@ -903,9 +903,9 @@ static void testElfSpace() {
   CHECK(basicText.find("inline") == std::string::npos && !fs::exists(dir / "bb" / "theme.vcsmusic"));  // empty: the loop alone
   {  // the square example's music: the song, and the player and tables main.bas inlines (h to z)
     CHECK(Project::create((dir / "bbsquare").string(), "Square Run", Language::BatariBasic, "NTSC", &project, &error, "square"));
-    std::ifstream squareFile(dir / "bbsquare" / "main.bas"), musicFile(dir / "bbsquare" / "theme.music.asm");
+    std::ifstream squareFile(dir / "bbsquare" / "main.bas"), musicFile(dir / "bbsquare" / "music.asm");
     std::string squareText((std::istreambuf_iterator<char>(squareFile)), {}), musicText((std::istreambuf_iterator<char>(musicFile)), {});
-    CHECK(fs::exists(dir / "bbsquare" / "theme.vcsmusic") && squareText.find("inline theme.music.asm") != std::string::npos);
+    CHECK(fs::exists(dir / "bbsquare" / "theme.vcsmusic") && squareText.find("inline music.asm") != std::string::npos);
     CHECK(musicText.find("MUSIC_RAM = h") != std::string::npos && musicText.find("MUSIC_EFFECT_BLIP") != std::string::npos);
   }
   CHECK(Project::create((dir / "bbpal").string(), "Pal Run", Language::BatariBasic, "PAL", &project, &error));
@@ -1094,7 +1094,7 @@ static void testElfSpace() {
             CHECK((basText.find("\t$F4\nend\n") != std::string::npos) == ntsc);
             CHECK((basText.find("in enemy.vcsgfx.\n\tplayer1color:\n\t$86\n") != std::string::npos) == ntsc &&
                   basText.find("{{SECOND_ENEMY_COLOUR}}") == std::string::npos);
-            std::ifstream musicFile(startDir / "theme.music.asm");
+            std::ifstream musicFile(startDir / "music.asm");
             std::string musicText((std::istreambuf_iterator<char>(musicFile)), {});
             CHECK(musicText.find("MUSIC_RAM = h") != std::string::npos && musicText.find("MUSIC_EFFECT_LOSE") != std::string::npos);
           }
@@ -1114,13 +1114,13 @@ static void testElfSpace() {
     fs::path gameDir = dir / (std::string("game-") + tvStandard);
     CHECK(Project::create(gameDir.string(), "my game", Language::Dasm, tvStandard, &project, &error, "game"));
     for (auto fileName : {"main.asm", "2600.h", "hero.vcsgfx", "enemy.vcsgfx", "room.vcsgfx", "title.vcsgfx", "hero.gfx.asm",
-                          "enemy.gfx.asm", "room.gfx.asm", "title.gfx.asm", "theme.vcsmusic", "theme.music.asm"})
+                          "enemy.gfx.asm", "room.gfx.asm", "title.gfx.asm", "theme.vcsmusic", "music.asm"})
       CHECK(fs::exists(gameDir / fileName));
     std::ifstream sourceFile(gameDir / "main.asm");
     std::string sourceText((std::istreambuf_iterator<char>(sourceFile)), {});
     const std::string expectedSystem = std::string(tvStandard) == "PAL60" ? "1" : std::string(tvStandard) == "PAL" ? "2" : "0";
     CHECK(sourceText.find("DEFAULT_SYSTEM = " + expectedSystem) != std::string::npos && sourceText.find("{{") == std::string::npos);
-    std::ifstream musicFile(gameDir / "theme.music.asm");
+    std::ifstream musicFile(gameDir / "music.asm");
     std::string musicText((std::istreambuf_iterator<char>(musicFile)), {});
     CHECK(musicText.find("MUSIC_EFFECT_SHOT") != std::string::npos && musicText.find("MUSIC_EFFECT_LOSE") != std::string::npos);
     // its effects all end (one that holds its volume keeps the channel for good)
@@ -1137,9 +1137,9 @@ static void testElfSpace() {
   for (const char* tvStandard : {"NTSC", "PAL", "AUTO"}) {
     fs::path animationDir = dir / (std::string("anim-") + tvStandard);
     CHECK(Project::create(animationDir.string(), "walker", Language::Dasm, tvStandard, &project, &error, "animation"));
-    for (auto fileName : {"main.asm", "2600.h", "hero.vcsgfx", "hero.gfx.asm", "theme.vcsmusic", "theme.music.asm"})
+    for (auto fileName : {"main.asm", "2600.h", "hero.vcsgfx", "hero.gfx.asm", "theme.vcsmusic", "music.asm"})
       CHECK(fs::exists(animationDir / fileName));
-    std::ifstream musicFile(animationDir / "theme.music.asm");
+    std::ifstream musicFile(animationDir / "music.asm");
     std::string musicText((std::istreambuf_iterator<char>(musicFile)), {});
     CHECK(musicText.find("MUSIC_EFFECT_JUMP") != std::string::npos && musicText.find("MusicFrame") != std::string::npos);
     std::ifstream includeFile(animationDir / "hero.gfx.asm");
@@ -1204,9 +1204,9 @@ static void testElfSpace() {
         CHECK(sourceText.find("{{") == std::string::npos && notesText.find("# voices: notes for the assistant") == 0 &&
               notesText.find("{{") == std::string::npos && notesText.find("## Kernel rules") != std::string::npos &&
               notesText.size() <= 4000);
-        CHECK(fs::exists(dpcDir / "theme.music.asm") == !example.empty());
+        CHECK(fs::exists(dpcDir / "music.asm") == !example.empty());
         if (!example.empty()) {
-          std::ifstream musicFile(dpcDir / "theme.music.asm");
+          std::ifstream musicFile(dpcDir / "music.asm");
           std::string musicText((std::istreambuf_iterator<char>(musicFile)), {});
           CHECK(musicText.find("MUSIC_PART = 3") != std::string::npos);
           CHECK(musicText.find("MUSIC_TIA_EFFECTS = 1 ") != std::string::npos);  // "bump" or "hit", on the TIA's channel 1
@@ -1242,9 +1242,9 @@ static void testElfSpace() {
     CHECK(makeText.find("NAME      = voices") != std::string::npos);
     CHECK(notesText.find("# voices: notes for the assistant") == 0 && notesText.find("{{") == std::string::npos &&
           notesText.find("## Kernel rules") != std::string::npos && notesText.size() <= 4000);
-    CHECK(fs::exists(cdfjDir / "theme.music.h") == !example.empty() && fs::exists(cdfjDir / "theme.vcsmusic") == !example.empty());
+    CHECK(fs::exists(cdfjDir / "music.h") == !example.empty() && fs::exists(cdfjDir / "theme.vcsmusic") == !example.empty());
     if (!example.empty()) {
-      std::ifstream musicFile(cdfjDir / "theme.music.h");
+      std::ifstream musicFile(cdfjDir / "music.h");
       std::string musicText((std::istreambuf_iterator<char>(musicFile)), {});
       CHECK(musicText.find("#define MUSIC_CDFJ 1") != std::string::npos);
       CHECK(musicText.find("#define MUSIC_TIA_EFFECTS 1 ") != std::string::npos);
@@ -1301,9 +1301,9 @@ static void testElfSpace() {
   CHECK(Project::examples(Language::ElfC).size() == 2 && Project::examples(Language::ElfC)[0].first == "game");
   fs::path elfDir = dir / "anim-elf";
   CHECK(Project::create(elfDir.string(), "walker", Language::ElfC, "NTSC", &project, &error, "animation"));
-  for (auto fileName : {"Makefile", "include/vcsLib.h", "src/main.c", "src/memcpy_long.S", "src/hero.vcsgfx", "src/hero.gfx.h", "src/theme.vcsmusic", "src/theme.music.h"})
+  for (auto fileName : {"Makefile", "include/vcsLib.h", "src/main.c", "src/memcpy_long.S", "src/hero.vcsgfx", "src/hero.gfx.h", "src/theme.vcsmusic", "src/music.h"})
     CHECK(fs::exists(elfDir / fileName));
-  std::ifstream mainFile(elfDir / "src" / "main.c"), headerFile(elfDir / "src" / "hero.gfx.h"), elfMusicFile(elfDir / "src" / "theme.music.h");
+  std::ifstream mainFile(elfDir / "src" / "main.c"), headerFile(elfDir / "src" / "hero.gfx.h"), elfMusicFile(elfDir / "src" / "music.h");
   std::string mainText((std::istreambuf_iterator<char>(mainFile)), {}), headerText((std::istreambuf_iterator<char>(headerFile)), {});
   std::string elfMusicText((std::istreambuf_iterator<char>(elfMusicFile)), {});
   CHECK(elfMusicText.find("#define MUSIC_TIA_EFFECTS 1 ") != std::string::npos && mainText.find("vcsWrite5(AUDV1, music_tia[2]);") != std::string::npos);
@@ -1330,7 +1330,7 @@ static void testElfSpace() {
     CHECK(Project::create(gameDir.string(), "game", Language::ElfC, tvStandard, &project, &error, "game"));
     CHECK(project.format == "ELF" && project.buildCommand == "make" && project.output == "build/game.bin");
     for (auto fileName : {"Makefile", "include/vcsLib.h", "src/main.c", "src/game.c", "src/game.h", "src/menu.c", "src/menu.h", "src/screen.c",
-                          "src/screen.h", "src/hero.gfx.h", "src/enemy.gfx.h", "src/room.gfx.h", "src/title.gfx.h", "src/theme.music.h",
+                          "src/screen.h", "src/hero.gfx.h", "src/enemy.gfx.h", "src/room.gfx.h", "src/title.gfx.h", "src/music.h",
                           "ace/vcslib_ace.c", "chameleon/support.c"})
       CHECK(fs::exists(gameDir / fileName));
     {  // its effects all end (one that holds its volume keeps its voice for good)
@@ -1339,7 +1339,7 @@ static void testElfSpace() {
       CHECK(vcs::music::fromJson(std::string((std::istreambuf_iterator<char>(songFile)), {}), &gameSong, &error));
       CHECK(vcs::music::exportSong(gameSong, vcs::music::audioClockHz("NTSC"), {vcs::music::ExportTarget::C, "", "NTSC"}).problems.empty());
     }
-    std::ifstream gameMain(gameDir / "src" / "main.c"), gameMusic(gameDir / "src" / "theme.music.h"), gameRules(gameDir / "src" / "game.c");
+    std::ifstream gameMain(gameDir / "src" / "main.c"), gameMusic(gameDir / "src" / "music.h"), gameRules(gameDir / "src" / "game.c");
     std::string gameMainText((std::istreambuf_iterator<char>(gameMain)), {}), gameMusicText((std::istreambuf_iterator<char>(gameMusic)), {});
     std::string gameRulesText((std::istreambuf_iterator<char>(gameRules)), {});
     const std::string expectedSystem = std::string(tvStandard) == "PAL" ? "SYSTEM_PAL" : std::string(tvStandard) == "PAL60" ? "SYSTEM_PAL60" : "SYSTEM_NTSC";
@@ -1372,7 +1372,7 @@ static void testElfSpace() {
   CHECK(Project::create(aceDir.string(), "beam", Language::AceC, "PAL", &project, &error));
   CHECK(project.format == "ACE" && project.output == "build/beam.ace" && project.emulator == "gopher2600" && project.buildCommand == "make");
   CHECK(project.emulatorOptions["gopher2600"]["armClock"] == "168" && languageFromId(languageId(Language::AceC)) == Language::AceC);
-  for (auto fileName : {"Makefile", "ace.ld", "include/ace.h", "src/ace.c", "src/start.S", "src/main.c", "src/theme.vcsmusic", "src/theme.music.h"})
+  for (auto fileName : {"Makefile", "ace.ld", "include/ace.h", "src/ace.c", "src/start.S", "src/main.c", "src/theme.vcsmusic", "src/music.h"})
     CHECK(fs::exists(aceDir / fileName));
   std::ifstream aceStart(aceDir / "src" / "start.S"), aceMain(aceDir / "src" / "main.c");
   std::string aceStartText((std::istreambuf_iterator<char>(aceStart)), {}), aceMainText((std::istreambuf_iterator<char>(aceMain)), {});
@@ -1396,7 +1396,7 @@ static void testElfSpace() {
         Project::examples(Language::AceC)[1].first == "animation");
   fs::path aceAnimationDir = dir / "ace-animation";
   CHECK(Project::create(aceAnimationDir.string(), "walker", Language::AceC, "NTSC", &project, &error, "animation"));
-  for (auto fileName : {"src/hero.vcsgfx", "src/hero.gfx.h", "src/theme.music.h", "src/ace.c", "src/start.S"})
+  for (auto fileName : {"src/hero.vcsgfx", "src/hero.gfx.h", "src/music.h", "src/ace.c", "src/start.S"})
     CHECK(fs::exists(aceAnimationDir / fileName));
   std::ifstream aceAnimationMain(aceAnimationDir / "src" / "main.c");
   std::string aceAnimationText((std::istreambuf_iterator<char>(aceAnimationMain)), {});
@@ -1411,7 +1411,7 @@ static void testElfSpace() {
   CHECK(Project::create(aceGameDir.string(), "game", Language::AceC, "PAL", &project, &error, "game"));
   CHECK(project.format == "ACE" && project.output == "build/game.ace" && project.buildCommand == "make" && project.emulator == "gopher2600");
   for (auto fileName : {"Makefile", "include/ace.h", "src/ace.c", "src/start.S", "src/main.c", "src/game.c", "src/menu.c", "src/screen.c",
-                        "src/hero.gfx.h", "src/enemy.gfx.h", "src/room.gfx.h", "src/title.gfx.h", "src/theme.music.h"})
+                        "src/hero.gfx.h", "src/enemy.gfx.h", "src/room.gfx.h", "src/title.gfx.h", "src/music.h"})
     CHECK(fs::exists(aceGameDir / fileName));
   CHECK(!fs::exists(aceGameDir / "include" / "vcsLib.h"));
   std::ifstream aceGameMain(aceGameDir / "src" / "main.c");
@@ -1425,7 +1425,7 @@ static void testElfSpace() {
   fs::path aceVcsLibDir = dir / "ace-vcslib";
   CHECK(Project::create(aceVcsLibDir.string(), "both", Language::AceC, "PAL", &project, &error, "vcslib"));
   CHECK(project.format == "ACE" && project.output == "build/both.ace" && project.emulator == "gopher2600" && project.buildCommand == "make ace");
-  for (auto fileName : {"Makefile", "include/vcsLib.h", "src/main.c", "src/theme.music.h", "ace/vcslib_ace.c", "ace/main_ace.c", "ace/ace.c", "ace/start.S"})
+  for (auto fileName : {"Makefile", "include/vcsLib.h", "src/main.c", "src/music.h", "ace/vcslib_ace.c", "ace/main_ace.c", "ace/ace.c", "ace/start.S"})
     CHECK(fs::exists(aceVcsLibDir / fileName));
   CHECK(!fs::exists(aceVcsLibDir / "include" / "ace.h") && !fs::exists(aceVcsLibDir / "shared.json"));
   if (!gcc.empty() && !make.empty()) {
@@ -2703,7 +2703,7 @@ struct AssembledSong {
   bool ok = false;
   std::string error;
   Cpu6502 cpu;
-  uint16_t init = 0, frame = 0, effect = 0;
+  uint16_t init = 0, frame = 0, effect = 0, play = 0, stop = 0;
   int bytes = 0;
 };
 
@@ -2744,6 +2744,8 @@ static void assembleSong(const std::string& dasm, const std::string& exportText,
     if (name == "MusicInit") out.init = address;
     if (name == "MusicFrame") out.frame = address;
     if (name == "MusicEffect") out.effect = address;
+    if (name == "MusicPlay") out.play = address;
+    if (name == "MusicStop") out.stop = address;
   }
   out.ok = out.init && out.frame && out.effect;
   if (!out.ok) out.error = "no player symbols";
@@ -2912,6 +2914,147 @@ static void testMusicExport() {
   CHECK(mostInstructions < 260);  // MusicFrame stays well inside a vertical blank
   std::printf("  exported player: %d songs the same as the editor's (%d skipped as ambiguous; %d frames with sound, %d effects), at most %ld instructions a frame\n",
               compared, skipped, heardFrames, effectsPlayed, mostInstructions);
+}
+
+// Several songs exported together, with one player: each one played with MusicPlay
+// against the editor's player for that song alone, effects included (their numbers go on
+// from one song to the next); a song started over another one as it plays (the last
+// song's voices go quiet), and MusicStop letting the notes go.
+static void testMusicSongs() {
+  using namespace vcs::music;
+  double ntsc = audioClockHz("NTSC");
+  {  // the constants, and an effect two songs share kept once
+    Song first = blankSong(), second;
+    for (auto& instrument : first.instruments) instrument.volumes[0] = {{12, 8, 0}, -1};  // effects must end
+    second = first;
+    first.patterns[0].cells[0][0] = {69, 0};
+    second.patterns[0].cells[1][0] = {60, 1};
+    first.effects.push_back({"blip", 0, 72, 0});
+    second.effects = first.effects;
+    second.effects.push_back({"boom", 1, 50, 1});
+    ExportResult both = exportSongs({{"title theme", &first}, {"game", &second}}, ntsc, {});
+    CHECK(both.ok && both.problems.empty() && both.text.find("MUSIC_SONG_TITLE_THEME = 0\nMUSIC_SONG_GAME = 1\n") != std::string::npos);
+    CHECK(both.text.find("MUSIC_EFFECT_BLIP = 0\nMUSIC_EFFECT_BOOM = 1\n") != std::string::npos && both.text.find("MUSIC_SONGS = 2") != std::string::npos);
+    second.effects[0].note = 74;  // the same name, another sound
+    CHECK(exportSongs({{"a", &first}, {"b", &second}}, ntsc, {}).problems.size() == 1);
+    // songs that cannot go together are left out, the rest is exported
+    Song samples = blankSong();
+    samples.target = "samples";
+    ExportResult mixed = exportSongs({{"a", &first}, {"b", &samples}, {"a", &second}}, ntsc, {});
+    CHECK(mixed.ok && mixed.problems.size() == 2 && mixed.text.find("MUSIC_SONGS = 1") != std::string::npos);
+    // a folder: the songs exported the same way, by file name, the one being edited as it is
+    namespace fs = std::filesystem;
+    fs::path folder = fs::temp_directory_path() / "vcside-test-songs";
+    std::error_code errorCode;
+    fs::remove_all(folder, errorCode);
+    fs::create_directories(folder);
+    first.exportTo = second.exportTo = "dasm";
+    second.effects[0].note = 72;
+    Song quiet = blankSong();  // not exported: left alone
+    std::ofstream(folder / "b.vcsmusic") << toJson(first);
+    std::ofstream(folder / "a.vcsmusic") << toJson(second);
+    std::ofstream(folder / "c.vcsmusic") << toJson(quiet);
+    Song edited = first;
+    edited.speed = 3;
+    FolderExport folderExport = exportFolder(folder.string(), ExportTarget::Dasm, ntsc, {}, (folder / "b.vcsmusic").string(), &edited);
+    CHECK(folderExport.result.ok && folderExport.songs == std::vector<std::string>({"a", "b"}) && folderExport.path == (folder / "music.asm").string());
+    CHECK(folderExport.result.text.find("MUSIC_SONG_A = 0") != std::string::npos && folderExport.result.text.find("MUSIC_PATTERN_SPEEDS = 1") != std::string::npos);
+    std::string error;
+    CHECK(writeFolderExport(folderExport, &error) && fs::exists(folder / "music.asm"));
+    fs::remove_all(folder, errorCode);
+  }
+  std::string dasm = findDasm();
+  if (dasm.empty()) {
+    std::printf("  (no DASM: the songs played together are not run)\n");
+    return;
+  }
+  int compared = 0, skipped = 0, switched = 0, effectsPlayed = 0;
+  for (unsigned seed = 1; seed <= 30; seed++) {
+    std::vector<Song> songs;
+    for (unsigned index = 0; index < 3; index++) {
+      Song song = randomSong(seed * 7 + index);
+      for (auto& effect : song.effects) effect.name = "song" + std::to_string(index) + effect.name;  // each song's own
+      songs.push_back(song);
+    }
+    std::vector<NamedSong> named;
+    for (size_t index = 0; index < songs.size(); index++) named.push_back({"s" + std::to_string(index), &songs[index]});
+    ExportResult result = exportSongs(named, ntsc, {});
+    bool ambiguousSong = false;
+    for (auto& problem : result.problems) ambiguousSong = ambiguousSong || problem.find("depending on what came before") != std::string::npos;
+    if (ambiguousSong) {
+      skipped++;
+      continue;
+    }
+    CHECK(result.ok);
+    if (!result.ok) continue;
+    AssembledSong assembled;
+    assembleSong(dasm, result.text, assembled);
+    CHECK(assembled.ok && assembled.play && assembled.stop);
+    if (!assembled.ok || !assembled.play || !assembled.stop) {
+      std::printf("  seed %u: %s\n", seed, assembled.error.c_str());
+      break;
+    }
+    auto sameFrame = [&](const Cpu6502& cpu, const FrameRegisters& expected) {
+      for (int channel = 0; channel < kChannels; channel++)
+        if (cpu.memory[0x15 + channel] != expected.control[channel] || cpu.memory[0x17 + channel] != expected.frequency[channel] ||
+            cpu.memory[0x19 + channel] != expected.volume[channel])
+          return false;
+      return true;
+    };
+    int firstEffect = 0;
+    for (size_t index = 0; index < songs.size(); index++) {
+      const Song& song = songs[index];
+      // each song from its start, with its effects at their numbers in the export
+      Cpu6502 cpu = assembled.cpu;
+      CHECK(cpu.call(assembled.init));
+      cpu.a = (uint8_t)index;
+      CHECK(cpu.call(assembled.play));
+      Player player;
+      player.start(song, ntsc);
+      std::mt19937 effects(seed * 3 + (unsigned)index);
+      bool same = true;
+      for (int frame = 0; frame < 800 && same; frame++) {
+        if (!song.effects.empty() && std::uniform_int_distribution<int>(0, 60)(effects) == 0) {
+          int effect = std::uniform_int_distribution<int>(0, (int)song.effects.size() - 1)(effects);
+          player.playEffect(song, ntsc, effect);
+          cpu.a = (uint8_t)(firstEffect + effect);
+          same = cpu.call(assembled.effect);
+          effectsPlayed++;
+        }
+        FrameRegisters expected = player.nextFrame();
+        same = same && cpu.call(assembled.frame) && sameFrame(cpu, expected);
+        if (!same) std::printf("  seed %u, song %zu, frame %d: not the editor's\n", seed, index, frame);
+      }
+      CHECK(same);
+      compared += same;
+      firstEffect += (int)song.effects.size();
+      // the next song started while this one plays: from there on, as that song from its start
+      size_t next = (index + 1) % songs.size();
+      cpu = assembled.cpu;
+      CHECK(cpu.call(assembled.init));
+      cpu.a = (uint8_t)index;
+      CHECK(cpu.call(assembled.play));
+      for (int frame = 0; frame < 37; frame++) CHECK(cpu.call(assembled.frame));
+      cpu.a = (uint8_t)next;
+      CHECK(cpu.call(assembled.play));
+      Player nextPlayer;
+      nextPlayer.start(songs[next], ntsc);
+      for (int frame = 0; frame < 400 && same; frame++) same = cpu.call(assembled.frame) && sameFrame(cpu, nextPlayer.nextFrame());
+      CHECK(same);
+      switched += same;
+      // MusicStop: the notes are let go and the song stops; silence follows
+      CHECK(cpu.call(assembled.stop));
+      bool silent = false;
+      for (int frame = 0; frame < 300 && !silent; frame++) {
+        CHECK(cpu.call(assembled.frame));
+        silent = cpu.memory[0x19] == 0 && cpu.memory[0x1a] == 0 && cpu.memory[0x80] == 0xFF;
+      }
+      CHECK(silent);
+    }
+  }
+  CHECK(compared >= 40 && switched >= 40 && effectsPlayed > 200);
+  std::printf("  songs played together: %d the same as the editor's, %d started over another one (%d seeds skipped as ambiguous, %d effects)\n", compared, switched,
+              skipped, effectsPlayed);
 }
 
 // Every other sound effect of a song of samples goes to the TIA's channel 1, with a copy of
@@ -3431,7 +3574,7 @@ static void testSampleExport() {
   {
     std::ofstream driver(folder / "driver.c");
     driver << "#include <stdio.h>\n#include \"song.music.h\"\n"
-              "int main(void) {\n  int frames, lines;\n  if (scanf(\"%d %d\", &frames, &lines) != 2) return 1;\n  music_init();\n"
+              "int main(void) {\n  int frames, lines, song;\n  if (scanf(\"%d %d %d\", &frames, &lines, &song) != 3) return 1;\n  music_init();\n  if (song) music_play(song);\n"
               "  for (int f = 0; f < frames; f++) {\n    int effect;\n    if (scanf(\"%d\", &effect) != 1) return 1;\n"
               "    if (effect >= 0) music_effect(effect);\n    music_frame(lines);\n"
               "    for (int i = 0; i < lines - MUSIC_OVERBLANK_LINES; i++) printf(\"%d \", music_level[i]);\n"
@@ -3474,7 +3617,7 @@ static void testSampleExport() {
       schedule.push_back(validEffects && std::uniform_int_distribution<int>(0, 40)(effects) == 0 ? std::uniform_int_distribution<int>(0, validEffects - 1)(effects) : -1);
     {
       std::ofstream input(folder / "input.txt");
-      input << frames << " " << lines << "\n";
+      input << frames << " " << lines << " 0\n";
       for (int effect : schedule) input << effect << "\n";
     }
     std::string run = "cd \"" + folder.string() + "\" && ./driver < input.txt > output.txt";
@@ -3514,8 +3657,50 @@ static void testSampleExport() {
     if (!same) break;
   }
   CHECK(compared >= 15 && loudLines > 100000 && effectsPlayed > 50 && tiaFrames > 20);
-  std::printf("  exported C player: %d songs the same as the editor's, line by line (%d skipped as ambiguous; %ld lines with sound, %d effects, %d frames on the TIA's channel 1)\n",
-              compared, skipped, loudLines, effectsPlayed, tiaFrames);
+  // songs exported together (the same voices and loudness), each one started with music_play
+  int songsCompared = 0;
+  for (unsigned seed = 31; seed <= 54; seed++) {
+    std::vector<Song> songs = {randomSampleSong(seed), randomSampleSong(seed + 100)};
+    songs[1].voices = songs[0].voices, songs[1].gain = songs[0].gain;
+    songs[1].effects.clear();
+    std::vector<NamedSong> named = {{"first", &songs[0]}, {"second", &songs[1]}};
+    ExportResult result = exportSongs(named, ntsc, {ExportTarget::C, "", "NTSC"});
+    bool ambiguousSong = false;
+    for (auto& problem : result.problems) ambiguousSong = ambiguousSong || problem.find("depending on what came before") != std::string::npos;
+    if (ambiguousSong || !result.ok) continue;
+    std::ofstream(folder / "song.music.h") << result.text;
+    std::string build = "cd \"" + folder.string() + "\" && \"" + compiler + "\" -std=c11 -O1 -Wall -Wextra -o driver driver.c > build.log 2>&1";
+    CHECK(std::system(build.c_str()) == 0);
+    const int frames = 300, lines = 262;
+    {
+      std::ofstream input(folder / "input.txt");
+      input << frames << " " << lines << " 1\n";
+      for (int frame = 0; frame < frames; frame++) input << "-1\n";
+    }
+    std::string run = "cd \"" + folder.string() + "\" && ./driver < input.txt > output.txt";
+    CHECK(std::system(run.c_str()) == 0);
+    std::ifstream output(folder / "output.txt");
+    Player player;
+    player.start(songs[1], ntsc);
+    SampleMixer mixer;
+    bool same = true;
+    for (int frame = 0; frame < frames && same; frame++) {
+      std::vector<uint8_t> expected;
+      mixer.render(songs[1], player.nextFrame(), lines, expected);
+      for (int line = 0; line < lines - 63 && same; line++) {
+        int got = -1;
+        output >> got;
+        same = got == expected[line];
+      }
+      std::string rest;
+      std::getline(output, rest);  // the overblank's nibbles and the TIA's channel 1
+    }
+    CHECK(same);
+    songsCompared += same;
+  }
+  CHECK(songsCompared >= 10);
+  std::printf("  exported C player: %d songs the same as the editor's, line by line (%d skipped as ambiguous; %ld lines with sound, %d effects, %d frames on the TIA's channel 1); %d second songs of two\n",
+              compared, skipped, loudLines, effectsPlayed, tiaFrames, songsCompared);
 }
 
 // ---- assistant ---------------------------------------------------------------------
@@ -5195,6 +5380,7 @@ int main() {
   testMusic();
   testSong();
   testMusicExport();
+  testMusicSongs();
   testSampleExport();
   testDpcExport();
   testCdfjExport();

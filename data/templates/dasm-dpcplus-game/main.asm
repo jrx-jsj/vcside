@@ -26,7 +26,7 @@
 ;   room.vcsgfx   the room's playfield: 22 rows of 8 lines, mirrored
 ;   title.vcsgfx  the title's cartridge (VCSIDE's icon) and the menu's texts
 ; THE GAME is written below, in the display data (TheGame0D-5D).
-; Music and sound: theme.vcsmusic (saving it writes theme.music.asm) is the
+; Music and sound: theme.vcsmusic (saving it writes music.asm) is the
 ; song, played on both screens, and three effects: shot (takes the third
 ; voice), hit (on the TIA's channel 1) and lose (the third voice).
 ;
@@ -234,7 +234,7 @@ TRAMPOLINES    = $FFC0          ; three trampolines, before the reset code at $F
 	RORG $F000
 	ds.b 128, 0             ; under the cartridge's registers
 MUSIC_PART SET 1
-	include "theme.music.asm"
+	include "music.asm"
 	IF MusicRam + MUSIC_RAM_BYTES > MusicRamEnd
 	ERR                     ; MusicRam is too small: make it MUSIC_RAM_BYTES long
 	ENDIF
@@ -1562,7 +1562,7 @@ PosObject SUBROUTINE
 	ORG $7000
 	RORG $0000
 MUSIC_PART SET 2
-	include "theme.music.asm"       ; the waveforms
+	include "music.asm"       ; the waveforms
 
 ; Written at power on by CopyTables, top row first, in CopyList's order.
 CartPF0D  ds cart_ROWS          ; the title's cartridge
@@ -1693,6 +1693,6 @@ TheGame5D
 	ORG $8000
 	RORG $1000
 MUSIC_PART SET 3
-	include "theme.music.asm"
+	include "music.asm"
 	ORG $83FF
 	.byte 0                 ; the image ends at 32K

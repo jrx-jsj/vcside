@@ -18,4 +18,4 @@ An ACE cartridge game in C (PlusCart, UnoCart) from VCSIDE's template: the ARM (
 
 ## Do not touch
 - `include/ace.h`, `src/ace.c`, `src/start.S`, `src/memory.c`, `ace.ld` (the bus library, start code and header).
-- `src/theme.music.h`: written by VCSIDE when `theme.vcsmusic` is saved.
+- `src/music.h`: written by VCSIDE when `theme.vcsmusic` is saved. Every `.vcsmusic` of that folder exported the same way goes into it, with one player: `music_play(MUSIC_SONG_<NAME>)` starts another song, `music_stop()` stops it.

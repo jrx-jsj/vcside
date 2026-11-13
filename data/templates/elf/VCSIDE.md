@@ -20,4 +20,4 @@ An ELF cartridge game in C from VCSIDE's template: the cartridge's ARM feeds the
 
 ## Do not touch
 - `include/vcsLib.h` (the loader's interface), `src/memcpy_long.S`, `ace/` and `chameleon/` (the other cartridges' glue), and the Makefile's checks.
-- `theme.music.h` (and any `*.gfx.h`): written by VCSIDE when the `.vcsmusic`/`.vcsgfx` files are saved.
+- `music.h` (and any `*.gfx.h`): written by VCSIDE when the `.vcsmusic`/`.vcsgfx` files are saved. Every `.vcsmusic` of that folder exported the same way goes into it, with one player: `music_play(MUSIC_SONG_<NAME>)` starts another song, `music_stop()` stops it.
