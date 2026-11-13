@@ -12,7 +12,7 @@ A 32K CDFJ program from VCSIDE's CDFJ example: the 6507 draws (`main.asm`), the 
 ## Where things live
 - Joystick and button: read by `CallArm`, used by `frame()` in `game.c`.
 - What the 6507 and the ARM share: `layout.h` (offsets in the display data, one `#define NAME number` per line, decimal).
-- Music: `music_init`, `music_frame`, `music_effect(MUSIC_EFFECT_FIRE / _BUMP)` in `game.c`; "bump" plays on the TIA's channel 1 from `LAYOUT_TIA`.
+- Music: `music_init`, `music_frame`, `music_effect(MUSIC_EFFECT_FIRE / _BUMP)` in `game.c`; "bump" plays on the TIA's channel 1 from `LAYOUT_TIA`. A song with a TIA track (*TIA track* in the music editor) plays it there too, through the same `music_tia`, when no effect sounds there.
 
 ## Build
 - F7 runs `make`: `build/{{NAME}}.bin` (32K). Needs DASM, `arm-none-eabi-gcc` and `cdfj_driver.bin` (CDFJ's 2K driver, not included). PAL: `make DASMFLAGS=-DPAL=1`.

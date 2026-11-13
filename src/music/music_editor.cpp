@@ -162,8 +162,11 @@ static std::string cellNote(int note) {
 
 void MusicEditor::preview(int note) {
   if (instrument_ < 0 || instrument_ >= (int)song_.instruments.size()) return;
-  // an instrument of sound effects on the TIA's channel 1 is heard there
-  previewChannel_ = song_.samples() && song_.playsOnTia(instrument_) ? kTiaChannel : channel_;
+  // on the TIA track, or an instrument only sound effects on the TIA's channel 1 use: heard there
+  bool effectOnTia = false;
+  for (auto& effect : song_.effects) effectOnTia = effectOnTia || (effect.tia && effect.instrument == instrument_);
+  bool onTia = song_.trackCells(channel_) == kTiaTrack || (song_.samples() && effectOnTia && !song_.hasTiaTrack());
+  previewChannel_ = onTia ? kTiaChannel : channel_;
   musicAudio().noteOn(song_, tv_, previewChannel_, note, instrument_);
 }
 
@@ -255,11 +258,12 @@ void MusicEditor::toolbar() {
   if (ImGui::Button(T("From the cursor"))) play(true);
   ImGui::SameLine();
   ImGui::Checkbox(T("Follow"), &follow_);
-  for (int channel = 0; channel < song_.channelCount(); channel++) {
+  for (int track = 0; track < song_.trackCount(); track++) {
     ImGui::SameLine();
-    bool heard = !muted_[channel];
-    std::string label = F("Channel {0}", {std::to_string(channel)});
-    if (ImGui::Checkbox(label.c_str(), &heard)) muted_[channel] = !heard, musicAudio().setMuted(channel, muted_[channel]);
+    int cells = song_.trackCells(track);
+    bool heard = !muted_[cells];
+    std::string label = cells == kTiaTrack ? std::string(T("TIA channel 1")) : F("Channel {0}", {std::to_string(track)});
+    if (ImGui::Checkbox(label.c_str(), &heard)) muted_[cells] = !heard, musicAudio().setMuted(cells, muted_[cells]);
   }
   ImGui::SameLine(0, em(20));
   if (ImGui::RadioButton(T("Tracker"), view_ == View::Tracker)) view_ = View::Tracker;
@@ -431,7 +435,7 @@ static const std::pair<ImGuiKey, int> kNoteKeys[] = {
     {ImGuiKey_O, 26}, {ImGuiKey_0, 27}, {ImGuiKey_P, 28}};
 
 void MusicEditor::enterNote(int note) {
-  Cell& cell = pattern().cells[channel_][row_];
+  Cell& cell = pattern().cells[song_.trackCells(channel_)][row_];
   cell.note = note;
   if (note >= 0) cell.instrument = instrument_;
   changed();
@@ -457,11 +461,11 @@ void MusicEditor::gridKeys() {
   }
   if (ImGui::IsKeyPressed(ImGuiKey_RightArrow)) {
     if (field_ < 2) field_++;
-    else if (channel_ + 1 < song_.channelCount()) channel_++, field_ = 0;
+    else if (channel_ + 1 < song_.trackCount()) channel_++, field_ = 0;
   }
-  if (ImGui::IsKeyPressed(ImGuiKey_Tab, false)) channel_ = (channel_ + 1) % song_.channelCount();
+  if (ImGui::IsKeyPressed(ImGuiKey_Tab, false)) channel_ = (channel_ + 1) % song_.trackCount();
   if (ImGui::IsKeyPressed(ImGuiKey_Space, false)) musicAudio().playing() ? musicAudio().stop() : play(true);
-  Cell& cell = pattern().cells[channel_][row_];
+  Cell& cell = pattern().cells[song_.trackCells(channel_)][row_];
   if (ImGui::IsKeyPressed(ImGuiKey_Delete) || ImGui::IsKeyPressed(ImGuiKey_Backspace)) {
     if (field_ == 0) cell = Cell();
     else if (field_ == 1) cell.instrument = -1;
@@ -520,7 +524,7 @@ void MusicEditor::patternGrid() {
   if (previewKey_ >= 0 && !ImGui::IsKeyDown((ImGuiKey)previewKey_)) previewKey_ = -1, stopPreview();
   gridKeys();
   Pattern& current = pattern();
-  const int kChannels = song_.channelCount();  // this song's
+  const int kChannels = song_.trackCount();  // this song's columns: channels, and the TIA track
   ImDrawList* draw = ImGui::GetWindowDrawList();
   float lineHeight = ImGui::GetTextLineHeightWithSpacing();
   float pad = em(8);
@@ -533,7 +537,7 @@ void MusicEditor::patternGrid() {
   // header
   ImVec2 origin = ImGui::GetCursorScreenPos();
   for (int channel = 0; channel < kChannels; channel++) {
-    std::string name = F("Channel {0}", {std::to_string(channel)});
+    std::string name = song_.trackCells(channel) == kTiaTrack ? std::string(T("TIA channel 1")) : F("Channel {0}", {std::to_string(channel)});
     draw->AddText(ImVec2(origin.x + numberWidth + channel * cellWidth + pad, origin.y), theme::col(theme::Role::UiTextDim), name.c_str());
   }
   ImGui::Dummy(ImVec2(numberWidth + kChannels * cellWidth, lineHeight));
@@ -569,16 +573,19 @@ void MusicEditor::patternGrid() {
       draw->AddText(position, theme::col(row % 4 == 0 ? theme::Role::UiText : theme::Role::UiTextDim), number);
       int lastInstrument = 0;
       for (int channel = 0; channel < kChannels; channel++) {
+        const int cells = song_.trackCells(channel);
+        const bool onTia = cells == kTiaTrack;  // the TIA track: TIA instruments, tuned
+        auto isDrum = [&](const Instrument& instrument) { return onTia ? instrument.drum : drum(instrument); };
         // the instrument in force: the last one given in the pattern up to this row
         lastInstrument = 0;
         for (int earlier = 0; earlier <= row; earlier++)
-          if (current.cells[channel][earlier].instrument >= 0) lastInstrument = current.cells[channel][earlier].instrument;
-        const Cell& cell = current.cells[channel][row];
+          if (current.cells[cells][earlier].instrument >= 0) lastInstrument = current.cells[cells][earlier].instrument;
+        const Cell& cell = current.cells[cells][row];
         float x = position.x + numberWidth + channel * cellWidth + pad;
         ImU32 noteColour = theme::col(theme::Role::UiTextDim);
         if (cell.note >= 0 && lastInstrument < (int)song_.instruments.size()) {
           const Instrument& instrument = song_.instruments[lastInstrument];
-          noteColour = drum(instrument) ? theme::col(theme::Role::UiText) : tuningColour(song_.pitchOf(cell.note, instrument, clock_));
+          noteColour = isDrum(instrument) ? theme::col(theme::Role::UiText) : tuningColour(song_.pitchOf(cell.note, instrument, clock_, onTia));
         } else if (cell.note == kNoteOff) {
           noteColour = theme::col(theme::Role::UiText);
         }
@@ -597,10 +604,10 @@ void MusicEditor::patternGrid() {
           if (cell.effect == kEffectVolume) ImGui::SetTooltip("%s", F("V{0}: volume envelope {0} of the instrument", {std::to_string(cell.effectValue)}).c_str());
           else if (cell.effect == kEffectRelease) ImGui::SetTooltip("%s", F("R{0}: the note is released with release {0}", {std::to_string(cell.effectValue)}).c_str());
           else ImGui::SetTooltip("%s", T("Effect: V and a digit, the volume envelope; R and a digit, the release."));
-        } else if (hoveredHere && cell.note >= 0 && lastInstrument < (int)song_.instruments.size() && !drum(song_.instruments[lastInstrument])) {
+        } else if (hoveredHere && cell.note >= 0 && lastInstrument < (int)song_.instruments.size() && !isDrum(song_.instruments[lastInstrument])) {
           {
-            NotePitch pitch = song_.pitchOf(cell.note, song_.instruments[lastInstrument], clock_);
-            if (song_.samples())
+            NotePitch pitch = song_.pitchOf(cell.note, song_.instruments[lastInstrument], clock_, onTia);
+            if (song_.samples() && !onTia)
               ImGui::SetTooltip("%s", F("{0}: {1} Hz, exact", {noteName(cell.note + song_.tuning.transpose), std::to_string((int)std::lround(pitch.hz))}).c_str());
             else if (pitch.playable)
               ImGui::SetTooltip("%s", F("{0}: AUDC {1}, AUDF {2}, {3} Hz, {4} cents", {noteName(cell.note + song_.tuning.transpose), std::to_string(pitch.control),
@@ -748,7 +755,7 @@ void MusicEditor::registerView() {
 
 void MusicEditor::pianoRoll() {
   Pattern& current = pattern();
-  const int kChannels = song_.channelCount();
+  const int kChannels = song_.trackCount();
   ImDrawList* draw = ImGui::GetWindowDrawList();
   float laneHeight = em(11), rowWidth = em(18), labelWidth = em(40);
   int lowest = 24, highest = 96;  // C1 to C7
@@ -778,22 +785,25 @@ void MusicEditor::pianoRoll() {
   // the notes: the current channel filled, the others outlined (drawn first)
   for (int pass = 0; pass < kChannels; pass++) {
     int channel = (channel_ + 1 + pass) % kChannels;
+    const int cells = song_.trackCells(channel);
+    const bool onTia = cells == kTiaTrack;
+    auto isDrum = [&](const Instrument& instrument) { return onTia ? instrument.drum : drum(instrument); };
     int instrumentIndex = 0;
     for (int row = 0; row < current.rows; row++) {
-      const Cell& cell = current.cells[channel][row];
+      const Cell& cell = current.cells[cells][row];
       if (cell.instrument >= 0) instrumentIndex = cell.instrument;
       if (cell.note < lowest || cell.note > highest) continue;
       int end = row + 1;
-      while (end < current.rows && current.cells[channel][end].note == kNoNote) end++;
+      while (end < current.rows && current.cells[cells][end].note == kNoNote) end++;
       ImU32 colour = theme::col(theme::Role::UiText);
-      if (instrumentIndex < (int)song_.instruments.size() && !drum(song_.instruments[instrumentIndex]))
-        colour = tuningColour(song_.pitchOf(cell.note, song_.instruments[instrumentIndex], clock_));
+      if (instrumentIndex < (int)song_.instruments.size() && !isDrum(song_.instruments[instrumentIndex]))
+        colour = tuningColour(song_.pitchOf(cell.note, song_.instruments[instrumentIndex], clock_, onTia));
       ImVec2 from(rowX(row) + 1, laneY(cell.note) + 1), to(rowX(end) - 1, laneY(cell.note) + laneHeight - 1);
       if (channel == channel_) draw->AddRectFilled(from, to, colour, em(2));
       else draw->AddRect(from, to, colour, em(2));
       if (hovered && mouse.x >= from.x && mouse.x < to.x && mouse.y >= from.y && mouse.y < to.y && instrumentIndex < (int)song_.instruments.size() &&
-          !drum(song_.instruments[instrumentIndex])) {
-        NotePitch pitch = song_.pitchOf(cell.note, song_.instruments[instrumentIndex], clock_);
+          !isDrum(song_.instruments[instrumentIndex])) {
+        NotePitch pitch = song_.pitchOf(cell.note, song_.instruments[instrumentIndex], clock_, onTia);
         ImGui::SetTooltip("%s", F("Channel {0}, {1}: {2} cents", {std::to_string(channel), noteName(cell.note), (pitch.cents >= 0 ? "+" : "") + std::to_string((int)std::lround(pitch.cents))}).c_str());
       }
     }
@@ -802,7 +812,7 @@ void MusicEditor::pianoRoll() {
   if (hovered && mouse.x >= rowX(0)) {
     int row = std::clamp((int)((mouse.x - rowX(0)) / rowWidth), 0, current.rows - 1);
     int note = std::clamp(highest - (int)((mouse.y - origin.y) / laneHeight), lowest, highest);
-    Cell& cell = current.cells[channel_][row];
+    Cell& cell = current.cells[song_.trackCells(channel_)][row];
     if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
       row_ = row;
       if (cell.note != note) {
@@ -1425,7 +1435,10 @@ void MusicEditor::soundPanel() {
   }
   ImGui::SetNextItemWidth(em(80));
   int voices = song_.voices;
-  if (ImGui::InputInt(T("Voices"), &voices)) song_.voices = std::clamp(voices, 1, kMaxChannels), channel_ = std::min(channel_, song_.channelCount() - 1), changed();
+  if (ImGui::InputInt(T("Voices"), &voices)) song_.voices = std::clamp(voices, 1, kMaxChannels), channel_ = std::min(channel_, song_.trackCount() - 1), changed();
+  if (ImGui::Checkbox(T("TIA track"), &song_.tiaTrack)) channel_ = std::min(channel_, song_.trackCount() - 1), changed();
+  if (ImGui::IsItemHovered())
+    ImGui::SetTooltip("%s", T("A column played on the TIA's channel 1, which the voices leave free: its instruments play as TIA instruments (AUDC, AUDF and AUDV once per frame), tuned as in a TIA song. A sound effect on the TIA's channel 1 takes it while it sounds."));
   ImGui::SetNextItemWidth(em(80));
   int gain = song_.gain;
   if (ImGui::InputInt(T("Loudness"), &gain, 1, 4)) song_.gain = std::clamp(gain, 4, 64), changed();

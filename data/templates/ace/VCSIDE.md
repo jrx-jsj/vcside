@@ -11,7 +11,7 @@ An ACE cartridge game in C (PlusCart, UnoCart) from VCSIDE's template: the ARM (
 
 ## Where things live
 - `main()` in `src/main.c`: the game loop. Joystick, switches, button: read by `kernel()` (`swcha`, `swchb`, `inpt4`). RESET: `leave()` and back to the cartridge's menu.
-- Music: `music_init`, `music_frame(lines + MUSIC_OVERBLANK_LINES)`, `music_effect(MUSIC_EFFECT_FIRE / _BUMP)`; "bump" plays on the TIA's channel 1 from `music_tia`.
+- Music: `music_init`, `music_frame(lines + MUSIC_OVERBLANK_LINES)`, `music_effect(MUSIC_EFFECT_FIRE / _BUMP)`; "bump" plays on the TIA's channel 1 from `music_tia`. A song with a TIA track (*TIA track* in the music editor) plays it there too, through the same `music_tia`, when no effect sounds there.
 
 ## Build
 - F7 runs `make`: `build/{{NAME}}.ace` and `build/ACE_debugging.elf` (for Gopher2600's debugger). Runs in Gopher2600 only (Stella has no ACE).

@@ -475,7 +475,7 @@ ToolResult musicDescribe(const ToolEnv& env, const json& args) {
   if (!readProjectText(env, args, ".vcsmusic", &text, &error)) return fail(error);
   music::Song song;
   if (!music::fromJson(text, &song, &error)) return fail("the file does not load: " + error);
-  std::string out = "song " + song.name + ": target " + song.target + ", speed " + std::to_string(song.speed) + " frames per row, " + std::to_string(song.channelCount()) + " channels\n";
+  std::string out = "song " + song.name + ": target " + song.target + ", speed " + std::to_string(song.speed) + " frames per row, " + std::to_string(song.channelCount()) + " channels" + (song.hasTiaTrack() ? " and a TIA track (the last column, on the TIA's channel 1)" : "") + "\n";
   out += "instruments:";
   for (size_t i = 0; i < song.instruments.size(); i++) out += " " + std::to_string(i) + "=" + song.instruments[i].name + (song.instruments[i].drum ? "(drum)" : "");
   out += "\norder:";
@@ -485,11 +485,12 @@ ToolResult musicDescribe(const ToolEnv& env, const json& args) {
   int index = std::clamp(intArg(args, "pattern", 0), 0, (int)song.patterns.size() - 1);
   const music::Pattern& pattern = song.patterns[index];
   out += "pattern " + std::to_string(index) + " \"" + pattern.name + "\", " + std::to_string(pattern.rows) + " rows (note instrument effect per channel):\n";
-  int channels = song.channelCount();
+  int channels = song.trackCount();
   for (int row = 0; row < pattern.rows && row < 64; row++) {
     std::string line = (row < 10 ? "  0" : "  ") + std::to_string(row);
     for (int channel = 0; channel < channels; channel++) {
-      const music::Cell& cell = pattern.cells[channel].size() > (size_t)row ? pattern.cells[channel][row] : music::Cell();
+      const auto& cells = pattern.cells[song.trackCells(channel)];
+      const music::Cell& cell = cells.size() > (size_t)row ? cells[row] : music::Cell();
       line += " | " + noteName(cell.note) + " " + (cell.instrument < 0 ? "." : std::to_string(cell.instrument)) + " " +
               (cell.effect ? std::string(1, cell.effect) + std::to_string(cell.effectValue) : std::string("."));
     }

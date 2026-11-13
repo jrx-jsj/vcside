@@ -13,7 +13,7 @@ VCSIDE The Game in C on an ACE cartridge (PlusCart, UnoCart; Gopher2600): a room
 ## Where things live
 - `main()` in `src/main.c`: the loop, the kernels and the sound. EXIT: `leave()`, and back to the cartridge's menu.
 - `src/game.c`: the rules (`game_frame`: hero, shot, enemies, collisions with the room's own tables, score, lives). `src/menu.c`: the menu. `src/screen.c`: what the kernels draw. These three have no bus calls (the ELF template shares them).
-- Sound: `music_effect(MUSIC_EFFECT_SHOT / _HIT / _LOSE)` from `game_frame`'s events; "hit" plays on the TIA's channel 1 (`music_tia`).
+- Sound: `music_effect(MUSIC_EFFECT_SHOT / _HIT / _LOSE)` from `game_frame`'s events; "hit" plays on the TIA's channel 1 (`music_tia`). A song with a TIA track (*TIA track* in the music editor) plays it there too, through the same `music_tia`, when no effect sounds there.
 - RESET in the game: back to the title.
 
 ## Build

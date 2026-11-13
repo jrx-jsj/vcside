@@ -13,7 +13,7 @@ VCSIDE The Game in C on an ELF cartridge (PlusCart, UnoCart, Chameleon Cart, Ste
 ## Where things live
 - `elf_main(args)` in `src/main.c`: reads `MP_SYSTEM_TYPE` (PAL and PAL60 only), `MP_CLOCK_HZ` (not used: ticks on the Chameleon) and `MP_FEATURE_FLAGS` with masks (`FF_MULTI_CART`: EXIT; `FF_CHAMELEON_CART`: `vcsEndOverblank()` first; `FF_REDUCED_HMOVE`: HMOVE starts at SHORT). Returns only from EXIT.
 - `src/game.c`: the rules (`game_frame`: hero, shot, enemies, collisions with the room's own tables, score, lives). `src/menu.c`: the menu. `src/screen.c`: what the kernels draw. These three have no bus calls (the ACE template shares them).
-- Sound: `music_effect(MUSIC_EFFECT_SHOT / _HIT / _LOSE)` from `game_frame`'s events; "hit" plays on the TIA's channel 1 (`music_tia`).
+- Sound: `music_effect(MUSIC_EFFECT_SHOT / _HIT / _LOSE)` from `game_frame`'s events; "hit" plays on the TIA's channel 1 (`music_tia`). A song with a TIA track (*TIA track* in the music editor) plays it there too, through the same `music_tia`, when no effect sounds there.
 - RESET in the game: back to the title.
 
 ## Build

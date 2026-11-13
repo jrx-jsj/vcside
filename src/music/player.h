@@ -24,7 +24,7 @@ struct FrameRegisters {
   bool sounding[kMaxChannels] = {}, restart[kMaxChannels] = {};
   uint32_t phaseStep[kMaxChannels] = {};
   int instrument[kMaxChannels] = {};
-  // Samples: the TIA's channel 1, for sound effects on it (silent when none sounds).
+  // Samples: the TIA's channel 1: the TIA track, or a sound effect on it (silent when neither sounds).
   uint8_t tiaControl = 0, tiaFrequency = 0, tiaVolume = 0;
 };
 
@@ -64,7 +64,7 @@ class Player {
   bool playing() const { return playing_; }
   bool sounding() const;  // the song plays or a voice still sounds
   SongPosition position() const { return shown_; }  // the row being heard
-  const VoiceTrace& trace(int channel) const { return traces_[channel]; }  // of the last frame
+  const VoiceTrace& trace(int channel) const { return traces_[channel]; }  // of the last frame (kTiaTrack: the TIA's channel 1)
   const Song& song() const { return song_; }
 
  private:
@@ -76,7 +76,7 @@ class Player {
     std::vector<PitchStep> pitch;  // melodic: frame by frame, the last one stays
     std::vector<uint32_t> steps;   // samples: the phase step frame by frame, the last one stays
     bool restart = false;          // samples: a note started since the last frame
-    bool tia = false;              // samples: the TIA's channel 1 (a sound effect)
+    bool tia = false;              // samples: the TIA's channel 1 (the TIA track or a sound effect)
   };
   void playRow();
   void end();
@@ -87,9 +87,10 @@ class Player {
   Song song_;
   double audioClock_ = 0;
   Voice voices_[kMaxChannels];
-  Voice tiaVoice_;  // samples: a sound effect on the TIA's channel 1
-  int channelInstruments_[kMaxChannels] = {};  // for the channel's next notes
-  VoiceTrace traces_[kMaxChannels];
+  // samples: the TIA's channel 1, the TIA track's notes or a sound effect (locked, as on a voice)
+  Voice tiaVoice_;
+  int channelInstruments_[kMaxTracks] = {};  // for the channel's next notes (kTiaTrack: the TIA track's)
+  VoiceTrace traces_[kMaxTracks];
   bool playing_ = false;
   SongPosition next_, shown_;
   int framesLeft_ = 0;  // in the current row
@@ -132,7 +133,7 @@ class Renderer {
  public:
   void setup(const std::string& tv, double outputRate);
   Player player;
-  bool muted[kMaxChannels] = {};
+  bool muted[kMaxTracks] = {};  // kTiaTrack: the TIA's channel 1
   // Plays one video frame and appends its samples (from -1 to 1).
   void renderFrame(std::vector<float>& output);
   const FrameRegisters& lastRegisters() const { return registers_; }

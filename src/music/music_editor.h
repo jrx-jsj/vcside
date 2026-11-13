@@ -89,7 +89,7 @@ class MusicEditor {
   int pitchRange_ = 100;  // the pitch envelope's bars (in cents) go from -this to +this
   void pitchRangeButtons(const std::vector<int>& pitch);
   int handNote_ = -1;                           // the note open in the tuning by hand
-  bool muted_[kMaxChannels] = {};
+  bool muted_[kMaxTracks] = {};  // kTiaTrack: the TIA track (and sound effects there)
   int previewKey_ = -1;    // ImGuiKey held for the note being previewed
   bool previewMouse_ = false;
   bool scrollToCursor_ = false;

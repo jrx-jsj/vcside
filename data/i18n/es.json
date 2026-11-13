@@ -1264,7 +1264,12 @@
     "{0} has {1} rows: the player takes 255": "{0} tiene {1} filas: el reproductor admite 255",
     "{0}: left out, it cannot be read ({1})": "{0}: se queda fuera, no se puede leer ({1})",
     "{0}: left out, it is exported for another kind of project": "{0}: se queda fuera, se exporta para otro tipo de proyecto",
-    "{0}: this folder's songs and VCSIDE's player for the console, kept up to date on every save.": "{0}: las canciones de esta carpeta y el reproductor de VCSIDE para la consola, al día en cada guardado."
+    "{0}: this folder's songs and VCSIDE's player for the console, kept up to date on every save.": "{0}: las canciones de esta carpeta y el reproductor de VCSIDE para la consola, al día en cada guardado.",
+    "TIA track": "Pista de la TIA",
+    "A column played on the TIA's channel 1, which the voices leave free: its instruments play as TIA instruments (AUDC, AUDF and AUDV once per frame), tuned as in a TIA song. A sound effect on the TIA's channel 1 takes it while it sounds.": "Una columna que suena en el canal 1 de la TIA, que las voces dejan libre: sus instrumentos suenan como instrumentos de la TIA (AUDC, AUDF y AUDV una vez por fotograma), afinados como en una canción de la TIA. Un efecto de sonido en el canal 1 de la TIA la ocupa mientras suena.",
+    "DPC+ does not play the TIA track yet: it is left out.": "DPC+ todavía no toca la pista de la TIA: se queda fuera.",
+    "{0} different sounds on the TIA track: the player takes 250": "{0} sonidos distintos en la pista de la TIA: el reproductor admite 250",
+    "pattern \"{0}\", TIA track, row {1}: not a cell": "patrón \"{0}\", pista de la TIA, fila {1}: no es una celda"
   },
   "total": 1171
 }

@@ -14,6 +14,7 @@ void Player::start(const Song& song, double audioClock, SongPosition from) {
   song_ = song;
   audioClock_ = audioClock;
   for (auto& voice : voices_) voice = Voice();
+  tiaVoice_ = Voice();
   for (int& instrument : channelInstruments_) instrument = 0;
   next_ = from;
   if (next_.order < 0 || next_.order >= (int)song_.order.size()) next_ = {};
@@ -54,6 +55,7 @@ void Player::playEffect(const Song& song, double audioClock, int effect) {
     tiaVoice_.tia = true;
     tiaVoice_.instrument = sound.instrument;
     trigger(tiaVoice_, sound.note);
+    tiaVoice_.locked = tiaVoice_.active;  // the TIA track waits until it ends
     return;
   }
   Voice& voice = voices_[std::clamp(sound.channel, 0, song_.channelCount() - 1)];
@@ -98,6 +100,7 @@ void Player::end() {
   playing_ = false;
   for (int channel = 0; channel < song_.channelCount(); channel++)
     if (!voices_[channel].locked) noteOff(channel);
+  if (song_.hasTiaTrack() && !tiaVoice_.locked) noteOff(kTiaChannel);
 }
 
 void Player::playRow() {
@@ -112,18 +115,20 @@ void Player::playRow() {
   }
   const Pattern& pattern = song_.patterns[patternIndex];
   shown_ = next_;
-  for (int channel = 0; channel < song_.channelCount(); channel++) {
-    if (next_.row >= (int)pattern.cells[channel].size()) continue;
-    const Cell& cell = pattern.cells[channel][next_.row];
-    Voice& voice = voices_[channel];
+  for (int track = 0; track < song_.trackCount(); track++) {
+    int cells = song_.trackCells(track);
+    if (next_.row >= (int)pattern.cells[cells].size()) continue;
+    const Cell& cell = pattern.cells[cells][next_.row];
+    bool onTia = cells == kTiaTrack;
+    Voice& voice = onTia ? tiaVoice_ : voices_[track];
     // the cell's instrument is the channel's from now on; the note sounding keeps its own
-    if (cell.instrument >= 0) channelInstruments_[channel] = cell.instrument;
+    if (cell.instrument >= 0) channelInstruments_[cells] = cell.instrument;
     if (voice.locked) continue;  // a sound effect has the channel
-    if (cell.note >= 0) voice.instrument = channelInstruments_[channel], trigger(voice, cell.note);
+    if (cell.note >= 0) voice.instrument = channelInstruments_[cells], voice.tia = onTia, trigger(voice, cell.note);
     // the effect after the note (it is for that note) and before a note off (whose release it picks)
     if (cell.effect == kEffectVolume) voice.volumeVariant = cell.effectValue;
     else if (cell.effect == kEffectRelease) voice.releaseVariant = cell.effectValue;
-    if (cell.note == kNoteOff) noteOff(channel);
+    if (cell.note == kNoteOff) noteOff(onTia ? kTiaChannel : track);
   }
   framesLeft_ = std::max(1, song_.rowFrames(pattern, next_.row));
   // the next row: the pattern's end goes to the next order entry, the song's end loops or stops
@@ -206,6 +211,7 @@ void Player::outputTia(FrameRegisters& registers) {
   FrameRegisters own;
   VoiceTrace kept = traces_[0];
   output(tiaVoice_, 0, own);
+  traces_[kTiaTrack] = traces_[0];
   traces_[0] = kept;
   registers.tiaControl = own.control[0], registers.tiaFrequency = own.frequency[0], registers.tiaVolume = own.volume[0];
 }
@@ -315,7 +321,7 @@ void Renderer::renderFrame(std::vector<float>& output) {
     tia_.channels[0].control = 0;
     tia_.channels[1].control = registers_.tiaControl;  // a sound effect on the TIA's channel 1
     tia_.channels[1].frequency = registers_.tiaFrequency;
-    tia_.channels[1].volume = registers_.tiaVolume;
+    tia_.channels[1].volume = muted[kTiaTrack] ? 0 : registers_.tiaVolume;
     for (uint8_t level : lineLevels_) {
       tia_.channels[0].volume = level;
       resampler_.push(tia_.clock(), raw_);

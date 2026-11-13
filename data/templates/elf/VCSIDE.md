@@ -13,7 +13,7 @@ An ELF cartridge game in C from VCSIDE's template: the cartridge's ARM feeds the
 ## Where things live
 - `elf_main(args)` in `src/main.c`: `args[MP_SYSTEM_TYPE]` (PAL gives 249 lines), `args[MP_FEATURE_FLAGS]` with masks: `FF_MULTI_CART` (RESET goes back to the menu: `leave()`, then return), `FF_CHAMELEON_CART` (already in an overblank: `vcsEndOverblank()` first).
 - Joystick, switches, button: read by `kernel()` after the visible lines (`swcha`, `swchb`, `inpt4`), used in `elf_main`'s loop.
-- Music: `music_init`, `music_frame(lines + MUSIC_OVERBLANK_LINES)` once a frame, `music_effect(MUSIC_EFFECT_FIRE / _BUMP)`; "bump" plays on the TIA's channel 1 from `music_tia`.
+- Music: `music_init`, `music_frame(lines + MUSIC_OVERBLANK_LINES)` once a frame, `music_effect(MUSIC_EFFECT_FIRE / _BUMP)`; "bump" plays on the TIA's channel 1 from `music_tia`. A song with a TIA track (*TIA track* in the music editor) plays it there too, through the same `music_tia`, when no effect sounds there.
 
 ## Build
 - F7 runs `make`: `build/{{NAME}}.bin`, the ELF ROM (Stella, Gopher2600, PlusCart, UnoCart). `make ace`: the same game as `build/{{NAME}}.ace` (vcsLib on VCSIDE's ACE bus library in `ace/`); a project made as the ACE example "the ELF game on vcsLib" builds with `make ace`. `make chameleon CHAMELEON_FW=...`: the Chameleon Cart image.

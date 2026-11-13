@@ -558,9 +558,10 @@ static const char* kCPlayer = R"PLAYER(
  *                                     restart: a note started (resetWave, if wanted)
  * and copy the amplitude stream to AUDV0 on every line, with AUDC0 = 0.
  *
- * Sound effects on the TIA's channel 1 (MUSIC_TIA_EFFECTS): music_frame leaves this
+ * The TIA's channel 1 (MUSIC_TIA_EFFECTS, MUSIC_TIA_TRACK): music_frame leaves this
  * frame's AUDC1, AUDF1 and AUDV1 in music_tia[0], [1] and [2], for the game to write
- * once per frame (AUDV1 is 0 once the effect is over); music_tia_left is 0 when none
+ * once per frame: the song's TIA track, or a sound effect there, which takes the track
+ * until it ends (AUDV1 is 0 when neither sounds); music_tia_left is 0 when no effect
  * sounds, for a game that also uses channel 1 for itself.
  * ------------------------------------------------------------------------- */
 
@@ -594,10 +595,15 @@ static uint8_t music_cdfj_samples[MUSIC_VOICES][32];
 uint8_t music_level[312 - MUSIC_OVERBLANK_LINES];
 uint8_t music_nibbles[31];
 #endif
-#if MUSIC_TIA_EFFECTS
+/* always there, so a game that writes them keeps building with or without them */
 uint8_t music_tia[3];               /* AUDC1, AUDF1 and AUDV1 for this frame */
 uint8_t music_tia_left;             /* frames left of the effect + 1 (0: none) */
+#if MUSIC_TIA_EFFECTS
 static uint16_t music_tia_at;       /* its next frame, in music_tia_data */
+#endif
+#if MUSIC_TIA_TRACK
+/* the TIA track: pitch is in music_tia_pitch_data; pitch_index bit 7: an effect has it */
+static music_voice music_tia_track;
 #endif
 
 static void music_start(music_voice *voice, int sound)
@@ -614,6 +620,18 @@ static void music_start(music_voice *voice, int sound)
     voice->restart = 1;
 #endif
 }
+
+#if MUSIC_TIA_TRACK
+static void music_tia_start(int sound)
+{
+    music_voice *voice = &music_tia_track;
+    voice->pitch = music_tia_sound_pitch[sound];
+    voice->state = (uint8_t)(music_tia_sound_release[sound] | 0x80);
+    voice->volume = music_envelope_offset[music_tia_sound_envelope[sound]];
+    voice->volume_index = 0;
+    voice->pitch_index = 0;
+}
+#endif
 
 static void music_note_off(music_voice *voice)
 {
@@ -632,6 +650,9 @@ void music_play(int song)
     music_pointer = music_order_offset[music_order];
     for (int i = 0; i < MUSIC_VOICES; i++)
         if (!(music_voices[i].pitch_index & 0x80)) music_voices[i].state = 0;   /* a sound effect keeps its voice */
+#if MUSIC_TIA_TRACK
+    if (!(music_tia_track.pitch_index & 0x80)) music_tia_track.state = 0;
+#endif
 }
 
 /* On the next frame the notes are let go, as at a song's end. */
@@ -650,9 +671,11 @@ void music_init(void)
         music_voices[i].cdfj_wave = 0xFFFF;             /* the first frame gives every voice its samples */
 #endif
     }
-#if MUSIC_TIA_EFFECTS
     music_tia_left = 0;
     music_tia[0] = music_tia[1] = music_tia[2] = 0;
+#if MUSIC_TIA_TRACK
+    music_tia_track.state = 0;
+    music_tia_track.pitch_index = 0;
 #endif
     music_play(0);
 }
@@ -663,6 +686,10 @@ void music_effect(int effect)
     if (music_effect_voice[effect] == 0xFF) {           /* on the TIA's channel 1 */
         music_tia_at = music_tia_offset[music_effect_sound[effect]];
         music_tia_left = music_tia_data[music_tia_at++];
+#if MUSIC_TIA_TRACK
+        music_tia_track.state = 0;                      /* the track waits until it ends */
+        music_tia_track.pitch_index = 0x80;
+#endif
         return;
     }
 #endif
@@ -671,13 +698,21 @@ void music_effect(int effect)
     voice->pitch_index = 0x80;
 }
 
-/* A row's event for a voice, from music_patterns[at]; returns where the next one is. */
-static int music_event(music_voice *voice, int at)
+/* A row's event for a voice (tia: the TIA track), from music_patterns[at]; returns
+ * where the next one is. */
+static int music_event(music_voice *voice, int at, int tia)
 {
     int code = music_patterns[at++], argument = 0;
     if (code >= 2 && code <= 4) argument = music_patterns[at++];
     if (voice->pitch_index & 0x80) return at;          /* a sound effect has the voice */
     if (code >= 6) {
+#if MUSIC_TIA_TRACK
+        if (tia) {
+            music_tia_start(code - 6);
+            return at;
+        }
+#endif
+        (void)tia;
         music_start(voice, code - 6);
     } else if (code == 1) {
         music_note_off(voice);
@@ -695,7 +730,10 @@ static int music_event(music_voice *voice, int at)
 static void music_play_row(void)
 {
     int at = music_pointer;
-    for (int i = 0; i < MUSIC_VOICES; i++) at = music_event(&music_voices[i], at);
+    for (int i = 0; i < MUSIC_VOICES; i++) at = music_event(&music_voices[i], at, 0);
+#if MUSIC_TIA_TRACK
+    at = music_event(&music_tia_track, at, 1);
+#endif
     music_pointer = (uint16_t)at;
 #if MUSIC_PATTERN_SPEEDS
     music_wait = (music_row & 1) ? music_order_swing[music_order] : music_order_speed[music_order];
@@ -710,16 +748,16 @@ static void music_play_row(void)
     }
 }
 
-/* This frame's volume and phase step for a voice. */
-static void music_voice_frame(music_voice *voice)
+/* This frame's volume of a voice, from its envelope or its release; -1: it is silent
+ * (it was not sounding, or it stops now), and its channel is the song's again. */
+static int music_volume_step(music_voice *voice)
 {
     if (!(voice->state & 0x80)) {
-        voice->level = 0;
-        voice->pitch_index = 0;                         /* the voice is the song's again */
-        return;
+        voice->pitch_index = 0;
+        return -1;
     }
     const uint8_t *volume = music_volume_data + voice->volume;
-    int index = voice->volume_index, value;
+    int index = voice->volume_index;
     if (index >= volume[0]) {
         if (voice->state & 0x40) goto stop;             /* the release is over */
         if (volume[1] != 0xFF) {
@@ -730,22 +768,48 @@ static void music_voice_frame(music_voice *voice)
             if (volume[2 + index] == 0) goto stop;      /* ...unless it is 0: the note is over */
         }
     }
-    value = volume[2 + index];
     voice->volume_index = (uint8_t)(index + 1);
-    {
-        const uint32_t *pitch = music_pitch_data + voice->pitch;
-        int length = (int)(pitch[0] & 0xFF), step = voice->pitch_index & 0x7F;
-        if (step != length - 1) voice->pitch_index++;
-        voice->step = pitch[1 + step];
-        voice->wave = (uint8_t)(pitch[0] >> 8);
-    }
-    voice->level = (uint8_t)value;
-    return;
+    return volume[2 + index];
 stop:
     voice->state = 0;
-    voice->level = 0;
     voice->pitch_index = 0;
+    return -1;
 }
+
+/* This frame's volume and phase step for a voice. */
+static void music_voice_frame(music_voice *voice)
+{
+    int value = music_volume_step(voice);
+    if (value < 0) {
+        voice->level = 0;
+        return;
+    }
+    const uint32_t *pitch = music_pitch_data + voice->pitch;
+    int length = (int)(pitch[0] & 0xFF), step = voice->pitch_index & 0x7F;
+    if (step != length - 1) voice->pitch_index++;
+    voice->step = pitch[1 + step];
+    voice->wave = (uint8_t)(pitch[0] >> 8);
+    voice->level = (uint8_t)value;
+}
+
+#if MUSIC_TIA_TRACK
+/* The TIA track's AUDC1, AUDF1 and AUDV1 for this frame, as a channel of a TIA song. */
+static void music_tia_track_frame(void)
+{
+    music_voice *voice = &music_tia_track;
+    int value = music_volume_step(voice);
+    if (value < 0) {
+        music_tia[2] = 0;
+        return;
+    }
+    const uint8_t *pitch = music_tia_pitch_data + voice->pitch;
+    int length = pitch[0] & 0x7F, step = voice->pitch_index & 0x7F;
+    if (step != length - 1) voice->pitch_index++;
+    music_tia[0] = pitch[1 + 2 * step];
+    music_tia[1] = pitch[2 + 2 * step];
+    music_tia[2] = (uint8_t)((pitch[0] & 0x80) ? 0 : value);   /* no allowed AUDC reaches the note */
+}
+#endif
 
 void music_frame(int lines)
 {
@@ -754,6 +818,9 @@ void music_frame(int lines)
             if (!music_order_rows[music_order]) {       /* the song is over: what sounds is released */
                 for (int i = 0; i < MUSIC_VOICES; i++)
                     if (!(music_voices[i].pitch_index & 0x80)) music_note_off(&music_voices[i]);
+#if MUSIC_TIA_TRACK
+                if (!(music_tia_track.pitch_index & 0x80)) music_note_off(&music_tia_track);
+#endif
                 music_order = 0xFF;
                 goto voices;
             }
@@ -764,14 +831,27 @@ void music_frame(int lines)
 voices:
     for (int i = 0; i < MUSIC_VOICES; i++) music_voice_frame(&music_voices[i]);
 #if MUSIC_TIA_EFFECTS
-    if (music_tia_left && --music_tia_left) {           /* the effect's frame on the TIA's channel 1 */
-        music_tia[0] = music_tia_data[music_tia_at];
-        music_tia[1] = music_tia_data[music_tia_at + 1];
-        music_tia[2] = music_tia_data[music_tia_at + 2];
-        music_tia_at += 3;
+    if (music_tia_left) {
+        if (--music_tia_left) {                         /* the effect's frame on the TIA's channel 1 */
+            music_tia[0] = music_tia_data[music_tia_at];
+            music_tia[1] = music_tia_data[music_tia_at + 1];
+            music_tia[2] = music_tia_data[music_tia_at + 2];
+            music_tia_at += 3;
+        } else {
+            music_tia[2] = 0;                           /* it is over: silent, and the track is the song's again */
+#if MUSIC_TIA_TRACK
+            music_tia_track.pitch_index = 0;
+#endif
+        }
     } else {
-        music_tia[2] = 0;                               /* none, or it is over: silent */
+#if MUSIC_TIA_TRACK
+        music_tia_track_frame();
+#else
+        music_tia[2] = 0;
+#endif
     }
+#elif MUSIC_TIA_TRACK
+    music_tia_track_frame();
 #endif
 #if MUSIC_CDFJ
     /* each voice's waveform at one of the levels the cartridge's sum allows */
@@ -921,6 +1001,9 @@ struct Builder {
                                                       // samples: length, waveform, then phase steps
   Pool<std::vector<int>> waves;                       // samples: noise mask (0: none), 32 levels
   Pool<std::tuple<int, int, int>> sounds;             // envelope, pitch, release
+  // samples: the TIA track's, played on the TIA (pitches as in a TIA song)
+  Pool<std::vector<int>> tiaPitches;
+  Pool<std::tuple<int, int, int>> tiaSounds;
 
   void problem(const std::string& text) {
     if (said.insert(text).second) problems.push_back(text);
@@ -939,12 +1022,13 @@ struct Builder {
     const std::vector<int>& chosen = source.releases[variantIndex >= 0 && variantIndex < (int)source.releases.size() ? variantIndex : 0];
     return releases.add(std::vector<int>(chosen.begin(), chosen.begin() + std::min<size_t>(chosen.size(), 250)));
   }
-  int pitch(int instrument, int note) {
+  // onTia: the TIA track of a song of samples (a TIA pitch, in tiaPitches)
+  int pitch(int instrument, int note, bool onTia = false) {
     const Instrument& source = song->instruments[instrument];
     std::vector<int> bytes;
     bool muted = false;
     std::vector<std::pair<int, int>> steps;
-    if (song->samples()) {
+    if (song->samples() && !onTia) {
       std::vector<uint32_t> phaseSteps = song->phaseSteps(note, source, clock);
       if (phaseSteps.size() > 120) {
         problem(F("{0}: only the first 120 frames of its pitch are exported", {source.name}));
@@ -973,7 +1057,7 @@ struct Builder {
         steps.push_back({control, frequency});
       }
     } else {
-      std::vector<PitchStep> sequence = song->pitchSequence(note, source, clock);
+      std::vector<PitchStep> sequence = song->pitchSequence(note, source, clock, onTia);
       muted = !sequence[0].playable;
       if (muted) problem(F("{0} with {1}: no allowed AUDC reaches it, so it is silent", {noteName(note + song->tuning.transpose), source.name}));
       for (auto& step : sequence) steps.push_back({step.control, step.frequency});
@@ -984,10 +1068,11 @@ struct Builder {
     }
     bytes.push_back((int)steps.size() | (muted ? 0x80 : 0));
     for (auto& [control, frequency] : steps) bytes.push_back(control & 15), bytes.push_back(frequency & 31);
-    return pitches.add(bytes);
+    return onTia && song->samples() ? tiaPitches.add(bytes) : pitches.add(bytes);
   }
-  int sound(int instrument, int note, int volumeVariant, int releaseVariant) {
-    return sounds.add({envelope(instrument, volumeVariant), pitch(instrument, note), release(instrument, releaseVariant)});
+  int sound(int instrument, int note, int volumeVariant, int releaseVariant, bool onTia = false) {
+    std::tuple<int, int, int> made{envelope(instrument, volumeVariant), pitch(instrument, note, onTia), release(instrument, releaseVariant)};
+    return onTia && song->samples() ? tiaSounds.add(made) : sounds.add(made);
   }
 };
 
@@ -1033,6 +1118,7 @@ struct Combined {
   std::vector<std::vector<TiaFrame>> tiaTables;
   std::vector<std::string> songSymbols;
   int channels = 2, gain = 16, speed = 6, swing = 0;
+  int tracks = 2;  // the channels, and the TIA track if a song has one (its events come after the voices')
   bool patternSpeeds = false;
   // the patterns each song plays, once each, in the order they are first played
   std::vector<std::pair<int, int>> patterns() const {
@@ -1046,7 +1132,7 @@ struct Combined {
     std::vector<int> bytes;
     const Pattern& pattern = songs[song].song->patterns[patternIndex];
     for (int row = 0; row < pattern.rows; row++)
-      for (int channel = 0; channel < channels; channel++) {
+      for (int channel = 0; channel < tracks; channel++) {
         auto found = events.find(std::make_tuple(song, patternIndex, channel, row));
         Event event = found == events.end() ? Event{} : found->second;
         bytes.push_back(event.code);
@@ -1089,6 +1175,8 @@ static ExportResult writeC(const Combined& combined, Builder& builder, const Exp
   for (size_t index = 0; index < combined.songs.size(); index++) out << "#define " << combined.songSymbols[index] << " " << index << "\n";
   out << "#define MUSIC_MIX " << mixFactor(combined.gain, channels) << "u  /* the sum of the voices to quarters of a level, in 1/65536 */\n";
   out << "#define MUSIC_TIA_EFFECTS " << tiaTables.size() << "  /* sound effects on the TIA's channel 1 (music_tia) */\n";
+  const bool tiaTrack = combined.tracks > channels;
+  out << "#define MUSIC_TIA_TRACK " << (tiaTrack ? 1 : 0) << "  /* a track on the TIA's channel 1 (music_tia) */\n";
   for (size_t index = 0; index < effects.size(); index++) out << "#define " << effects[index].first << " " << index << "\n";
   // patterns, one after another, and where each order entry starts
   std::vector<long long> patternBytes, orderOffset, orderRows, songStart;
@@ -1170,6 +1258,23 @@ static ExportResult writeC(const Combined& combined, Builder& builder, const Exp
   out << "static const uint8_t music_effect_sound[] = {\n" << cList(effectSound) << "};\n";
   out << "static const uint8_t music_effect_voice[] = {\n" << cList(effectVoice) << "};\n";
   dataBytes += (int)builder.sounds.entries.size() * 4 + (int)effects.size() * 2;
+  // the TIA track's sounds: their pitch as in a TIA song (length, + 0x80 silent; AUDC and AUDF pairs)
+  if (tiaTrack) {
+    std::vector<long long> tiaPitchData, tiaPitchAt, tiaEnvelope, tiaRelease, tiaPitch;
+    for (auto& entry : builder.tiaPitches.entries) {
+      tiaPitchAt.push_back((long long)tiaPitchData.size());
+      tiaPitchData.insert(tiaPitchData.end(), entry.begin(), entry.end());
+    }
+    for (auto& [envelopeIndex, pitchIndex, releaseIndex] : builder.tiaSounds.entries)
+      tiaEnvelope.push_back(envelopeIndex), tiaRelease.push_back(releaseIndex), tiaPitch.push_back(tiaPitchAt[pitchIndex]);
+    for (auto* list : {&tiaPitchData, &tiaEnvelope, &tiaRelease, &tiaPitch})
+      if (list->empty()) list->push_back(0);
+    out << "static const uint8_t music_tia_pitch_data[] = {\n" << cList(tiaPitchData) << "};\n";
+    out << "static const uint8_t music_tia_sound_envelope[] = {\n" << cList(tiaEnvelope) << "};\n";
+    out << "static const uint8_t music_tia_sound_release[] = {\n" << cList(tiaRelease) << "};\n";
+    out << "static const uint16_t music_tia_sound_pitch[] = {\n" << cList(tiaPitch) << "};\n";
+    dataBytes += (int)tiaPitchData.size() + (int)builder.tiaSounds.entries.size() * 4;
+  }
   // sound effects on the TIA's channel 1: frames + 1, then AUDC1, AUDF1 and AUDV1 for each frame
   if (!tiaTables.empty()) {
     std::vector<long long> offsets, bytes;
@@ -1246,8 +1351,8 @@ static bool sameFrames(const std::vector<TiaFrame>& left, const std::vector<TiaF
 static void walkSong(int songIndex, Builder& builder, Combined& combined) {
   const Song& song = *combined.songs[songIndex].song;
   builder.song = &song;
-  const int channels = combined.channels;
-  int channelInstrument[kMaxChannels] = {}, soundingInstrument[kMaxChannels] = {-1, -1, -1, -1};
+  const int tracks = std::min(combined.tracks, song.trackCount());  // the TIA track last, after the voices
+  int channelInstrument[kMaxTracks] = {}, soundingInstrument[kMaxTracks] = {-1, -1, -1, -1, -1};
   std::string prefix = combined.songs.size() > 1 ? combined.songs[songIndex].name + ": " : "";
   auto walk = [&](int from) {
     bool changed = false;
@@ -1256,8 +1361,9 @@ static void walkSong(int songIndex, Builder& builder, Combined& combined) {
       if (patternIndex < 0 || patternIndex >= (int)song.patterns.size()) continue;
       const Pattern& pattern = song.patterns[patternIndex];
       for (int row = 0; row < pattern.rows; row++)
-        for (int channel = 0; channel < channels; channel++) {
-          const Cell& cell = pattern.cells[channel][row];
+        for (int channel = 0; channel < tracks; channel++) {
+          const bool onTia = song.trackCells(channel) == kTiaTrack;
+          const Cell& cell = pattern.cells[song.trackCells(channel)][row];
           if (cell.instrument >= 0) channelInstrument[channel] = cell.instrument;
           int sounding = soundingInstrument[channel];
           Event event;
@@ -1269,7 +1375,7 @@ static void walkSong(int songIndex, Builder& builder, Combined& combined) {
             } else {
               int volumeVariant = cell.effect == kEffectVolume ? cell.effectValue : 0;
               int releaseVariant = cell.effect == kEffectRelease ? cell.effectValue : 0;
-              event.code = 6 + builder.sound(instrument, cell.note, volumeVariant, releaseVariant);
+              event.code = 6 + builder.sound(instrument, cell.note, volumeVariant, releaseVariant, onTia);
             }
           } else if (cell.note == kNoteOff) {
             if (cell.effect == kEffectRelease && builder.valid(sounding)) event = {4, builder.release(sounding, cell.effectValue)};
@@ -1287,7 +1393,7 @@ static void walkSong(int songIndex, Builder& builder, Combined& combined) {
           } else if (!(found->second == event)) {
             std::string name = pattern.name.empty() ? F("pattern {0}", {std::to_string(patternIndex)}) : pattern.name;
             builder.problem(prefix + F("{0}, channel {1}, row {2}: it plays differently depending on what came before; give the cell its instrument",
-                                       {name, std::to_string(channel), std::to_string(row)}));
+                                       {name, onTia ? std::string("TIA") : std::to_string(channel), std::to_string(row)}));
           }
         }
     }
@@ -1337,7 +1443,7 @@ static void walkSong(int songIndex, Builder& builder, Combined& combined) {
       const Envelope* volume = song.instruments[effect.instrument].volumes.empty() ? nullptr : &song.instruments[effect.instrument].volumes[0];
       if ((!volume || volume->values.empty() || volume->loop >= 0 || volume->values.back() != 0))
         builder.problem(prefix + F("Sound effect {0} never ends and keeps its channel: its instrument's volume envelope must end on 0, with no loop", {effect.name}));
-      made = {builder.sound(effect.instrument, effect.note, 0, 0), std::clamp(effect.channel, 0, channels - 1)};
+      made = {builder.sound(effect.instrument, effect.note, 0, 0), std::clamp(effect.channel, 0, combined.channels - 1)};
     }
     auto same = std::find_if(combined.effects.begin(), combined.effects.end(), [&](auto& existing) { return existing.first == symbol; });
     if (same != combined.effects.end()) {
@@ -1394,18 +1500,23 @@ ExportResult exportSongs(const std::vector<NamedSong>& songs, double audioClock,
   }
   if (combined.songs.empty()) return result;
   const int channels = combined.channels;
+  bool anyTiaTrack = false;
+  for (auto& named : combined.songs) anyTiaTrack = anyTiaTrack || named.song->hasTiaTrack();
+  combined.tracks = channels + (anyTiaTrack && (options.target == ExportTarget::C || cdfj) ? 1 : 0);
+  if (anyTiaTrack && dpc) result.problems.push_back(T("DPC+ does not play the TIA track yet: it is left out."));
   Builder builder{*combined.songs[0].song, audioClock, dpc};
   builder.problems = result.problems;
   for (auto& text : result.problems) builder.said.insert(text);
   for (int index = 0; index < (int)combined.songs.size(); index++) walkSong(index, builder, combined);
   bool tooLong = false;
   for (auto& entry : combined.order) tooLong = tooLong || entry.rows > 255;
+  if (builder.tiaSounds.entries.size() > 250) builder.problem(F("{0} different sounds on the TIA track: the player takes 250", {std::to_string(builder.tiaSounds.entries.size())}));
   if (builder.sounds.entries.size() > 250) builder.problem(F("{0} different sounds: the player takes 250", {std::to_string(builder.sounds.entries.size())}));
   if (builder.releases.entries.size() > 64) builder.problem(F("{0} different releases: the player takes 64", {std::to_string(builder.releases.entries.size())}));
   if (builder.envelopes.entries.size() > 256) builder.problem(F("{0} different volume envelopes: the player takes 256", {std::to_string(builder.envelopes.entries.size())}));
   if (combined.order.size() > 255) builder.problem(combined.songs.size() > 1 ? T("The songs' order lists are longer than 255 entries together (each song takes one more).") : T("The order list is longer than 254 entries."));
   result.problems = builder.problems;
-  if (builder.sounds.entries.size() > 250 || builder.releases.entries.size() > 64 || builder.envelopes.entries.size() > 256 || combined.order.size() > 255 || tooLong) return result;
+  if (builder.sounds.entries.size() > 250 || builder.tiaSounds.entries.size() > 250 || builder.releases.entries.size() > 64 || builder.envelopes.entries.size() > 256 || combined.order.size() > 255 || tooLong) return result;
   if (cdfj && channels > 3) {
     result.problems.push_back(T("CDFJ has 3 voices: the song has more."));
     return result;

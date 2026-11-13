@@ -24,9 +24,9 @@ std::vector<SongNote> Song::notes() const {
   for (int orderIndex : order) {
     if (orderIndex < 0 || orderIndex >= (int)patterns.size()) continue;
     const Pattern& pattern = patterns[orderIndex];
-    for (int channel = 0; channel < channelCount(); channel++) {
+    for (int track = 0; track < trackCount(); track++) {
       int instrumentIndex = 0;
-      for (const Cell& cell : pattern.cells[channel]) {
+      for (const Cell& cell : pattern.cells[trackCells(track)]) {
         if (cell.instrument >= 0) instrumentIndex = cell.instrument;
         if (cell.note < 0 || instrumentIndex >= (int)instruments.size() || instruments[instrumentIndex].drum) continue;
         list.push_back({cell.note, instruments[instrumentIndex].controls});
@@ -40,9 +40,9 @@ std::vector<int> Song::notesOf(int instrument) const {
   std::vector<int> heard;
   for (int orderIndex : order) {
     if (orderIndex < 0 || orderIndex >= (int)patterns.size()) continue;
-    for (int channel = 0; channel < channelCount(); channel++) {
+    for (int track = 0; track < trackCount(); track++) {
       int instrumentIndex = 0;
-      for (const Cell& cell : patterns[orderIndex].cells[channel]) {
+      for (const Cell& cell : patterns[orderIndex].cells[trackCells(track)]) {
         if (cell.instrument >= 0) instrumentIndex = cell.instrument;
         if (cell.note >= 0 && instrumentIndex == instrument) heard.push_back(cell.note + tuning.transpose);
       }
@@ -163,6 +163,15 @@ bool Song::playsOnTia(int instrument) const {
   if (!samples()) return true;
   for (auto& effect : effects)
     if (effect.tia && effect.instrument == instrument) return true;
+  if (!hasTiaTrack()) return false;
+  for (int orderIndex : order) {
+    if (orderIndex < 0 || orderIndex >= (int)patterns.size()) continue;
+    int instrumentIndex = 0;
+    for (const Cell& cell : patterns[orderIndex].cells[kTiaTrack]) {
+      if (cell.instrument >= 0) instrumentIndex = cell.instrument;
+      if (cell.note >= 0 && instrumentIndex == instrument) return true;
+    }
+  }
   return false;
 }
 
@@ -278,6 +287,11 @@ std::string toJson(const Song& song) {
       channels.push_back(rows);
     }
     item["channels"] = channels;
+    if (song.hasTiaTrack()) {
+      json rows = json::array();
+      for (auto& cell : pattern.cells[kTiaTrack]) rows.push_back(cellText(cell));
+      item["tia"] = rows;
+    }
     patterns.push_back(item);
   }
   json tuning = {{"transpose", song.tuning.transpose},
@@ -294,6 +308,7 @@ std::string toJson(const Song& song) {
                    {"speed", song.speed},  {"swing", song.swing}, {"tuning", tuning},       {"instruments", instruments},
                    {"order", song.order},  {"loop_to", song.loopTo}, {"patterns", patterns}};
   if (song.samples()) document["voices"] = song.channelCount(), document["gain"] = song.gain;
+  if (song.hasTiaTrack()) document["tia_track"] = true;
   if (!song.effects.empty()) document["effects"] = effects;
   if (!song.exportTo.empty()) document["export"] = {{"to", song.exportTo}, {"ram", song.exportRam}};
   return document.dump(1) + "\n";
@@ -310,6 +325,7 @@ bool fromJson(const std::string& text, Song* song, std::string* error) {
     parsed.swing = std::clamp(document.value("swing", 0), 0, 255);
     parsed.target = document.value("target", "tia") == "samples" ? "samples" : "tia";
     parsed.voices = std::clamp(document.value("voices", 3), 1, kMaxChannels);
+    parsed.tiaTrack = parsed.target == "samples" && document.value("tia_track", false);
     parsed.gain = std::clamp(document.value("gain", 16), 4, 64);
     if (document.contains("tuning")) {
       auto& tuning = document["tuning"];
@@ -385,6 +401,10 @@ bool fromJson(const std::string& text, Song* song, std::string* error) {
           if (!channels[channel][row].is_string() || !parseCell(channels[channel][row].get<std::string>(), &pattern.cells[channel][row]))
             throw std::runtime_error(F("pattern \"{0}\", channel {1}, row {2}: not a cell", {pattern.name, std::to_string(channel), std::to_string(row)}));
         }
+      auto tiaRows = item.value("tia", json::array());
+      for (int row = 0; row < pattern.rows && row < (int)tiaRows.size(); row++)
+        if (!tiaRows[row].is_string() || !parseCell(tiaRows[row].get<std::string>(), &pattern.cells[kTiaTrack][row]))
+          throw std::runtime_error(F("pattern \"{0}\", TIA track, row {1}: not a cell", {pattern.name, std::to_string(row)}));
       parsed.patterns.push_back(pattern);
     }
     if (parsed.patterns.empty()) {

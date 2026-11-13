@@ -23,6 +23,10 @@ namespace vcs::music {
 
 constexpr int kChannels = 2;     // the TIA's
 constexpr int kMaxChannels = 4;  // voices of a song played as samples (ELF)
+// A song of samples may also have a track on the TIA's channel 1, which the voices leave
+// free (they all go to AUDV0): its cells are a pattern's cells[kTiaTrack].
+constexpr int kTiaTrack = kMaxChannels;
+constexpr int kMaxTracks = kMaxChannels + 1;
 constexpr int kNoNote = -1;   // an empty cell: the channel goes on as it was
 constexpr int kNoteOff = -2;  // the note is released
 
@@ -96,7 +100,7 @@ struct Pattern {
   // Frames per row while this pattern plays, and of its odd rows (0: as the even ones);
   // speed 0: the song's speed and swing.
   int speed = 0, swing = 0;
-  std::vector<Cell> cells[kMaxChannels];  // rows cells per channel (all four kept)
+  std::vector<Cell> cells[kMaxTracks];  // rows cells per channel (all kept), and the TIA track's
   void resize(int rowCount);
 };
 
@@ -134,6 +138,9 @@ struct Song {
   std::string target = "tia";
   int voices = 3;   // samples: 1..4
   int gain = 16;    // samples: the mix's loudness in sixteenths (16: all voices at full fit)
+  // samples: a track on the TIA's channel 1, played as a channel of a TIA song (its
+  // instruments as TIA instruments, tuned); a sound effect there takes it while it sounds
+  bool tiaTrack = false;
   int speed = 6;   // video frames per row
   int swing = 0;   // frames of the odd rows (0: the same as speed)
   std::vector<Instrument> instruments;
@@ -149,6 +156,11 @@ struct Song {
   SongTuningSettings tuning;
 
   bool samples() const { return target == "samples"; }
+  bool hasTiaTrack() const { return samples() && tiaTrack; }
+  // The columns of a pattern: the channels (or voices), then the TIA track if it has one.
+  int trackCount() const { return channelCount() + (hasTiaTrack() ? 1 : 0); }
+  // A column's cells in Pattern::cells: the TIA track is always kTiaTrack.
+  int trackCells(int track) const { return track < channelCount() ? track : kTiaTrack; }
   int channelCount() const { return samples() ? (voices < 1 ? 1 : voices > kMaxChannels ? kMaxChannels : voices) : kChannels; }
   int rowFrames(int row) const { return (row % 2 == 1 && swing > 0) ? swing : speed; }
   int rowFrames(const Pattern& pattern, int row) const {
@@ -166,7 +178,7 @@ struct Song {
   // Frame by frame, what a note writes to AUDC and AUDF (at least one step; the last stays).
   std::vector<PitchStep> pitchSequence(int note, const Instrument& instrument, double audioClock, bool onTia = false) const;
   // The instrument sounds on the TIA: every one in a TIA song; in a song of samples, one
-  // that a sound effect on the TIA's channel 1 uses.
+  // that a sound effect on the TIA's channel 1 or the TIA track uses.
   bool playsOnTia(int instrument) const;
   // Samples: frame by frame, the phase step per scanline (2^32 = one cycle) of a note, with
   // the pitch envelope in cents (at least one step; the last stays). Exact pitch.

@@ -2793,8 +2793,8 @@ static vcs::music::Song randomSong(unsigned seed) {
   for (int patternIndex = pick(1, 3); patternIndex > 0; patternIndex--) {
     Pattern pattern;
     pattern.resize(pick(2, 12));
-    for (auto& channel : pattern.cells)
-      for (auto& cell : channel) {
+    for (int channelIndex = 0; channelIndex < kMaxChannels; channelIndex++)
+      for (auto& cell : pattern.cells[channelIndex]) {
         int kind = pick(0, 9);
         if (kind < 4) cell.note = pick(40, 90), cell.instrument = pick(0, instrumentCount);  // sometimes one that does not exist
         else if (kind == 4) cell.note = kNoteOff;
@@ -3216,7 +3216,7 @@ static void testCdfjExport() {
               "    if (effect >= 0) music_effect(effect);\n    for (int v = 0; v < 4; v++) given_sounding[v] = 0;\n    music_frame(262);\n"
               "    for (int v = 0; v < MUSIC_VOICES; v++) {\n      for (int k = 0; k < 32; k++) printf(\"%d \", given_wave[v][k]);\n"
               "      printf(\"%d %u %d \", given_sounding[v], (unsigned)given_note[v], given_restart[v]);\n    }\n"
-              "#if MUSIC_TIA_EFFECTS\n    printf(\"%d %d %d\", music_tia[0], music_tia[1], music_tia[2]);\n#else\n    printf(\"0 0 0\");\n#endif\n"
+              "    printf(\"%d %d %d\", music_tia[0], music_tia[1], music_tia[2]);\n"
               "    printf(\"\\n\");\n  }\n  return 0;\n}\n";
   }
   int compared = 0, skipped = 0, soundingFrames = 0, restarts = 0, tiaFrames = 0;
@@ -3579,7 +3579,7 @@ static void testSampleExport() {
               "    if (effect >= 0) music_effect(effect);\n    music_frame(lines);\n"
               "    for (int i = 0; i < lines - MUSIC_OVERBLANK_LINES; i++) printf(\"%d \", music_level[i]);\n"
               "    for (int j = 0; j < 31; j++) printf(\"%d \", music_nibbles[j]);\n"
-              "#if MUSIC_TIA_EFFECTS\n    printf(\"%d %d %d\", music_tia[0], music_tia[1], music_tia[2]);\n#else\n    printf(\"0 0 0\");\n#endif\n"
+              "    printf(\"%d %d %d\", music_tia[0], music_tia[1], music_tia[2]);\n"
               "    printf(\"\\n\");\n  }\n  return 0;\n}\n";
   }
   int compared = 0, skipped = 0, effectsPlayed = 0, tiaFrames = 0;
@@ -3699,8 +3699,110 @@ static void testSampleExport() {
     songsCompared += same;
   }
   CHECK(songsCompared >= 10);
+  {  // the TIA track: kept in the file; an effect there takes it until it ends, and the next note gets it back
+    Song track = blankSong();
+    track.target = "samples", track.voices = 2, track.tiaTrack = true;
+    track.instruments[0].volumes[0] = {{9}, -1};  // held
+    track.instruments.push_back(track.instruments[0]);
+    track.instruments[2].volumes[0] = {{14, 12, 11, 10, 9, 8, 7, 0}, -1};  // the effect's: 7 frames, then it ends
+    track.patterns[0].resize(8);
+    track.speed = 4;
+    track.patterns[0].cells[kTiaTrack][0] = {69, 0};
+    track.patterns[0].cells[kTiaTrack][1] = {69, 0};  // frame 4, while the effect sounds: skipped
+    track.patterns[0].cells[kTiaTrack][4] = {64, 0};
+    track.effects = {{"zap", 2, 60, 0, true}};
+    Song read;
+    std::string error;
+    CHECK(fromJson(toJson(track), &read, &error) && read.hasTiaTrack() && read.trackCount() == 3 && read.patterns[0].cells[kTiaTrack][4].note == 64);
+    CHECK(read.playsOnTia(0) && !read.playsOnTia(1));
+    Player player;
+    player.start(track, ntsc);
+    FrameRegisters first = player.nextFrame();
+    CHECK(first.tiaVolume == 9);
+    player.playEffect(track, ntsc, 0);
+    bool effectHeard = true;
+    for (int volume : {14, 12, 11, 10, 9, 8, 7}) effectHeard = effectHeard && player.nextFrame().tiaVolume == volume;
+    CHECK(effectHeard);
+    bool quietUntilNote = true;
+    for (int frame = 8; frame < 16; frame++) quietUntilNote = quietUntilNote && player.nextFrame().tiaVolume == 0;  // row 1's note was skipped
+    CHECK(quietUntilNote && player.nextFrame().tiaVolume == 9);  // row 4
+    ExportResult dpcTrack = exportSong(track, ntsc, {ExportTarget::DpcPlus, "", "NTSC"});
+    bool leftOut = false;
+    for (auto& problem : dpcTrack.problems) leftOut = leftOut || problem.find("TIA track") != std::string::npos;
+    CHECK(dpcTrack.ok && leftOut);
+  }
+  // the TIA track: random notes on the TIA's channel 1, with effects there taking it
+  int trackCompared = 0, trackFrames = 0, trackEffects = 0;
+  for (unsigned seed = 61; seed <= 90; seed++) {
+    Song random = randomSampleSong(seed);
+    random.tiaTrack = true;
+    std::mt19937 notes(seed);
+    auto pick = [&](int low, int high) { return std::uniform_int_distribution<int>(low, high)(notes); };
+    for (auto& pattern : random.patterns)
+      for (auto& cell : pattern.cells[kTiaTrack]) {
+        int kind = pick(0, 9);
+        if (kind < 4) cell.note = pick(40, 80), cell.instrument = pick(0, (int)random.instruments.size() - 1);
+        else if (kind == 4) cell.note = kNoteOff;
+        if (pick(0, 5) == 0) cell.effect = pick(0, 1) ? kEffectVolume : kEffectRelease, cell.effectValue = pick(0, 2);
+      }
+    markTiaEffects(random, ntsc);
+    ExportResult result = exportSong(random, ntsc, {ExportTarget::C, "", "NTSC"});
+    bool ambiguousSong = false;
+    for (auto& problem : result.problems) ambiguousSong = ambiguousSong || problem.find("depending on what came before") != std::string::npos;
+    if (ambiguousSong || !result.ok) continue;
+    CHECK(result.text.find("#define MUSIC_TIA_TRACK 1") != std::string::npos);
+    std::ofstream(folder / "song.music.h") << result.text;
+    std::string build = "cd \"" + folder.string() + "\" && \"" + compiler + "\" -std=c11 -O1 -Wall -Wextra -o driver driver.c > build.log 2>&1";
+    bool built = std::system(build.c_str()) == 0;
+    std::ifstream buildLog(folder / "build.log");
+    std::string warnings((std::istreambuf_iterator<char>(buildLog)), {});
+    if (!built || !warnings.empty()) std::printf("  seed %u: %s\n", seed, warnings.c_str());
+    CHECK(built && warnings.empty());
+    if (!built) break;
+    const int frames = 800, lines = 262;
+    std::mt19937 effects(seed);
+    std::vector<int> schedule;
+    for (int frame = 0; frame < frames; frame++)
+      schedule.push_back(!random.effects.empty() && std::uniform_int_distribution<int>(0, 30)(effects) == 0
+                             ? std::uniform_int_distribution<int>(0, (int)random.effects.size() - 1)(effects)
+                             : -1);
+    {
+      std::ofstream input(folder / "input.txt");
+      input << frames << " " << lines << " 0\n";
+      for (int effect : schedule) input << effect << "\n";
+    }
+    std::string run = "cd \"" + folder.string() + "\" && ./driver < input.txt > output.txt";
+    CHECK(std::system(run.c_str()) == 0);
+    std::ifstream output(folder / "output.txt");
+    Player player;
+    player.start(random, ntsc);
+    SampleMixer mixer;
+    bool same = true;
+    for (int frame = 0; frame < frames && same; frame++) {
+      if (schedule[frame] >= 0) player.playEffect(random, ntsc, schedule[frame]), trackEffects++;
+      std::vector<uint8_t> expected;
+      FrameRegisters registers = player.nextFrame();
+      mixer.render(random, registers, lines, expected);
+      for (int line = 0; line < lines - 63 + 31 && same; line++) {
+        int got = -1;
+        output >> got;
+        if (line < lines - 63) same = got == expected[line];
+      }
+      int control = -1, frequency = -1, volume = -1;
+      output >> control >> frequency >> volume;
+      if (same && !sameTia(registers, control, frequency, volume, &trackFrames)) {
+        same = false;
+        std::printf("  seed %u, frame %d: TIA track %d %d %d, editor %d %d %d\n", seed, frame, control, frequency, volume, registers.tiaControl, registers.tiaFrequency,
+                    registers.tiaVolume);
+      }
+    }
+    CHECK(same);
+    trackCompared += same;
+  }
+  CHECK(trackCompared >= 15 && trackFrames > 2000 && trackEffects > 100);
   std::printf("  exported C player: %d songs the same as the editor's, line by line (%d skipped as ambiguous; %ld lines with sound, %d effects, %d frames on the TIA's channel 1); %d second songs of two\n",
               compared, skipped, loudLines, effectsPlayed, tiaFrames, songsCompared);
+  std::printf("  the TIA track: %d songs the same as the editor's (%d frames heard on the TIA's channel 1, %d effects there)\n", trackCompared, trackFrames, trackEffects);
 }
 
 // ---- assistant ---------------------------------------------------------------------
