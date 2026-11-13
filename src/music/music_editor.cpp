@@ -874,6 +874,19 @@ void MusicEditor::keyboard() {
 // Instruments
 
 // Bars to draw with the mouse; right click marks where the held part loops from.
+// The pitch envelope's range in cents: a semitone for vibrato, one or two octaves for slides
+// and drums; never narrower than the widest value, so every bar fits.
+void MusicEditor::pitchRangeButtons(const std::vector<int>& pitch) {
+  int widest = 0;
+  for (int value : pitch) widest = std::max(widest, std::abs(value));
+  while (pitchRange_ < widest && pitchRange_ < 2400) pitchRange_ = pitchRange_ == 100 ? 1200 : 2400;
+  static const int ranges[] = {100, 1200, 2400};
+  for (int range : ranges) {
+    ImGui::SameLine();
+    if (ImGui::RadioButton(F("±{0}", {std::to_string(range)}).c_str(), pitchRange_ == range) && range >= widest) pitchRange_ = range;
+  }
+}
+
 bool MusicEditor::envelope(const char* id, std::vector<int>& values, int low, int high, int* loopStart, int minLength) {
   bool edited = false;
   ImGui::PushID(id);
@@ -884,6 +897,7 @@ bool MusicEditor::envelope(const char* id, std::vector<int>& values, int low, in
   ImGui::InvisibleButton("##bars", size, ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonRight);
   ImDrawList* draw = ImGui::GetWindowDrawList();
   draw->AddRectFilled(origin, ImVec2(origin.x + size.x, origin.y + size.y), theme::col(theme::Role::UiFrame));
+  draw->PushClipRect(origin, ImVec2(origin.x + size.x, origin.y + size.y), true);  // a value out of range stays in the box
   float zeroY = origin.y + height * (float)high / (float)(high - low);
   if (low < 0) draw->AddLine(ImVec2(origin.x, zeroY), ImVec2(origin.x + size.x, zeroY), theme::col(theme::Role::UiBorder));
   for (int index = 0; index < (int)values.size(); index++) {
@@ -895,6 +909,7 @@ bool MusicEditor::envelope(const char* id, std::vector<int>& values, int low, in
   }
   if (loopStart && *loopStart >= 0)
     draw->AddText(ImVec2(origin.x + *loopStart * barWidth, origin.y), theme::col(theme::Role::UiText), "↻");
+  draw->PopClipRect();
   if (ImGui::IsItemActive() && ImGui::IsMouseDown(ImGuiMouseButton_Left) && !values.empty()) {
     ImVec2 mouse = ImGui::GetMousePos();
     int index = std::clamp((int)((mouse.x - origin.x) / barWidth), 0, (int)values.size() - 1);
@@ -1002,15 +1017,7 @@ void MusicEditor::instrumentEditor() {
   if (!onTia) {
     ImGui::SeparatorText(T("Pitch"));
     ImGui::TextDisabled("%s", T("Added to the note frame by frame, in cents (positive is higher); the last value stays."));
-    // a semitone for vibrato, one or two octaves for slides and drums
-    int widest = 0;
-    for (int value : instrument.pitch) widest = std::max(widest, std::abs(value));
-    while (pitchRange_ < widest && pitchRange_ < 2400) pitchRange_ = pitchRange_ == 100 ? 1200 : 2400;
-    static const int ranges[] = {100, 1200, 2400};
-    for (int range : ranges) {
-      ImGui::SameLine();
-      if (ImGui::RadioButton(F("±{0}", {std::to_string(range)}).c_str(), pitchRange_ == range) && range >= widest) pitchRange_ = range;
-    }
+    pitchRangeButtons(instrument.pitch);
     if (envelope("pitch", instrument.pitch, -pitchRange_, pitchRange_, nullptr, 0)) changed();
   } else if (instrument.drum) {
     ImGui::SeparatorText("AUDC");
@@ -1027,7 +1034,15 @@ void MusicEditor::instrumentEditor() {
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", T("Added to AUDF as it is: one step is almost a semitone on high notes and a few cents on low ones."));
     ImGui::TextDisabled("%s", cents ? T("Added to the note frame by frame (positive is higher); the last value stays.")
                                     : T("Added to AUDF frame by frame (positive is lower); the last value stays."));
-    if (cents ? envelope("pitch", instrument.pitch, -100, 100, nullptr, 0) : envelope("pitch", instrument.pitch, -8, 8, nullptr, 0)) changed();
+    if (cents) {
+      pitchRangeButtons(instrument.pitch);
+      if (envelope("pitch", instrument.pitch, -pitchRange_, pitchRange_, nullptr, 0)) changed();
+    } else {
+      // AUDF goes from 0 to 31: the bars reach the widest step, 8 at least
+      int widest = 8;
+      for (int value : instrument.pitch) widest = std::max(widest, std::min(std::abs(value), 31));
+      if (envelope("pitch", instrument.pitch, -widest, widest, nullptr, 0)) changed();
+    }
     if (!song_.samples()) noteTuningEditor(instrument);  // the notes of a TIA song
   }
   ImGui::Spacing();

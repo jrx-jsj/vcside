@@ -83,7 +83,8 @@ class MusicEditor {
   int tracedRevision_ = -1, tracedOrder_ = -1;
   double tracedClock_ = 0;
   int volumeVariant_ = 0, releaseVariant_ = 0;  // shown in the instrument editor
-  int pitchRange_ = 100;  // samples: the pitch envelope's bars go from -this to +this cents
+  int pitchRange_ = 100;  // the pitch envelope's bars (in cents) go from -this to +this
+  void pitchRangeButtons(const std::vector<int>& pitch);
   int handNote_ = -1;                           // the note open in the tuning by hand
   bool muted_[kMaxChannels] = {};
   int previewKey_ = -1;    // ImGuiKey held for the note being previewed
