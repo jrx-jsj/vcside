@@ -60,13 +60,34 @@
 #include "assistant/settings.h"
 #include "assistant/sha256.h"
 #include "assistant/sse.h"
-#ifndef _WIN32
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
-#include <thread>
 #endif
+#include <chrono>
+#include <thread>
+
+// The few things the tests need that POSIX and Windows spell differently.
+static void sleepMicroseconds(unsigned microseconds) { std::this_thread::sleep_for(std::chrono::microseconds(microseconds)); }
+static void setEnvironment(const char* name, const char* value) {
+#ifdef _WIN32
+  _putenv_s(name, value);
+#else
+  setenv(name, value, 1);
+#endif
+}
+static void clearEnvironment(const char* name) {
+#ifdef _WIN32
+  _putenv_s(name, "");
+#else
+  unsetenv(name);
+#endif
+}
 #include <random>
 
 #include <algorithm>
@@ -1286,7 +1307,7 @@ static void testElfSpace() {
 #ifdef _WIN32
       _putenv_s("bB", value.c_str());
 #else
-      if (value.empty()) unsetenv("bB");
+      if (value.empty()) clearEnvironment("bB");
       else setenv("bB", value.c_str(), 1);
 #endif
     };
@@ -4044,11 +4065,11 @@ static void testBundledModel() {
   // the engine reports a model that is not there instead of starting anything
   {
     Engine engine;
-    setenv("VCSIDE_LLM_HELPER_PATH", "/bin/echo", 1);
+    setEnvironment("VCSIDE_LLM_HELPER_PATH", "/bin/echo");
     CHECK(engine.available());
     engine.start("/no/such/model.gguf", 4096);
     CHECK(engine.state() == Engine::State::Failed && engine.error().find("missing") != std::string::npos);
-    unsetenv("VCSIDE_LLM_HELPER_PATH");
+    clearEnvironment("VCSIDE_LLM_HELPER_PATH");
   }
 #endif
 }
@@ -4097,13 +4118,24 @@ static void testMarkdown() {
   CHECK(answer.size() == 3 && answer[1].kind == MdBlock::Bullet && answer[1].runs[0].bold);
 }
 
-#ifndef _WIN32
 // A one-shot HTTP server on loopback: reads a request, answers with `reply`, closes.
 struct MockServer {
-  int listener = -1, port = 0;
+#ifdef _WIN32
+  using Socket = SOCKET;
+  static void closeSocket(Socket socket) { closesocket(socket); }
+#else
+  using Socket = int;
+  static void closeSocket(Socket socket) { close(socket); }
+#endif
+  Socket listener;
+  int port = 0;
   std::string request;
   std::thread thread;
   MockServer(const std::string& reply, size_t pieces = 1) {
+#ifdef _WIN32
+    WSADATA data;
+    WSAStartup(MAKEWORD(2, 2), &data);
+#endif
     listener = socket(AF_INET, SOCK_STREAM, 0);
     sockaddr_in address{};
     address.sin_family = AF_INET;
@@ -4114,10 +4146,10 @@ struct MockServer {
     port = ntohs(address.sin_port);
     listen(listener, 1);
     thread = std::thread([this, reply, pieces] {
-      int client = accept(listener, nullptr, nullptr);
+      Socket client = accept(listener, nullptr, nullptr);
       char buffer[8192];
       for (;;) {  // until the header and the whole body have arrived
-        ssize_t n = recv(client, buffer, sizeof buffer, 0);
+        int n = (int)recv(client, buffer, (int)sizeof buffer, 0);
         if (n <= 0) break;
         request.append(buffer, (size_t)n);
         size_t end = request.find("\r\n\r\n");
@@ -4128,15 +4160,15 @@ struct MockServer {
       }
       size_t step = std::max<size_t>(1, reply.size() / pieces);
       for (size_t i = 0; i < reply.size(); i += step) {
-        send(client, reply.data() + i, std::min(step, reply.size() - i), 0);
-        usleep(2000);
+        send(client, reply.data() + i, (int)std::min(step, reply.size() - i), 0);
+        sleepMicroseconds(2000);
       }
-      close(client);
+      closeSocket(client);
     });
   }
   ~MockServer() {
     thread.join();
-    close(listener);
+    closeSocket(listener);
   }
   std::string url() const { return "http://127.0.0.1:" + std::to_string(port) + "/v1"; }
 };
@@ -4146,7 +4178,6 @@ static std::string chunk(const std::string& data) {
   std::snprintf(size, sizeof size, "%zx", data.size());
   return std::string(size) + "\r\n" + data + "\r\n";
 }
-#endif
 
 static void testAgentTools(const KnowledgeBase& kb) {
   namespace fs = std::filesystem;
@@ -4396,7 +4427,7 @@ static void testBusyServiceMessages() {
   request.start(provider, {{"user", "hi"}});
   std::string error;
   for (int i = 0; i < 300 && error.empty(); i++) {
-    usleep(10000);
+    sleepMicroseconds(10000);
     for (auto& event : request.poll())
       if (event.kind == Event::Error) error = event.text;
   }
@@ -5054,8 +5085,8 @@ static void testEditBlocks() {
   write(root / "crlf.asm", "One\r\n\tlda #1\r\n\trts\r\n");
   auto windows = locate("edit crlf.asm", "<<<<<<< SEARCH\n  lda #1\n=======\n  lda #1\n  nop\n>>>>>>> REPLACE");
   CHECK(windows.proposed && windows.edit.after == "One\r\n  lda #1\r\n  nop\r\n\trts\r\n");  // the lines are the file's, the new ones have its line ends
-  auto near = locate("edit main.asm", "<<<<<<< SEARCH\nLoop\n\tlda #9\n\tsta COLUBK\n=======\nx\n>>>>>>> REPLACE");
-  CHECK(near.error && near.text.find("closest lines in the file are 5-8") != std::string::npos && near.text.find("6: \tlda #2") != std::string::npos);  // two of its three lines vote for line 5
+  auto closeMiss = locate("edit main.asm", "<<<<<<< SEARCH\nLoop\n\tlda #9\n\tsta COLUBK\n=======\nx\n>>>>>>> REPLACE");
+  CHECK(closeMiss.error && closeMiss.text.find("closest lines in the file are 5-8") != std::string::npos && closeMiss.text.find("6: \tlda #2") != std::string::npos);  // two of its three lines vote for line 5
   write(root / "done.asm", "Start\n  lda #7\n  rts\n");
   auto already = locate("edit done.asm", "<<<<<<< SEARCH\n  lda #1\n=======\n  lda #7\n>>>>>>> REPLACE");
   CHECK(already.error && already.text.find("already in the file (line 2)") != std::string::npos);
@@ -5153,7 +5184,7 @@ static void testFirstPass() {
     FirstPassRequest request;
     request.start(provider, "¿cómo leo el mando?", true, true);
     FirstPass answer;
-    for (int i = 0; i < 300 && !request.poll(&answer); i++) usleep(10000);
+    for (int i = 0; i < 300 && !request.poll(&answer); i++) sleepMicroseconds(10000);
     CHECK(answer.ok && answer.title == "Leer el mando" && answer.english == "Read the joystick");
     request.cancel();
     server.thread.join();
@@ -5167,7 +5198,7 @@ static void testFirstPass() {
     FirstPassRequest request;
     request.start(provider, "x", true, false);
     FirstPass answer;
-    for (int i = 0; i < 300 && !request.poll(&answer); i++) usleep(10000);
+    for (int i = 0; i < 300 && !request.poll(&answer); i++) sleepMicroseconds(10000);
     CHECK(!answer.ok && !answer.error.empty());
   }
 }
@@ -5249,7 +5280,7 @@ static void testKnownProviders() {
         describeModelListError("connection refused") == "connection refused");
 
   // asking a service: the key goes as a Bearer header, the answer is cleaned, nothing is asked without a key
-  setenv("VCSIDE_TEST_KEY", "sk-test-abcdef", 1);
+  setEnvironment("VCSIDE_TEST_KEY", "sk-test-abcdef");
   {
     std::string body = R"({"data":[{"id":"models/gemini-2.5-flash"},{"id":"models/text-embedding-004"},{"id":"models/gemini-2.5-pro"}]})";
     MockServer server("HTTP/1.1 200 OK\r\nContent-Length: " + std::to_string(body.size()) + "\r\n\r\n" + body);
@@ -5261,7 +5292,7 @@ static void testKnownProviders() {
     CHECK(!lists.needsKey(remote) && lists.of(remote).ids.empty() && !lists.of(remote).fetched);
     lists.request(remote);
     CHECK(lists.of(remote).fetching);
-    for (int i = 0; i < 300 && lists.of(remote).fetching; i++) usleep(10000), lists.poll();
+    for (int i = 0; i < 300 && lists.of(remote).fetching; i++) sleepMicroseconds(10000), lists.poll();
     CHECK(lists.of(remote).fetched && lists.of(remote).error.empty() && lists.of(remote).ids.size() == 2);  // a plain http address is not Google's: the prefix stays
     server.thread.join();
     server.thread = std::thread([] {});
@@ -5286,7 +5317,7 @@ static void testKnownProviders() {
     remote.keyEnv = "VCSIDE_TEST_KEY";
     ModelLists lists;
     lists.request(remote);
-    for (int i = 0; i < 300 && lists.of(remote).fetching; i++) usleep(10000), lists.poll();
+    for (int i = 0; i < 300 && lists.of(remote).fetching; i++) sleepMicroseconds(10000), lists.poll();
     CHECK(lists.of(remote).fetched && lists.of(remote).ids.empty() && lists.of(remote).error.find("refused the key") != std::string::npos);
   }
   {  // Google's own shape: {"models": [{"name": "models/..."}]}, and something that is not a list at all
@@ -5306,7 +5337,7 @@ static void testKnownProviders() {
     std::string error;
     CHECK(listModels(remote, &error).empty() && error.find("not a list") != std::string::npos);
   }
-  unsetenv("VCSIDE_TEST_KEY");
+  clearEnvironment("VCSIDE_TEST_KEY");
 }
 
 static void testAssistant(const KnowledgeBase& kb) {
@@ -5535,7 +5566,7 @@ static void testAssistant(const KnowledgeBase& kb) {
         if (event.kind == Event::Done) done = true;
         CHECK(event.kind != Event::Error);
       }
-      usleep(10000);
+      sleepMicroseconds(10000);
     }
     CHECK(done && text == "Hello" && promptTokens == 5);
     CHECK(server.request.find("POST /v1/chat/completions HTTP/1.1") == 0 && server.request.find("\"hello\"") != std::string::npos);
@@ -5552,7 +5583,7 @@ static void testAssistant(const KnowledgeBase& kb) {
     for (int i = 0; i < 300 && error.empty(); i++) {
       for (auto& event : request.poll())
         if (event.kind == Event::Error) error = event.text;
-      usleep(10000);
+      sleepMicroseconds(10000);
     }
     CHECK(error.find("404") != std::string::npos && error.find("model not found") != std::string::npos);
   }
@@ -5578,7 +5609,7 @@ static void testAssistant(const KnowledgeBase& kb) {
     for (int i = 0; i < 100 && message.empty(); i++) {
       for (auto& event : request.poll())
         if (event.kind == Event::Error) message = event.text;
-      usleep(10000);
+      sleepMicroseconds(10000);
     }
     CHECK(message.find("https is not available") != std::string::npos);
   }
