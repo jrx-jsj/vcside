@@ -984,6 +984,7 @@ std::string App::addressColumn(const std::string& path, int line) {
   }
   auto found = file->second.find(line);
   if (found == file->second.end()) return {};
+  if (found->second->bytes == 0) return hexAddress(found->second->cpu);  // a label or an ORG in SEG.U
   return hexAddress(found->second->cpu) + " " + std::to_string(found->second->bytes);
 }
 
@@ -1008,6 +1009,18 @@ std::string App::lineDetails(const OpenFile& file, int line) const {
   return details + where;
 }
 
+// Whether a listed line's source is an ORG (as its first or second word, after a label).
+static bool findOrg(const std::string& source) {
+  std::istringstream stream(source);
+  std::string word;
+  for (int index = 0; index < 2 && stream >> word; index++) {
+    if (word[0] == ';') return false;
+    for (auto& character : word) character = (char)std::toupper((unsigned char)character);
+    if (word == "ORG") return true;
+  }
+  return false;
+}
+
 std::string App::addressInfo(const std::string& path, int line) const {
   if (addresses_.empty()) return T("No addresses yet: build first.");
   std::string info;
@@ -1026,9 +1039,29 @@ std::string App::addressInfo(const std::string& path, int line) const {
     info += "  " + F("{0} bytes, at {1} in the ROM file", {std::to_string(listed->bytes), hexAddress(addresses_.romOffset(*listed))}) + "\n";
     if ((last >> 8) != (listed->cpu >> 8)) info += "  " + F("Crosses into page {0}.", {hexAddress(last & ~0xFFL)}) + "\n";
   }
-  for (const ListedLine* listed : addresses_.reservedIn(path)) {
+  auto reserved = addresses_.reservedIn(path);
+  for (size_t index = 0; index < reserved.size(); index++) {
+    const ListedLine* listed = reserved[index];
     if (listed->line != line + 1 || shown) continue;
     shown++;
+    if (listed->bytes == 0) {
+      info += hexAddress(listed->cpu) + "\n  ";
+      if (findOrg(listed->source)) {
+        // an ORG back over variables already placed: say which RAM is shared with them
+        long sharedEnd = -1;
+        for (size_t before = 0; before < index; before++)
+          if (reserved[before]->bytes > 0 && reserved[before]->cpu + reserved[before]->bytes > listed->cpu)
+            sharedEnd = std::max(sharedEnd, reserved[before]->cpu + reserved[before]->bytes - 1);
+        if (sharedEnd >= 0)
+          info += F("ORG back to {0}: what follows shares the RAM up to {1} with the variables above.", {hexAddress(listed->cpu), hexAddress(sharedEnd)});
+        else
+          info += F("ORG in SEG.U: what follows starts at {0}.", {hexAddress(listed->cpu)});
+      } else {
+        info += T("Label in SEG.U: the address of what follows, no bytes of its own.");
+      }
+      info += "\n";
+      continue;
+    }
     std::string where = hexAddress(listed->cpu);
     if (listed->bytes > 1) where += "-" + hexAddress(listed->cpu + listed->bytes - 1);
     info += where + "\n  " + F("{0} bytes reserved (SEG.U): nothing in the ROM file", {std::to_string(listed->bytes)}) + "\n";

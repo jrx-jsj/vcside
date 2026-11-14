@@ -3,8 +3,10 @@
 #include "debugmap.h"
 
 #include <algorithm>
+#include <cctype>
 #include <map>
 #include <regex>
+#include <set>
 #include <sstream>
 
 namespace vcs {
@@ -119,7 +121,16 @@ void AddressMap::load(const std::string& listing, const SymbolLookup& lookup, lo
       // bytes as 00 (and an equate's value too, which reserves nothing), so its size comes
       // from DS when it can be worked out, else from what is listed
       int ds = findWord(wordList, "DS") >= 0 ? findWord(wordList, "DS") : findWord(wordList, "DS.B");
-      if (ds < 0) continue;
+      if (ds < 0) {
+        // a label alone or an ORG: no bytes, but the address where the next variables go,
+        // which shows where an ORG takes the RAM back to share it (title and game, say)
+        bool org = findWord(wordList, "ORG") >= 0;
+        static const std::set<std::string> kNotLabels = {"ENDIF", "EIF", "ELSE", "ENDM", "REPEND", "SUBROUTINE", "ALIGN"};
+        bool label = wordList.size() == 1 && wordList[0][0] != ';' && !kNotLabels.count(upper(wordList[0])) &&
+                     (std::isalpha((unsigned char)wordList[0][0]) || wordList[0][0] == '_' || wordList[0][0] == '.');
+        if (org || label) reserved_.push_back({file, line, phys, phys + delta, 0, rest});
+        continue;
+      }
       int size = bytes;
       if (ds + 1 < (int)wordList.size())
         if (auto value = evalExpr(wordList[ds + 1], lookup); value && *value > 0 && *value < 65536) size = (int)*value;

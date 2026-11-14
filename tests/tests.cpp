@@ -458,13 +458,24 @@ static void testDebugMap() {
         "      6 U0085\t\t       00 00 00 00*Big\t      ds\t12\n"
         "      7 U0085\t\t       00 03\t   SIZE       =\t3\n"
         "      8 U0091\t\t       00 00 00    Tbl\t      ds\tSIZE\n"
-        "      9  0000 ????\t\t\t\t      SEG\tCode\n"
-        "     10  f000\t\t\t\t\t      ORG\t$F000\n"
-        "     11  f000\t\t       a5 80\t\t      lda\tSystem\n";
+        "      9 U0094\t\t\t\t   Shared\n"
+        "     10 U0094\t\t       00 00\t   Title      ds\t2\n"
+        "     11 U0096\t\t\t\t\t      ENDIF\n"
+        "     12 U0094\t\t\t\t\t      ORG\tShared\n"
+        "     13 U0094\t\t       00\t   Enemy      ds\t1\n"
+        "     14  0000 ????\t\t\t\t      SEG\tCode\n"
+        "     15  f000\t\t\t\t\t      ORG\t$F000\n"
+        "     16  f000\t\t       a5 80\t\t      lda\tSystem\n";
     AddressMap ramMap;
     ramMap.load(ramListing, [](const std::string&) -> std::optional<int> { return std::nullopt; }, 4096);
-    auto reserved = ramMap.reservedIn("main.asm");
-    CHECK(reserved.size() == 4 && ramMap.linesIn("main.asm").size() == 1);
+    auto listedRam = ramMap.reservedIn("main.asm");
+    std::vector<const ListedLine*> reserved, markers;  // variables; labels and ORGs (no bytes)
+    for (auto* listed : listedRam) (listed->bytes > 0 ? reserved : markers).push_back(listed);
+    CHECK(reserved.size() == 6 && ramMap.linesIn("main.asm").size() == 1);
+    // ORG $80, the label Shared and ORG Shared, back over Title (ENDIF is no label)
+    CHECK(markers.size() == 3 && markers[0]->line == 3 && markers[0]->cpu == 0x80);
+    CHECK(markers[1]->line == 9 && markers[1]->cpu == 0x94 && markers[2]->line == 12 && markers[2]->cpu == 0x94);
+    CHECK(reserved[4]->cpu == 0x94 && reserved[4]->bytes == 2 && reserved[5]->line == 13 && reserved[5]->cpu == 0x94);
     CHECK(reserved[0]->line == 4 && reserved[0]->cpu == 0x80 && reserved[0]->bytes == 1);
     CHECK(reserved[1]->cpu == 0x81 && reserved[1]->bytes == 4 && reserved[2]->cpu == 0x85 && reserved[2]->bytes == 12);
     CHECK(reserved[3]->line == 8 && reserved[3]->cpu == 0x91 && reserved[3]->bytes == 3);  // SIZE unknown here: the bytes listed

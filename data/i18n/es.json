@@ -1287,7 +1287,10 @@
     "(next to each file)": "(junto a cada archivo)",
     "Where the build leaves what it writes: a Makefile gets it as BUILD_DIR, and batari Basic's files are moved there. Empty: the ROM's folder.": "Dónde deja la compilación lo que escribe: un Makefile lo recibe como BUILD_DIR, y los archivos de batari Basic se mueven ahí. Vacío: la carpeta de la ROM.",
     "(the ROM's folder)": "(la carpeta de la ROM)",
-    "{0} bytes reserved (SEG.U): nothing in the ROM file": "{0} bytes reservados (SEG.U): nada en el archivo de la ROM"
+    "{0} bytes reserved (SEG.U): nothing in the ROM file": "{0} bytes reservados (SEG.U): nada en el archivo de la ROM",
+    "ORG back to {0}: what follows shares the RAM up to {1} with the variables above.": "ORG de vuelta a {0}: lo que sigue comparte la RAM hasta {1} con las variables de arriba.",
+    "ORG in SEG.U: what follows starts at {0}.": "ORG en SEG.U: lo que sigue empieza en {0}.",
+    "Label in SEG.U: the address of what follows, no bytes of its own.": "Etiqueta en SEG.U: la dirección de lo que sigue, sin bytes propios."
   },
   "total": 1171
 }
