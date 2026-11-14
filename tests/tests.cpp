@@ -2880,10 +2880,15 @@ static void assembleSong(const std::string& dasm, const std::string& exportText,
 }
 
 // A song made of random choices, with every feature the player has.
+
+// A number from low to high, the same on every platform (mt19937's output is fixed by the
+// standard; uniform_int_distribution's is not, and Linux's songs came out different).
+static int randomBetween(std::mt19937& generator, int low, int high) { return low + (int)(generator() % (uint32_t)(high - low + 1)); }
+
 static vcs::music::Song randomSong(unsigned seed) {
   using namespace vcs::music;
   std::mt19937 random(seed);
-  auto pick = [&](int low, int high) { return std::uniform_int_distribution<int>(low, high)(random); };
+  auto pick = [&](int low, int high) { return randomBetween(random, low, high); };
   Song song = blankSong();
   song.speed = pick(1, 5);
   song.swing = pick(0, 1) ? pick(1, 6) : 0;
@@ -2932,7 +2937,7 @@ static vcs::music::Song randomSong(unsigned seed) {
   }
   {  // some patterns with a speed of their own (a separate generator: the rest stays as it was)
     std::mt19937 speeds(seed * 31 + 7);
-    auto speedPick = [&](int low, int high) { return std::uniform_int_distribution<int>(low, high)(speeds); };
+    auto speedPick = [&](int low, int high) { return randomBetween(speeds, low, high); };
     for (auto& pattern : song.patterns)
       if (speedPick(0, 2) == 0) pattern.speed = speedPick(1, 5), pattern.swing = speedPick(0, 1) ? speedPick(1, 6) : 0;
   }
@@ -3014,8 +3019,8 @@ static void testMusicExport() {
     for (auto& effect : random.effects) validEffects += effect.instrument < (int)random.instruments.size();
     bool same = true;
     for (int frame = 0; frame < 1500 && same; frame++) {
-      if (validEffects && std::uniform_int_distribution<int>(0, 60)(effects) == 0) {
-        int effect = std::uniform_int_distribution<int>(0, validEffects - 1)(effects);
+      if (validEffects && randomBetween(effects, 0, 60) == 0) {
+        int effect = randomBetween(effects, 0, validEffects - 1);
         player.playEffect(random, ntsc, effect);
         effectsPlayed++;
         cpu.a = (uint8_t)effect;
@@ -3142,8 +3147,8 @@ static void testMusicSongs() {
       std::mt19937 effects(seed * 3 + (unsigned)index);
       bool same = true;
       for (int frame = 0; frame < 800 && same; frame++) {
-        if (!song.effects.empty() && std::uniform_int_distribution<int>(0, 60)(effects) == 0) {
-          int effect = std::uniform_int_distribution<int>(0, (int)song.effects.size() - 1)(effects);
+        if (!song.effects.empty() && randomBetween(effects, 0, 60) == 0) {
+          int effect = randomBetween(effects, 0, (int)song.effects.size() - 1);
           player.playEffect(song, ntsc, effect);
           cpu.a = (uint8_t)(firstEffect + effect);
           same = cpu.call(assembled.effect);
@@ -3275,8 +3280,8 @@ static void testDpcExport() {
     for (auto& effect : random.effects) validEffects += effect.instrument < (int)random.instruments.size();
     bool same = true;
     for (int frame = 0; frame < 1000 && same; frame++) {
-      if (validEffects && std::uniform_int_distribution<int>(0, 60)(effects) == 0) {
-        int effect = std::uniform_int_distribution<int>(0, validEffects - 1)(effects);
+      if (validEffects && randomBetween(effects, 0, 60) == 0) {
+        int effect = randomBetween(effects, 0, validEffects - 1);
         player.playEffect(random, clock, effect);
         effectsPlayed++;
         cpu.a = (uint8_t)effect;
@@ -3377,7 +3382,7 @@ static void testCdfjExport() {
     for (auto& effect : random.effects) validEffects += effect.instrument < (int)random.instruments.size();
     std::vector<int> schedule;
     for (int frame = 0; frame < frames; frame++)
-      schedule.push_back(validEffects && std::uniform_int_distribution<int>(0, 40)(effects) == 0 ? std::uniform_int_distribution<int>(0, validEffects - 1)(effects) : -1);
+      schedule.push_back(validEffects && randomBetween(effects, 0, 40) == 0 ? randomBetween(effects, 0, validEffects - 1) : -1);
     {
       std::ofstream input(folder / "input.txt");
       input << frames << "\n";
@@ -3447,7 +3452,7 @@ static std::string findCompiler() {
 static vcs::music::Song randomSampleSong(unsigned seed) {
   using namespace vcs::music;
   std::mt19937 random(seed * 7919);
-  auto pick = [&](int low, int high) { return std::uniform_int_distribution<int>(low, high)(random); };
+  auto pick = [&](int low, int high) { return randomBetween(random, low, high); };
   Song song = randomSong(seed);
   song.target = "samples";
   song.voices = pick(1, 4);
@@ -3744,7 +3749,7 @@ static void testSampleExport() {
     for (auto& effect : random.effects) validEffects += effect.instrument < (int)random.instruments.size();
     std::vector<int> schedule;
     for (int frame = 0; frame < frames; frame++)
-      schedule.push_back(validEffects && std::uniform_int_distribution<int>(0, 40)(effects) == 0 ? std::uniform_int_distribution<int>(0, validEffects - 1)(effects) : -1);
+      schedule.push_back(validEffects && randomBetween(effects, 0, 40) == 0 ? randomBetween(effects, 0, validEffects - 1) : -1);
     {
       std::ofstream input(folder / "input.txt");
       input << frames << " " << lines << " 0\n";
@@ -3867,7 +3872,7 @@ static void testSampleExport() {
     Song random = randomSampleSong(seed);
     random.tiaTrack = true;
     std::mt19937 notes(seed);
-    auto pick = [&](int low, int high) { return std::uniform_int_distribution<int>(low, high)(notes); };
+    auto pick = [&](int low, int high) { return randomBetween(notes, low, high); };
     for (auto& pattern : random.patterns)
       for (auto& cell : pattern.cells[kTiaTrack]) {
         int kind = pick(0, 9);
@@ -3893,8 +3898,8 @@ static void testSampleExport() {
     std::mt19937 effects(seed);
     std::vector<int> schedule;
     for (int frame = 0; frame < frames; frame++)
-      schedule.push_back(!random.effects.empty() && std::uniform_int_distribution<int>(0, 30)(effects) == 0
-                             ? std::uniform_int_distribution<int>(0, (int)random.effects.size() - 1)(effects)
+      schedule.push_back(!random.effects.empty() && randomBetween(effects, 0, 30) == 0
+                             ? randomBetween(effects, 0, (int)random.effects.size() - 1)
                              : -1);
     {
       std::ofstream input(folder / "input.txt");
