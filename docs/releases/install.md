@@ -11,7 +11,18 @@
 
 VCSIDE needs OpenGL 2.1 or later and nothing else of its own: SDL3 is built in.
 
-**These builds are not signed yet.** On macOS, the first time you open VCSIDE the system says it cannot check the developer: open *System Settings → Privacy & Security* and choose *Open Anyway* (or run `xattr -dr com.apple.quarantine VCSIDE.app`). On Windows, SmartScreen may stop it: *More info → Run anyway*.
+<!-- MACOS_UNSIGNED -->
+**The macOS build is not signed with a Developer ID.** The first time you open VCSIDE, macOS says it cannot check the developer: open *System Settings → Privacy & Security* and choose *Open Anyway* (or run `xattr -dr com.apple.quarantine VCSIDE.app`).
+
+<!-- /MACOS_UNSIGNED -->
+<!-- WINDOWS_UNSIGNED -->
+**The Windows build is not signed.** SmartScreen may stop it: *More info → Run anyway*.
+
+<!-- /WINDOWS_UNSIGNED -->
+<!-- WINDOWS_SIGNED -->
+The Windows build is signed. While the signature is new to SmartScreen it may still ask once: *More info → Run anyway*.
+
+<!-- /WINDOWS_SIGNED -->
 
 VCSIDE does not bundle the tools it works with. Install the ones your projects need: DASM for assembly, batari Basic 1.9 and wasmtime for batari Basic, the Arm GNU toolchain and GNU Make for C on ELF cartridges, and Stella or Gopher2600 to run and debug. *Settings → Tools* says what it found, with each download page.
 

@@ -145,7 +145,7 @@ The Windows one is cross-compiled with MinGW-w64 and linked statically (SDL3 inc
 
 ## Releases
 
-`tools/release.sh X.Y.Z` publishes a version from a Mac with Docker and `gh`: it builds and tests macOS (universal), Linux and Windows, tags `vX.Y.Z`, creates the GitHub release with the packages, checksums and notes, and updates the download page of the website (`vcside-web`). What is new in each version goes in `docs/releases/X.Y.Z.md`. The whole process, and why the builds are not signed yet, is in [`docs/releases/README.md`](docs/releases/README.md).
+`tools/release.sh X.Y.Z` publishes a version from a Mac with Docker and `gh`: it builds and tests macOS (universal), Linux and Windows, tags `vX.Y.Z`, creates the GitHub release with the packages, checksums and notes, and updates the download page of the website (`vcside-web`). What is new in each version goes in `docs/releases/X.Y.Z.md`. It signs the macOS app with Developer ID and notarises it, and signs the Windows executables, when the credentials are there (`tools/sign.sh status`). The whole process, and how to set up signing, is in [`docs/releases/README.md`](docs/releases/README.md).
 
 ## Translations
 

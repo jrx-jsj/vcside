@@ -8,7 +8,9 @@
 # Run it on a Mac (the macOS build needs one) with Docker running (Linux and Windows builds)
 # and gh signed in. What is new goes in docs/releases/<version>.md: if it is missing, the
 # script writes a draft from the commits since the last release and stops so you can edit it.
-# docs/releases/README.md explains the whole process.
+# docs/releases/README.md explains the whole process. The packages are signed by tools/sign.sh
+# when the credentials are there (Developer ID and notarisation on macOS, a code-signing service
+# on Windows) and left unsigned when they are not: tools/sign.sh status says which.
 set -euo pipefail
 
 VERSION=${1:-}
@@ -40,6 +42,12 @@ if [ $DRY_RUN = 0 ]; then
   [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ] || die "main is not the same as origin/main"
   ! git rev-parse -q --verify "refs/tags/$TAG" >/dev/null || die "$TAG exists already"
 fi
+
+MAC_SIGNING=$(tools/sign.sh macos-state)
+WINDOWS_SIGNING=$(tools/sign.sh windows-state)
+say "signing: macOS $MAC_SIGNING, Windows $WINDOWS_SIGNING"
+[ "$MAC_SIGNING" = notarised ] || echo "  macOS: without Developer ID and notarisation, Gatekeeper warns (docs/releases/README.md)"
+[ "$WINDOWS_SIGNING" = signed ] || echo "  Windows: without a signature, SmartScreen warns (docs/releases/README.md)"
 
 PREVIOUS_TAG=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)
 if [ ! -f "$NOTES" ]; then
@@ -75,7 +83,8 @@ APP_BUNDLE="$BUILD_DIR/macos/VCSIDE.app"
 if otool -L "$APP_BUNDLE/Contents/MacOS/VCSIDE" | grep -q -e /opt/homebrew -e /usr/local; then
   die "the macOS build links a library outside the system"
 fi
-codesign --force --deep --sign - "$APP_BUNDLE"  # ad hoc: not a Developer ID, but a valid bundle
+# Developer ID, hardened runtime, notarised and stapled; ad hoc without the credentials.
+tools/sign.sh macos-app "$APP_BUNDLE"
 MAC_ZIP="VCSIDE-$VERSION-macos.zip"
 ditto -c -k --sequesterRsrc --keepParent "$APP_BUNDLE" "$DIST/$MAC_ZIP"
 # The disk image: the app and a link to Applications, to drag it there.
@@ -86,6 +95,7 @@ mkdir -p "$DMG_STAGE"
 ditto "$APP_BUNDLE" "$DMG_STAGE/VCSIDE.app"
 ln -s /Applications "$DMG_STAGE/Applications"
 hdiutil create -quiet -volname "VCSIDE $VERSION" -srcfolder "$DMG_STAGE" -fs HFS+ -format UDZO "$DIST/$MAC_DMG"
+tools/sign.sh macos-dmg "$DIST/$MAC_DMG"
 
 # Linux for one architecture: Docker platform (amd64, arm64) and the name in the package.
 # On Apple silicon arm64 runs natively and amd64 is emulated (slower).
@@ -115,11 +125,20 @@ mkdir -p "$BUILD_DIR/pkg/$WINDOWS_NAME"
 cp "$BUILD_DIR/windows/vcside.exe" "$BUILD_DIR/pkg/$WINDOWS_NAME/"
 cp -R "$BUILD_DIR/windows/data" "$BUILD_DIR/pkg/$WINDOWS_NAME/"
 cp LICENSE "$BUILD_DIR/pkg/$WINDOWS_NAME/LICENSE.txt"
+# Signed before they are zipped and packed into the installer, so the installed copies are too.
+WINDOWS_EXES=()
+while IFS= read -r -d '' exe; do WINDOWS_EXES+=("$exe"); done \
+  < <(find "$BUILD_DIR/pkg/$WINDOWS_NAME" -name '*.exe' -print0)
+tools/sign.sh windows "${WINDOWS_EXES[@]}"
 (cd "$BUILD_DIR/pkg" && zip -qr "$DIST/$WINDOWS_NAME.zip" "$WINDOWS_NAME")
 WINDOWS_SETUP="$WINDOWS_NAME-setup.exe"
 docker run --rm -v "$ROOT":/src -w /src vcside-windows makensis -V2 -DVERSION="$VERSION" \
   -DSOURCE="/src/build-release/pkg/$WINDOWS_NAME" -DOUTFILE="/src/build-release/dist/$WINDOWS_SETUP" \
   tools/windows/vcside.nsi
+tools/sign.sh windows "$DIST/$WINDOWS_SETUP"
+if [ "$WINDOWS_SIGNING" = signed ]; then
+  tools/sign.sh windows-verify "${WINDOWS_EXES[@]}" "$DIST/$WINDOWS_SETUP"
+fi
 
 (cd "$DIST" && shasum -a 256 "$MAC_DMG" "$MAC_ZIP" "$WINDOWS_SETUP" "$WINDOWS_NAME.zip" "$LINUX_X64" "$LINUX_ARM64" > SHA256SUMS)
 
@@ -128,7 +147,18 @@ REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null || echo j
 {
   cat "$NOTES"
   echo
-  sed -e "s/{{VERSION}}/$VERSION/g" docs/releases/install.md
+  # The paragraph on opening unsigned builds, for the platforms that are not signed.
+  python3 - "$VERSION" "$MAC_SIGNING" "$WINDOWS_SIGNING" docs/releases/install.md <<'PY'
+import re, sys
+version, mac, windows, path = sys.argv[1:]
+text = open(path, encoding="utf-8").read().replace("{{VERSION}}", version)
+keep = {"MACOS_UNSIGNED": mac != "notarised", "WINDOWS_UNSIGNED": windows != "signed",
+        "WINDOWS_SIGNED": windows == "signed"}
+for name, wanted in keep.items():
+    text = re.sub(r"<!-- %s -->\n(.*?)<!-- /%s -->\n" % (name, name),
+                  lambda m: m.group(1) if wanted else "", text, flags=re.S)
+print(re.sub(r"\n{3,}", "\n\n", text), end="")
+PY
   echo
   echo '```'
   cat "$DIST/SHA256SUMS"
