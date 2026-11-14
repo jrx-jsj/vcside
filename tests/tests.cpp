@@ -1463,6 +1463,22 @@ static void testElfSpace() {
     std::string palText((std::istreambuf_iterator<char>(palMakefile)), {});
     CHECK(palText.find("ACE_SYSTEM ?= 1\n") != std::string::npos);
   }
+  // the builds besides the ROM, chosen when the project is made: only those get their glue
+  // folder, their Makefile target and their lines in VCSIDE.md
+  for (auto [chameleonBuild, aceBuild] : {std::pair{false, false}, std::pair{true, false}, std::pair{false, true}}) {
+    fs::path buildsDir = dir / ("elf-builds-" + std::to_string(chameleonBuild) + std::to_string(aceBuild));
+    CHECK(Project::create(buildsDir.string(), "solo", Language::ElfC, "NTSC", &project, &error, "game", "", {chameleonBuild, aceBuild}));
+    CHECK(fs::exists(buildsDir / "chameleon") == chameleonBuild && fs::exists(buildsDir / "ace") == aceBuild);
+    std::ifstream makefileIn(buildsDir / "Makefile"), notesIn(buildsDir / "VCSIDE.md");
+    std::string makefileText((std::istreambuf_iterator<char>(makefileIn)), {}), notesText((std::istreambuf_iterator<char>(notesIn)), {});
+    CHECK(makefileText.find("{{") == std::string::npos && notesText.find("{{") == std::string::npos);
+    CHECK((makefileText.find("\nchameleon: ") != std::string::npos) == chameleonBuild && (makefileText.find("\nace: ") != std::string::npos) == aceBuild);
+    CHECK((notesText.find("make chameleon") != std::string::npos) == chameleonBuild && (notesText.find("make ace") != std::string::npos) == aceBuild);
+    if (!gcc.empty() && !make.empty() && !chameleonBuild && !aceBuild) {
+      std::string command = "cd \"" + buildsDir.string() + "\" && \"" + make + "\" > make.log 2>&1";
+      CHECK(std::system(command.c_str()) == 0 && fs::exists(buildsDir / "build" / "solo.bin"));
+    }
+  }
   CHECK(!Project::create((dir / "none-elf").string(), "x", Language::ElfC, "NTSC", &project, &error, "nope") && !error.empty());
   // the ACE template: Gopher2600 at the STM32F407's clock, the header's 16-character name,
   // the visible lines for the TV standard, and a file that starts with the ACE header
@@ -1525,7 +1541,7 @@ static void testElfSpace() {
   CHECK(project.format == "ACE" && project.output == "build/both.ace" && project.emulator == "gopher2600" && project.buildCommand == "make ace");
   for (auto fileName : {"Makefile", "include/vcsLib.h", "src/main.c", "src/music.h", "ace/vcslib_ace.c", "ace/main_ace.c", "ace/ace.c", "ace/start.S"})
     CHECK(fs::exists(inProject(aceVcsLibDir, fileName)));
-  CHECK(!fs::exists(aceVcsLibDir / "include" / "ace.h") && !fs::exists(aceVcsLibDir / "shared.json"));
+  CHECK(!fs::exists(aceVcsLibDir / "include" / "ace.h") && !fs::exists(aceVcsLibDir / "shared.json") && !fs::exists(aceVcsLibDir / "chameleon"));
   if (!gcc.empty() && !make.empty()) {
     std::string command = "cd \"" + aceVcsLibDir.string() + "\" && \"" + make + "\" ace > make-ace.log 2>&1 && \"" + make + "\" > make.log 2>&1";
     CHECK(std::system(command.c_str()) == 0 && romFormat((aceVcsLibDir / "build" / "both.ace").string()) == "ACE" && fs::exists(aceVcsLibDir / "build" / "both.bin"));

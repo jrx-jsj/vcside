@@ -16,6 +16,12 @@ enum class Language { Dasm, BatariBasic, ElfC, AceC, Unknown };
 inline bool isC(Language language) { return language == Language::ElfC || language == Language::AceC; }
 enum class IllegalOpcodes { Allow, StableOnly, Warn, Forbid };
 
+// An ELF project's builds besides its ROM, each with its glue folder and its Makefile
+// target: make chameleon (chameleon/) and make ace (ace/).
+struct ElfBuilds {
+  bool chameleon = true, ace = true;
+};
+
 struct Project {
   std::string file;             // absolute path of the .vcsproj
   std::string dir;              // folder that holds it
@@ -115,8 +121,10 @@ struct Project {
   // Creates a new project folder with a template for the language.
   // example: "" for the empty template, or one of examples(language, format).
   // format: the cartridge, one of cartridgeFormats(language) ("": 4K, or the example's own).
+  // elfBuilds: an ELF project's builds besides its ROM (ElfBuilds).
   static bool create(const std::string& directory, const std::string& projectName, Language projectLanguage, const std::string& tvStandard,
-                     Project* result, std::string* error, const std::string& example = "", const std::string& format = "");
+                     Project* result, std::string* error, const std::string& example = "", const std::string& format = "",
+                     const ElfBuilds& elfBuilds = {});
   // Examples a new project can start from: id and name (for people, to translate). With a
   // format, only the ones made for that cartridge.
   static std::vector<std::pair<std::string, const char*>> examples(Language language, const std::string& format = "");

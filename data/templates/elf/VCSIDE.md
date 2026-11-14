@@ -19,8 +19,8 @@ An ELF cartridge game in C from VCSIDE's template: the cartridge's ARM feeds the
 - `src/`: programs; `resources/gfx/`, `resources/music/`: `.vcsgfx`, `.vcsmusic`; `generated/`: what VCSIDE writes from them; `build/`: the build's. Set in the `.vcsproj` (`*_dir`).
 
 ## Build
-- F7 runs `make`: `build/{{NAME}}.bin`, the ELF ROM (Stella, Gopher2600, PlusCart, UnoCart). `make ace`: the same game as `build/{{NAME}}.ace` (vcsLib on VCSIDE's ACE bus library in `ace/`); a project made as the ACE example "the ELF game on vcsLib" builds with `make ace`. `make chameleon CHAMELEON_FW=...`: the Chameleon Cart image.
+- F7 runs `make`: `build/{{NAME}}.bin`, the ELF ROM (Stella, Gopher2600, PlusCart, UnoCart).{{EXTRA_BUILDS}}
 
 ## Do not touch
-- `include/vcsLib.h` (the loader's interface), `src/memcpy_long.S`, `ace/` and `chameleon/` (the other cartridges' glue), and the Makefile's checks.
+- `include/vcsLib.h` (the loader's interface), `src/memcpy_long.S`{{GLUE}}, and the Makefile's checks.
 - `generated/music/music.h` (and any `generated/gfx/*.gfx.h`): written by VCSIDE when the `.vcsmusic`/`.vcsgfx` files are saved. Every `.vcsmusic` of that folder exported the same way goes into it, with one player: `music_play(MUSIC_SONG_<NAME>)` starts another song, `music_stop()` stops it.

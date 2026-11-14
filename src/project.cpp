@@ -866,7 +866,7 @@ static void writeMusicIncludes(const fs::path& dir, const fs::path& outputDir, c
 }
 
 bool Project::create(const std::string& dirIn, const std::string& projName, Language projectLanguage, const std::string& tvStandard,
-                     Project* result, std::string* error, const std::string& example, const std::string& format) {
+                     Project* result, std::string* error, const std::string& example, const std::string& format, const ElfBuilds& elfBuilds) {
   fs::path folder(dirIn);
   std::error_code errorCode;
   fs::create_directories(folder, errorCode);
@@ -1097,7 +1097,19 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
       if (error) *error = F("Template not found in {0}", {(exampleName.empty() ? templateDir : exampleDir).string()});
       return false;
     }
+    // the ELF project's other builds, each with its glue folder: the Chameleon image and the
+    // ACE file (ACE's vcsLib example is the ACE build alone)
+    const bool chameleonBuild = !ace && elfBuilds.chameleon, aceBuild = vcsLibOnAce || (!ace && elfBuilds.ace);
+    std::string extraBuilds, glue;
+    if (aceBuild)
+      extraBuilds += " `make ace`: the same game as `build/" + projName + ".ace` (vcsLib on VCSIDE's ACE bus library in `ace/`)" +
+                     (vcsLibOnAce ? ", what this project builds." : ".");
+    if (chameleonBuild) extraBuilds += " `make chameleon CHAMELEON_FW=...`: the Chameleon Cart image (`chameleon/`).";
+    if (aceBuild && chameleonBuild) glue = ", `ace/` and `chameleon/` (the other cartridges' glue)";
+    else if (aceBuild) glue = ", `ace/` (the ACE build's glue)";
+    else if (chameleonBuild) glue = ", `chameleon/` (the Chameleon image's glue)";
     const std::vector<std::pair<std::string, std::string>> substitutions = {
+        {"{{EXTRA_BUILDS}}", extraBuilds}, {"{{GLUE}}", glue},
         {"{{NAME}}", projName}, {"{{ACE_NAME}}", aceName}, {"{{VISIBLE_LINES}}", visibleLines}, {"{{ACE_SYSTEM}}", aceSystem}, {"{{MENU_SYSTEM}}", menuSystem}};
     std::vector<fs::path> from{templateDir};
     if (!exampleName.empty()) from.insert(from.begin(), exampleDir);  // the first copy of a file wins
@@ -1106,8 +1118,12 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
         if (!entry.is_regular_file()) continue;
         fs::path relativePath = fs::relative(entry.path(), sourceDir), destination = fs::path(newProject.dir) / relativePath;
         if (relativePath == "LICENSE.md" || relativePath == "shared.json" || fs::exists(destination)) continue;
+        if (relativePath.begin()->string() == "ace" && !aceBuild) continue;
+        if (relativePath.begin()->string() == "chameleon" && !chameleonBuild) continue;
         fs::create_directories(destination.parent_path(), errorCode);
         std::string text = readFile(entry.path().string());
+        keepSection(text, "CHAMELEON", chameleonBuild);
+        keepSection(text, "ACE", aceBuild);
         for (auto& [search, replacement] : substitutions) replaceAll(text, search, replacement);
         std::ofstream(destination, std::ios::binary) << text;
       }
@@ -1115,6 +1131,7 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
       // library, start code and linker script in ace/, for make ace (next to vcslib_ace.c)
       if (!copySharedFiles(sourceDir, newProject.dir, substitutions, error)) return false;
     }
+    if (!aceBuild) fs::remove_all(fs::path(newProject.dir) / "ace", errorCode);  // shared.json's ACE files
     writeGfxIncludes(gfxFolder, generatedGfx, true);
     writeMusicIncludes(musicFolder, generatedMusic, tvStandard);
     newProject.main = "src/main.c";

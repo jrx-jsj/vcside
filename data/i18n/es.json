@@ -1290,7 +1290,12 @@
     "{0} bytes reserved (SEG.U): nothing in the ROM file": "{0} bytes reservados (SEG.U): nada en el archivo de la ROM",
     "ORG back to {0}: what follows shares the RAM up to {1} with the variables above.": "ORG de vuelta a {0}: lo que sigue comparte la RAM hasta {1} con las variables de arriba.",
     "ORG in SEG.U: what follows starts at {0}.": "ORG en SEG.U: lo que sigue empieza en {0}.",
-    "Label in SEG.U: the address of what follows, no bytes of its own.": "Etiqueta en SEG.U: la dirección de lo que sigue, sin bytes propios."
+    "Label in SEG.U: the address of what follows, no bytes of its own.": "Etiqueta en SEG.U: la dirección de lo que sigue, sin bytes propios.",
+    "Also builds": "Compila también",
+    "Chameleon image": "Imagen del Chameleon",
+    "ACE file": "Archivo ACE",
+    "make chameleon: the game linked with the Chameleon Cart's firmware, to flash. Adds chameleon/.": "make chameleon: el juego enlazado con el firmware del Chameleon Cart, para grabarlo. Añade chameleon/.",
+    "make ace: the same game as an ACE file for the PlusCart and the UnoCart (runs in Gopher2600). Adds ace/.": "make ace: el mismo juego como archivo ACE para el PlusCart y el UnoCart (funciona en Gopher2600). Añade ace/."
   },
   "total": 1171
 }

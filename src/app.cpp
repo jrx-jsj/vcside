@@ -3699,7 +3699,7 @@ void App::newProjectDialog() {
     // wide enough for its longest label and value (the folder grows as it is typed): never squeezed
     const ImGuiStyle& style = ImGui::GetStyle();
     float labels = 0, values = 0;
-    for (const char* label : {"Name", "Folder", "Programming language", "TV standard", "Start from", "Cartridge", "Flash (KB)", "RAM (KB)"})
+    for (const char* label : {"Name", "Folder", "Programming language", "TV standard", "Start from", "Cartridge", "Flash (KB)", "RAM (KB)", "Also builds"})
       labels = std::max(labels, ImGui::CalcTextSize(T(label)).x);
     auto value = [&](const std::string& text) { values = std::max(values, ImGui::CalcTextSize(text.c_str()).x); };
     for (const char* name : kLangNames) value(T(name));
@@ -3770,6 +3770,7 @@ void App::newProjectDialog() {
         for (auto& [id, name] : cartridges)
           if (ImGui::Selectable(id == std::string("pluscart") ? T(name) : name, npElfCartridge_ == id) && npElfCartridge_ != id) {
             npElfCartridge_ = id;
+            npChameleonBuild_ = id == std::string("chameleon");
             npFlashKb_ = (int)defaultElfFlashKb(id), npRamKb_ = (int)defaultElfRamKb(id);
           }
         ImGui::EndCombo();
@@ -3783,6 +3784,15 @@ void App::newProjectDialog() {
       row(T("RAM (KB)"));
       ImGui::InputInt("##ram", &npRamKb_, 0);
       npRamKb_ = std::clamp(npRamKb_, 1, 65536);
+      // the other builds: only what is chosen gets its glue folder and its Makefile target
+      row(T("Also builds"));
+      ImGui::Checkbox(T("Chameleon image"), &npChameleonBuild_);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s", T("make chameleon: the game linked with the Chameleon Cart's firmware, to flash. Adds chameleon/."));
+      ImGui::SameLine();
+      ImGui::Checkbox(T("ACE file"), &npAceBuild_);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s", T("make ace: the same game as an ACE file for the PlusCart and the UnoCart (runs in Gopher2600). Adds ace/."));
     }
     if (!formats.empty()) {
       row(T("Cartridge"));
@@ -3831,7 +3841,8 @@ void App::newProjectDialog() {
     Project created;
     error.clear();
     std::string example = startIds[npExample_];
-    bool made = Project::create(target.string(), npName_, npLanguage, npTvId_, &created, &error, example, formats.empty() ? "" : npFormat_);
+    bool made = Project::create(target.string(), npName_, npLanguage, npTvId_, &created, &error, example, formats.empty() ? "" : npFormat_,
+                                {npChameleonBuild_, npAceBuild_});
     if (made && created.language == Language::ElfC) {  // the cartridge; its own sizes are left unset
       created.elfCartridge = npElfCartridge_;
       created.elfFlashKb = npFlashKb_ == defaultElfFlashKb(npElfCartridge_) ? 0 : npFlashKb_;

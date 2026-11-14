@@ -2,12 +2,16 @@
 #
 #   make             build/{{NAME}}.bin: the ROM (a relocatable ARM ELF object that the
 #                    cartridge or the emulator links). Stella, Gopher2600, PlusCart, UnoCart.
+{{CHAMELEON}}
 #   make chameleon   build/{{NAME}}-chameleon.elf: the game linked with the Chameleon Cart
 #                    firmware, to flash with an ST-Link. Needs the firmware objects of the
 #                    Chameleon's ELF template (not included): CHAMELEON_FW=<its chameleon_cart folder>.
+{{/CHAMELEON}}
+{{ACE}}
 #   make ace         build/{{NAME}}.ace: the same game as an ACE file for the PlusCart and the
 #                    UnoCart (ACE-UF00), with vcsLib written on the ACE bus library (ace/), and
 #                    build/ACE_debugging.elf for Gopher2600's debugger. Runs in Gopher2600.
+{{/ACE}}
 #
 # Needs the Arm GNU toolchain (arm-none-eabi-gcc) in PATH.
 
@@ -59,6 +63,7 @@ $(GAME): $(OBJS)
 	@if arm-none-eabi-readelf -r -W $@ | awk '$$3 ~ /THM_CALL|THM_JUMP24/' | grep -E ' (vcs[A-Za-z0-9]+|memset|memcpy|randint)$$'; then \
 		echo "$@: error: short calls to the loader (above): declare them between #pragma long_calls and long_calls_off"; rm -f $@; exit 1; fi
 
+{{CHAMELEON}}
 # Chameleon Cart (STM32G070RB: 128 KB of flash and 36 KB of RAM, firmware included).
 CHAMELEON_FW ?=
 GAME_CC = $(BUILD_DIR)/$(NAME)-chameleon.elf
@@ -73,6 +78,10 @@ $(GAME_CC): $(GAME) chameleon/support.c
 		-o $@ -mcpu=cortex-m0plus -mthumb -nostdlib -static -L$(OUT)/nolibc -T $(OUT)/chameleon.ld \
 		-Wl,--gc-sections,--print-memory-usage
 
+.PHONY: chameleon
+
+{{/CHAMELEON}}
+{{ACE}}
 # ACE (PlusCart and UnoCart): the game compiled for their Cortex-M4 and linked with ace/,
 # which takes the 6507 over and gives elf_main the vcsLib functions. The program runs from
 # the cartridge's SRAM (ace/ace.ld). ACE_SYSTEM: the TV system elf_main is given.
@@ -109,10 +118,13 @@ $(ACE_GAME): $(ACE_DEBUG)
 $(ACE_OUT):
 	mkdir -p $@/game
 
+.PHONY: ace
+
+{{/ACE}}
 $(OUT):
 	mkdir -p $@
 
 clean:
 	rm -rf $(BUILD_DIR)
 
-.PHONY: all chameleon ace clean
+.PHONY: all clean
