@@ -24,7 +24,8 @@
 #                             VCSIDE_AZURE_SIGNING_ACCOUNT   the signing account
 #                             VCSIDE_AZURE_SIGNING_PROFILE   the certificate profile
 #                           jsign: any keystore jsign knows (a PKCS#11 token, a cloud HSM, a
-#                             .p12 file...), with VCSIDE_JSIGN_STORETYPE, VCSIDE_JSIGN_KEYSTORE,
+#                             .p12 file, a Certum card: CRYPTOCERTUM), with VCSIDE_JSIGN_STORETYPE,
+#                             VCSIDE_JSIGN_KEYSTORE (if the store type needs one),
 #                             VCSIDE_JSIGN_ALIAS, VCSIDE_JSIGN_STOREPASS and, if the keystore
 #                             needs it, VCSIDE_JSIGN_CERTFILE (see https://ebourg.github.io/jsign/)
 #                           unset: not signed.
@@ -183,9 +184,9 @@ windows_sign() {
       tsa=${VCSIDE_WINDOWS_TSA:-http://timestamp.acs.microsoft.com}
       ;;
     jsign)
-      need VCSIDE_JSIGN_STORETYPE; need VCSIDE_JSIGN_KEYSTORE
+      need VCSIDE_JSIGN_STORETYPE
       storetype=$VCSIDE_JSIGN_STORETYPE
-      keystore=$VCSIDE_JSIGN_KEYSTORE
+      keystore=${VCSIDE_JSIGN_KEYSTORE:-}   # not needed for some, such as CRYPTOCERTUM cards
       alias=${VCSIDE_JSIGN_ALIAS:-}
       certfile=${VCSIDE_JSIGN_CERTFILE:-}
       export VCSIDE_JSIGN_STOREPASS=${VCSIDE_JSIGN_STOREPASS:-}
@@ -194,8 +195,9 @@ windows_sign() {
     *) die "VCSIDE_WINDOWS_SIGNER must be artifact-signing or jsign, not \"$VCSIDE_WINDOWS_SIGNER\"" ;;
   esac
   # The password or token goes as env:NAME, so it is not on the command line (ps shows those).
-  local args=(--storetype "$storetype" --keystore "$keystore" --storepass env:VCSIDE_JSIGN_STOREPASS
+  local args=(--storetype "$storetype" --storepass env:VCSIDE_JSIGN_STOREPASS
               --alg SHA-256 --tsaurl "$tsa" --tsmode RFC3161 --name VCSIDE --url https://vcside.com)
+  [ -n "$keystore" ] && args+=(--keystore "$keystore")
   [ -n "$alias" ] && args+=(--alias "$alias")
   [ -n "$certfile" ] && args+=(--certfile "$certfile")
   local file
