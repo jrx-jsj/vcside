@@ -1479,6 +1479,14 @@ static void testElfSpace() {
       CHECK(std::system(command.c_str()) == 0 && fs::exists(buildsDir / "build" / "solo.bin"));
     }
   }
+  {  // the ACE file as the default build: F7 runs make ace, F5 runs it in Gopher2600
+    fs::path aceDefaultDir = dir / "elf-ace-default";
+    CHECK(Project::create(aceDefaultDir.string(), "both", Language::ElfC, "NTSC", &project, &error, "", "", {false, true, true}));
+    CHECK(project.buildCommand == "make ace" && project.output == "build/both.ace" && project.format == "ACE" && project.emulator == "gopher2600");
+    CHECK(fs::exists(aceDefaultDir / "ace") && !fs::exists(aceDefaultDir / "chameleon"));
+    CHECK(Project::create((dir / "elf-ace-nodefault").string(), "solo", Language::ElfC, "NTSC", &project, &error, "", "", {false, false, true}));
+    CHECK(project.buildCommand == "make" && project.format == "ELF");  // no ACE build: the ELF ROM
+  }
   CHECK(!Project::create((dir / "none-elf").string(), "x", Language::ElfC, "NTSC", &project, &error, "nope") && !error.empty());
   // the ACE template: Gopher2600 at the STM32F407's clock, the header's 16-character name,
   // the visible lines for the TV standard, and a file that starts with the ACE header

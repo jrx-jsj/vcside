@@ -345,7 +345,7 @@ class App {
   std::string npCdfjDriver_, npCdfjError_;    // CDFJ: the user's own driver, chosen before Create
   std::string npElfCartridge_ = "chameleon";  // ELF: the cartridge, and its sizes in KB
   int npFlashKb_ = 128, npRamKb_ = 36;
-  bool npChameleonBuild_ = true, npAceBuild_ = false;  // ELF: the builds besides the ROM
+  bool npChameleonBuild_ = true, npAceBuild_ = false, npAceDefault_ = false;  // ELF: the builds besides the ROM, and F7's
 
   // settings
   std::vector<std::string> recent_;

@@ -1103,7 +1103,7 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
     std::string extraBuilds, glue;
     if (aceBuild)
       extraBuilds += " `make ace`: the same game as `build/" + projName + ".ace` (vcsLib on VCSIDE's ACE bus library in `ace/`)" +
-                     (vcsLibOnAce ? ", what this project builds." : ".");
+                     (vcsLibOnAce || elfBuilds.aceDefault ? ", what F7 builds." : ".");
     if (chameleonBuild) extraBuilds += " `make chameleon CHAMELEON_FW=...`: the Chameleon Cart image (`chameleon/`).";
     if (aceBuild && chameleonBuild) glue = ", `ace/` and `chameleon/` (the other cartridges' glue)";
     else if (aceBuild) glue = ", `ace/` (the ACE build's glue)";
@@ -1136,10 +1136,11 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
     writeMusicIncludes(musicFolder, generatedMusic, tvStandard);
     newProject.main = "src/main.c";
     newProject.buildCommand = "make";
-    newProject.format = ace ? "ACE" : "ELF";
-    if (ace) {
+    const bool aceOutput = ace || (aceBuild && elfBuilds.aceDefault);  // F7 builds the ACE file
+    newProject.format = aceOutput ? "ACE" : "ELF";
+    if (aceOutput) {
       newProject.output = "build/" + projName + ".ace";
-      if (vcsLibOnAce) newProject.buildCommand = "make ace";
+      if (aceBuild) newProject.buildCommand = "make ace";
       newProject.emulator = "gopher2600";                         // the only one that runs ACE
       newProject.emulatorOptions["gopher2600"]["armClock"] = "168";  // the STM32F407's MHz
     }

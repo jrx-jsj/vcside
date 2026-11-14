@@ -3699,7 +3699,7 @@ void App::newProjectDialog() {
     // wide enough for its longest label and value (the folder grows as it is typed): never squeezed
     const ImGuiStyle& style = ImGui::GetStyle();
     float labels = 0, values = 0;
-    for (const char* label : {"Name", "Folder", "Programming language", "TV standard", "Start from", "Cartridge", "Flash (KB)", "RAM (KB)", "Also builds"})
+    for (const char* label : {"Name", "Folder", "Programming language", "TV standard", "Start from", "Cartridge", "Cartridges", "Default build", "Flash (KB)", "RAM (KB)"})
       labels = std::max(labels, ImGui::CalcTextSize(T(label)).x);
     auto value = [&](const std::string& text) { values = std::max(values, ImGui::CalcTextSize(text.c_str()).x); };
     for (const char* name : kLangNames) value(T(name));
@@ -3763,19 +3763,34 @@ void App::newProjectDialog() {
       }
     }
     if (languageFromId(kLangIds[npLang_]) == Language::ElfC) {
-      row(T("Cartridge"));
-      const std::pair<const char*, const char*> cartridges[] = {{"chameleon", "Chameleon Cart"}, {"pluscart", N_("PlusCart or UnoCart")}};
-      std::string shown = npElfCartridge_ == "pluscart" ? T(cartridges[1].second) : cartridges[0].second;
-      if (ImGui::BeginCombo("##cart", shown.c_str())) {
-        for (auto& [id, name] : cartridges)
-          if (ImGui::Selectable(id == std::string("pluscart") ? T(name) : name, npElfCartridge_ == id) && npElfCartridge_ != id) {
-            npElfCartridge_ = id;
-            npChameleonBuild_ = id == std::string("chameleon");
-            npFlashKb_ = (int)defaultElfFlashKb(id), npRamKb_ = (int)defaultElfRamKb(id);
-          }
-        ImGui::EndCombo();
+      // the cartridges: the ELF ROM always (the emulators run it and the Chameleon image is
+      // made from it); the Chameleon image and the ACE file get their folder and make target
+      row(T("Cartridges"));
+      ImGui::BeginDisabled();
+      bool elfRom = true;
+      ImGui::Checkbox(T("PlusCart / UnoCart (ELF ROM)"), &elfRom);
+      ImGui::EndDisabled();
+      if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        ImGui::SetTooltip("%s", T("make: the ROM. Always built: the emulators run it, and the Chameleon image is made from it."));
+      if (ImGui::Checkbox("Chameleon Cart", &npChameleonBuild_)) {
+        npElfCartridge_ = npChameleonBuild_ ? "chameleon" : "pluscart";
+        npFlashKb_ = (int)defaultElfFlashKb(npElfCartridge_), npRamKb_ = (int)defaultElfRamKb(npElfCartridge_);
       }
-      if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", T("What the space report measures the game against. It can be changed later in the project settings."));
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s", T("make chameleon: the game linked with the Chameleon Cart's firmware, to flash. Adds chameleon/. The space report measures against the Chameleon, the tighter one."));
+      ImGui::Checkbox(T("ACE file (PlusCart, UnoCart)"), &npAceBuild_);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s", T("make ace: the same game as an ACE file for the PlusCart and the UnoCart (runs in Gopher2600). Adds ace/."));
+      if (!npAceBuild_) npAceDefault_ = false;
+      // what F7 builds and F5 runs: the Chameleon image needs its firmware and no emulator runs it
+      row(T("Default build"));
+      const char* defaultBuilds[] = {T("ELF ROM (make)"), T("ACE file (make ace)")};
+      ImGui::BeginDisabled(!npAceBuild_);
+      int defaultBuild = npAceDefault_ ? 1 : 0;
+      if (ImGui::Combo("##defaultbuild", &defaultBuild, defaultBuilds, npAceBuild_ ? 2 : 1)) npAceDefault_ = defaultBuild == 1;
+      ImGui::EndDisabled();
+      if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        ImGui::SetTooltip("%s", T("What F7 builds and F5 runs (the ACE file in Gopher2600). The Chameleon image is built with make chameleon: it needs the firmware and no emulator runs it."));
       if (npElfCartridge_ == "chameleon") {
         row(T("Flash (KB)"));
         ImGui::InputInt("##flash", &npFlashKb_, 0);
@@ -3784,15 +3799,6 @@ void App::newProjectDialog() {
       row(T("RAM (KB)"));
       ImGui::InputInt("##ram", &npRamKb_, 0);
       npRamKb_ = std::clamp(npRamKb_, 1, 65536);
-      // the other builds: only what is chosen gets its glue folder and its Makefile target
-      row(T("Also builds"));
-      ImGui::Checkbox(T("Chameleon image"), &npChameleonBuild_);
-      if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("%s", T("make chameleon: the game linked with the Chameleon Cart's firmware, to flash. Adds chameleon/."));
-      ImGui::SameLine();
-      ImGui::Checkbox(T("ACE file"), &npAceBuild_);
-      if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("%s", T("make ace: the same game as an ACE file for the PlusCart and the UnoCart (runs in Gopher2600). Adds ace/."));
     }
     if (!formats.empty()) {
       row(T("Cartridge"));
@@ -3842,7 +3848,7 @@ void App::newProjectDialog() {
     error.clear();
     std::string example = startIds[npExample_];
     bool made = Project::create(target.string(), npName_, npLanguage, npTvId_, &created, &error, example, formats.empty() ? "" : npFormat_,
-                                {npChameleonBuild_, npAceBuild_});
+                                {npChameleonBuild_, npAceBuild_, npAceDefault_});
     if (made && created.language == Language::ElfC) {  // the cartridge; its own sizes are left unset
       created.elfCartridge = npElfCartridge_;
       created.elfFlashKb = npFlashKb_ == defaultElfFlashKb(npElfCartridge_) ? 0 : npFlashKb_;

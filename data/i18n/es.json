@@ -1117,7 +1117,6 @@
     "What saving writes for the program: all the tables in <name>.gfx.asm, each sprite and playfield in <name>.<item>.gfx.asm, or the items of each group together in <name>.<group>.gfx.asm (those with no group stay in <name>.gfx.asm). Files an earlier choice wrote are removed. C projects: .gfx.h.": "Lo que se escribe al guardar para el programa: todas las tablas en <nombre>.gfx.asm, cada sprite y playfield en <nombre>.<elemento>.gfx.asm, o los elementos de cada grupo juntos en <nombre>.<grupo>.gfx.asm (los que no tienen grupo se quedan en <nombre>.gfx.asm). Se borran los archivos que escribió una elección anterior. Proyectos en C: .gfx.h.",
     "What the player writes to AUDC, AUDF and AUDV on every video frame of this pattern.": "Lo que escribe el reproductor en AUDC, AUDF y AUDV en cada cuadro de vídeo de este patrón.",
     "What the space report measures the game against.": "Con qué se compara el espacio del juego en el informe.",
-    "What the space report measures the game against. It can be changed later in the project settings.": "Con qué se compara el espacio del juego en el informe. Se puede cambiar después en los ajustes del proyecto.",
     "What you hear is the TIA counter by counter, as Chris Brenner described it (\"TIA Sounding Off in the Digital Domain\"), with the two channels mixed by his formula as Thomas Jentzsch simplified it. The pitches are those of Ron Fries' TIASOUND and of the tables by Eckhard Stolberg and Paul Slocum.": "Lo que se oye es el TIA contador a contador, como lo describió Chris Brenner («TIA Sounding Off in the Digital Domain»), con los dos canales mezclados por su fórmula tal como la simplificó Thomas Jentzsch. Los tonos son los de TIASOUND de Ron Fries y los de las tablas de Eckhard Stolberg y Paul Slocum.",
     "Where a dragged panel will dock": "Dónde se acoplará un panel arrastrado",
     "Where the build leaves the ROM, relative to the project. Run and debug open it.": "Dónde deja la ROM la compilación, relativo al proyecto. Ejecutar y depurar la abren.",
@@ -1291,11 +1290,16 @@
     "ORG back to {0}: what follows shares the RAM up to {1} with the variables above.": "ORG de vuelta a {0}: lo que sigue comparte la RAM hasta {1} con las variables de arriba.",
     "ORG in SEG.U: what follows starts at {0}.": "ORG en SEG.U: lo que sigue empieza en {0}.",
     "Label in SEG.U: the address of what follows, no bytes of its own.": "Etiqueta en SEG.U: la dirección de lo que sigue, sin bytes propios.",
-    "Also builds": "Compila también",
-    "Chameleon image": "Imagen del Chameleon",
-    "ACE file": "Archivo ACE",
-    "make chameleon: the game linked with the Chameleon Cart's firmware, to flash. Adds chameleon/.": "make chameleon: el juego enlazado con el firmware del Chameleon Cart, para grabarlo. Añade chameleon/.",
-    "make ace: the same game as an ACE file for the PlusCart and the UnoCart (runs in Gopher2600). Adds ace/.": "make ace: el mismo juego como archivo ACE para el PlusCart y el UnoCart (funciona en Gopher2600). Añade ace/."
+    "make ace: the same game as an ACE file for the PlusCart and the UnoCart (runs in Gopher2600). Adds ace/.": "make ace: el mismo juego como archivo ACE para el PlusCart y el UnoCart (funciona en Gopher2600). Añade ace/.",
+    "Cartridges": "Cartuchos",
+    "PlusCart / UnoCart (ELF ROM)": "PlusCart / UnoCart (ROM ELF)",
+    "make: the ROM. Always built: the emulators run it, and the Chameleon image is made from it.": "make: la ROM. Se compila siempre: es la que ejecutan los emuladores, y la imagen del Chameleon sale de ella.",
+    "make chameleon: the game linked with the Chameleon Cart's firmware, to flash. Adds chameleon/. The space report measures against the Chameleon, the tighter one.": "make chameleon: el juego enlazado con el firmware del Chameleon Cart, para grabarlo. Añade chameleon/. El informe de espacio mide contra el Chameleon, el más justo.",
+    "ACE file (PlusCart, UnoCart)": "Archivo ACE (PlusCart, UnoCart)",
+    "Default build": "Build por defecto",
+    "ELF ROM (make)": "ROM ELF (make)",
+    "ACE file (make ace)": "Archivo ACE (make ace)",
+    "What F7 builds and F5 runs (the ACE file in Gopher2600). The Chameleon image is built with make chameleon: it needs the firmware and no emulator runs it.": "Lo que compila F7 y ejecuta F5 (el archivo ACE, en Gopher2600). La imagen del Chameleon se compila con make chameleon: necesita el firmware y ningún emulador la ejecuta."
   },
   "total": 1171
 }
