@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Juan Sánchez Jurado
 #include "assistant/embeddings.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <filesystem>
@@ -57,7 +58,17 @@ bool requestEmbeddings(const std::string& baseUrl, const std::vector<std::string
   std::string answer;
   HttpResult result = httpRequest(request, [&](const char* bytes, size_t size) { return answer.append(bytes, size), answer.size() < (64u << 20); }, cancel);
   if (result.status / 100 != 2 || !result.error.empty()) {
-    if (error) *error = result.error.empty() ? "HTTP " + std::to_string(result.status) + " " + result.errorBody.substr(0, 200) : result.error;
+    if (error) {
+      if (!result.error.empty()) {
+        *error = result.error;
+      } else {  // the server's own message when it sends one ({"error":{"message":...}}), not the whole JSON
+        json body = json::parse(result.errorBody, nullptr, false);
+        std::string message;
+        if (body.is_object() && body.contains("error") && body["error"].is_object() && body["error"].contains("message") && body["error"]["message"].is_string())
+          message = body["error"]["message"].get<std::string>();
+        *error = "HTTP " + std::to_string(result.status) + ": " + (message.empty() ? result.errorBody.substr(0, 200) : utf8Cut(message, 200));
+      }
+    }
     return false;
   }
   json value = json::parse(answer, nullptr, false);
@@ -149,7 +160,7 @@ void EmbeddingWorker::start(const std::string& baseUrl, const std::string& docum
     for (size_t first = 0; first < jobs.size() && !cancel_; first += batch) {
       size_t last = std::min(jobs.size(), first + batch);
       std::vector<std::string> texts;
-      for (size_t i = first; i < last; i++) texts.push_back(documentPrefix + utf8Cut(jobs[i].text, 3000));
+      for (size_t i = first; i < last; i++) texts.push_back(documentPrefix + utf8Cut(jobs[i].text, kEmbeddingTextBytes - std::min(documentPrefix.size(), kEmbeddingTextBytes / 2)));
       std::vector<std::vector<float>> vectors;
       std::string error;
       if (!requestEmbeddings(baseUrl, texts, &vectors, &error, cancel_, 120)) {

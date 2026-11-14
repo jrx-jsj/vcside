@@ -23,6 +23,11 @@ float dotProduct(const std::vector<float>& left, const std::vector<float>& right
 // The hash a chunk's vector is cached under: the model and the text (hex SHA-256).
 std::string embeddingKey(const std::string& modelId, const std::string& text);
 
+// The search model runs with this context. Its tokenizer works on bytes and never makes more tokens
+// than there are bytes, so a text cut to kEmbeddingTextBytes always fits, with room for the prefix.
+constexpr int kEmbeddingContext = 2048;
+constexpr size_t kEmbeddingTextBytes = 1900;
+
 // POST <baseUrl>/embeddings with the texts (llama.cpp's server and any OpenAI-style one). The
 // vectors come back normalised, in the order of the texts. False with *error set on a failure.
 bool requestEmbeddings(const std::string& baseUrl, const std::vector<std::string>& texts, std::vector<std::vector<float>>* vectors,

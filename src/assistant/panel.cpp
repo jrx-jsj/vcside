@@ -797,7 +797,8 @@ void AssistantPanel::updateEmbeddings(const PanelContext& context) {
     return;
   }
   if (embedEngine_.state() == Engine::State::Stopped) {
-    embedEngine_.start(modelPath(*model), 2048, {"--embedding", "--pooling", model->pooling.empty() ? "mean" : model->pooling, "-b", "2048", "-ub", "2048"});
+    const std::string batch = std::to_string(kEmbeddingContext);
+    embedEngine_.start(modelPath(*model), kEmbeddingContext, {"--embedding", "--pooling", model->pooling.empty() ? "mean" : model->pooling, "-b", batch, "-ub", batch});
     return;
   }
   if (embedEngine_.state() != Engine::State::Ready) return;
@@ -844,7 +845,7 @@ std::vector<float> AssistantPanel::queryVector(const std::string& text) {
   std::vector<std::vector<float>> vectors;
   std::string error;
   std::atomic<bool> never{false};
-  if (!requestEmbeddings(embedEngine_.baseUrl(), {model->queryPrefix + utf8Cut(text, 1500)}, &vectors, &error, never, 5) || vectors.empty()) return {};
+  if (!requestEmbeddings(embedEngine_.baseUrl(), {model->queryPrefix + utf8Cut(text, kEmbeddingTextBytes - std::min(model->queryPrefix.size(), kEmbeddingTextBytes / 2))}, &vectors, &error, never, 5) || vectors.empty()) return {};
   return vectors[0];
 }
 

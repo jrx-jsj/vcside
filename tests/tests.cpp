@@ -4799,6 +4799,16 @@ static void testEmbeddings() {
     std::atomic<bool> never{false};
     CHECK(!requestEmbeddings(server.url(), {"a"}, &vectors, &error, never, 5) && !error.empty());  // wrong number of vectors
   }
+  {  // an error: the server's message, not its JSON
+    std::string body = R"json({"error":{"code":400,"message":"request (2182 tokens) exceeds the available context size (2048 tokens)","type":"exceed_context_size_error"}})json";
+    MockServer server("HTTP/1.1 400 Bad Request\r\nContent-Length: " + std::to_string(body.size()) + "\r\n\r\n" + body);
+    std::vector<std::vector<float>> vectors;
+    std::string error;
+    std::atomic<bool> never{false};
+    CHECK(!requestEmbeddings(server.url(), {"a"}, &vectors, &error, never, 5));
+    CHECK(error == "HTTP 400: request (2182 tokens) exceeds the available context size (2048 tokens)");
+  }
+  CHECK(kEmbeddingTextBytes + 64 < (size_t)kEmbeddingContext);  // a cut text and its prefix fit the model's context
 
   // the cache: written, read back, damaged files ignored
   fs::path root = fs::temp_directory_path() / "vcside_cache_test";
