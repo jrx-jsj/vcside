@@ -176,6 +176,6 @@ Third-party licences are in [`licenses/`](licenses/README.md). External tools (D
 
 ## Acknowledgements
 
-VCSIDE stands on the work of the Atari 2600 community: the authors of DASM, batari Basic, Stella and Gopher2600, whose tools it drives, and everyone credited in [`docs/sources.md`](docs/sources.md) and in the editors' own help.
+VCSIDE stands on the work of the Atari 2600 community: the authors of DASM, batari Basic, Stella and Gopher2600, whose tools it drives, and everyone credited in [`docs/sources.md`](docs/sources.md) and in the editors' own help. Thanks to every one of these people and teams for their contribution to the community.
 
 Thanks to Stephen Illingworth, author of [Gopher2600](https://github.com/JetSetIlly/Gopher2600), for his support and his feedback on VCSIDE.

@@ -6,6 +6,8 @@ Each JSON file has a top-level `sources` array (`id`, `title`, `author`, `url`, 
 
 ## Sources and licences
 
+Thanks to every person and team below for what they have given the Atari 2600 community: this knowledge base is built on their work.
+
 | id | Source | URL | Licence / status |
 |---|---|---|---|
 | `stella-guide` | *Stella Programmer's Guide*, Steve Wright, 12/03/1979 (text reconstructed by Charles Sinnett, 1993) | https://atarihq.com/danb/files/stella.pdf | 1979 document freely distributed by the community. The copyright (Atari) is not clarified: only facts were taken. |

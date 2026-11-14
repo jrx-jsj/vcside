@@ -77,7 +77,7 @@ AboutInfo aboutInfo(const KnowledgeBase& kb, Toolchain& tools) {
   }
 
   AboutSection sourcesSection{T("Sources of the knowledge base"),
-                   T("Facts are cited, not copied: the texts are VCSIDE's own. Details in docs/sources.md."), {}};
+                   T("Thanks to every person and team listed for their work for the community. Facts are cited, not copied: the texts are VCSIDE's own. Details in docs/sources.md."), {}};
   std::vector<const Source*> list;
   for (auto& [id, source] : kb.sources()) list.push_back(&source);
   std::sort(list.begin(), list.end(), [](auto* left, auto* right) { return naturalLess(left->title, right->title); });
