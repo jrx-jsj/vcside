@@ -7,4 +7,4 @@ set -e
 DIR=${1:-build-windows}
 cmake -S . -B "$DIR" -G Ninja -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_TOOLCHAIN_FILE=tools/docker/mingw-w64.cmake -DVCSIDE_VENDORED_SDL=ON
-cmake --build "$DIR"
+cmake --build "$DIR" -j "${BUILD_JOBS:-4}"  # more jobs run Docker out of memory

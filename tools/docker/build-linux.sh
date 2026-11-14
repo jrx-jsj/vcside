@@ -7,5 +7,5 @@ set -e
 DIR=${1:-build-linux}
 [ $# -gt 0 ] && shift
 cmake -S . -B "$DIR" -G Ninja -DCMAKE_BUILD_TYPE=Release "$@"
-cmake --build "$DIR"
+cmake --build "$DIR" -j "${BUILD_JOBS:-4}"  # more jobs run Docker out of memory
 "./$DIR/vcside_tests"
