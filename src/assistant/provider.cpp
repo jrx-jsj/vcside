@@ -206,8 +206,10 @@ void parseOpenAiStreamData(const std::string& data, std::vector<Event>& events, 
     if (tools && choice.contains("delta") && choice["delta"].is_object() && choice["delta"].contains("tool_calls")) tools->addOpenAi(choice["delta"]["tool_calls"]);
     if (tools && choice.contains("finish_reason") && choice["finish_reason"].is_string() && choice["finish_reason"].get<std::string>() != "length") tools->finish(events);  // the calls are whole
     if (choice.contains("delta") && choice["delta"].is_object()) {
-      const json& content = choice["delta"]["content"];
-      if (content.is_string() && !content.get<std::string>().empty()) events.push_back({Event::Text, content.get<std::string>(), 0, 0});
+      // find, not [] (on a const json, [] with a missing key is undefined: a delta may be {})
+      auto content = choice["delta"].find("content");
+      if (content != choice["delta"].end() && content->is_string() && !content->get<std::string>().empty())
+        events.push_back({Event::Text, content->get<std::string>(), 0, 0});
     }
   }
   if (value.contains("usage") && value["usage"].is_object()) {

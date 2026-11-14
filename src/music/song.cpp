@@ -233,8 +233,9 @@ static bool parseCell(const std::string& text, Cell* cell) {
   if (text.size() >= 9 && text.compare(7, 2, "..") != 0) {
     char letter = text[7];
     if (letter != kEffectVolume && letter != kEffectRelease) return false;
+    std::string digit = text.substr(8, 1);  // kept alive: end points into it
     char* end = nullptr;
-    long value = std::strtol(text.substr(8, 1).c_str(), &end, 16);
+    long value = std::strtol(digit.c_str(), &end, 16);
     if (!end || *end) return false;
     cell->effect = letter, cell->effectValue = (int)value;
   }
