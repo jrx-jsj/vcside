@@ -41,6 +41,7 @@ int findWord(const std::vector<std::string>& wordList, const char* name) {
 
 void AddressMap::load(const std::string& listing, const SymbolLookup& lookup, long bankSize) {
   lines_.clear();
+  reserved_.clear();
   bankSize_ = bankSize > 0 ? bankSize : 4096;
   std::istringstream stream(listing);
   std::string text, file, seg;
@@ -113,7 +114,19 @@ void AddressMap::load(const std::string& listing, const SymbolLookup& lookup, lo
       if (auto value = evalExpr(wordList[i + 1], lookup)) delta = *value - phys;
     }
     if (findWord(wordList, "REND") >= 0) delta = 0;
-    if (uninit || bytes == 0) continue;
+    if (uninit) {
+      // a variable in RAM (or any space reserved with DS in SEG.U): DASM lists its first
+      // bytes as 00 (and an equate's value too, which reserves nothing), so its size comes
+      // from DS when it can be worked out, else from what is listed
+      int ds = findWord(wordList, "DS") >= 0 ? findWord(wordList, "DS") : findWord(wordList, "DS.B");
+      if (ds < 0) continue;
+      int size = bytes;
+      if (ds + 1 < (int)wordList.size())
+        if (auto value = evalExpr(wordList[ds + 1], lookup); value && *value > 0 && *value < 65536) size = (int)*value;
+      if (size > 0) reserved_.push_back({file, line, phys, phys + delta, size, rest});
+      continue;
+    }
+    if (bytes == 0) continue;
     if (!lines_.empty() && truncatedLast && phys > lines_.back().phys) lines_.back().bytes = (int)(phys - lines_.back().phys);
     lines_.push_back({file, line, phys, phys + delta, bytes, rest});
     truncatedLast = truncated;
@@ -139,11 +152,20 @@ void AddressMap::remap(const std::string& file, const std::vector<int>& lineMap,
     kept.push_back(listed);
   }
   lines_ = std::move(kept);
+  std::vector<ListedLine> keptReserved;
+  for (auto& listed : reserved_) {
+    int to = listed.file == file ? (listed.line > 0 && listed.line <= (int)lineMap.size() ? lineMap[listed.line - 1] : 0) : listed.line;
+    if (to <= 0) continue;
+    if (listed.file == file) listed.file = toFile, listed.line = to;
+    keptReserved.push_back(listed);
+  }
+  reserved_ = std::move(keptReserved);
 }
 
 void AddressMap::resolveFiles(const std::function<std::string(const std::string&)>& resolve) {
   std::map<std::string, std::string> cache;
-  for (auto& listed : lines_) {
+  for (auto* list : {&lines_, &reserved_})
+  for (auto& listed : *list) {
     auto found = cache.find(listed.file);
     if (found == cache.end()) found = cache.emplace(listed.file, resolve(listed.file)).first;
     listed.file = found->second;
@@ -164,6 +186,13 @@ std::optional<Breakpoint> AddressMap::breakpointAt(const std::string& file, int 
 std::vector<const ListedLine*> AddressMap::linesIn(const std::string& file) const {
   std::vector<const ListedLine*> result;
   for (auto& listed : lines_)
+    if (listed.file == file) result.push_back(&listed);
+  return result;
+}
+
+std::vector<const ListedLine*> AddressMap::reservedIn(const std::string& file) const {
+  std::vector<const ListedLine*> result;
+  for (auto& listed : reserved_)
     if (listed.file == file) result.push_back(&listed);
   return result;
 }

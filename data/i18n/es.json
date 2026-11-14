@@ -1286,7 +1286,8 @@
     "Where saving a .vcsgfx or .vcsmusic writes what it exports (.gfx.asm, .gfx.h, music.asm, music.h), in its gfx and music folders. DASM looks for includes in them; a Makefile gets it as GENERATED_DIR. Empty: next to each file.": "Dónde escribe lo que exporta guardar un .vcsgfx o un .vcsmusic (.gfx.asm, .gfx.h, music.asm, music.h), en sus carpetas gfx y music. DASM busca ahí los include; un Makefile lo recibe como GENERATED_DIR. Vacío: junto a cada archivo.",
     "(next to each file)": "(junto a cada archivo)",
     "Where the build leaves what it writes: a Makefile gets it as BUILD_DIR, and batari Basic's files are moved there. Empty: the ROM's folder.": "Dónde deja la compilación lo que escribe: un Makefile lo recibe como BUILD_DIR, y los archivos de batari Basic se mueven ahí. Vacío: la carpeta de la ROM.",
-    "(the ROM's folder)": "(la carpeta de la ROM)"
+    "(the ROM's folder)": "(la carpeta de la ROM)",
+    "{0} bytes reserved (SEG.U): nothing in the ROM file": "{0} bytes reservados (SEG.U): nada en el archivo de la ROM"
   },
   "total": 1171
 }

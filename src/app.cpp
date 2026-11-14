@@ -980,6 +980,7 @@ std::string App::addressColumn(const std::string& path, int line) {
     file = addressColumns_.emplace(path, std::map<int, const ListedLine*>{}).first;
     for (const ListedLine* listed : addresses_.linesIn(path))
       if (listed->bytes > 0) file->second.emplace(listed->line - 1, listed);
+    for (const ListedLine* listed : addresses_.reservedIn(path)) file->second.emplace(listed->line - 1, listed);  // RAM variables
   }
   auto found = file->second.find(line);
   if (found == file->second.end()) return {};
@@ -1024,6 +1025,13 @@ std::string App::addressInfo(const std::string& path, int line) const {
     info += where + "\n";
     info += "  " + F("{0} bytes, at {1} in the ROM file", {std::to_string(listed->bytes), hexAddress(addresses_.romOffset(*listed))}) + "\n";
     if ((last >> 8) != (listed->cpu >> 8)) info += "  " + F("Crosses into page {0}.", {hexAddress(last & ~0xFFL)}) + "\n";
+  }
+  for (const ListedLine* listed : addresses_.reservedIn(path)) {
+    if (listed->line != line + 1 || shown) continue;
+    shown++;
+    std::string where = hexAddress(listed->cpu);
+    if (listed->bytes > 1) where += "-" + hexAddress(listed->cpu + listed->bytes - 1);
+    info += where + "\n  " + F("{0} bytes reserved (SEG.U): nothing in the ROM file", {std::to_string(listed->bytes)}) + "\n";
   }
   if (!shown) return T("No bytes for this line in the last build.");
   info.pop_back();

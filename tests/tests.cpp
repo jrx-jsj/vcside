@@ -447,6 +447,28 @@ static void testDebugMap() {
   AddressMap map;
   map.load(listing, [](const std::string&) -> std::optional<int> { return std::nullopt; }, 4096);
   CHECK(map.banks() == 2);
+  {  // RAM variables (DS in SEG.U, as DASM 2.20 lists them): their address and size, apart from
+     // the ROM's lines; an equate in the segment reserves nothing
+    const std::string ramListing =
+        "------- FILE main.asm LEVEL 1 PASS 1\n"
+        "      2 U0000 ????\t\t\t\t      SEG.U\tVars\n"
+        "      3 U0080\t\t\t\t\t      ORG\t$80\n"
+        "      4 U0080\t\t       00\t   System     ds\t1\n"
+        "      5 U0081\t\t       00 00 00 00 Buf\t      ds\t4\n"
+        "      6 U0085\t\t       00 00 00 00*Big\t      ds\t12\n"
+        "      7 U0085\t\t       00 03\t   SIZE       =\t3\n"
+        "      8 U0091\t\t       00 00 00    Tbl\t      ds\tSIZE\n"
+        "      9  0000 ????\t\t\t\t      SEG\tCode\n"
+        "     10  f000\t\t\t\t\t      ORG\t$F000\n"
+        "     11  f000\t\t       a5 80\t\t      lda\tSystem\n";
+    AddressMap ramMap;
+    ramMap.load(ramListing, [](const std::string&) -> std::optional<int> { return std::nullopt; }, 4096);
+    auto reserved = ramMap.reservedIn("main.asm");
+    CHECK(reserved.size() == 4 && ramMap.linesIn("main.asm").size() == 1);
+    CHECK(reserved[0]->line == 4 && reserved[0]->cpu == 0x80 && reserved[0]->bytes == 1);
+    CHECK(reserved[1]->cpu == 0x81 && reserved[1]->bytes == 4 && reserved[2]->cpu == 0x85 && reserved[2]->bytes == 12);
+    CHECK(reserved[3]->line == 8 && reserved[3]->cpu == 0x91 && reserved[3]->bytes == 3);  // SIZE unknown here: the bytes listed
+  }
   auto isCode = [](const ListedLine& listedLine) { return listedLine.source.find("ds") == std::string::npos; };
   auto breakpoint = map.breakpointAt("main.asm", 12, isCode);
   CHECK(breakpoint && breakpoint->cpu == 0xF000 && breakpoint->bank == 0);

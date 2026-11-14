@@ -51,13 +51,16 @@ class AddressMap {
                                          const std::function<bool(const ListedLine&)>& isCode) const;
   // Listed lines of a source file, in the order they were assembled.
   std::vector<const ListedLine*> linesIn(const std::string& file) const;
+  // Lines of a source file that reserve space in an uninitialised segment (SEG.U), such as
+  // the RAM variables (Frame ds 1): their address and size, with nothing in the ROM.
+  std::vector<const ListedLine*> reservedIn(const std::string& file) const;
   // Where a listed line is in the ROM file.
   long romOffset(const ListedLine& listed) const { return listed.phys - base_; }
   // Listed lines whose code starts at a CPU address (one per bank where it exists).
   std::vector<const ListedLine*> linesAt(long cpu, int bank = -1) const;
 
  private:
-  std::vector<ListedLine> lines_;
+  std::vector<ListedLine> lines_, reserved_;
   long base_ = 0, bankSize_ = 4096;
   int banks_ = 1;
 };
