@@ -460,6 +460,8 @@ static void testDebugMap() {
         "      8 U0091\t\t       00 00 00    Tbl\t      ds\tSIZE\n"
         "      9 U0094\t\t\t\t   Shared\n"
         "     10 U0094\t\t       00 00\t   Title      ds\t2\n"
+        "     11 U0096\t\t\t\t  -\t      ELSE\n"
+        "     11 U0096\t\t\t\t  -Unused     ds\t1\n"
         "     11 U0096\t\t\t\t\t      ENDIF\n"
         "     12 U0094\t\t\t\t\t      ORG\tShared\n"
         "     13 U0094\t\t       00\t   Enemy      ds\t1\n"
@@ -472,7 +474,7 @@ static void testDebugMap() {
     std::vector<const ListedLine*> reserved, markers;  // variables; labels and ORGs (no bytes)
     for (auto* listed : listedRam) (listed->bytes > 0 ? reserved : markers).push_back(listed);
     CHECK(reserved.size() == 6 && ramMap.linesIn("main.asm").size() == 1);
-    // ORG $80, the label Shared and ORG Shared, back over Title (ENDIF is no label)
+    // ORG $80, the label Shared and ORG Shared, back over Title (ENDIF is no label; Unused, in the branch not taken, is skipped)
     CHECK(markers.size() == 3 && markers[0]->line == 3 && markers[0]->cpu == 0x80);
     CHECK(markers[1]->line == 9 && markers[1]->cpu == 0x94 && markers[2]->line == 12 && markers[2]->cpu == 0x94);
     CHECK(reserved[4]->cpu == 0x94 && reserved[4]->bytes == 2 && reserved[5]->line == 13 && reserved[5]->cpu == 0x94);

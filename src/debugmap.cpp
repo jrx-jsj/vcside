@@ -117,6 +117,8 @@ void AddressMap::load(const std::string& listing, const SymbolLookup& lookup, lo
     }
     if (findWord(wordList, "REND") >= 0) delta = 0;
     if (uninit) {
+      // DASM marks a line of an IF branch not taken with '-' before its source: it defines nothing
+      if (!wordList.empty() && wordList[0][0] == '-') continue;
       // a variable in RAM (or any space reserved with DS in SEG.U): DASM lists its first
       // bytes as 00 (and an equate's value too, which reserves nothing), so its size comes
       // from DS when it can be worked out, else from what is listed
