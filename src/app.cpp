@@ -20,6 +20,7 @@
 #include "doc_markdown.h"
 #include "file_icons.h"
 #include "cycles.h"
+#include "c_syntax.h"
 #include "window_icon.h"
 #include "emulator_launch.h"
 #include "i18n.h"
@@ -391,7 +392,7 @@ OpenFile* App::openFile(const std::string& pathIn, int line) {
   newFile->editor.setFoldSyntax(cLike ? FoldSyntax::C : ext == ".bas" ? FoldSyntax::Basic : newFile->asmSyntax ? FoldSyntax::Asm : FoldSyntax::None);
   newFile->editor.setDefaultIndent(IndentStyle{true, 4});  // tabs, as the templates
   {
-    EditorHooks editorHooks = newFile->asmSyntax ? asmHooks() : ext == ".bas" ? basicHooks() : EditorHooks{};
+    EditorHooks editorHooks = newFile->asmSyntax ? asmHooks() : ext == ".bas" ? basicHooks() : cLike ? cHooks() : EditorHooks{};
     OpenFile* self = newFile.get();
     // the files a line names (include, incbin, #include...)
     editorHooks.hasFile = [this, self](const std::string& name) { return !linkedFile(name, self->path).empty(); };
@@ -1522,7 +1523,7 @@ std::vector<Token> App::tokenizeAsm(const std::string& text) const {
 
 EditorHooks App::asmHooks() {
   EditorHooks editorHooks;
-  editorHooks.tokenize = [this](const std::string& lineText) { return tokenizeAsm(lineText); };
+  editorHooks.tokenize = [this](const std::string& lineText, int) { return tokenizeAsm(lineText); };
   editorHooks.gutter = [this](int, const std::string& lineText) -> std::string {
     LineCycles cycles = countLine(kb_, lineText, [this](const std::string& result) { return lookupSymbol(result); });
     if (!cycles.isCode) return {};
@@ -1614,10 +1615,22 @@ std::string App::registerHelp(const Register& reg) const {
   return result;
 }
 
+// C and C++: keywords, types, the preprocessor and comments, and the registers vcsLib writes.
+EditorHooks App::cHooks() {
+  EditorHooks editorHooks;
+  editorHooks.tokenize = [this](const std::string& lineText, int startState) { return tokenizeC(kb_, lineText, startState); };
+  editorHooks.lineEndState = cLineEndState;
+  editorHooks.hover = [this](const std::string& word, const std::string&) -> std::string {
+    if (const Register* registerEntry = kb_.reg(word)) return registerHelp(*registerEntry);
+    return {};
+  };
+  return editorHooks;
+}
+
 // batari Basic: its keywords and variables, the registers, and the labels of the file.
 EditorHooks App::basicHooks() {
   EditorHooks editorHooks;
-  editorHooks.tokenize = [this](const std::string& lineText) { return tokenizeBasic(kb_, lineText); };
+  editorHooks.tokenize = [this](const std::string& lineText, int) { return tokenizeBasic(kb_, lineText); };
   editorHooks.hover = [this](const std::string& word, const std::string& line) -> std::string {
     std::string keywordName = word;
     size_t colonPos = line.find(word);

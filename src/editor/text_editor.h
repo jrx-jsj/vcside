@@ -31,7 +31,10 @@ struct Completion {
 
 struct EditorHooks {
   // Colours one line.
-  std::function<std::vector<Token>(const std::string&)> tokenize;
+  // The int is the state the line starts in (0 unless lineEndState is set).
+  std::function<std::vector<Token>(const std::string&, int)> tokenize;
+  // For a language whose lines carry state (C's /* */ comments): the state at the end of a line, from the state at its start.
+  std::function<int(const std::string&, int)> lineEndState;
   // Text shown in the gutter for a line (e.g. "3" or "4/5" cycles); empty = nothing.
   std::function<std::string(int line, const std::string&)> gutter;
   // Tooltip over the gutter's cycle column for a line (e.g. where its bytes are); empty = none.

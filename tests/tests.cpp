@@ -16,6 +16,7 @@
 #include "space.h"
 #include "debugmap.h"
 #include "basic_syntax.h"
+#include "c_syntax.h"
 #include "elf_space.h"
 #include "pluscart_server.h"
 #include "emulator_launch.h"
@@ -1688,6 +1689,39 @@ static void testBasicSyntax(const KnowledgeBase& kb) {
   CHECK(tokens.size() == 3 && tokens[0].second == K::Register && tokens[1].second == K::Register);
   tokens = kinds(" set romsize 8kSC");
   CHECK(tokens.size() == 3 && tokens[0].second == K::Directive && tokens[1].second == K::Directive);
+}
+
+static void testCSyntax(const KnowledgeBase& kb) {
+  using K = TokenKind;
+  auto kinds = [&](const std::string& line, int startState = CLineCode) {
+    std::vector<std::pair<std::string, TokenKind>> result;
+    for (auto& token : tokenizeC(kb, line, startState)) result.push_back({line.substr(token.start, token.end - token.start), token.kind});
+    return result;
+  };
+  auto tokens = kinds("#include <stdint.h>");
+  CHECK(tokens.size() == 2 && tokens[0].first == "#include" && tokens[0].second == K::Directive && tokens[1].first == "<stdint.h>" && tokens[1].second == K::String);
+  tokens = kinds("# define LINES 192 // NTSC");
+  CHECK(tokens.size() == 4 && tokens[0].first == "# define" && tokens[1].first == "LINES" && tokens[1].second == K::Symbol &&
+        tokens[2].second == K::Number && tokens[3].first == "// NTSC" && tokens[3].second == K::Comment);
+  tokens = kinds("static const uint8_t colours[] = {0x84, 'a', '\\''};");
+  CHECK(tokens.size() == 6 && tokens[0].second == K::Directive && tokens[2].first == "uint8_t" && tokens[2].second == K::Directive &&
+        tokens[3].first == "0x84" && tokens[3].second == K::Number && tokens[4].second == K::String && tokens[5].first == "'\\''");  // colours stays plain
+  tokens = kinds("\tif (frame) vcsWrite5(COLUBK, colour); /* blue */ return;");
+  CHECK(tokens.size() == 5 && tokens[0].second == K::Mnemonic && tokens[1].first == "vcsWrite5" && tokens[1].second == K::Label &&
+        tokens[2].first == "COLUBK" && tokens[2].second == K::Register && tokens[3].second == K::Comment && tokens[4].second == K::Mnemonic);
+  tokens = kinds("char* text = \"a // b /* c\"; // d");
+  CHECK(tokens.size() == 3 && tokens[1].first == "\"a // b /* c\"" && tokens[1].second == K::String && tokens[2].first == "// d");
+  tokens = kinds("uint8_t swcha = SWCHA;");
+  CHECK(tokens.size() == 2 && tokens[1].first == "SWCHA" && tokens[1].second == K::Register);
+  // a /* */ comment over several lines
+  CHECK(cLineEndState("int x; /* starts", CLineCode) == CLineBlockComment);
+  CHECK(cLineEndState("still inside", CLineBlockComment) == CLineBlockComment);
+  CHECK(cLineEndState("ends */ int y; // /* not a start", CLineBlockComment) == CLineCode);
+  CHECK(cLineEndState("char* s = \"/*\";", CLineCode) == CLineCode);
+  tokens = kinds("still inside", CLineBlockComment);
+  CHECK(tokens.size() == 1 && tokens[0].second == K::Comment);
+  tokens = kinds("ends */ return 0;", CLineBlockComment);
+  CHECK(tokens.size() == 3 && tokens[0].first == "ends */" && tokens[0].second == K::Comment && tokens[1].second == K::Mnemonic && tokens[2].second == K::Number);
 }
 
 static void testBasic() {
@@ -5732,6 +5766,7 @@ int main() {
   testTiaTrackerImport();
   testBasic();
   testBasicSyntax(kb);
+  testCSyntax(kb);
   testFormatOrder(kb);
   testGfx();
   testFolding();

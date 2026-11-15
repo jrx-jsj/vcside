@@ -1114,6 +1114,17 @@ bool TextEditor::render(const char* id, ImFont* font) {
     if (spaceCount > 0 && spaceCount < (int)lines_[lineIndex].size()) spaceUnit = spaceUnit ? std::min(spaceUnit, spaceCount) : spaceCount;
   }
   spaceUnit = spaceUnit >= 2 && spaceUnit <= 8 ? spaceUnit : 4;
+  // the state each line in sight starts in, followed from the top of the file (a quick scan, no tokens)
+  std::vector<int> lineStartStates;
+  if (hooks_.lineEndState && lastRow >= 0) {
+    int lastVisibleLine = lineAt_[lastRow];
+    lineStartStates.resize(lastVisibleLine + 1);
+    int state = 0;
+    for (int lineIndex = 0; lineIndex <= lastVisibleLine; lineIndex++) {
+      lineStartStates[lineIndex] = state;
+      state = hooks_.lineEndState(lines_[lineIndex], state);
+    }
+  }
   for (int row = firstRow; row <= lastRow; row++) {
     int lineIndex = lineAt_[row];
     float y = origin.y + row * lineH_;
@@ -1154,7 +1165,8 @@ bool TextEditor::render(const char* id, ImFont* font) {
     }
     // text
     const std::string& lineText = lines_[lineIndex];
-    std::vector<Token> tokens = hooks_.tokenize ? hooks_.tokenize(lineText) : std::vector<Token>{};
+    int startState = lineIndex < (int)lineStartStates.size() ? lineStartStates[lineIndex] : 0;
+    std::vector<Token> tokens = hooks_.tokenize ? hooks_.tokenize(lineText, startState) : std::vector<Token>{};
     size_t tokenIndex = 0;
     int visualColumn = 0;
     for (int byteIndex = 0; byteIndex < (int)lineText.size();) {

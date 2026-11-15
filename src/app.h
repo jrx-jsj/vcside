@@ -203,6 +203,7 @@ class App {
   // editor hooks
   EditorHooks asmHooks();
   EditorHooks basicHooks();
+  EditorHooks cHooks();
   std::string registerHelp(const Register& reg) const;
   std::vector<Token> tokenizeAsm(const std::string& line) const;
   std::optional<int> lookupSymbol(const std::string& name) const;
