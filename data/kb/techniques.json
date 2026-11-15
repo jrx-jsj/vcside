@@ -746,6 +746,259 @@
   "verified": false,
   "example": "        lda #$80\n        sta VBLANK         ; discharge (leave it a few lines, earlier in the frame)\n        lda #0\n        sta VBLANK         ; charging starts\n        ldx #0\n.Count  sta WSYNC\n        lda INPT0\n        bmi .Done          ; bit 7 = 1: charged\n        inx\n        bne .Count\n.Done   stx Paddle0        ; the position",
   "note": "The routine was written for this entry from the register descriptions, not run on hardware."
+ },
+ {
+  "id": "7800-display-list",
+  "title": "Draw on the Atari 7800: a DLL, display lists and graphics for MARIA",
+  "keywords": [
+   "7800",
+   "maria",
+   "dll",
+   "display list",
+   "zone",
+   "dpph",
+   "dppl",
+   "header",
+   "160a",
+   "sprite",
+   "object",
+   "graphics",
+   "ctrl"
+  ],
+  "summary": "MARIA follows a display list list (DLL) of zones; each zone points to a display list of objects (4- or 5-byte headers) whose graphics bytes it reads into a line buffer, one zone line at a time.",
+  "steps": [
+   "Pick the mode in CTRL bits 1-0 (00 = 160A/160B). In 160A a byte is 4 pixels of 2 bits; 0 is transparent and 1-3 are the colours of the object's palette (P0C1-P7C3).",
+   "Write the display lists in RAM. A 4-byte header is: graphics address low, palette in bits 7-5 with the width in bits 4-0 as the two's complement of the byte count (-n & $1F, 1-31 bytes), graphics address high, horizontal position (0-255, in 160-mode pixels). A 5-byte header puts $40 in byte 1 ($C0 for 160B/320B write mode), the address high in byte 2, palette/width in byte 3 (0 = 32 bytes) and the position in byte 4. Two zero bytes end the list (a header whose byte 1 is 0).",
+   "Write the DLL: one 3-byte entry per zone: bits 3-0 = lines in the zone - 1 (1 to 16 lines; bit 7 = DLI, bits 6-5 = holey DMA, keep them 0 on a Chameleon), then the display list's address, high byte first. Cover every line MARIA reads (243 in NTSC, 293 in PAL in Test7800), padding with zones whose list is empty.",
+   "Lay the graphics out by zone line: on each line MARIA reads the object's bytes at (address high + offset) * 256 + address low, where offset counts down from the zone's height - 1 on its first line to 0 on its last. A zone of height 1 reads the same bytes on every line.",
+   "Point DPPH/DPPL at the DLL, set BACKGRND and the palettes, and turn DMA on with CTRL = $40 at the start of a VBLANK (MSTAT bit 7 just became 1).",
+   "Budget the DMA: per line about 426 MARIA cycles, 16 to start, 8 or 10 per header and 3 per graphics byte (24 to start the last line of a zone). The 6502 stops while DMA runs."
+  ],
+  "related": [
+   "CTRL",
+   "DPPH",
+   "DPPL",
+   "MSTAT",
+   "BACKGRND",
+   "P0C1",
+   "CHARBASE"
+  ],
+  "sources": [
+   "7800-software-guide",
+   "7800-devtools",
+   "test7800-src"
+  ],
+  "verified": true,
+  "example": "; a zone of 1 line with two 20-byte objects (160 pixels of 160A) at $1000 and $1014\nDL:   .byte $00, $00|(-20 & $1F), $10, 0     ; low, palette 0 + width 20, high, x = 0\n      .byte $14, $00|(-20 & $1F), $10, 80    ; next 80 pixels\n      .byte 0, 0                              ; end\nDLL:  .byte $00, >DL, <DL                     ; height 1 (offset 0)",
+  "note": "Header and DLL layouts were checked against Test7800's MARIA; the example's addresses are only an illustration (on a Chameleon, see 7800-elf-serve-graphics for which addresses the cartridge can serve)."
+ },
+ {
+  "id": "7800-elf-start",
+  "title": "Start a 7800 game from an ELF on the Chameleon Cart",
+  "keywords": [
+   "7800",
+   "chameleon",
+   "elf",
+   "start",
+   "boot",
+   "inptctrl",
+   "mp_system_type",
+   "st_ntsc_7800",
+   "st_pal_7800",
+   "vcsjmptoram3",
+   "vcswrite6",
+   "dual",
+   "maria"
+  ],
+  "summary": "The Chameleon's firmware boots the 7800 and calls elf_main with args[MP_SYSTEM_TYPE] = ST_NTSC_7800 (3) or ST_PAL_7800 (4). The ARM then feeds the 6502 instructions, as on a 2600, to fill the console's RAM, and parks it in a loop in RAM.",
+  "steps": [
+   "Read args[MP_SYSTEM_TYPE]: 3 or 4 means a 7800 in MARIA mode with INPTCTRL already locked; 0-2 means a 2600 (or a 7800 in 2600 mode). Choose the renderer from it.",
+   "Mark the ELF as a 7800 game for firmwares that look for it: a byte in a section named .elf7800 (and .elf2600 if it also runs on a 2600), as in Zack's elf7800 branch; without either, that firmware locks the console in 2600 mode.",
+   "vcsJmp3() first; then turn DMA off (vcsWrite5(CTRL, $60)) while the lists are written.",
+   "Write the DLL, the display lists, the 6502's own loop and anything else that lives in RAM with vcsWrite6(address, value) (lda #/sta abs): vcsSta3/vcsSta4 reach only the zero page. Call vcsJmp3() every few dozen writes so the 6502's fetches stay below $1800, where its RAM starts (it fetches at $1000 + n).",
+   "Keep the RAM layout away from the cartridge's 13-bit view: nothing MARIA or the 6502 reads may equal (mod $2000) an address the ARM waits for, and nothing in $1800-$1FFF (A12 high looks like the cartridge).",
+   "Set DPPH/DPPL and the colours, wait for MSTAT bit 7 to go 0 -> 1 (vcsRead4(MSTAT) with vcsJmp3 between reads), write CTRL ($40: DMA on, 160A), then vcsJmpToRam3(loop) to send the 6502 into its loop in RAM. From then on the ARM only serves and snoops bus cycles."
+  ],
+  "related": [
+   "INPTCTRL",
+   "CTRL",
+   "MSTAT",
+   "DPPH",
+   "DPPL"
+  ],
+  "sources": [
+   "chameleon-elf-template",
+   "uca-elf7800",
+   "test7800-src",
+   "test7800-measured"
+  ],
+  "verified": false,
+  "example": "int is7800 = args[MP_SYSTEM_TYPE] == ST_NTSC_7800 || args[MP_SYSTEM_TYPE] == ST_PAL_7800;\nif (is7800) run7800(args); else run2600(args);",
+  "note": "Checked in Test7800 only. The released Chameleon firmware is not public: the .elf7800 mark, the locked INPTCTRL and vcsJmp3's target come from Zack's work-in-progress branch."
+ },
+ {
+  "id": "7800-elf-serve-graphics",
+  "title": "Feed MARIA's DMA from the ARM (vcsInjectDmaData)",
+  "keywords": [
+   "7800",
+   "maria",
+   "dma",
+   "vcsinjectdmadata",
+   "vcswaitforaddress",
+   "elf",
+   "chameleon",
+   "serve",
+   "graphics",
+   "framebuffer",
+   "line",
+   "inject"
+  ],
+  "summary": "Point an object's graphics at an address in the cartridge's space; the ARM answers MARIA's reads there as they happen with vcsInjectDmaData, one call per run of consecutive reads, and finds the start of each frame with vcsWaitForAddress on the DLL.",
+  "steps": [
+   "Give each served object an address with A12 set that nothing else touches modulo $2000 (for example $5000-$5FFF, which the cartridge sees as $1000-$1FFF). The firmware lets go of the data bus when A12 goes low after the run.",
+   "Use zones of height 1 and the same display list on every line: then each line reads the same addresses, and the ARM can serve line n by calling vcsInjectDmaData(address & $1FFF, count, lineBuffer) again.",
+   "One call per run: between two objects MARIA reads the next header from RAM, so two 20-byte objects need two calls even if their graphics are contiguous. A call that spanned the header would drive the bus while the RAM answers.",
+   "Count the frame: after the last served line, call vcsWaitForAddress on an address MARIA reads once per frame (its first DLL entry, & $1FFF), then serve the lines again. Counting lines alone drifts by one line.",
+   "In Test7800, the first vcsInjectDmaData or vcsSnoopRead only ends byte streaming and serves nothing; make one throw-away call before the first frame, and do not call vcsWaitForAddress while streaming is on (it hangs).",
+   "The ARM does nothing else while it serves: game logic goes in VBLANK and in lines without served objects. On a 64 MHz Chameleon one 7800 line is about 4,000 ARM cycles."
+  ],
+  "related": [
+   "DPPH",
+   "CTRL",
+   "MSTAT"
+  ],
+  "sources": [
+   "uca-elf7800",
+   "test7800-src",
+   "test7800-measured"
+  ],
+  "verified": false,
+  "example": "for (int line = 0; line < 192; line++) {\n  vcsInjectDmaData(0x1000, 20, pixels[line]);       /* object 1: bytes 0-19 */\n  vcsInjectDmaData(0x1014, 20, pixels[line] + 20);  /* object 2: bytes 20-39 */\n}\nvcsWaitForAddress(DLL & 0x1FFF);                    /* the next frame starts */",
+  "note": "Test7800 serves the bytes instantly; whether the Chameleon's ARM keeps up with MARIA (a header is about 10 MARIA cycles, some 180 ARM cycles) is only known on the cartridge."
+ },
+ {
+  "id": "7800-read-controllers",
+  "title": "Read the 7800 joystick, its two buttons and PAUSE from an ELF",
+  "keywords": [
+   "7800",
+   "joystick",
+   "two button",
+   "fire",
+   "button",
+   "pause",
+   "swcha",
+   "swchb",
+   "inpt0",
+   "inpt1",
+   "inpt4",
+   "vcssnoopread",
+   "controller",
+   "proline"
+  ],
+  "summary": "The 6502's loop in RAM reads SWCHA, SWCHB and the INPT registers; the ARM sees the values on the bus with vcsSnoopRead, in the same order. Two-button mode is enabled by driving SWCHB bit 2 low as an output.",
+  "steps": [
+   "Directions: SWCHA as on the 2600 (bits 7-4 left port: right, left, down, up; 0 = pushed).",
+   "Two buttons (7800 joystick): make SWCHB bit 2 (bit 4 for the right port) an output at 0, once, from the 6502 (write SWBCNT $0283 and SWCHB $0282). Then the left port's right button reads in INPT0 and its left button in INPT1, bit 7 = 1 while pressed (the opposite of INPT4). A 2600 joystick's single button still reads in INPT4 (bit 7 = 0 pressed); accept either.",
+   "PAUSE: SWCHB bit 3 reads 0 while the 7800's PAUSE button is held; toggle pause when it goes from 1 to 0. RESET (bit 0) and SELECT (bit 1) are as on the 2600; bits 6 and 7 are the difficulty switches.",
+   "From the ARM: have the RAM loop read the registers once a frame, in VBLANK, in a fixed order (lda SWCHA, lda SWCHB, lda INPT4, lda INPT0, lda INPT1) and call vcsSnoopRead with the same addresses in the same order. A snoop of an address the loop has already passed waits for the next frame.",
+   "vcsSnoopRead(SWCHA) also wakes up on a write to $0280 and on any read that aliases it modulo $2000 (for example MARIA reading $2280): keep display lists and graphics off such addresses."
+  ],
+  "related": [
+   "SWCHA",
+   "SWCHB",
+   "INPT0",
+   "INPT1",
+   "INPT4"
+  ],
+  "sources": [
+   "7800-8bitdev-wiki",
+   "7800-software-guide",
+   "test7800-src",
+   "test7800-measured"
+  ],
+  "verified": false,
+  "example": "uint8_t swcha = vcsSnoopRead(0x0280), swchb = vcsSnoopRead(0x0282);\nuint8_t inpt4 = vcsSnoopRead(0x000C), inpt1 = vcsSnoopRead(0x0009);\nint fire = !(inpt4 & 0x80) || (inpt1 & 0x80);",
+  "note": "Checked in Test7800 (space or Z = main button, X or B = second, F3 = PAUSE). On hardware, Atari's guide warns that driving SWCHB bit 2 with a 2600 joystick plugged in is harmless; a Genesis pad needs other handling."
+ },
+ {
+  "id": "7800-tia-sound",
+  "title": "Play TIA sound and music on the 7800 from an ELF",
+  "keywords": [
+   "7800",
+   "sound",
+   "music",
+   "tia",
+   "audc",
+   "audf",
+   "audv",
+   "elf",
+   "chameleon",
+   "pokey",
+   "shared"
+  ],
+  "summary": "The 7800 has the TIA's two sound channels, clocked as on a 2600, and a Chameleon game has no POKEY: the same music engine and tables serve both consoles. The ARM serves the register values and the 6502's loop in RAM copies them to the TIA.",
+  "steps": [
+   "Run the music engine once a frame on the ARM, as for the 2600, producing AUDC0/1, AUDF0/1 and AUDV0/1.",
+   "In the 6502's RAM loop, in VBLANK, read six bytes from a served address range (lda $5Fx0... / sta AUDC0...) and serve them from the ARM with one vcsInjectDmaData(address, 1, &value) per read (the 6502's own code is read from RAM between them).",
+   "For sampled sound, serve one AUDV0 sample per line as well (the loop reads it after MARIA's DMA on each line), at about 15.7 kHz in NTSC.",
+   "A frame-rate player runs at 60 Hz on NTSC and 50 Hz on PAL consoles on both machines; the frequencies need no change because the TIA's clock is the same."
+  ],
+  "related": [
+   "AUDC0",
+   "AUDF0",
+   "AUDV0"
+  ],
+  "sources": [
+   "7800-software-guide",
+   "7800-8bitdev-wiki",
+   "test7800-measured"
+  ],
+  "verified": false,
+  "example": "",
+  "note": "Pitch equality between a 2600 and a 7800 is from the clock design; listened to only in emulators."
+ },
+ {
+  "id": "7800-dual-elf",
+  "title": "One ELF for both the Atari 2600 and the 7800 (Chameleon Cart)",
+  "keywords": [
+   "7800",
+   "2600",
+   "dual",
+   "both",
+   "chameleon",
+   "elf",
+   "mp_system_type",
+   "maria",
+   "tia",
+   "kernel",
+   "renderer",
+   "template"
+  ],
+  "summary": "Keep the game's rules, data and music in plain C, and write two screens: a TIA kernel fed through vcsLib for the 2600 and a MARIA renderer that serves display list data for the 7800. elf_main picks one from args[MP_SYSTEM_TYPE].",
+  "steps": [
+   "Split the game: the rules (positions, collisions, score) and the music produce a state each frame; neither calls vcsLib.",
+   "Write a 2600 screen: the usual overblank and kernel (vcsEndOverblank, a line loop with vcsSta3(WSYNC), vcsStartOverblank).",
+   "Write a 7800 screen: lists in RAM, a 6502 loop in RAM that copies served bytes to the TIA's sound registers once a frame and reads the controllers, and the ARM serving each line's graphics (see 7800-elf-serve-graphics).",
+   "Draw the same things on both: a 160 x 192 picture in 160A has the same pixel width as the 2600's, and colour bytes keep their meaning.",
+   "In elf_main: if args[MP_SYSTEM_TYPE] is ST_NTSC_7800 or ST_PAL_7800, run the 7800 screen; otherwise the 2600 one. Mark the ELF with both .elf2600 and .elf7800 sections.",
+   "Test the 2600 side in Stella or Gopher2600 and the 7800 side in Test7800 (-bios=false: the ELF carries no 7800 signature; the cartridge's firmware fakes one)."
+  ],
+  "related": [
+   "CTRL",
+   "DPPH",
+   "INPTCTRL",
+   "AUDV0",
+   "SWCHA"
+  ],
+  "sources": [
+   "chameleon-elf-template",
+   "uca-elf7800",
+   "test7800-src",
+   "test7800-measured"
+  ],
+  "verified": false,
+  "example": "",
+  "note": "VCSIDE's template 'Example: one game for the 2600 and the 7800' (C for ELF) follows these steps."
  }
- ]
+]
 }

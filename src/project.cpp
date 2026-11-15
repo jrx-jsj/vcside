@@ -506,8 +506,15 @@ std::vector<std::string> tvStandardsFor(Language language) {
   return result;
 }
 
-// Stella's -format and Gopher2600's -tv (checked in their -help and sources).
+const std::vector<std::string>& emulatorIds() {
+  static const std::vector<std::string> ids = {"gopher2600", "stella", "test7800"};
+  return ids;
+}
+
+// Stella's -format and Gopher2600's -tv (checked in their -help and sources); Test7800's -tv
+// is AUTO, NTSC or PAL, as 7800 consoles come.
 bool tvSupported(const std::string& emulator, const std::string& tv) {
+  if (emulator == "test7800") return tv == "NTSC" || tv == "PAL" || tv == "AUTO";
   if (tv == "NTSC" || tv == "PAL" || tv == "PAL60" || tv == "SECAM" || tv == "AUTO") return true;
   if (emulator == "stella") return tv == "NTSC50" || tv == "SECAM60";
   if (emulator == "gopher2600") return tv == "PAL-M";
@@ -541,6 +548,13 @@ std::vector<std::string> Project::runArgs(Toolchain& toolchain, bool debug, std:
     arguments.push_back(debug ? "DEBUG" : "RUN");
     if (!format.empty() && format != "AUTO") arguments.insert(arguments.end(), {"-mapping", format});
     if (!tv.empty() && tv != "AUTO" && tvSupported(emulator, tv)) arguments.insert(arguments.end(), {"-tv", tv});
+  } else if (emulator == "test7800") {
+    // running, not halted in its terminal debugger; no file dialog; no BIOS, whose signature
+    // check an ELF fails (on the Chameleon Cart the firmware answers it). Debugging shows
+    // MARIA's overlay. The project's options come after these, so they win.
+    arguments.insert(arguments.end(), {"-run", "-dialog=false", "-bios=false"});
+    if (debug) arguments.push_back("-overlay");
+    if (!tv.empty() && tv != "AUTO" && tvSupported(emulator, tv)) arguments.push_back("-tv=" + tv);
   }
   arguments.push_back(rom);
   return arguments;
@@ -767,7 +781,10 @@ std::vector<std::pair<std::string, const char*>> Project::examples(Language lang
       for (auto& entry : kBasicExamples) all.push_back({entry.id, entry.name});
     return all;
   }
-  if (language == Language::ElfC) return {{"game", N_("VCSIDE The Game")}, {"animation", N_("Example: an animated sprite")}};
+  if (language == Language::ElfC)
+    return {{"game", N_("VCSIDE The Game")},
+            {"animation", N_("Example: an animated sprite")},
+            {"dual", N_("Example: one game for the 2600 and the 7800 (Chameleon Cart)")}};
   if (language == Language::AceC)
     return {{"game", N_("VCSIDE The Game")},
             {"animation", N_("Example: an animated sprite")},
@@ -1099,7 +1116,8 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
     }
     // the ELF project's other builds, each with its glue folder: the Chameleon image and the
     // ACE file (ACE's vcsLib example is the ACE build alone)
-    const bool chameleonBuild = !ace && elfBuilds.chameleon, aceBuild = vcsLibOnAce || (!ace && elfBuilds.ace);
+    // the dual example always has the Chameleon image: it is the only cartridge that runs it on a 7800
+    const bool chameleonBuild = !ace && (elfBuilds.chameleon || example == "dual"), aceBuild = vcsLibOnAce || (!ace && elfBuilds.ace);
     std::string extraBuilds, glue;
     if (aceBuild)
       extraBuilds += " `make ace`: the same game as `build/" + projName + ".ace` (vcsLib on VCSIDE's ACE bus library in `ace/`)" +
@@ -1154,6 +1172,7 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
 }
 
 bool formatSupported(const std::string& emulator, const std::string& formatId) {
+  if (emulator == "test7800") return formatId == "ELF";  // a 7800: only an ELF game that has a 7800 side
   return !(emulator == "stella" && formatId == "ACE");
 }
 

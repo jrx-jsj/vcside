@@ -9,7 +9,7 @@
 namespace vcs {
 
 struct Tool {
-  std::string id;           // "dasm", "stella", "gopher2600", "bb", "wasmtime", "arm-gcc", "make"
+  std::string id;           // "dasm", "stella", "gopher2600", "test7800", "bb", "wasmtime", "arm-gcc", "make"
   std::string name;         // shown to the user
   std::string role;         // "assembler", "compiler", "emulator", "runtime", "build tool"
   std::string path;         // resolved executable (empty = not found)

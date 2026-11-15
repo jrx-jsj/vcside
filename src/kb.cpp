@@ -119,18 +119,20 @@ bool KnowledgeBase::load(const std::string& dir, std::string* error) {
     for (auto& opcode : opcodes_) instructions_[opcode.mnemonic].opcodes.push_back(&opcode);
   } else if (!cpuDocument.is_null()) ok = false;
 
-  for (const char* file : {"tia.json", "riot.json"}) {
+  // the chips' registers; a7800.json is MARIA's and the 7800's, as a Chameleon Cart ELF reaches them
+  for (const char* file : {"tia.json", "riot.json", "a7800.json"}) {
     json chipDocument;
     if (!readJson(dir + "/" + file, chipDocument, error)) {
       if (!chipDocument.is_null()) ok = false;
       continue;
     }
     if (std::string(file) == "tia.json") tiaNotes_ = stringList(chipDocument, "notes");
+    if (std::string(file) == "a7800.json") a7800Notes_ = stringList(chipDocument, "notes");
     readSources(chipDocument, sources_);
     std::string chip = stringValue(chipDocument, "chip");
     for (auto& registerJson : chipDocument["registers"]) {
       Register reg;
-      reg.chip = chip;
+      reg.chip = registerJson.contains("chip") ? stringValue(registerJson, "chip") : chip;  // INPTCTRL is the console's
       reg.name = stringValue(registerJson, "name");
       reg.address = stringValue(registerJson, "address");
       reg.access = stringValue(registerJson, "access");

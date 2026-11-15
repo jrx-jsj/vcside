@@ -238,6 +238,7 @@ const std::map<std::string, std::vector<std::string>>& synonyms() {
       {"linea", {"scanline", "wsync", "line"}},             {"lineas", {"scanline", "wsync", "line"}},
       {"rueda", {"vsync", "scanline", "262", "312"}},       {"rota", {"vsync", "scanline", "262", "312"}},
       {"parpadea", {"vsync", "scanline", "frame"}},         {"fotograma", {"frame", "vsync", "scanline", "262"}},
+      {"pausa", {"pause", "swchb"}},                        {"botones", {"button", "fire"}},
       {"ancho", {"nusiz0", "copies", "stretch"}},           {"ancha", {"nusiz0", "copies", "stretch"}},
       {"grande", {"nusiz0", "stretch"}},                    {"campo", {"playfield", "pf0", "pf1", "pf2", "ctrlpf"}},
       {"muro", {"pf0", "pf1", "pf2"}},                      {"pared", {"pf0", "pf1", "pf2"}},
@@ -257,7 +258,7 @@ const std::map<std::string, std::vector<std::string>>& synonyms() {
 
 struct TopicDoc {
   std::string kind, id, name, title, body;
-  int source = 0;      // 0 register, 1 format, 2 TV, 3 batari Basic, 4 TIA note, 5 6502 note, 6 how-to
+  int source = 0;      // 0 register, 1 format, 2 TV, 3 batari Basic, 4 TIA note, 5 6502 note, 6 how-to, 7 7800 note
   size_t index = 0;
   bool verified = true;
 };
@@ -292,9 +293,14 @@ std::vector<GroundedEntry> topicSearch(const KnowledgeBase& kb, const std::strin
       for (auto& extra : synonym->second) query.insert(stem(extra));
   }
   if (query.empty()) return {};
+  // the 7800's entries only answer questions about the 7800: a "tone" or a "button" is the 2600's
+  bool about7800 = false;
+  for (const char* word : {"7800", "maria", "prosystem", "inptctrl"}) about7800 = about7800 || query.count(stem(word));
+  auto is7800Technique = [](const Technique& technique) { return technique.id.rfind("7800-", 0) == 0; };
 
   std::vector<TopicDoc> docs;
   for (auto& reg : kb.registers()) {
+    if (!about7800 && (reg.chip == "MARIA" || reg.chip == "7800")) continue;
     TopicDoc doc{reg.chip + " register", reg.name, reg.name, reg.summary, reg.description + " " + reg.timing + " " + reg.bits};
     for (auto& issue : reg.issues) doc.body += " " + issue;
     doc.source = 0, doc.index = &reg - &kb.registers()[0], doc.verified = reg.verified;
@@ -330,8 +336,15 @@ std::vector<GroundedEntry> topicSearch(const KnowledgeBase& kb, const std::strin
     docs.push_back(doc);
   }
 
+  for (size_t i = 0; about7800 && i < kb.a7800Notes().size(); i++) {
+    TopicDoc doc{"7800 note", "7800-note-" + std::to_string(i + 1), "7800", kb.a7800Notes()[i], ""};
+    doc.source = 7, doc.index = i;
+    docs.push_back(doc);
+  }
+
   for (size_t i = 0; i < kb.techniques().size(); i++) {
     const Technique& technique = kb.techniques()[i];
+    if (!about7800 && is7800Technique(technique)) continue;
     std::string keywords = technique.id + " " + technique.title;
     for (auto& word : technique.keywords) keywords += " " + word;
     TopicDoc doc{"how-to", technique.id, keywords, technique.summary, ""};
@@ -390,6 +403,7 @@ std::vector<GroundedEntry> topicSearch(const KnowledgeBase& kb, const std::strin
       case 3: entry.text = basicText(kb.basicKeywords().at(doc.id)); break;
       case 4: entry.text = "TIA note: " + kb.tiaNotes()[doc.index]; break;
       case 6: entry.text = techniqueText(kb.techniques()[doc.index]); break;
+      case 7: entry.text = "Atari 7800 note: " + kb.a7800Notes()[doc.index]; break;
       default: entry.text = "6502 note: " + kb.cpuNotes()[doc.index]; break;
     }
     result.push_back(entry);

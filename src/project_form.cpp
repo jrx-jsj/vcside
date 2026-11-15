@@ -213,7 +213,7 @@ void ProjectForm::render(TextEditor& text, ImFont* mono, const KnowledgeBase& kb
     row(T("Emulator"), T("Its launch options: Build > Emulator options..."));
     {
       std::vector<std::pair<std::string, std::string>> items;
-      for (auto emulatorId : {"gopher2600", "stella"}) {
+      for (auto& emulatorId : emulatorIds()) {
         Tool* tool = toolchain.get(emulatorId);
         items.push_back({emulatorId, tool ? tool->name : emulatorId});
       }

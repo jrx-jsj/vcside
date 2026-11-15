@@ -154,6 +154,9 @@ std::vector<std::string> tvStandardsFor(Language language);
 std::string tvLabel(const std::string& tv);  // for people: AUTO is "Multiple (in the code)"
 // AUTO in a project: it runs on several systems, handled in its code (a DASM template
 // chooses with -DPAL=1, vcsLib detects it); the emulator is not told one and detects it.
+// The emulators VCSIDE runs, in menu order: Gopher2600 and Stella (2600), Test7800 (the
+// 7800 side of a Chameleon Cart ELF game).
+const std::vector<std::string>& emulatorIds();
 bool tvSupported(const std::string& emulator, const std::string& tv);
 bool tvIs50Hz(const std::string& tv);
 std::vector<std::string> splitCommand(const std::string& command);  // "a \"b c\"" -> a, b c

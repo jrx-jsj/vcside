@@ -1,0 +1,854 @@
+{
+ "chip": "MARIA",
+ "console": "Atari 7800 (as reached from a Chameleon Cart ELF game)",
+ "notes": [
+  "The Atari 7800 runs 2600 cartridges in a TIA mode and its own games in a MARIA mode. MARIA draws the picture; the TIA stays in the console only for sound and for some inputs, and the 6532 RIOT for the joystick directions, the console buttons and its timer (7800 Software Guide).",
+  "Memory map in MARIA mode: TIA at $0000-$001F, MARIA's registers at $0020-$003F, 4 KB of RAM at $1800-$27FF (with the zero page $0040-$00FF and the stack $0140-$01FF as mirrors of $2040-$20FF and $2140-$21FF), the RIOT at $0280-$02FF and the cartridge from $4000 (usually $8000-$FFFF on a real 7800 cartridge). There is no POKEY in the console; the Chameleon Cart does not add one, so a Chameleon game has only the TIA's two channels.",
+  "What a Chameleon Cart sees: it plugs into the 2600-sized connector, so in Test7800 (and, by Zack's notes, on the cartridge) it only sees address lines A0-A12. An address and the same address plus a multiple of $2000 look the same to it: a read of $2280 by MARIA looks like SWCHA ($0280), and the 6502's code at $1800-$1FFF looks like the cartridge's own $1800. Choose RAM addresses and served addresses that never alias with what the ARM waits for. Unverified on hardware.",
+  "The 6502 (6502C 'Sally') runs at about 1.79 MHz (NTSC, 7.16 MHz / 4) and slows to about 1.19 MHz for each access to the TIA or the RIOT. A line lasts 454 MARIA cycles (7.16 MHz), about 113.5 CPU cycles. MARIA's WSYNC ($24) halts the CPU until the next line, like the TIA's.",
+  "MARIA builds each line in a line buffer during the line before it is shown. It follows a list of zones (the DLL, from DPPH/DPPL); each zone points to a display list (DL) of objects for its lines; each object says where its graphics are, its palette, width and horizontal position. Objects are drawn in order, so later ones are on top; colour 0 of a pixel is transparent unless Kangaroo mode (CTRL bit 2) is on.",
+  "DMA and the CPU: while MARIA reads lists and graphics it halts the 6502 completely. Costs from the Software Guide's DMA timing table, in MARIA cycles: 16 to start a line (24 on the last line of a zone, which also reads the next DLL entry), 8 for a 4-byte header, 10 for a 5-byte header, 3 per graphics byte in direct mode, 6 per character in indirect mode (9 with double-width characters), 3 for a read that falls in a DMA hole. About 426 cycles of a line are available to DMA; what DMA does not use is left to the 6502 (Test7800 starts the line's DMA about 7-10 CPU cycles after the line begins).",
+  "Graphics modes (CTRL bits 1-0 plus each object's write mode): 160A, 2 bits per pixel, 4 pixels per byte at 160 wide, palette 0-7 with colours 1-3; 160B, 4 bits per pixel, 2 pixels per byte, 12 colours from palettes 0-3 or 4-7; 320A, 1 bit per pixel at 320 wide; 320B, 2 bits per pixel at 320 wide (4 pixels a byte, one bit from each nibble); 320C and 320D are variants with colour taken per pair of pixels or from the palette. A 160-pixel 2600 screen maps 1:1 onto 160A: same pixel width, 40 bytes per line.",
+  "Colours: one background (BACKGRND) and eight palettes of three colours (P0C1-P7C3), each a colour byte laid out as on the 2600: hue in the high nibble, luminance in the low one (the 7800 uses all 16 luminances; the 2600 ignores bit 0). The NTSC hues are close to the 2600's, so a game can share its colour values and check them by eye; PAL consoles have their own palette (its hue rows are shifted against NTSC).",
+  "Lines with DMA: MARIA reads lists only outside VBLANK (MSTAT bit 7 = 0). Test7800 does DMA on 243 lines in NTSC (lines 16-258 of 263) and 293 in PAL (of 313); the DLL must cover all of them, or MARIA reads past its end. Most TVs show about 192-200 of them (NTSC).",
+  "Interrupts: a DLL entry with bit 7 set raises a display list interrupt (an NMI) at the end of the zone before it. The NMI vector is read from the cartridge at $FFFA; a vcsLib cartridge serving instructions or graphics will not answer it with a valid address, so 7800 ELF games keep bit 7 clear (Zack's notes say the Chameleon avoids IRQs and holey DMA).",
+  "Turning DMA on: write CTRL with DMA bits 10 ($40 with 160A) at the start of VBLANK (wait for MSTAT bit 7 to go from 0 to 1). MARIA reloads DPPH/DPPL at the end of VBLANK; turned on mid-frame it can follow another list and hit a DLI.",
+  "The TIA on the 7800: AUDC0/1, AUDF0/1 and AUDV0/1 work as on a 2600 and are clocked from the same colour clock (3.579545 MHz NTSC, about 3.5469 MHz PAL), so TIA music and its frequency tables are shared between the two consoles. The TIA's video registers have no effect in MARIA mode; its WSYNC ($02) is not used, MARIA's is at $24.",
+  "Console buttons on the 7800 (SWCHB): bit 0 RESET and bit 1 SELECT as on the 2600 (0 = pressed); bit 3 is the PAUSE button, which reads 0 only while it is held (a 2600 colour switch that stays put), so a game toggles pause on each press; bits 6 and 7 are the left and right difficulty switches. Test7800 maps SELECT, RESET and PAUSE to F1, F2 and F3.",
+  "The 7800's ELF calls in vcsLib (Chameleon template): vcsWaitForAddress(a) waits until the bus shows address a (13 bits); vcsJmpToRam3(a) gives the 6502 a JMP to a in the console's RAM, so it stops fetching from the cartridge; vcsInjectDmaData(a, n, buf) drives buf[0..n-1] onto the bus as the console reads a, a+1, ... a+n-1 (one call per run of consecutive cartridge reads); vcsSnoopRead(a) waits for an access to a and returns the byte the console put on the bus. Their arguments are 13-bit cartridge addresses (address & $1FFF)."
+ ],
+ "registers": [
+  {
+   "name": "INPTCTRL",
+   "address": "$01",
+   "access": "W",
+   "bits": "----3210",
+   "summary": "7800: chooses TIA or MARIA mode and maps the BIOS out; bit 0 locks it.",
+   "description": "Written by the BIOS (or, on the Chameleon Cart, by its firmware) while booting. Bit 1 = 1 turns MARIA's video on, bit 3 = 1 the TIA's (2600 mode), bit 2 = 1 takes the BIOS ROM out of the memory map, bit 0 = 1 locks the register until the console is switched off. A vcsLib firmware writes $07 (locked, BIOS out, MARIA) before calling elf_main for a 7800 ELF, or $0D (locked, BIOS out, TIA video) for a 2600 one, so an ELF game normally never writes it.",
+   "timing": "",
+   "issues": [
+    "Locked by the firmware before elf_main on the Chameleon Cart (per the elf7800 branch's code): the game cannot switch between 2600 and 7800 mode. Unverified on the released Chameleon firmware, which is not public.",
+    "Answers writes at the TIA's addresses $00-$1F while unlocked; vcsLib names it at $01."
+   ],
+   "example": "",
+   "verified": true,
+   "sources": [
+    "7800-software-guide",
+    "chameleon-elf-template",
+    "uca-elf7800"
+   ],
+   "chip": "7800",
+   "fields": [
+    {
+     "bits": "3",
+     "name": "TIA video",
+     "meaning": "1 = the TIA draws the picture (2600 mode)"
+    },
+    {
+     "bits": "2",
+     "name": "BIOS off",
+     "meaning": "1 = the BIOS ROM leaves the map; the cartridge answers there"
+    },
+    {
+     "bits": "1",
+     "name": "MARIA",
+     "meaning": "1 = MARIA draws the picture (7800 mode)"
+    },
+    {
+     "bits": "0",
+     "name": "Lock",
+     "meaning": "1 = no more writes until power-off"
+    }
+   ],
+   "see_also": [
+    "CTRL",
+    "7800-elf-start"
+   ]
+  },
+  {
+   "name": "BACKGRND",
+   "address": "$20",
+   "access": "W",
+   "bits": "76543210",
+   "summary": "MARIA: background colour.",
+   "description": "The colour of every pixel no object covers, and of the border when CTRL bit 3 is 0. A colour byte as on the 2600: hue in bits 7-4, luminance in bits 3-0.",
+   "timing": "",
+   "issues": [],
+   "example": "",
+   "verified": true,
+   "sources": [
+    "7800-software-guide",
+    "7800-devtools"
+   ],
+   "chip": "MARIA",
+   "fields": [
+    {
+     "bits": "7-4",
+     "name": "Hue",
+     "meaning": "0 = grey, 1-15 colours"
+    },
+    {
+     "bits": "3-0",
+     "name": "Luminance",
+     "meaning": "0 = darkest, 15 = brightest"
+    }
+   ],
+   "see_also": [
+    "P0C1",
+    "CTRL"
+   ]
+  },
+  {
+   "name": "P0C1",
+   "address": "$21",
+   "access": "W",
+   "bits": "76543210",
+   "summary": "MARIA: palette 0, colour 1.",
+   "description": "Colour 1 of palette 0: what a pixel of value 1 shows in an object with palette 0 (160A, 320A-D), or one of the twelve colours of 160B. Colour byte as on the 2600: hue in bits 7-4, luminance in bits 3-0.",
+   "timing": "",
+   "issues": [],
+   "example": "",
+   "verified": true,
+   "sources": [
+    "7800-software-guide",
+    "7800-devtools"
+   ],
+   "chip": "MARIA",
+   "see_also": [
+    "BACKGRND",
+    "7800-display-list"
+   ]
+  },
+  {
+   "name": "P0C2",
+   "address": "$22",
+   "access": "W",
+   "bits": "76543210",
+   "summary": "MARIA: palette 0, colour 2.",
+   "description": "Colour 2 of palette 0: what a pixel of value 2 shows in an object with palette 0 (160A, 320A-D), or one of the twelve colours of 160B. Colour byte as on the 2600: hue in bits 7-4, luminance in bits 3-0.",
+   "timing": "",
+   "issues": [],
+   "example": "",
+   "verified": true,
+   "sources": [
+    "7800-software-guide",
+    "7800-devtools"
+   ],
+   "chip": "MARIA",
+   "see_also": [
+    "BACKGRND",
+    "7800-display-list"
+   ]
+  },
+  {
+   "name": "P0C3",
+   "address": "$23",
+   "access": "W",
+   "bits": "76543210",
+   "summary": "MARIA: palette 0, colour 3.",
+   "description": "Colour 3 of palette 0: what a pixel of value 3 shows in an object with palette 0 (160A, 320A-D), or one of the twelve colours of 160B. Colour byte as on the 2600: hue in bits 7-4, luminance in bits 3-0.",
+   "timing": "",
+   "issues": [],
+   "example": "",
+   "verified": true,
+   "sources": [
+    "7800-software-guide",
+    "7800-devtools"
+   ],
+   "chip": "MARIA",
+   "see_also": [
+    "BACKGRND",
+    "7800-display-list"
+   ]
+  },
+  {
+   "name": "P1C1",
+   "address": "$25",
+   "access": "W",
+   "bits": "76543210",
+   "summary": "MARIA: palette 1, colour 1.",
+   "description": "Colour 1 of palette 1: what a pixel of value 1 shows in an object with palette 1 (160A, 320A-D), or one of the twelve colours of 160B. Colour byte as on the 2600: hue in bits 7-4, luminance in bits 3-0.",
+   "timing": "",
+   "issues": [],
+   "example": "",
+   "verified": true,
+   "sources": [
+    "7800-software-guide",
+    "7800-devtools"
+   ],
+   "chip": "MARIA",
+   "see_also": [
+    "BACKGRND",
+    "7800-display-list"
+   ]
+  },
+  {
+   "name": "P1C2",
+   "address": "$26",
+   "access": "W",
+   "bits": "76543210",
+   "summary": "MARIA: palette 1, colour 2.",
+   "description": "Colour 2 of palette 1: what a pixel of value 2 shows in an object with palette 1 (160A, 320A-D), or one of the twelve colours of 160B. Colour byte as on the 2600: hue in bits 7-4, luminance in bits 3-0.",
+   "timing": "",
+   "issues": [],
+   "example": "",
+   "verified": true,
+   "sources": [
+    "7800-software-guide",
+    "7800-devtools"
+   ],
+   "chip": "MARIA",
+   "see_also": [
+    "BACKGRND",
+    "7800-display-list"
+   ]
+  },
+  {
+   "name": "P1C3",
+   "address": "$27",
+   "access": "W",
+   "bits": "76543210",
+   "summary": "MARIA: palette 1, colour 3.",
+   "description": "Colour 3 of palette 1: what a pixel of value 3 shows in an object with palette 1 (160A, 320A-D), or one of the twelve colours of 160B. Colour byte as on the 2600: hue in bits 7-4, luminance in bits 3-0.",
+   "timing": "",
+   "issues": [],
+   "example": "",
+   "verified": true,
+   "sources": [
+    "7800-software-guide",
+    "7800-devtools"
+   ],
+   "chip": "MARIA",
+   "see_also": [
+    "BACKGRND",
+    "7800-display-list"
+   ]
+  },
+  {
+   "name": "P2C1",
+   "address": "$29",
+   "access": "W",
+   "bits": "76543210",
+   "summary": "MARIA: palette 2, colour 1.",
+   "description": "Colour 1 of palette 2: what a pixel of value 1 shows in an object with palette 2 (160A, 320A-D), or one of the twelve colours of 160B. Colour byte as on the 2600: hue in bits 7-4, luminance in bits 3-0.",
+   "timing": "",
+   "issues": [],
+   "example": "",
+   "verified": true,
+   "sources": [
+    "7800-software-guide",
+    "7800-devtools"
+   ],
+   "chip": "MARIA",
+   "see_also": [
+    "BACKGRND",
+    "7800-display-list"
+   ]
+  },
+  {
+   "name": "P2C2",
+   "address": "$2A",
+   "access": "W",
+   "bits": "76543210",
+   "summary": "MARIA: palette 2, colour 2.",
+   "description": "Colour 2 of palette 2: what a pixel of value 2 shows in an object with palette 2 (160A, 320A-D), or one of the twelve colours of 160B. Colour byte as on the 2600: hue in bits 7-4, luminance in bits 3-0.",
+   "timing": "",
+   "issues": [],
+   "example": "",
+   "verified": true,
+   "sources": [
+    "7800-software-guide",
+    "7800-devtools"
+   ],
+   "chip": "MARIA",
+   "see_also": [
+    "BACKGRND",
+    "7800-display-list"
+   ]
+  },
+  {
+   "name": "P2C3",
+   "address": "$2B",
+   "access": "W",
+   "bits": "76543210",
+   "summary": "MARIA: palette 2, colour 3.",
+   "description": "Colour 3 of palette 2: what a pixel of value 3 shows in an object with palette 2 (160A, 320A-D), or one of the twelve colours of 160B. Colour byte as on the 2600: hue in bits 7-4, luminance in bits 3-0.",
+   "timing": "",
+   "issues": [],
+   "example": "",
+   "verified": true,
+   "sources": [
+    "7800-software-guide",
+    "7800-devtools"
+   ],
+   "chip": "MARIA",
+   "see_also": [
+    "BACKGRND",
+    "7800-display-list"
+   ]
+  },
+  {
+   "name": "P3C1",
+   "address": "$2D",
+   "access": "W",
+   "bits": "76543210",
+   "summary": "MARIA: palette 3, colour 1.",
+   "description": "Colour 1 of palette 3: what a pixel of value 1 shows in an object with palette 3 (160A, 320A-D), or one of the twelve colours of 160B. Colour byte as on the 2600: hue in bits 7-4, luminance in bits 3-0.",
+   "timing": "",
+   "issues": [],
+   "example": "",
+   "verified": true,
+   "sources": [
+    "7800-software-guide",
+    "7800-devtools"
+   ],
+   "chip": "MARIA",
+   "see_also": [
+    "BACKGRND",
+    "7800-display-list"
+   ]
+  },
+  {
+   "name": "P3C2",
+   "address": "$2E",
+   "access": "W",
+   "bits": "76543210",
+   "summary": "MARIA: palette 3, colour 2.",
+   "description": "Colour 2 of palette 3: what a pixel of value 2 shows in an object with palette 3 (160A, 320A-D), or one of the twelve colours of 160B. Colour byte as on the 2600: hue in bits 7-4, luminance in bits 3-0.",
+   "timing": "",
+   "issues": [],
+   "example": "",
+   "verified": true,
+   "sources": [
+    "7800-software-guide",
+    "7800-devtools"
+   ],
+   "chip": "MARIA",
+   "see_also": [
+    "BACKGRND",
+    "7800-display-list"
+   ]
+  },
+  {
+   "name": "P3C3",
+   "address": "$2F",
+   "access": "W",
+   "bits": "76543210",
+   "summary": "MARIA: palette 3, colour 3.",
+   "description": "Colour 3 of palette 3: what a pixel of value 3 shows in an object with palette 3 (160A, 320A-D), or one of the twelve colours of 160B. Colour byte as on the 2600: hue in bits 7-4, luminance in bits 3-0.",
+   "timing": "",
+   "issues": [],
+   "example": "",
+   "verified": true,
+   "sources": [
+    "7800-software-guide",
+    "7800-devtools"
+   ],
+   "chip": "MARIA",
+   "see_also": [
+    "BACKGRND",
+    "7800-display-list"
+   ]
+  },
+  {
+   "name": "P4C1",
+   "address": "$31",
+   "access": "W",
+   "bits": "76543210",
+   "summary": "MARIA: palette 4, colour 1.",
+   "description": "Colour 1 of palette 4: what a pixel of value 1 shows in an object with palette 4 (160A, 320A-D), or one of the twelve colours of 160B. Colour byte as on the 2600: hue in bits 7-4, luminance in bits 3-0.",
+   "timing": "",
+   "issues": [],
+   "example": "",
+   "verified": true,
+   "sources": [
+    "7800-software-guide",
+    "7800-devtools"
+   ],
+   "chip": "MARIA",
+   "see_also": [
+    "BACKGRND",
+    "7800-display-list"
+   ]
+  },
+  {
+   "name": "P4C2",
+   "address": "$32",
+   "access": "W",
+   "bits": "76543210",
+   "summary": "MARIA: palette 4, colour 2.",
+   "description": "Colour 2 of palette 4: what a pixel of value 2 shows in an object with palette 4 (160A, 320A-D), or one of the twelve colours of 160B. Colour byte as on the 2600: hue in bits 7-4, luminance in bits 3-0.",
+   "timing": "",
+   "issues": [],
+   "example": "",
+   "verified": true,
+   "sources": [
+    "7800-software-guide",
+    "7800-devtools"
+   ],
+   "chip": "MARIA",
+   "see_also": [
+    "BACKGRND",
+    "7800-display-list"
+   ]
+  },
+  {
+   "name": "P4C3",
+   "address": "$33",
+   "access": "W",
+   "bits": "76543210",
+   "summary": "MARIA: palette 4, colour 3.",
+   "description": "Colour 3 of palette 4: what a pixel of value 3 shows in an object with palette 4 (160A, 320A-D), or one of the twelve colours of 160B. Colour byte as on the 2600: hue in bits 7-4, luminance in bits 3-0.",
+   "timing": "",
+   "issues": [],
+   "example": "",
+   "verified": true,
+   "sources": [
+    "7800-software-guide",
+    "7800-devtools"
+   ],
+   "chip": "MARIA",
+   "see_also": [
+    "BACKGRND",
+    "7800-display-list"
+   ]
+  },
+  {
+   "name": "P5C1",
+   "address": "$35",
+   "access": "W",
+   "bits": "76543210",
+   "summary": "MARIA: palette 5, colour 1.",
+   "description": "Colour 1 of palette 5: what a pixel of value 1 shows in an object with palette 5 (160A, 320A-D), or one of the twelve colours of 160B. Colour byte as on the 2600: hue in bits 7-4, luminance in bits 3-0.",
+   "timing": "",
+   "issues": [],
+   "example": "",
+   "verified": true,
+   "sources": [
+    "7800-software-guide",
+    "7800-devtools"
+   ],
+   "chip": "MARIA",
+   "see_also": [
+    "BACKGRND",
+    "7800-display-list"
+   ]
+  },
+  {
+   "name": "P5C2",
+   "address": "$36",
+   "access": "W",
+   "bits": "76543210",
+   "summary": "MARIA: palette 5, colour 2.",
+   "description": "Colour 2 of palette 5: what a pixel of value 2 shows in an object with palette 5 (160A, 320A-D), or one of the twelve colours of 160B. Colour byte as on the 2600: hue in bits 7-4, luminance in bits 3-0.",
+   "timing": "",
+   "issues": [],
+   "example": "",
+   "verified": true,
+   "sources": [
+    "7800-software-guide",
+    "7800-devtools"
+   ],
+   "chip": "MARIA",
+   "see_also": [
+    "BACKGRND",
+    "7800-display-list"
+   ]
+  },
+  {
+   "name": "P5C3",
+   "address": "$37",
+   "access": "W",
+   "bits": "76543210",
+   "summary": "MARIA: palette 5, colour 3.",
+   "description": "Colour 3 of palette 5: what a pixel of value 3 shows in an object with palette 5 (160A, 320A-D), or one of the twelve colours of 160B. Colour byte as on the 2600: hue in bits 7-4, luminance in bits 3-0.",
+   "timing": "",
+   "issues": [],
+   "example": "",
+   "verified": true,
+   "sources": [
+    "7800-software-guide",
+    "7800-devtools"
+   ],
+   "chip": "MARIA",
+   "see_also": [
+    "BACKGRND",
+    "7800-display-list"
+   ]
+  },
+  {
+   "name": "P6C1",
+   "address": "$39",
+   "access": "W",
+   "bits": "76543210",
+   "summary": "MARIA: palette 6, colour 1.",
+   "description": "Colour 1 of palette 6: what a pixel of value 1 shows in an object with palette 6 (160A, 320A-D), or one of the twelve colours of 160B. Colour byte as on the 2600: hue in bits 7-4, luminance in bits 3-0.",
+   "timing": "",
+   "issues": [],
+   "example": "",
+   "verified": true,
+   "sources": [
+    "7800-software-guide",
+    "7800-devtools"
+   ],
+   "chip": "MARIA",
+   "see_also": [
+    "BACKGRND",
+    "7800-display-list"
+   ]
+  },
+  {
+   "name": "P6C2",
+   "address": "$3A",
+   "access": "W",
+   "bits": "76543210",
+   "summary": "MARIA: palette 6, colour 2.",
+   "description": "Colour 2 of palette 6: what a pixel of value 2 shows in an object with palette 6 (160A, 320A-D), or one of the twelve colours of 160B. Colour byte as on the 2600: hue in bits 7-4, luminance in bits 3-0.",
+   "timing": "",
+   "issues": [],
+   "example": "",
+   "verified": true,
+   "sources": [
+    "7800-software-guide",
+    "7800-devtools"
+   ],
+   "chip": "MARIA",
+   "see_also": [
+    "BACKGRND",
+    "7800-display-list"
+   ]
+  },
+  {
+   "name": "P6C3",
+   "address": "$3B",
+   "access": "W",
+   "bits": "76543210",
+   "summary": "MARIA: palette 6, colour 3.",
+   "description": "Colour 3 of palette 6: what a pixel of value 3 shows in an object with palette 6 (160A, 320A-D), or one of the twelve colours of 160B. Colour byte as on the 2600: hue in bits 7-4, luminance in bits 3-0.",
+   "timing": "",
+   "issues": [],
+   "example": "",
+   "verified": true,
+   "sources": [
+    "7800-software-guide",
+    "7800-devtools"
+   ],
+   "chip": "MARIA",
+   "see_also": [
+    "BACKGRND",
+    "7800-display-list"
+   ]
+  },
+  {
+   "name": "P7C1",
+   "address": "$3D",
+   "access": "W",
+   "bits": "76543210",
+   "summary": "MARIA: palette 7, colour 1.",
+   "description": "Colour 1 of palette 7: what a pixel of value 1 shows in an object with palette 7 (160A, 320A-D), or one of the twelve colours of 160B. Colour byte as on the 2600: hue in bits 7-4, luminance in bits 3-0.",
+   "timing": "",
+   "issues": [],
+   "example": "",
+   "verified": true,
+   "sources": [
+    "7800-software-guide",
+    "7800-devtools"
+   ],
+   "chip": "MARIA",
+   "see_also": [
+    "BACKGRND",
+    "7800-display-list"
+   ]
+  },
+  {
+   "name": "P7C2",
+   "address": "$3E",
+   "access": "W",
+   "bits": "76543210",
+   "summary": "MARIA: palette 7, colour 2.",
+   "description": "Colour 2 of palette 7: what a pixel of value 2 shows in an object with palette 7 (160A, 320A-D), or one of the twelve colours of 160B. Colour byte as on the 2600: hue in bits 7-4, luminance in bits 3-0.",
+   "timing": "",
+   "issues": [],
+   "example": "",
+   "verified": true,
+   "sources": [
+    "7800-software-guide",
+    "7800-devtools"
+   ],
+   "chip": "MARIA",
+   "see_also": [
+    "BACKGRND",
+    "7800-display-list"
+   ]
+  },
+  {
+   "name": "P7C3",
+   "address": "$3F",
+   "access": "W",
+   "bits": "76543210",
+   "summary": "MARIA: palette 7, colour 3.",
+   "description": "Colour 3 of palette 7: what a pixel of value 3 shows in an object with palette 7 (160A, 320A-D), or one of the twelve colours of 160B. Colour byte as on the 2600: hue in bits 7-4, luminance in bits 3-0.",
+   "timing": "",
+   "issues": [],
+   "example": "",
+   "verified": true,
+   "sources": [
+    "7800-software-guide",
+    "7800-devtools"
+   ],
+   "chip": "MARIA",
+   "see_also": [
+    "BACKGRND",
+    "7800-display-list"
+   ]
+  },
+  {
+   "name": "MARIA_WSYNC",
+   "address": "$24",
+   "access": "W",
+   "bits": "--------",
+   "summary": "MARIA: wait for the next line (7800 WSYNC).",
+   "description": "Any write halts the 6502 until the start of the next line. It is the 7800's WSYNC; the TIA's one at $02 does nothing useful in MARIA mode. vcsLib names it MARIA_WSYNC, since WSYNC is already the TIA's; 7800 assemblers call it WSYNC.",
+   "timing": "",
+   "issues": [],
+   "example": "",
+   "verified": true,
+   "sources": [
+    "7800-software-guide",
+    "7800-devtools"
+   ],
+   "chip": "MARIA",
+   "see_also": [
+    "MSTAT"
+   ]
+  },
+  {
+   "name": "MSTAT",
+   "address": "$28",
+   "access": "R",
+   "bits": "7-------",
+   "summary": "MARIA: status; bit 7 = 1 during VBLANK.",
+   "description": "Bit 7 reads 1 while MARIA is in vertical blank (no DMA) and 0 while it draws lines. Waiting for it to go 0 -> 1 is how a program finds the start of VBLANK, the safe moment to turn DMA on or change the lists' base.",
+   "timing": "",
+   "issues": [],
+   "example": "",
+   "verified": true,
+   "sources": [
+    "7800-software-guide",
+    "7800-devtools"
+   ],
+   "chip": "MARIA",
+   "fields": [
+    {
+     "bits": "7",
+     "name": "VBLANK",
+     "meaning": "1 = vertical blank, 0 = lines with DMA"
+    }
+   ],
+   "see_also": [
+    "CTRL",
+    "MARIA_WSYNC"
+   ]
+  },
+  {
+   "name": "DPPH",
+   "address": "$2C",
+   "access": "W",
+   "bits": "76543210",
+   "summary": "MARIA: display list list (DLL) address, high byte.",
+   "description": "With DPPL, the address of the DLL, the list of zones MARIA follows from the top of the frame. MARIA takes it at the end of VBLANK. Each DLL entry has 3 bytes: flags and height (bit 7 DLI, bit 6 holey 16, bit 5 holey 8, bits 3-0 = lines in the zone - 1), then the zone's display list address, high byte first.",
+   "timing": "",
+   "issues": [],
+   "example": "",
+   "verified": true,
+   "sources": [
+    "7800-software-guide",
+    "7800-devtools"
+   ],
+   "chip": "MARIA",
+   "fields": [
+    {
+     "bits": "7-0",
+     "name": "DLL high",
+     "meaning": "high byte of the DLL's address"
+    }
+   ],
+   "see_also": [
+    "DPPL",
+    "7800-display-list"
+   ]
+  },
+  {
+   "name": "DPPL",
+   "address": "$30",
+   "access": "W",
+   "bits": "76543210",
+   "summary": "MARIA: display list list (DLL) address, low byte.",
+   "description": "Low byte of the DLL's address; see DPPH.",
+   "timing": "",
+   "issues": [],
+   "example": "",
+   "verified": true,
+   "sources": [
+    "7800-software-guide",
+    "7800-devtools"
+   ],
+   "chip": "MARIA",
+   "see_also": [
+    "DPPH",
+    "7800-display-list"
+   ]
+  },
+  {
+   "name": "CHARBASE",
+   "address": "$34",
+   "access": "W",
+   "bits": "76543210",
+   "summary": "MARIA: high byte of the character set for indirect (character) objects.",
+   "description": "In indirect mode an object's bytes are character numbers: MARIA reads each character's graphics at CHARBASE (+ the zone's line offset) * 256 + the number. Each indirect read costs 6 MARIA cycles (9 with double-width characters, CTRL bit 4).",
+   "timing": "",
+   "issues": [],
+   "example": "",
+   "verified": true,
+   "sources": [
+    "7800-software-guide",
+    "7800-devtools"
+   ],
+   "chip": "MARIA",
+   "see_also": [
+    "CTRL",
+    "7800-display-list"
+   ]
+  },
+  {
+   "name": "OFFSET",
+   "address": "$38",
+   "access": "W",
+   "bits": "--------",
+   "summary": "MARIA: reserved; write 0.",
+   "description": "Reserved for expansion in the original design; programs write 0 to it.",
+   "timing": "",
+   "issues": [],
+   "example": "",
+   "verified": true,
+   "sources": [
+    "7800-software-guide",
+    "7800-devtools"
+   ],
+   "chip": "MARIA",
+   "see_also": [
+    "CTRL"
+   ]
+  },
+  {
+   "name": "CTRL",
+   "address": "$3C",
+   "access": "W",
+   "bits": "76543210",
+   "summary": "MARIA: DMA on/off, graphics read mode, border, Kangaroo and character width.",
+   "description": "Bit 7 kills the colour burst (black and white), bits 6-5 control DMA (10 = on, 11 = off), bit 4 makes characters two bytes wide, bit 3 = 1 makes the border black instead of BACKGRND, bit 2 = 1 is Kangaroo mode (colour 0 is drawn instead of being transparent), bits 1-0 choose the read mode (00 160A/160B, 10 320B/320D, 11 320A/320C). Typical values: $40 = DMA on, 160A; $60 = DMA off.",
+   "timing": "",
+   "issues": [
+    "Turn DMA on at the start of VBLANK (MSTAT bit 7 just set): mid-frame MARIA may follow a stale list and raise a DLI, an NMI no vcsLib cartridge answers."
+   ],
+   "example": "",
+   "verified": true,
+   "sources": [
+    "7800-software-guide",
+    "7800-devtools",
+    "test7800-src",
+    "test7800-measured"
+   ],
+   "chip": "MARIA",
+   "fields": [
+    {
+     "bits": "7",
+     "name": "Colour kill",
+     "meaning": "1 = no colour burst"
+    },
+    {
+     "bits": "6-5",
+     "name": "DMA",
+     "meaning": "10 = on, 11 = off (00 and 01 are test modes)"
+    },
+    {
+     "bits": "4",
+     "name": "Character width",
+     "meaning": "1 = two bytes per character"
+    },
+    {
+     "bits": "3",
+     "name": "Border",
+     "meaning": "1 = black border, 0 = BACKGRND"
+    },
+    {
+     "bits": "2",
+     "name": "Kangaroo",
+     "meaning": "1 = colour 0 is not transparent"
+    },
+    {
+     "bits": "1-0",
+     "name": "Read mode",
+     "meaning": "00 160A/B, 10 320B/D, 11 320A/C"
+    }
+   ],
+   "see_also": [
+    "MSTAT",
+    "DPPH",
+    "7800-display-list",
+    "7800-elf-start"
+   ]
+  }
+ ],
+ "sources": [
+  {
+   "id": "7800-software-guide",
+   "title": "7800 Software Guide (Atari, 1984), as transcribed on the Atari 7800 Development Wiki",
+   "author": "Atari / General Computer Corporation; wiki transcription by the 7800 community",
+   "url": "https://7800.8bitdev.org/index.php/7800_Software_Guide",
+   "used_for": "MARIA register map, CTRL bits, DLL and display list header formats, graphics modes, the DMA timing table, INPTCTRL bits, console switches"
+  },
+  {
+   "id": "7800-8bitdev-wiki",
+   "title": "Atari 7800 Development Wiki (7800.8bitdev.org): two-button controllers, hardware facts, common emulator issues",
+   "author": "the 7800 development community (RevEng, Mitch, and others)",
+   "url": "https://7800.8bitdev.org/index.php/Main_Page",
+   "used_for": "Two-button joystick wiring and reads (SWCHB output bits, INPT0-INPT3), the pause button, TIA and RIOT on the 7800, CPU speed when touching TIA/RIOT"
+  },
+  {
+   "id": "test7800-src",
+   "title": "Test7800 v0.9.x source code (hardware/maria, hardware/memory/external/elf)",
+   "author": "JetSetIlly",
+   "url": "https://github.com/JetSetIlly/test7800",
+   "used_for": "How an emulator models MARIA's headers and DMA costs, the ELF cartridge in 7800 mode (13 address lines, the 7800 vcsLib calls, byte streaming), its command line and portable mode; GPL-3, consulted only, nothing copied"
+  },
+  {
+   "id": "7800-devtools",
+   "title": "7800 devtools: 7800.h register names and the 7800basic manual",
+   "author": "RevEng and the 7800-devtools contributors",
+   "url": "https://github.com/7800-devtools/7800basic",
+   "used_for": "The usual register names (BACKGRND, P0C1, DPPH, CTRL...) and their addresses; GPL-2, consulted only"
+  },
+  {
+   "id": "chameleon-elf-template",
+   "title": "Chameleon Cart ELF template (vcsLib.h, elf_main.cpp, 2025-10-23)",
+   "author": "ZackAttack (Zachary Scolaro)",
+   "url": "https://forums.atariage.com/topic/373370-is-there-a-way-to-run-a-2600-game-in-7800-mode/",
+   "used_for": "MP_SYSTEM_TYPE values ST_NTSC_7800 (3) and ST_PAL_7800 (4), the names of the four 7800 calls (vcsWaitForAddress, vcsJmpToRam3, vcsInjectDmaData, vcsSnoopRead), INPTCTRL and the MARIA register names it declares; no licence, interfaces only"
+  },
+  {
+   "id": "uca-elf7800",
+   "title": "United Carts of Atari, branch elf7800 (work in progress, March 2025)",
+   "author": "ZackAttack (Zachary Scolaro)",
+   "url": "https://github.com/ZacharyScolaro/United-Carts-of-Atari/tree/elf7800",
+   "used_for": "How a vcsLib firmware boots a 7800 (signature answered by the cartridge, INPTCTRL written before elf_main), the .elf7800/.elf2600 section marks, what vcsInjectDmaData does on the bus (drives data from the first address to the end of the run, lets go when A12 goes low); GPL-3, consulted only"
+  },
+  {
+   "id": "test7800-measured",
+   "title": "Behavioural tests of 7800-mode ELF programs in Test7800 v0.9.0 (VCSIDE's dual template and La Abadía del Crimen 2600/7800)",
+   "author": "Juan Sánchez Jurado",
+   "url": "https://github.com/JetSetIlly/test7800",
+   "used_for": "Measured: DMA lines per frame, the first vcsInjectDmaData/vcsSnoopRead call only ending byte streaming, address aliasing with 13 lines, SWCHA snooping, lines where MARIA reads the DLL"
+  }
+ ]
+}

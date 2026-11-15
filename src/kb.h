@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 Juan Sánchez Jurado
-// Knowledge base: 6502 opcodes, TIA/RIOT registers, cartridge formats, TV standards.
+// Knowledge base: 6502 opcodes, TIA/RIOT registers (and MARIA's, for 7800 ELF games), cartridge formats, TV standards.
 #pragma once
 #include <map>
 #include <optional>
@@ -133,6 +133,8 @@ class KnowledgeBase {
   const std::vector<std::string>& cpuNotes() const { return cpuNotes_; }
   const std::map<std::string, Source>& sources() const { return sources_; }
   const std::vector<std::string>& tiaNotes() const { return tiaNotes_; }
+  // The Atari 7800 as a Chameleon Cart ELF game reaches it (data/kb/a7800.json).
+  const std::vector<std::string>& a7800Notes() const { return a7800Notes_; }
   const std::vector<Technique>& techniques() const { return techniques_; }
 
   // Completion candidates whose word starts with prefix (case-insensitive).
@@ -146,7 +148,7 @@ class KnowledgeBase {
   std::vector<CartFormat> formats_;
   std::vector<TvStandard> tv_;
   std::vector<EmulatorInfo> emulators_;
-  std::vector<std::string> cpuNotes_, tiaNotes_;
+  std::vector<std::string> cpuNotes_, tiaNotes_, a7800Notes_;
   std::vector<Technique> techniques_;
   std::map<std::string, Source> sources_;
   std::map<std::string, BasicKeyword> basic_;

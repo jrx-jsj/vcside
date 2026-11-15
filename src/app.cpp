@@ -877,6 +877,21 @@ void App::run(bool debug) {
   launchEmulator(*project_, args, error);
 }
 
+// Runs the project's ROM in another emulator than the project's, with that emulator's options
+// (the 7800 side of a dual ELF game in Test7800).
+void App::runOn(const std::string& emulatorId) {
+  if (!project_) return;
+  if (Tool* tool = tools_.get(emulatorId); tool && !tool->found()) {
+    askForTool(tool->id, T("run the game"), [this, emulatorId] { runOn(emulatorId); });
+    return;
+  }
+  Project other = *project_;
+  other.emulator = emulatorId;
+  std::string error;
+  auto args = other.runArgs(tools_, false, &error);
+  launchEmulator(other, args, error);
+}
+
 // Runs a ROM chosen in the project tree with the project's emulator and options; its format
 // is the one its header names (ACE), the project's for the project's own ROM, else AUTO.
 void App::runRom(const std::string& rom) {
@@ -2114,6 +2129,9 @@ MenuBar App::buildMenuBar(bool native) {
                                breakpoints_.clear();
                                saveUserState();
                              })};
+  // an ELF game with a 7800 side: its 7800 screen in Test7800, whatever the project's emulator
+  if (project_ && project_->format == "ELF" && project_->emulator != "test7800")
+    buildMenu.insert(buildMenu.begin() + 4, item(T("Run on the Atari 7800 (Test7800)"), "", [this] { runOn("test7800"); }, canBuild));
   if (project_) {
     auto set = [this](std::function<void(Project&)> change) {
       return [this, change] {
@@ -2169,7 +2187,7 @@ MenuBar App::buildMenuBar(bool native) {
       }
       tvItems.push_back(tvItem);
     }
-    for (auto emulatorId : {"gopher2600", "stella"}) {
+    for (auto& emulatorId : emulatorIds()) {
       Tool* tool = tools_.get(emulatorId);
       MenuItem emulatorItem = item(tool->name, "", set([emulatorId](Project& project) { project.emulator = emulatorId; }), true, project_->emulator == emulatorId);
       emulatorItem.hint = !formatSupported(emulatorId, project_->format) ? F("no {0}", {project_->format}) : tool->found() ? T("found") : T("not found");
@@ -3103,7 +3121,8 @@ void App::problemsPanel() {
     N_("auto"), N_("joystick"), N_("paddles"), N_("keypad"), N_("driving"), N_("yes"), N_("no"),
     N_("standard"), N_("user"), N_("custom"), N_("composite"), N_("bad adjust"), N_("by ROM"), N_("always"),
     N_("automatic, on"), N_("automatic"), N_("small"), N_("medium"), N_("large"), N_("gamepad"),
-    N_("trak-ball"), N_("Amiga mouse"), N_("Atari mouse"), N_("light gun"), N_("Genesis pad")};
+    N_("trak-ball"), N_("Amiga mouse"), N_("Atari mouse"), N_("light gun"), N_("Genesis pad"),
+    N_("none"), N_("mono"), N_("stereo"), N_("modern"), N_("full")};
 
 
 void App::emulatorOptionsDialog() {
@@ -3125,9 +3144,9 @@ void App::emulatorOptionsDialog() {
   }
   bool changed = false;
   if (ImGui::BeginTabBar("emus")) {
-    for (const char* id : {"gopher2600", "stella"}) {
+    for (auto& id : emulatorIds()) {
       const EmulatorInfo* emulator = kb_.emulator(id);
-      if (!emulator) continue;
+      if (!emulator || (!formatSupported(id, project_->format) && project_->emulator != id)) continue;  // Test7800: ELF only
       ImGuiTabItemFlags tabFlags = emuOptionsTab_ == id ? ImGuiTabItemFlags_SetSelected : 0;
       if (!ImGui::BeginTabItem(emulator->name.c_str(), nullptr, tabFlags)) continue;
       auto& currentValues = project_->emulatorOptions[id];
@@ -3661,6 +3680,10 @@ void App::docsPanel() {
     for (auto& note : kb_.cpuNotes()) bullet(note);
     ImGui::SeparatorText("TIA");
     for (auto& note : kb_.tiaNotes()) bullet(note);
+    if (!kb_.a7800Notes().empty()) {
+      ImGui::SeparatorText(T("Atari 7800 (Chameleon Cart ELF games)"));
+      for (auto& note : kb_.a7800Notes()) bullet(note);
+    }
   }
   assistant::setMarkdownLinks(nullptr);
   ImGui::EndChild();

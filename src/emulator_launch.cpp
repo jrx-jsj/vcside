@@ -165,6 +165,38 @@ static bool prepareGopher(const fs::path& root, const std::string& home,
   return true;
 }
 
+// Test7800 keeps no preferences: only its SaveKey, high score cartridge and ELF save files, in
+// its config folder or, in portable mode (portable.txt in the working folder), in
+// ./Test7800_UserData. VCSIDE always runs it portable, with a copy of the user's files, so a
+// test run never writes over the user's saves.
+static bool prepareTest7800(const fs::path& root, const std::string& home, EmulatorLaunch& launch, std::string* error) {
+#if defined(_WIN32)
+  fs::path user = fs::path(home) / "test7800";
+#elif defined(__APPLE__)
+  fs::path user = fs::path(home) / "Library" / "Application Support" / "test7800";
+#else
+  std::string xdg = env("XDG_CONFIG_HOME");
+  fs::path user = (!xdg.empty() && home == env("HOME") ? fs::path(xdg) : fs::path(home) / ".config") / "test7800";
+#endif
+  fs::path work = root / "test7800", data = work / "Test7800_UserData";
+  std::error_code errorCode;
+  fs::create_directories(data, errorCode);
+  if (errorCode) {
+    if (error) *error = F("Cannot create {0}: {1}", {data.string(), errorCode.message()});
+    return false;
+  }
+  if (fs::is_directory(user, errorCode)) {
+    fs::copy(user, data, fs::copy_options::recursive | fs::copy_options::overwrite_existing, errorCode);
+    if (errorCode) {
+      if (error) *error = F("Cannot copy {0} to {1}: {2}", {user.string(), data.string(), errorCode.message()});
+      return false;
+    }
+  }
+  std::ofstream(work / "portable.txt") << "VCSIDE: Test7800 keeps its files in Test7800_UserData next to this file.\n";
+  launch.workDir = work.string();
+  return true;
+}
+
 bool prepareEmulatorLaunch(const Project& project, const KnowledgeBase& knowledgeBase, const std::string& profileRoot,
                            EmulatorLaunch& launch, std::string* error, const std::string& userHome) {
   if (launch.args.size() < 2) return false;
@@ -182,10 +214,12 @@ bool prepareEmulatorLaunch(const Project& project, const KnowledgeBase& knowledg
     for (auto& arguments : splitCommand(found->second)) optionArguments.push_back(arguments);
   launch.args.insert(launch.args.end() - 1, optionArguments.begin(), optionArguments.end());
   if (!tvSupported(project.emulator, project.tv))
-    launch.notes.push_back(F("{0} has no {1} TV standard: it chooses one itself.", {project.emulator == "stella" ? "Stella" : "Gopher2600", project.tv}));
+    launch.notes.push_back(F("{0} has no {1} TV standard: it chooses one itself.",
+                             {project.emulator == "stella" ? "Stella" : project.emulator == "test7800" ? "Test7800" : "Gopher2600", project.tv}));
   fs::path root(profileRoot);
   if (project.emulator == "stella") return prepareStella(project, root, home, launch, error);
   if (project.emulator == "gopher2600" && !preferences.empty()) return prepareGopher(root, home, preferences, launch, error);
+  if (project.emulator == "test7800") return prepareTest7800(root, home, launch, error);
   return true;
 }
 

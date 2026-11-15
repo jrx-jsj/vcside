@@ -1299,7 +1299,15 @@
     "Default build": "Build por defecto",
     "ELF ROM (make)": "ROM ELF (make)",
     "ACE file (make ace)": "Archivo ACE (make ace)",
-    "What F7 builds and F5 runs (the ACE file in Gopher2600). The Chameleon image is built with make chameleon: it needs the firmware and no emulator runs it.": "Lo que compila F7 y ejecuta F5 (el archivo ACE, en Gopher2600). La imagen del Chameleon se compila con make chameleon: necesita el firmware y ningún emulador la ejecuta."
+    "What F7 builds and F5 runs (the ACE file in Gopher2600). The Chameleon image is built with make chameleon: it needs the firmware and no emulator runs it.": "Lo que compila F7 y ejecuta F5 (el archivo ACE, en Gopher2600). La imagen del Chameleon se compila con make chameleon: necesita el firmware y ningún emulador la ejecuta.",
+    "Atari 7800 (Chameleon Cart ELF games)": "Atari 7800 (juegos ELF del Chameleon Cart)",
+    "Atari 7800 emulator by JetSetIlly, for the 7800 side of Chameleon Cart ELF games that run on both consoles. macOS: Test7800.app in Applications; Windows and Linux: unpack the release into the test7800 folder of VCSIDE's tools folder.": "Emulador de Atari 7800 de JetSetIlly, para la parte 7800 de los juegos ELF del Chameleon Cart que funcionan en las dos consolas. macOS: Test7800.app en Aplicaciones; Windows y Linux: descomprime la versión en la carpeta test7800 de la carpeta de herramientas de VCSIDE.",
+    "Example: one game for the 2600 and the 7800 (Chameleon Cart)": "Ejemplo: un juego para la 2600 y la 7800 (Chameleon Cart)",
+    "full": "completo",
+    "modern": "moderno",
+    "mono": "mono",
+    "Run on the Atari 7800 (Test7800)": "Ejecutar en la Atari 7800 (Test7800)",
+    "stereo": "estéreo"
   },
-  "total": 1171
+  "total": 1302
 }

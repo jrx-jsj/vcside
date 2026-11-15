@@ -166,6 +166,7 @@ class App {
   void build(int thenRun);  // 0 = no, 1 = run, 2 = debug
   void run(bool debug);
   void runRom(const std::string& rom);  // a ROM of the project tree, in the project's emulator
+  void runOn(const std::string& emulatorId);  // the project's ROM in another emulator (Test7800)
   void launchEmulator(const Project& project, std::vector<std::string> args, std::string error);
   void pollBuild();
   void startSpace();

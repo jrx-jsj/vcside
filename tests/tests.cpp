@@ -150,6 +150,12 @@ static void testKb(const KnowledgeBase& kb) {
   CHECK(ace && ace->category == "arm" && ace->stella == "none" && !ace->sources.empty());
   for (auto& [mnemonic, instruction] : kb.instructions())
     for (auto& id : instruction.sources) CHECK(kb.source(id) != nullptr);
+  // the 7800 as a Chameleon Cart ELF game reaches it: MARIA's registers, INPTCTRL, its notes;
+  // the TIA keeps WSYNC (MARIA's is MARIA_WSYNC, as vcsLib names it)
+  CHECK(kb.reg("WSYNC") && kb.reg("WSYNC")->chip == "TIA");
+  CHECK(kb.reg("MARIA_WSYNC") && kb.reg("MARIA_WSYNC")->chip == "MARIA" && kb.reg("MARIA_WSYNC")->addr() == 0x24);
+  CHECK(kb.reg("CTRL") && kb.reg("CTRL")->addr() == 0x3C && kb.reg("P7C3") && kb.reg("P7C3")->addr() == 0x3F && kb.reg("P1C1")->addr() == 0x25);
+  CHECK(kb.reg("INPTCTRL") && kb.reg("INPTCTRL")->chip == "7800" && kb.a7800Notes().size() >= 10);
   auto completions = kb.complete("ST");
   bool sta = false;
   for (auto& completion : completions) sta |= completion.word == "STA";
@@ -742,6 +748,41 @@ static void testEmulatorOptions(const KnowledgeBase& kb) {
   launch = {};
   launch.args = {"/usr/local/bin/gopher2600", "RUN", "/tmp/proj/build/game.bin"};
   CHECK(prepareEmulatorLaunch(project, kb, root.string(), launch, &error, home.string()) && launch.workDir == project.dir);
+  // Test7800: flags only, always portable, with a copy of the user's save files
+  const EmulatorInfo* test7800 = kb.emulator("test7800");
+  CHECK(test7800 && test7800->option("bios") && test7800->option("overlay"));
+  if (test7800) {
+    for (auto& option : test7800->options) CHECK(!option.flag.empty() && option.pref.empty() && option.arg.empty() && !option.labelText().empty());
+    project.emulator = "test7800";
+    project.tv = "PAL";
+    project.emulatorOptions["test7800"] = {{"bios", "true"}, {"audio", "NONE"}};
+    CHECK(has(emulatorOptionArgs(project, *test7800), {"-bios=true"}) && has(emulatorOptionArgs(project, *test7800), {"-audio", "NONE"}));
+#if defined(_WIN32)
+    fs::path t78User = home / "test7800";
+#elif defined(__APPLE__)
+    fs::path t78User = home / "Library" / "Application Support" / "test7800";
+#else
+    fs::path t78User = home / ".config" / "test7800";
+#endif
+    fs::create_directories(t78User / "elf_nvram");
+    std::ofstream(t78User / "savekey") << "eeprom";
+    launch = {};
+    launch.args = {"/Applications/Test7800.app/Contents/MacOS/test7800_darwin_arm64", "-run", "-bios=false", "/tmp/proj/build/game.bin"};
+    CHECK(prepareEmulatorLaunch(project, kb, root.string(), launch, &error, home.string()));
+    CHECK(launch.workDir == (root / "test7800").string() && fs::exists(root / "test7800" / "portable.txt"));
+    CHECK(fs::exists(root / "test7800" / "Test7800_UserData" / "savekey") && fs::is_directory(root / "test7800" / "Test7800_UserData" / "elf_nvram"));
+    CHECK(launch.args.back() == "/tmp/proj/build/game.bin" && launch.notes.empty());
+    // the project's -bios=true comes after VCSIDE's -bios=false, so the project wins (Go's flag package keeps the last)
+    auto biosOff = std::find(launch.args.begin(), launch.args.end(), "-bios=false"), biosOn = std::find(launch.args.begin(), launch.args.end(), "-bios=true");
+    CHECK(biosOff != launch.args.end() && biosOn != launch.args.end() && biosOff < biosOn);
+    project.tv = "PAL60";
+    launch = {};
+    launch.args = {"/usr/bin/test7800", "/tmp/proj/build/game.bin"};
+    CHECK(prepareEmulatorLaunch(project, kb, root.string(), launch, &error, home.string()) && launch.notes.size() == 1);  // a 7800 has no PAL60
+  }
+  CHECK(formatSupported("test7800", "ELF") && !formatSupported("test7800", "4K") && !formatSupported("test7800", "ACE"));
+  CHECK(tvSupported("test7800", "PAL") && !tvSupported("test7800", "PAL60") && !tvSupported("test7800", "SECAM"));
+  CHECK(std::find(emulatorIds().begin(), emulatorIds().end(), "test7800") != emulatorIds().end());
   fs::remove_all(tempDir, errorCode);
   CHECK(tvSupported("stella", "NTSC50") && !tvSupported("stella", "PAL-M") && tvSupported("gopher2600", "PAL-M"));
   CHECK(tvIs50Hz("NTSC50") && !tvIs50Hz("PAL60"));
@@ -1283,7 +1324,7 @@ static void testElfSpace() {
     const std::vector<std::pair<Language, std::string>> notedTemplates = {
         {Language::Dasm, ""},  {Language::Dasm, "animation"}, {Language::Dasm, "game"},   {Language::Dasm, "cdfj"},
         {Language::BatariBasic, ""}, {Language::BatariBasic, "game"}, {Language::BatariBasic, "square"}, {Language::ElfC, ""},   {Language::ElfC, "animation"},
-        {Language::ElfC, "game"},    {Language::AceC, ""},        {Language::AceC, "animation"}, {Language::AceC, "vcslib"}, {Language::AceC, "game"}};
+        {Language::ElfC, "game"},    {Language::ElfC, "dual"},    {Language::AceC, ""},        {Language::AceC, "animation"}, {Language::AceC, "vcslib"}, {Language::AceC, "game"}};
     int notesIndex = 0;
     for (auto& [language, example] : notedTemplates) {
       fs::path notedDir = dir / ("notes-" + std::to_string(notesIndex++));
@@ -1417,7 +1458,7 @@ static void testElfSpace() {
   }
   CHECK(stellaFormat("CDFJ") == "CDF" && stellaFormat("DPC+") == "DPCP");
   // the ELF example: the template with the example's main.c, and hero.gfx.h next to it
-  CHECK(Project::examples(Language::ElfC).size() == 2 && Project::examples(Language::ElfC)[0].first == "game");
+  CHECK(Project::examples(Language::ElfC).size() == 3 && Project::examples(Language::ElfC)[0].first == "game");
   fs::path elfDir = dir / "anim-elf";
   CHECK(Project::create(elfDir.string(), "walker", Language::ElfC, "NTSC", &project, &error, "animation"));
   for (auto fileName : {"Makefile", "include/vcsLib.h", "src/main.c", "src/memcpy_long.S", "src/hero.vcsgfx", "src/hero.gfx.h", "src/theme.vcsmusic", "src/music.h"})
@@ -1469,6 +1510,26 @@ static void testElfSpace() {
     if (!gcc.empty() && !make.empty() && std::string(tvStandard) == "NTSC") {
       std::string command = "cd \"" + gameDir.string() + "\" && \"" + make + "\" > make.log 2>&1 && \"" + make + "\" ace > make-ace.log 2>&1";
       CHECK(std::system(command.c_str()) == 0 && fs::exists(gameDir / "build" / "game.bin") && romFormat((gameDir / "build" / "game.ace").string()) == "ACE");
+    }
+  }
+  // the dual example: one ELF for the 2600 (TIA) and the 7800 (MARIA), always with the
+  // Chameleon image's glue; a TIA song in C with its two effects; it builds as ELF and ACE
+  {
+    CHECK(Project::examples(Language::ElfC)[2].first == "dual");
+    fs::path dualDir = dir / "dual";
+    CHECK(Project::create(dualDir.string(), "both", Language::ElfC, "NTSC", &project, &error, "dual"));
+    CHECK(project.format == "ELF" && project.output == "build/both.bin");
+    for (auto fileName : {"src/main.c", "src/game.c", "src/game.h", "src/screens.h", "src/tia_screen.c", "src/maria_screen.c", "src/hero.gfx.h",
+                          "src/music.h", "chameleon/support.c"})
+      CHECK(fs::exists(inProject(dualDir, fileName)));
+    std::ifstream dualMain(inProject(dualDir, "src/main.c")), dualMusic(inProject(dualDir, "src/music.h"));
+    std::string dualMainText((std::istreambuf_iterator<char>(dualMain)), {}), dualMusicText((std::istreambuf_iterator<char>(dualMusic)), {});
+    CHECK(dualMainText.find("ST_NTSC_7800") != std::string::npos && dualMainText.find(".elf7800") != std::string::npos && dualMainText.find("{{") == std::string::npos);
+    CHECK(dualMusicText.find("#define MUSIC_TIA 1") != std::string::npos && dualMusicText.find("MUSIC_EFFECT_FIRE") != std::string::npos &&
+          dualMusicText.find("MUSIC_EFFECT_BUMP") != std::string::npos);
+    if (!gcc.empty() && !make.empty()) {
+      std::string command = "cd \"" + dualDir.string() + "\" && \"" + make + "\" > make.log 2>&1 && \"" + make + "\" ace > make-ace.log 2>&1";
+      CHECK(std::system(command.c_str()) == 0 && fs::exists(dualDir / "build" / "both.bin") && romFormat((dualDir / "build" / "both.ace").string()) == "ACE");
     }
   }
   // the ACE files an ELF project gets for make ace, and its TV system
@@ -5459,6 +5520,12 @@ static void testAssistant(const KnowledgeBase& kb) {
       CHECK(ids("Para posicionar un sprite en un valor específico de X en la pantalla").count("position-object-x"));
       CHECK(ids("¿Cómo hago que la consola reproduzca un tono?").count("make-sound"));
       CHECK(ids("My game is bigger than 4 KB, what can I do?").count("add-banks"));
+      // the Atari 7800 entries (data/kb/a7800.json and its how-to entries)
+      CHECK(ids("How do I build a display list for MARIA on the 7800?").count("7800-display-list"));
+      CHECK(ids("How does the ARM feed MARIA's DMA with vcsInjectDmaData?").count("7800-elf-serve-graphics"));
+      CHECK(ids("How do I read the two buttons of the 7800 joystick?").count("7800-read-controllers"));
+      CHECK(ids("One ELF for both the 2600 and the 7800 on the Chameleon").count("7800-dual-elf"));
+      CHECK(ids("¿Cómo funciona la pausa de la 7800?").size() > 0);
       CHECK(ids("Why does my picture roll?").count("fix-rolling-picture") || ids("Why does my picture roll?").count("frame-structure"));
       auto how = groundText(kb, "How do I position a sprite horizontally?", "", context);
       CHECK(!how.empty() && how[0].text.find("How-to:") == 0 && how[0].text.find("NOT VERIFIED") != std::string::npos);  // the unrun routine says so

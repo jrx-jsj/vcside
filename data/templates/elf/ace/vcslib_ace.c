@@ -72,3 +72,10 @@ void vcsWrite6(uint16_t address, uint8_t value)
 void vcsCopyOverblankToRiotRam(void) { ace_overblank_load(); }
 void vcsStartOverblank(void) { ace_overblank_start(); }
 void vcsEndOverblank(void) { ace_overblank_end(); }
+
+/* An ACE cartridge never runs on a 7800 (args[MP_SYSTEM_TYPE] is a 2600's), so a game that
+ * also has a 7800 side never calls these: they only let it link. */
+void vcsJmpToRam3(uint16_t address) { (void)address; }
+void vcsWaitForAddress(uint16_t address) { (void)address; }
+void vcsInjectDmaData(uint16_t address, uint8_t count, const uint8_t *bytes) { (void)address; (void)count; (void)bytes; }
+uint8_t vcsSnoopRead(uint16_t address) { (void)address; return 0; }

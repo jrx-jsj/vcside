@@ -110,6 +110,18 @@ void vcsCopyOverblankToRiotRam(void);
 void vcsStartOverblank(void);
 void vcsEndOverblank(void);
 
+/* Atari 7800 (the Chameleon Cart in a 7800, args[MP_SYSTEM_TYPE] = ST_NTSC_7800 or
+ * ST_PAL_7800; Test7800). Addresses are what the cartridge sees of the bus: 13 bits
+ * (address & 0x1FFF). Only a game that runs on a 7800 calls them: the PlusCart's and the
+ * UnoCart's loaders lack them and refuse an ELF that names vcsSnoopRead, and the Chameleon
+ * template's firmware lacks vcsWaitForAddress. */
+void vcsJmpToRam3(uint16_t address);             /* jmp address (3): the 6502 goes on in the console's RAM */
+void vcsWaitForAddress(uint16_t address);        /* waits until the console puts address on the bus */
+/* Drives bytes[0..count-1] onto the bus as the console reads address, address + 1... (one
+ * run of consecutive reads: a read from elsewhere in between ends it). MARIA's DMA reads. */
+void vcsInjectDmaData(uint16_t address, uint8_t count, const uint8_t *bytes);
+uint8_t vcsSnoopRead(uint16_t address);          /* waits for address and returns what the console put on the bus */
+
 /* Bus stuffing (vcsWrite3, vcsLd[axy]ForBusStuff2) exists on the PlusCart and in Stella
  * but not in the Chameleon Cart's current firmware, so it is left out here. */
 

@@ -14,6 +14,8 @@
 //     ~/Library/Application Support/Stella is the profile's
 //   Gopher2600: portable mode (portable.txt in the working folder, the
 //     preferences in ./Gopher2600_UserData), only when a preference is set
+//   Test7800: portable mode too (./Test7800_UserData), always: it has only flags,
+//     but it writes its SaveKey and save files there
 #pragma once
 #include <map>
 #include <string>

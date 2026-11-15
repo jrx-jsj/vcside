@@ -24,6 +24,8 @@ Toolchain::Toolchain() {
        N_("ELF cartridges need a recent build (nightly from 2026-11 or later).")},
       {"stella", "Stella", N_("emulator"), "", "", "https://stella-emu.github.io/downloads.html",
        N_("Install it normally; VCSIDE looks in the usual application folders.")},
+      {"test7800", "Test7800", N_("emulator"), "", "", "https://github.com/JetSetIlly/test7800/releases",
+       N_("Atari 7800 emulator by JetSetIlly, for the 7800 side of Chameleon Cart ELF games that run on both consoles. macOS: Test7800.app in Applications; Windows and Linux: unpack the release into the test7800 folder of VCSIDE's tools folder.")},
       {"bb", "batari Basic", N_("compiler"), "", "", "https://github.com/batari-Basic/batari-Basic/releases",
        N_("Unpack the release zip into the bb folder of VCSIDE's tools folder, or choose its 2600basic.sh (2600bas.bat on Windows). It brings its own DASM; version 1.9 also needs wasmtime.")},
       {"bb-pxe", "batari Basic for PXE (beta)", N_("compiler"), "", "", "https://github.com/ZacharyScolaro/batari-Basic/releases",
@@ -110,6 +112,20 @@ std::vector<std::string> Toolchain::candidates(const Tool& tool) const {
     add(toolsFolder + "/gopher2600/gopher2600_linux_amd64");
 #endif
     add(toolsFolder + "/gopher2600/gopher2600");
+  } else if (tool.id == "test7800") {
+    add(findInPath("test7800"));
+#if defined(__APPLE__)
+    for (auto bin : {"test7800_darwin_arm64", "test7800_darwin_amd64", "test7800"}) {
+      add(std::string("/Applications/Test7800.app/Contents/MacOS/") + bin);
+      add(homeDir + "/Applications/Test7800.app/Contents/MacOS/" + bin);
+    }
+#elif defined(_WIN32)
+    add(toolsFolder + "\\test7800\\test7800.exe");
+    add(toolsFolder + "\\test7800\\test7800_windows_amd64.exe");
+#else
+    add(toolsFolder + "/test7800/test7800_linux_amd64");
+#endif
+    add(toolsFolder + "/test7800/test7800");
   } else if (tool.id == "wasmtime") {
     add(findInPath("wasmtime"));
 #ifdef _WIN32

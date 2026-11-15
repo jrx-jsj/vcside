@@ -4,7 +4,8 @@
   "Stella saves every command-line option into its settings when it quits (Settings::load/save in its sources), except a few local ones (-basedir, -break, -debug, -holdreset, -holdselect) and the ROM properties (-bs, -format, -tv, -ld, -rd, -lc, -rc, -sp, -cp, -startbank...). So VCSIDE runs it with its own copy of the user's settings: '-basedir <dir>' for the Unix and Windows builds, HOME=<dir> for the macOS app, which ignores -basedir.",
   "Stella's dev.* options only apply with the developer settings on (-dev.settings 1); VCSIDE adds it when one is used ('developer': true).",
   "Gopher2600 has no command-line flags for its preferences (sound, VSYNC checks, random state...). VCSIDE runs it in portable mode (portable.txt in the working folder, preferences in ./Gopher2600_UserData) with a copy of the user's preferences file and the chosen values.",
-  "Labels and descriptions are VCSIDE's own words; values and meanings were checked against the emulators' help, manual and sources."
+  "Labels and descriptions are VCSIDE's own words; values and meanings were checked against the emulators' help, manual and sources.",
+  "Test7800 (an Atari 7800 emulator) only takes flags; it keeps no preferences, only the SaveKey, high score cartridge and ELF save files. VCSIDE runs it in portable mode (portable.txt in the working folder, its files in ./Test7800_UserData) with a copy of the user's, so a test run never writes over them. VCSIDE always passes -run (start running, not halted in the terminal debugger), -dialog=false and -bios=false (an ELF carries no 7800 signature: on the Chameleon Cart the firmware answers the BIOS's check); the BIOS option below overrides the last one."
  ],
  "sources": [
   {
@@ -27,6 +28,13 @@
    "author": "JetSetIlly",
    "url": "https://github.com/JetSetIlly/Gopher2600/tree/v0.56.1",
    "used_for": "Flags, preference keys and their meaning, portable mode; GPL-3, consulted only"
+  },
+  {
+   "id": "test7800-0.9",
+   "title": "Test7800 v0.9.0: command-line flags (debugger.go), README and resources package (portable mode)",
+   "author": "JetSetIlly",
+   "url": "https://github.com/JetSetIlly/test7800",
+   "used_for": "Flags, their values and meaning, where it keeps its files; GPL-3, consulted only"
   }
  ],
  "emulators": {
@@ -2325,6 +2333,291 @@
       "es": {
        "label": "RESPx: HMOVE threshold",
        "description": "Rareza de revisión del TIA presente en algunas consolas: RESPx: HMOVE threshold."
+      }
+     }
+    }
+   ]
+  },
+  "test7800": {
+   "name": "Test7800",
+   "options": [
+    {
+     "id": "bios",
+     "group": "Console",
+     "label": "Run the BIOS",
+     "description": "Runs the 7800 BIOS at reset (its signature check included). VCSIDE turns it off unless this is set: an ELF has no signature, and with the BIOS the screen stays black.",
+     "type": "bool",
+     "sources": [
+      "test7800-0.9"
+     ],
+     "flag": "-bios",
+     "values": [
+      {
+       "value": "true",
+       "label": "on"
+      },
+      {
+       "value": "false",
+       "label": "off"
+      }
+     ],
+     "i18n": {
+      "es": {
+       "label": "Ejecutar la BIOS",
+       "description": "Ejecuta la BIOS de la 7800 al reiniciar (con su comprobación de la firma). VCSIDE la desactiva salvo que se elija aquí: un ELF no lleva firma y, con la BIOS, la pantalla se queda en negro."
+      }
+     }
+    },
+    {
+     "id": "checksum",
+     "group": "Console",
+     "label": "BIOS signature check",
+     "description": "With the BIOS on, whether it checks the cartridge's signature. Off lets unsigned NTSC ROMs boot through the BIOS.",
+     "type": "bool",
+     "sources": [
+      "test7800-0.9"
+     ],
+     "flag": "-checksum",
+     "values": [
+      {
+       "value": "true",
+       "label": "on"
+      },
+      {
+       "value": "false",
+       "label": "off"
+      }
+     ],
+     "i18n": {
+      "es": {
+       "label": "Comprobar la firma",
+       "description": "Con la BIOS, si comprueba la firma del cartucho. Desactivada, las ROM NTSC sin firmar arrancan con la BIOS."
+      }
+     }
+    },
+    {
+     "id": "savekey",
+     "group": "Controllers",
+     "label": "SaveKey",
+     "description": "A SaveKey in the second port: auto (when the game uses one), always or never.",
+     "type": "choice",
+     "sources": [
+      "test7800-0.9"
+     ],
+     "flag": "-savekey",
+     "values": [
+      {
+       "value": "AUTO",
+       "label": "auto"
+      },
+      {
+       "value": "ALWAYS",
+       "label": "always"
+      },
+      {
+       "value": "NEVER",
+       "label": "no"
+      }
+     ],
+     "i18n": {
+      "es": {
+       "label": "SaveKey",
+       "description": "Una SaveKey en el segundo puerto: automática (si el juego la usa), siempre o nunca."
+      }
+     }
+    },
+    {
+     "id": "hsc",
+     "group": "Console",
+     "label": "High score cartridge",
+     "description": "Atari's high score cartridge: auto (when the ROM's header asks for it), always or never.",
+     "type": "choice",
+     "sources": [
+      "test7800-0.9"
+     ],
+     "flag": "-hsc",
+     "values": [
+      {
+       "value": "AUTO",
+       "label": "auto"
+      },
+      {
+       "value": "ALWAYS",
+       "label": "always"
+      },
+      {
+       "value": "NEVER",
+       "label": "no"
+      }
+     ],
+     "i18n": {
+      "es": {
+       "label": "Cartucho de récords",
+       "description": "El cartucho de récords de Atari: automático (si lo pide la cabecera de la ROM), siempre o nunca."
+      }
+     }
+    },
+    {
+     "id": "players",
+     "group": "Controllers",
+     "label": "Players' controllers",
+     "description": "Which controller each player uses, separated by commas: keyboard, gamepad or none (for example keyboard,gamepad).",
+     "type": "text",
+     "sources": [
+      "test7800-0.9"
+     ],
+     "flag": "-players",
+     "i18n": {
+      "es": {
+       "label": "Mandos de los jugadores",
+       "description": "El mando de cada jugador, separados por comas: keyboard, gamepad o none (por ejemplo keyboard,gamepad)."
+      }
+     }
+    },
+    {
+     "id": "quadtari",
+     "group": "Controllers",
+     "label": "QuadTari",
+     "description": "Four controllers through QuadTari adapters.",
+     "type": "bool",
+     "sources": [
+      "test7800-0.9"
+     ],
+     "flag": "-quadtari",
+     "values": [
+      {
+       "value": "true",
+       "label": "on"
+      },
+      {
+       "value": "false",
+       "label": "off"
+      }
+     ],
+     "i18n": {
+      "es": {
+       "label": "QuadTari",
+       "description": "Cuatro mandos con adaptadores QuadTari."
+      }
+     }
+    },
+    {
+     "id": "overscan",
+     "group": "Video",
+     "label": "Overscan",
+     "description": "How much of the picture's edges the TV shows: auto, none, modern or full.",
+     "type": "choice",
+     "sources": [
+      "test7800-0.9"
+     ],
+     "flag": "-overscan",
+     "values": [
+      {
+       "value": "AUTO",
+       "label": "auto"
+      },
+      {
+       "value": "NONE",
+       "label": "none"
+      },
+      {
+       "value": "MODERN",
+       "label": "modern"
+      },
+      {
+       "value": "FULL",
+       "label": "full"
+      }
+     ],
+     "i18n": {
+      "es": {
+       "label": "Sobrebarrido",
+       "description": "Cuánto de los bordes de la imagen enseña la tele: automático, nada, moderno o completo."
+      }
+     }
+    },
+    {
+     "id": "audio",
+     "group": "Audio",
+     "label": "Audio",
+     "description": "Mono, stereo (TIA and POKEY on separate sides) or no sound.",
+     "type": "choice",
+     "sources": [
+      "test7800-0.9"
+     ],
+     "flag": "-audio",
+     "values": [
+      {
+       "value": "MONO",
+       "label": "mono"
+      },
+      {
+       "value": "STEREO",
+       "label": "stereo"
+      },
+      {
+       "value": "NONE",
+       "label": "no"
+      }
+     ],
+     "i18n": {
+      "es": {
+       "label": "Sonido",
+       "description": "Mono, estéreo (TIA y POKEY a cada lado) o sin sonido."
+      }
+     }
+    },
+    {
+     "id": "overlay",
+     "group": "Debugging",
+     "label": "MARIA overlay",
+     "description": "Colours each part of the picture by what MARIA was doing: red DMA, blue WSYNC, green an interrupt. Debug (F6) turns it on.",
+     "type": "bool",
+     "sources": [
+      "test7800-0.9"
+     ],
+     "flag": "-overlay",
+     "values": [
+      {
+       "value": "true",
+       "label": "on"
+      },
+      {
+       "value": "false",
+       "label": "off"
+      }
+     ],
+     "i18n": {
+      "es": {
+       "label": "Capa de MARIA",
+       "description": "Colorea cada parte de la imagen según lo que hacía MARIA: rojo DMA, azul WSYNC, verde una interrupción. Depurar (F6) la activa."
+      }
+     }
+    },
+    {
+     "id": "log",
+     "group": "Debugging",
+     "label": "Log to the terminal",
+     "description": "Echoes Test7800's log to its standard error (VCSIDE's output panel does not show it).",
+     "type": "bool",
+     "sources": [
+      "test7800-0.9"
+     ],
+     "flag": "-log",
+     "values": [
+      {
+       "value": "true",
+       "label": "on"
+      },
+      {
+       "value": "false",
+       "label": "off"
+      }
+     ],
+     "i18n": {
+      "es": {
+       "label": "Registro en el terminal",
+       "description": "Copia el registro de Test7800 a su salida de errores (el panel de salida de VCSIDE no lo muestra)."
       }
      }
     }
