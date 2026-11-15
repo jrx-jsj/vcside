@@ -19,6 +19,14 @@ set(VCSIDE_LLM_ARGS
   -DLLAMA_OPENSSL=OFF
   -DGGML_CCACHE=OFF)
 
+# llama.cpp's messages and asserts name their source files (__FILE__): without this, the shipped
+# helper would carry the path of the folder it was built in (on a Mac, under the builder's home).
+set(VCSIDE_LLM_PATH_MAP "-ffile-prefix-map=<SOURCE_DIR>=llama.cpp -ffile-prefix-map=<BINARY_DIR>=llama.cpp-build")
+if(NOT MSVC)
+  list(APPEND VCSIDE_LLM_ARGS "-DCMAKE_C_FLAGS=${VCSIDE_LLM_PATH_MAP}" "-DCMAKE_CXX_FLAGS=${VCSIDE_LLM_PATH_MAP}"
+       "-DCMAKE_OBJC_FLAGS=${VCSIDE_LLM_PATH_MAP}" "-DCMAKE_OBJCXX_FLAGS=${VCSIDE_LLM_PATH_MAP}")
+endif()
+
 if(APPLE)
   # One self-contained executable: Metal for the GPU, the CPU kernels built in.
   list(APPEND VCSIDE_LLM_ARGS -DBUILD_SHARED_LIBS=OFF -DGGML_METAL=ON -DGGML_METAL_EMBED_LIBRARY=ON

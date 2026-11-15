@@ -140,6 +140,12 @@ if [ "$WINDOWS_SIGNING" = signed ]; then
   tools/sign.sh windows-verify "${WINDOWS_EXES[@]}" "$DIST/$WINDOWS_SETUP"
 fi
 
+# Nothing of this computer goes out: no file in the packages may name the builder's home
+# (a source path a compiler kept, e.g. llama.cpp's __FILE__ before its prefix map).
+leaks=$(grep -r -a -l -F -e "$HOME" "$APP_BUNDLE" "$BUILD_DIR/pkg" 2>/dev/null || true)
+[ -z "$leaks" ] || die "these packaged files contain $HOME:
+$leaks"
+
 (cd "$DIST" && shasum -a 256 "$MAC_DMG" "$MAC_ZIP" "$WINDOWS_SETUP" "$WINDOWS_NAME.zip" "$LINUX_X64" "$LINUX_ARM64" > SHA256SUMS)
 
 # --- notes ----------------------------------------------------------------------------------
