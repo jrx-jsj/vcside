@@ -87,14 +87,29 @@ struct Source {
   std::string id, title, author, url;
 };
 
-// A word the editor can complete or explain.
-// A word of batari Basic (data/kb/batari-basic.json): statement, control, directive,
-// block, function, variable or comment.
+// A word of a language the editor can complete or explain: batari Basic (data/kb/batari-basic.json),
+// TinyELF Basic (tinyelf-basic.json) or the C of ELF games (elf.json, vcsLib): statement, control,
+// directive, block, function, variable, operator, command, macro or comment.
 struct BasicKeyword {
-  std::string word, kind, syntax, summary;
-  std::map<std::string, std::string> i18n;  // language -> summary
-  std::vector<std::string> sources;
+  std::string word, kind, syntax, summary, description, example;
+  std::map<std::string, std::string> i18n;             // language -> summary
+  std::map<std::string, std::string> i18nDescription;  // language -> description
+  std::vector<std::string> sources, seeAlso;
+  bool available = true;  // false: the language knows the word but this build leaves it out (TinyELF's PLAY...)
   const std::string& summaryText() const;
+  const std::string& descriptionText() const;
+};
+
+// The words of one language, and what the knowledge base says of it as a whole.
+struct LanguageWords {
+  std::string id, title;  // "bb" "batari Basic", "tinyelf" "TinyELF Basic", "elf" "ELF"
+  bool caseSensitive = true;  // TinyELF's words are kept in capitals and found in any case
+  std::vector<std::string> notes;
+  std::map<std::string, BasicKeyword> words;  // by word; "joyNup" with a range is joy0up ... joy3up
+  std::vector<BasicKeyword> entries;          // as the file has them ("joyNup" once), for the documentation
+  std::map<std::string, std::string> entryOf;  // a numbered word -> its entry's word (joy2up -> joyNup)
+  // An entry by its word (joyNup) or a word of it (joy0up): what the documentation shows.
+  const BasicKeyword* entry(const std::string& word) const;
 };
 
 // A how-to entry (data/kb/techniques.json): what a programmer wants to do, with the registers and the steps.
@@ -125,6 +140,11 @@ class KnowledgeBase {
   // batari Basic word (case-sensitive, as the compiler); "player0:" with its colon.
   const BasicKeyword* basic(const std::string& word) const;
   const std::map<std::string, BasicKeyword>& basicKeywords() const { return basic_; }
+  // The languages whose words are documented, in the order the documentation lists them.
+  static const std::vector<std::string>& languageIds();
+  const LanguageWords* language(const std::string& id) const;
+  // A word of a language: as it is written (bb, elf) or in any case (tinyelf).
+  const BasicKeyword* languageWord(const std::string& languageId, const std::string& word) const;
 
   const std::map<std::string, Instruction>& instructions() const { return instructions_; }
   const std::vector<Register>& registers() const { return registers_; }
@@ -151,7 +171,9 @@ class KnowledgeBase {
   std::vector<std::string> cpuNotes_, tiaNotes_, a7800Notes_;
   std::vector<Technique> techniques_;
   std::map<std::string, Source> sources_;
-  std::map<std::string, BasicKeyword> basic_;
+  std::map<std::string, BasicKeyword> basic_;  // = languages_["bb"].words
+  std::map<std::string, LanguageWords> languages_;
+  bool loadLanguage(const std::string& path, const std::string& id, const std::string& title, bool caseSensitive, std::string* error);
 };
 
 std::string upper(std::string text);

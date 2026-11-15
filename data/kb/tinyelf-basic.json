@@ -1,0 +1,2350 @@
+{
+  "language": "TinyELF Basic",
+  "notes": [
+    "TinyELF Basic is Al_Nafuur's port of Stefan Lenz's IoT BASIC (Basic2) to the Atari 2600. It runs as an ELF game on a PlusCart or UnoCart (firmware 2.3.32 or newer) and drives a 36-column text display.",
+    "Lines that start with a number are stored as program lines; anything else is run at once. Typing a number that exists replaces that line, typing only the number deletes it, and several statements share a line when separated by a colon. There is no full-screen editor.",
+    "Keywords are shown in capitals, and names are converted to upper case. Spaces between keywords and names are optional (FORI=1TO10 works), and because a keyword ends a name, a variable name must not contain one: SCORE is read as SC OR E.",
+    "Numbers are 32-bit signed integers: there is no floating point, so SIN, COS, TAN, ATAN, LOG and EXP do not exist, and INT leaves its argument unchanged. Comparisons give -1 for true and 0 for false, so NOT, AND and OR work bitwise. % is the integer remainder and ^ is evaluated from left to right.",
+    "Variable names may be up to 32 characters, but only the first two are significant, as in Microsoft BASICs. String variables end in $, are created 32 characters long (SET 16 changes it) and support the substring notation A$(1,4) as well as LEFT$, RIGHT$, MID$ and + in assignments and PRINT. Arrays have 10 elements unless dimensioned, start at 1 (SET 12,0 starts at 0) and can have two dimensions.",
+    "Program memory is chosen at start-up: a PlusCart or UnoCart offers 65535 bytes for the program and its variables, while Gopher2600 offers 49152. SIZE shows what is free.",
+    "Input comes from a KeyPortari keyboard adapter; ESC stops a running program. Programs are stored on SaveKey-compatible I2C EEPROM drives named E1 to E8, with SAVE, LOAD, LIST \"file\" and ENTER. VCSIDE's TinyELF projects can instead build the program into the ROM so it runs at power-on with only a joystick.",
+    "The Atari 2600 additions are GRAPHICS, PLOT, DRAWTO, STICK, STRIG, PTRIG, FORMAT, CATALOG, ENTER and DELETE, plus PEEK and POKE addressing the display kernel's memory map (colours, characters, video RAM and the TIA audio registers) rather than program memory. There is no sound command and no COLOR command; both are done with POKE.",
+    "The interpreter prints only numeric error codes, for example Error 10 (syntax) or 16 (out of range). After an error the program can be continued with CONT.",
+    "Entries marked \"available\": false are words from Stefan's generic interpreter that are not compiled into the TinyELF build; they are listed so the editor can recognise them, and their text points to the TinyELF way of doing the same thing.",
+    "The TinyELF manual tags each topic as verified on hardware, inherited from Stefan's interpreter, or read from the source only; the string functions, MILLIS and DELAY timing are in the last group, so test them on a real cartridge."
+  ],
+  "sources": [
+    {
+      "id": "tinybasic",
+      "title": "tinybasic (IoT BASIC / Basic2) and its manual",
+      "author": "Stefan Lenz",
+      "url": "https://github.com/slviajero/tinybasic"
+    },
+    {
+      "id": "tinyelf",
+      "title": "TinyELF Basic",
+      "author": "Al_Nafuur",
+      "url": "https://github.com/Al-Nafuur/TinyELF-Basic"
+    }
+  ],
+  "keywords": [
+    {
+      "word": "PRINT",
+      "kind": "statement",
+      "syntax": "PRINT [expr][; | ,] ...\nPRINT #width, expr ...",
+      "summary": "Writes strings and numbers to the screen.",
+      "description": "Prints each expression in turn. A semicolon joins items with no space, a comma puts a space between them. PRINT # followed by a number sets a right-aligned field of that width for numbers, and PRINT #0 switches it off again. Strings can be joined with + inside PRINT.\n\nPRINT ends the line with a line feed. A row that is exactly 36 characters wide already moves the cursor to the next row, so the line feed leaves an empty row; end that PRINT with a semicolon to avoid it. Numbers are printed without the leading and trailing spaces of Microsoft BASIC unless SET 25,1 is used.",
+      "example": "10 A$=\"TINY\"\n20 PRINT \"HELLO \";A$\n30 PRINT #6,42,7",
+      "seeAlso": [
+        "INPUT",
+        "TAB",
+        "SPC",
+        "LOCATE",
+        "SET"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Escribe cadenas y números en pantalla.",
+          "description": "Imprime cada expresión por orden. El punto y coma las une sin espacio y la coma pone un espacio entre ellas. PRINT # seguido de un número fija un campo de ese ancho con los números alineados a la derecha, y PRINT #0 lo desactiva. Dentro de PRINT se pueden concatenar cadenas con +.\n\nPRINT termina la línea con un salto de línea. Una fila de exactamente 36 caracteres ya baja el cursor, así que el salto deja una fila vacía; termina ese PRINT con punto y coma para evitarlo. Los números se imprimen sin los espacios de Microsoft BASIC salvo que uses SET 25,1."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "LET",
+      "kind": "statement",
+      "syntax": "[LET] var = expr\n[LET] var$ = string-expr",
+      "summary": "Assigns a value to a variable, array element or string.",
+      "description": "LET is optional: A=5 works as well as LET A=5. The left side can be a numeric variable, an array element, a string or a substring. Variables are created on first use.\n\nAssigned strings are changed in place, so the string being assigned must not appear further to the right of the = sign; use a second string for things like T$=B$+A$.",
+      "example": "10 LET A=3\n20 B=A*4\n30 N$=\"ELF\"\n40 PRINT B;N$",
+      "seeAlso": [
+        "DIM",
+        "PRINT"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Asigna un valor a una variable, un elemento de matriz o una cadena.",
+          "description": "LET es opcional: A=5 funciona igual que LET A=5. El lado izquierdo puede ser una variable numérica, un elemento de matriz, una cadena o una subcadena. Las variables se crean al usarlas por primera vez.\n\nLas cadenas se modifican en el sitio, así que la cadena que se asigna no debe aparecer más a la derecha del signo =; para casos como T$=B$+A$ usa una segunda cadena."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "INPUT",
+      "kind": "statement",
+      "syntax": "INPUT var [, var ...]\nINPUT \"prompt\", var [, \"prompt\", var ...]",
+      "summary": "Reads values typed on the keyboard into variables.",
+      "description": "Without a prompt string INPUT shows a ? prompt; with one, only the string is shown. Numeric input may be an expression such as 3+4*(4+5). ESC stops the program even while it waits in INPUT.\n\nTinyELF Basic reads its input from a KeyPortari keyboard adapter, which is the only input method of the standard build.",
+      "example": "10 INPUT \"Number: \",N\n20 PRINT N*N",
+      "seeAlso": [
+        "GET",
+        "PRINT"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Lee valores tecleados y los guarda en variables.",
+          "description": "Sin cadena de aviso, INPUT muestra el prompt ?; con ella, solo se muestra la cadena. La entrada numérica puede ser una expresión como 3+4*(4+5). ESC detiene el programa incluso mientras espera en INPUT.\n\nTinyELF Basic lee la entrada de un teclado KeyPortari, que es el único método de entrada de la versión estándar."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "GOTO",
+      "kind": "control",
+      "syntax": "GOTO line-expr",
+      "summary": "Jumps to a program line.",
+      "description": "The target may be an expression, such as GOTO 100+I. GOTO from a running program continues without clearing the variables, unlike RUN. It is also used after ON and ERROR.",
+      "example": "10 PRINT \"HELLO\"\n20 GOTO 10",
+      "seeAlso": [
+        "GOSUB",
+        "ON",
+        "IF",
+        "RUN"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Salta a una línea del programa.",
+          "description": "El destino puede ser una expresión, como GOTO 100+I. GOTO desde un programa en marcha continúa sin borrar las variables, a diferencia de RUN. También se usa tras ON y ERROR."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "GOSUB",
+      "kind": "control",
+      "syntax": "GOSUB line-expr",
+      "summary": "Calls a subroutine at a program line.",
+      "description": "GOSUB remembers where it was and jumps to the line; RETURN comes back to the statement after the GOSUB. The target may be an expression. The GOSUB stack holds 64 entries in this build.",
+      "example": "10 GOSUB 100\n20 END\n100 PRINT \"SUB\"\n110 RETURN",
+      "seeAlso": [
+        "RETURN",
+        "GOTO",
+        "ON"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Llama a una subrutina en una línea del programa.",
+          "description": "GOSUB recuerda dónde estaba y salta a la línea; RETURN vuelve a la sentencia siguiente al GOSUB. El destino puede ser una expresión. La pila de GOSUB tiene 64 entradas en esta versión."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "RETURN",
+      "kind": "control",
+      "syntax": "RETURN",
+      "summary": "Returns from a subroutine called with GOSUB.",
+      "description": "Continues after the GOSUB that called the subroutine. A RETURN without a matching GOSUB stops the program with an error.",
+      "example": "10 GOSUB 100\n20 END\n100 PRINT \"SUB\"\n110 RETURN",
+      "seeAlso": [
+        "GOSUB"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Vuelve de una subrutina llamada con GOSUB.",
+          "description": "Continúa después del GOSUB que llamó a la subrutina. Un RETURN sin GOSUB detiene el programa con un error."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "IF",
+      "kind": "control",
+      "syntax": "IF cond THEN statement [ELSE statement]\nIF cond GOTO line",
+      "summary": "Runs a statement only when a condition is true.",
+      "description": "Zero is false and any other value is true. Comparisons give -1 for true and 0 for false. THEN may be left out, so IF B=A PRINT \"EQUAL\" and IF X=1 GOTO 100 are valid. After THEN or ELSE a plain number means GOTO that line.\n\nIF controls the rest of its line only; with no match, the rest of the line is skipped.",
+      "example": "10 INPUT A\n20 IF A=0 THEN PRINT \"ZERO\" ELSE PRINT \"NOT ZERO\"",
+      "seeAlso": [
+        "THEN",
+        "ELSE",
+        "AND",
+        "OR",
+        "NOT"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Ejecuta una sentencia solo si se cumple una condición.",
+          "description": "Cero es falso y cualquier otro valor es verdadero. Las comparaciones dan -1 si son ciertas y 0 si no. THEN puede omitirse, así que IF B=A PRINT \"IGUAL\" e IF X=1 GOTO 100 son válidos. Tras THEN o ELSE, un número solo significa GOTO a esa línea.\n\nIF controla solo el resto de su línea; si no se cumple, se salta el resto."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "FORMAT",
+      "kind": "command",
+      "syntax": "FORMAT \"En:\" [, size]",
+      "summary": "Prepares a drive for the TinyELF filesystem.",
+      "description": "Without a size, a drive spanning several I2C addresses uses its full capacity and a single address is assumed to hold 32 KiB. An explicit size is checked against the drive; the filesystem cannot address more than 262144 bytes. FORMAT writes only the header, the free-space map and an empty directory and does not erase the data area.\n\nThe drive prefix is required. A bad prefix, missing drive or oversized request gives error 23; a size above 262144 or below zero gives error 16.",
+      "example": "FORMAT \"E1:\"\nFORMAT \"E1:\",4096",
+      "seeAlso": [
+        "SAVE",
+        "CATALOG",
+        "DELETE"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Prepara una unidad para el sistema de archivos de TinyELF.",
+          "description": "Sin tamaño, una unidad que ocupa varias direcciones I2C usa toda su capacidad y una dirección suelta se supone de 32 KiB. Un tamaño explícito se comprueba contra la unidad; el sistema de archivos no puede direccionar más de 262144 bytes. FORMAT solo escribe la cabecera, el mapa de espacio libre y un directorio vacío y no borra el área de datos.\n\nEl prefijo de unidad es obligatorio. Un prefijo erróneo, una unidad inexistente o un tamaño excesivo dan error 23; un tamaño mayor de 262144 o negativo da error 16."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "FOR",
+      "kind": "control",
+      "syntax": "FOR var = start TO end [STEP step]",
+      "summary": "Starts a counting loop closed by NEXT.",
+      "description": "The variable counts from start to end in steps of 1, or STEP. Each FOR needs its own NEXT; NEXT I,J is not accepted. FOR I with no limits is an endless loop. BREAK leaves the innermost loop and CONT jumps to its next iteration. The FOR stack holds 64 entries in this build.",
+      "example": "10 FOR I=1 TO 10 STEP 2\n20 PRINT I\n30 NEXT I",
+      "seeAlso": [
+        "TO",
+        "STEP",
+        "NEXT",
+        "BREAK",
+        "CONT"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Inicia un bucle contador cerrado por NEXT.",
+          "description": "La variable cuenta de inicio a fin de 1 en 1, o con STEP. Cada FOR necesita su propio NEXT; NEXT I,J no se admite. FOR I sin límites es un bucle infinito. BREAK sale del bucle más interno y CONT salta a su siguiente iteración. La pila de FOR tiene 64 entradas en esta versión."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "TO",
+      "kind": "control",
+      "syntax": "FOR var = start TO end",
+      "summary": "Part of FOR: gives the final value of the counter.",
+      "description": "TO separates the start and end values in a FOR statement. Because keywords end names, a variable name must not contain TO: TOTAL is read as TO TAL.",
+      "example": "10 FOR I=1 TO 5: PRINT I: NEXT I",
+      "seeAlso": [
+        "FOR",
+        "STEP"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Parte de FOR: da el valor final del contador.",
+          "description": "TO separa los valores inicial y final en una sentencia FOR. Como las palabras clave terminan los nombres, un nombre de variable no puede contener TO: TOTAL se lee como TO TAL."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "STEP",
+      "kind": "control",
+      "syntax": "FOR var = start TO end STEP step",
+      "summary": "Part of FOR: sets the increment (default 1).",
+      "description": "STEP may be negative to count down. If it is left out, the counter goes up by 1.",
+      "example": "10 FOR I=10 TO 0 STEP -2\n20 PRINT I\n30 NEXT I",
+      "seeAlso": [
+        "FOR",
+        "NEXT"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Parte de FOR: fija el incremento (1 por defecto).",
+          "description": "STEP puede ser negativo para contar hacia atrás. Si se omite, el contador sube de 1 en 1."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "NEXT",
+      "kind": "control",
+      "syntax": "NEXT [var]",
+      "summary": "Closes a FOR loop and goes to the next iteration.",
+      "description": "The variable after NEXT is optional. One NEXT closes one FOR; to close several loops, write several NEXT statements.",
+      "example": "10 FOR I=1 TO 3: PRINT I: NEXT I",
+      "seeAlso": [
+        "FOR",
+        "BREAK",
+        "CONT"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Cierra un bucle FOR y pasa a la siguiente iteración.",
+          "description": "La variable tras NEXT es opcional. Un NEXT cierra un FOR; para cerrar varios bucles hacen falta varios NEXT."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "STOP",
+      "kind": "control",
+      "syntax": "STOP",
+      "summary": "Halts the program; CONT resumes it.",
+      "description": "The program stops and the interpreter returns to the prompt with variables and position kept. Type CONT to continue. ESC stops a running program from the keyboard in the same way.",
+      "example": "10 PRINT \"A\"\n20 STOP\n30 PRINT \"B\"",
+      "seeAlso": [
+        "END",
+        "CONT"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Detiene el programa; CONT lo reanuda.",
+          "description": "El programa se para y el intérprete vuelve al prompt con las variables y la posición intactas. Escribe CONT para continuar. ESC detiene igual un programa en marcha desde el teclado."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "LIST",
+      "kind": "command",
+      "syntax": "LIST\nLIST line\nLIST first, last\nLIST \"En:file\"",
+      "summary": "Shows the program, or writes it as text to a file.",
+      "description": "LIST prints the whole program on screen; LIST 10 prints one line and LIST 10,100 a range. With a drive prefix and file name in quotes, LIST writes the whole program as plain text, one line per program line with keywords expanded, replacing an existing file of the same name. The file form has no line range.\n\nTyping a line number that already exists replaces that line, and typing only a line number deletes it; there is no full-screen editor.",
+      "example": "LIST 10,100\nLIST \"E1:HELLO.LST\"",
+      "seeAlso": [
+        "ENTER",
+        "SAVE",
+        "NEW"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Muestra el programa o lo escribe como texto en un archivo.",
+          "description": "LIST imprime todo el programa en pantalla; LIST 10 imprime una línea y LIST 10,100 un intervalo. Con una unidad y un nombre entre comillas, LIST escribe todo el programa como texto plano, una línea por línea de programa y con las palabras clave expandidas, sustituyendo un archivo del mismo nombre. La forma con archivo no admite intervalo.\n\nEscribir un número de línea que ya existe la sustituye, y escribir solo el número la borra; no hay editor de pantalla completa."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "NEW",
+      "kind": "command",
+      "syntax": "NEW",
+      "summary": "Deletes the program and all variables.",
+      "description": "Settings made with SET are kept.",
+      "example": "NEW",
+      "seeAlso": [
+        "CLR",
+        "RUN",
+        "SET"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Borra el programa y todas las variables.",
+          "description": "Los ajustes hechos con SET se conservan."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "RUN",
+      "kind": "command",
+      "syntax": "RUN",
+      "summary": "Clears variables and starts the program.",
+      "description": "RUN erases all variables and stacks and then runs the program from its first line. GOTO restarts a program without clearing the variables.",
+      "example": "RUN",
+      "seeAlso": [
+        "NEW",
+        "GOTO",
+        "CONT"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Borra las variables y arranca el programa.",
+          "description": "RUN borra todas las variables y pilas y ejecuta el programa desde su primera línea. GOTO reinicia un programa sin borrar las variables."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "ABS",
+      "kind": "function",
+      "syntax": "ABS(x)",
+      "summary": "Absolute value.",
+      "description": "Returns x without its sign.",
+      "example": "10 PRINT ABS(-7)",
+      "seeAlso": [
+        "SGN",
+        "INT"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Valor absoluto.",
+          "description": "Devuelve x sin signo."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "RND",
+      "kind": "function",
+      "syntax": "RND(n)",
+      "summary": "Random number from 0 to n-1.",
+      "description": "RND(n) gives 0 to n-1; RND(-n) gives -n to -1. SET 19,1 changes it to 1 to n. The seed is the special variable @R, which can be read and written.",
+      "example": "10 PRINT RND(6)+1",
+      "seeAlso": [
+        "SET"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Número aleatorio de 0 a n-1.",
+          "description": "RND(n) da de 0 a n-1; RND(-n) da de -n a -1. SET 19,1 lo cambia a de 1 a n. La semilla es la variable especial @R, que se puede leer y escribir."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "SIZE",
+      "kind": "variable",
+      "syntax": "SIZE",
+      "summary": "The free memory between the program and the variables.",
+      "description": "SIZE gives the number of free bytes. On a PlusCart or UnoCart the banner reports 65535 bytes free at start-up; Gopher2600 provides 49152.",
+      "example": "10 PRINT SIZE",
+      "seeAlso": [
+        "HIMEM",
+        "DIM"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "La memoria libre entre el programa y las variables.",
+          "description": "SIZE da el número de bytes libres. En un PlusCart o UnoCart el aviso de arranque indica 65535 bytes libres; Gopher2600 ofrece 49152."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "REM",
+      "kind": "comment",
+      "syntax": "REM text",
+      "summary": "A comment: everything after it on the line is ignored.",
+      "description": "REM is recognized as a keyword and the rest of the line is stored exactly as typed, including case. ",
+      "example": "10 REM THIS IS A COMMENT",
+      "seeAlso": [
+        "LIST"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Comentario: se ignora todo lo que le sigue en la línea.",
+          "description": "REM se reconoce como palabra clave y el resto de la línea se guarda tal como se escribió, mayúsculas incluidas."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "NOT",
+      "kind": "operator",
+      "syntax": "NOT expr",
+      "summary": "Bitwise NOT; NOT 0 is -1.",
+      "description": "Comparisons give -1 for true and 0 for false, so NOT, AND and OR work both as logic and as bitwise operators.",
+      "example": "10 IF NOT A=0 THEN PRINT \"NONZERO\"",
+      "seeAlso": [
+        "AND",
+        "OR",
+        "IF"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "NOT bit a bit; NOT 0 vale -1.",
+          "description": "Las comparaciones dan -1 si son ciertas y 0 si no, así que NOT, AND y OR funcionan como lógica y como operadores de bits."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "AND",
+      "kind": "operator",
+      "syntax": "a AND b",
+      "summary": "Bitwise AND.",
+      "description": "Works as logical AND on comparison results (-1 and 0) and bitwise AND on numbers.",
+      "example": "10 IF A>0 AND A<10 THEN PRINT \"IN\"",
+      "seeAlso": [
+        "OR",
+        "NOT"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Y bit a bit.",
+          "description": "Funciona como Y lógico sobre resultados de comparaciones (-1 y 0) y como Y bit a bit sobre números."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "OR",
+      "kind": "operator",
+      "syntax": "a OR b",
+      "summary": "Bitwise OR.",
+      "description": "Works as logical OR on comparison results and bitwise OR on numbers. A variable name must not contain OR: SCORE is read as SC OR E.",
+      "example": "10 IF A=1 OR A=2 THEN PRINT \"ONE OR TWO\"",
+      "seeAlso": [
+        "AND",
+        "NOT"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "O bit a bit.",
+          "description": "Funciona como O lógico sobre resultados de comparaciones y como O bit a bit sobre números. Un nombre de variable no puede contener OR: SCORE se lee como SC OR E."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "LEN",
+      "kind": "function",
+      "syntax": "LEN(s$)",
+      "summary": "Length of a string.",
+      "description": "Returns the number of characters currently in the string.",
+      "example": "10 A$=\"HELLO\"\n20 PRINT LEN(A$)",
+      "seeAlso": [
+        "LEFT",
+        "RIGHT",
+        "MID"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Longitud de una cadena.",
+          "description": "Devuelve el número de caracteres que tiene la cadena."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "SGN",
+      "kind": "function",
+      "syntax": "SGN(x)",
+      "summary": "Sign of a number: -1, 0 or 1.",
+      "description": "Returns -1 for negative values, 0 for zero and 1 for positive values.",
+      "example": "10 PRINT SGN(-5)",
+      "seeAlso": [
+        "ABS"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Signo de un número: -1, 0 o 1.",
+          "description": "Devuelve -1 para valores negativos, 0 para cero y 1 para positivos."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "PEEK",
+      "kind": "function",
+      "syntax": "PEEK(addr)",
+      "summary": "Reads a byte of the cartridge's hardware memory map.",
+      "description": "On TinyELF, PEEK and POKE address the display kernel's map, not the BASIC program memory: video RAM from 4096, character RAM from 2048, background colours from 1024, RIOT mirror RAM from 512 (frame counter at 648 to 651), text colours from 256, playfield shadow from 128 and the TIA register shadow from 0. PEEK returns 0 to 255 and cannot read BASIC memory.",
+      "example": "10 PRINT PEEK(648)",
+      "seeAlso": [
+        "POKE",
+        "DUMP"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Lee un byte del mapa de memoria de hardware del cartucho.",
+          "description": "En TinyELF, PEEK y POKE direccionan el mapa del kernel de pantalla, no la memoria de programa BASIC: RAM de vídeo desde 4096, RAM de caracteres desde 2048, colores de fondo desde 1024, RAM espejo del RIOT desde 512 (contador de cuadros en 648 a 651), colores de texto desde 256, sombra del campo de juego desde 128 y sombra de registros TIA desde 0. PEEK devuelve de 0 a 255 y no puede leer la memoria BASIC."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "DIM",
+      "kind": "statement",
+      "syntax": "DIM name(size)\nDIM name(rows, cols)\nDIM name$(length)\nDIM name$(length, count)",
+      "summary": "Creates an array or sets the size of a string.",
+      "description": "DIM A(100) creates A(1) to A(100); without DIM an array has 10 elements. SET 12,0 makes indexing start at 0. DIM A(3,4) creates a two-dimensional array and an index out of range gives error 16. DIM A$(100) sets a string of up to 100 characters; without it, strings are 32 long.\n\nDIM C$(8,3) creates 3 strings of up to 8 characters (length first, then count). The element is the second bracket: C$()(2) is the second string.",
+      "example": "10 DIM C$(8,3)\n20 C$()(1)=\"AB\": C$()(2)=\"CDE\"\n30 PRINT C$()(1);C$()(2)",
+      "seeAlso": [
+        "SET",
+        "LET",
+        "LEN"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Crea una matriz o fija el tamaño de una cadena.",
+          "description": "DIM A(100) crea de A(1) a A(100); sin DIM una matriz tiene 10 elementos. SET 12,0 hace que los índices empiecen en 0. DIM A(3,4) crea una matriz bidimensional y un índice fuera de rango da error 16. DIM A$(100) fija una cadena de hasta 100 caracteres; sin ello, las cadenas miden 32.\n\nDIM C$(8,3) crea 3 cadenas de hasta 8 caracteres (primero la longitud, luego la cantidad). El elemento es el segundo paréntesis: C$()(2) es la segunda cadena."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "CLR",
+      "kind": "statement",
+      "syntax": "CLR",
+      "summary": "Removes all variables and clears the stacks.",
+      "description": "The program stays; settings made with SET are kept.",
+      "example": "10 CLR",
+      "seeAlso": [
+        "NEW",
+        "RUN"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Elimina todas las variables y vacía las pilas.",
+          "description": "El programa se conserva; los ajustes hechos con SET también."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "HIMEM",
+      "kind": "variable",
+      "syntax": "HIMEM",
+      "summary": "The topmost free memory cell.",
+      "description": "HIMEM gives the highest free BASIC memory address, as in Stefan's interpreter.",
+      "example": "10 PRINT HIMEM",
+      "seeAlso": [
+        "SIZE",
+        "DUMP"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "La celda de memoria libre más alta.",
+          "description": "HIMEM da la dirección más alta libre de la memoria BASIC, igual que en el intérprete de Stefan."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "TAB",
+      "kind": "statement",
+      "syntax": "TAB n\nPRINT TAB(n); ...",
+      "summary": "Prints n spaces.",
+      "description": "TAB 20 outputs 20 spaces. The form PRINT TAB(20);\"x\" is accepted too.",
+      "example": "10 PRINT TAB(10);\"X\"",
+      "seeAlso": [
+        "SPC",
+        "LOCATE",
+        "PRINT"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Imprime n espacios.",
+          "description": "TAB 20 saca 20 espacios. También se acepta la forma PRINT TAB(20);\"x\"."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "THEN",
+      "kind": "control",
+      "syntax": "IF cond THEN statement | line",
+      "summary": "Part of IF: introduces what to do when the condition holds.",
+      "description": "THEN is followed by a statement, or by a line number meaning GOTO that line. It is optional before a statement.",
+      "example": "10 IF A>3 THEN PRINT \"BIG\"\n20 IF A=0 THEN 100",
+      "seeAlso": [
+        "IF",
+        "ELSE"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Parte de IF: indica qué hacer cuando se cumple la condición.",
+          "description": "THEN va seguido de una sentencia o de un número de línea que significa GOTO a esa línea. Es opcional delante de una sentencia."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "END",
+      "kind": "control",
+      "syntax": "END",
+      "summary": "Ends the program.",
+      "description": "END finishes the program and returns to the prompt. A tone made by writing the TIA sound registers keeps playing after END, so silence the volume registers first.",
+      "example": "10 PRINT \"DONE\"\n20 POKE 25,0: POKE 26,0\n30 END",
+      "seeAlso": [
+        "STOP",
+        "RUN"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Termina el programa.",
+          "description": "END acaba el programa y vuelve al prompt. Un tono hecho escribiendo en los registros de sonido del TIA sigue sonando tras END, así que silencia antes los registros de volumen."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "POKE",
+      "kind": "statement",
+      "syntax": "POKE addr, value",
+      "summary": "Writes a byte to the hardware memory map (colours, sound, characters).",
+      "description": "Colour values are TIA colour bytes with the hue in the high nibble. Examples: POKE 256,30 sets the colour of text row 0 and POKE 1024+10,150 the background of graphics line 10. Sound is made by writing the shadow of the TIA audio registers: addresses 21 and 22 are AUDC0 and AUDC1, 23 and 24 are AUDF0 and AUDF1, 25 and 26 are AUDV0 and AUDV1. The kernel copies them to the TIA once per frame, so changes faster than about 17 ms are not heard. Do not POKE addresses 0 to 3.\n\nA negative address writes to BASIC memory at the address with its sign removed.",
+      "example": "10 POKE 21,4: POKE 23,10: POKE 25,12\n20 DELAY 500\n30 POKE 25,0",
+      "seeAlso": [
+        "PEEK",
+        "DELAY",
+        "GRAPHICS"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Escribe un byte en el mapa de hardware (colores, sonido, caracteres).",
+          "description": "Los valores de color son bytes de color del TIA con el matiz en el nibble alto. Ejemplos: POKE 256,30 fija el color de la fila de texto 0 y POKE 1024+10,150 el fondo de la línea gráfica 10. El sonido se hace escribiendo en la sombra de los registros de audio del TIA: las direcciones 21 y 22 son AUDC0 y AUDC1, 23 y 24 son AUDF0 y AUDF1, 25 y 26 son AUDV0 y AUDV1. El kernel los copia al TIA una vez por cuadro, así que los cambios más rápidos que unos 17 ms no se oyen. No hagas POKE en las direcciones 0 a 3.\n\nUna dirección negativa escribe en la memoria BASIC en la dirección sin signo."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "CONT",
+      "kind": "control",
+      "syntax": "CONT",
+      "summary": "At the prompt, resumes a stopped program; in a FOR loop, skips to the next iteration.",
+      "description": "Typed in direct mode after STOP, ESC or an error, CONT continues the program where it stopped, with the variables kept. Inside a FOR loop it ends the current iteration and goes to the next one.",
+      "example": "10 FOR I=1 TO 5\n20 IF I=3 THEN CONT\n30 PRINT I\n40 NEXT I",
+      "seeAlso": [
+        "STOP",
+        "BREAK",
+        "FOR"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "En el prompt, reanuda un programa detenido; en un FOR, salta a la siguiente iteración.",
+          "description": "Tecleado en modo directo tras STOP, ESC o un error, CONT continúa el programa donde se detuvo, con las variables intactas. Dentro de un bucle FOR termina la iteración actual y pasa a la siguiente."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "SQR",
+      "kind": "function",
+      "syntax": "SQR(x)",
+      "summary": "Integer square root.",
+      "description": "Returns the whole-number square root of x.",
+      "example": "10 PRINT SQR(144)",
+      "seeAlso": [
+        "POW"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Raíz cuadrada entera.",
+          "description": "Devuelve la raíz cuadrada entera de x."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "POW",
+      "kind": "function",
+      "syntax": "POW(a, b)",
+      "summary": "a raised to the power b.",
+      "description": "The result is 0 for a negative exponent. The operator ^ does the same and is evaluated left to right, so 2^3^2 is 64.",
+      "example": "10 PRINT POW(2,10)",
+      "seeAlso": [
+        "SQR"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "a elevado a b.",
+          "description": "El resultado es 0 para un exponente negativo. El operador ^ hace lo mismo y se evalúa de izquierda a derecha, así que 2^3^2 es 64."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "MAP",
+      "kind": "function",
+      "syntax": "MAP(v, a, b, c, d)",
+      "summary": "Rescales v from the range a..b to c..d.",
+      "description": "Works like the Arduino map function with integers.",
+      "example": "10 PRINT MAP(50,0,100,0,255)",
+      "seeAlso": [
+        "ABS"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Reescala v del intervalo a..b al c..d.",
+          "description": "Funciona como la función map de Arduino con enteros."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "DUMP",
+      "kind": "command",
+      "syntax": "DUMP [start [, end]]",
+      "summary": "Prints a hex dump of BASIC memory.",
+      "description": "Prints BASIC memory as hexadecimal, eight bytes per row, from the start address up to the end address. With no arguments it dumps from 0 to the end of memory and with one argument from that address on. It is a direct-mode tool for inspecting the program and variables.",
+      "example": "DUMP 0,100",
+      "seeAlso": [
+        "PEEK",
+        "SIZE"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Imprime un volcado hexadecimal de la memoria BASIC.",
+          "description": "Imprime la memoria BASIC en hexadecimal, ocho bytes por fila, desde la dirección inicial hasta la final. Sin argumentos vuelca desde 0 hasta el final de la memoria y con uno, desde esa dirección. Es una herramienta de modo directo para inspeccionar el programa y las variables."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "BREAK",
+      "kind": "control",
+      "syntax": "BREAK",
+      "summary": "Leaves the innermost FOR loop.",
+      "description": "Execution continues after the matching NEXT of the innermost FOR.",
+      "example": "10 FOR I=1 TO 100\n20 IF I>5 THEN BREAK\n30 PRINT I\n40 NEXT I",
+      "seeAlso": [
+        "FOR",
+        "CONT",
+        "NEXT"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Sale del bucle FOR más interno.",
+          "description": "La ejecución continúa tras el NEXT del FOR más interno."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "SAVE",
+      "kind": "command",
+      "syntax": "SAVE \"En:file\"",
+      "summary": "Stores the program on a drive in tokenized form.",
+      "description": "Drives are named E1 to E8 and the prefix is required, as in SAVE \"E1:HELLO.BAS\". The name is up to 8 characters plus a 3-character extension and must be a literal string. SAVE writes the compact binary form, replaces a file of the same name and fails with error 23 if the drive is missing or not formatted, or 14 if the drive is full.\n\nStorage is I2C EEPROM on a SaveKey-compatible adapter; the drive must have been prepared with FORMAT.",
+      "example": "SAVE \"E1:HELLO.BAS\"",
+      "seeAlso": [
+        "LOAD",
+        "FORMAT",
+        "DELETE",
+        "CATALOG",
+        "LIST"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Guarda el programa en una unidad en forma tokenizada.",
+          "description": "Las unidades se llaman E1 a E8 y el prefijo es obligatorio, como en SAVE \"E1:HOLA.BAS\". El nombre tiene hasta 8 caracteres más 3 de extensión y debe ser una cadena literal. SAVE escribe la forma binaria compacta, sustituye un archivo del mismo nombre y da error 23 si la unidad no existe o no está formateada, o 14 si está llena.\n\nEl almacenamiento es una EEPROM I2C en un adaptador compatible con SaveKey; la unidad debe haberse preparado con FORMAT."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "LOAD",
+      "kind": "command",
+      "syntax": "LOAD \"En:file\"",
+      "summary": "Loads a program saved with SAVE.",
+      "description": "LOAD replaces the program in memory and clears the variables. A missing file gives error 20.",
+      "example": "LOAD \"E1:HELLO.BAS\"",
+      "seeAlso": [
+        "SAVE",
+        "ENTER",
+        "CATALOG"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Carga un programa guardado con SAVE.",
+          "description": "LOAD sustituye el programa en memoria y borra las variables. Un archivo inexistente da error 20."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "GET",
+      "kind": "statement",
+      "syntax": "GET var",
+      "summary": "Reads one key without waiting; 0 if no key is pressed.",
+      "description": "GET stores the code of the pressed key in the variable, or 0 when no key is down. It does not wait and needs no RETURN. To wait for a key, loop until the value is not 0.\n\nThe keys come from the KeyPortari adapter. For example, the cursor keys give 11 (up), 10 (down), 8 (left), 21 (right) and RETURN gives 13 in the example programs.",
+      "example": "10 GET K: IF K=0 THEN GOTO 10\n20 PRINT K",
+      "seeAlso": [
+        "PUT",
+        "INPUT",
+        "STICK"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Lee una tecla sin esperar; 0 si no hay ninguna pulsada.",
+          "description": "GET guarda en la variable el código de la tecla pulsada, o 0 si no hay ninguna. No espera ni necesita RETURN. Para esperar una tecla, repite hasta que el valor no sea 0.\n\nLas teclas llegan del adaptador KeyPortari. En los programas de ejemplo, las flechas dan 11 (arriba), 10 (abajo), 8 (izquierda) y 21 (derecha), y RETURN da 13."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "PUT",
+      "kind": "statement",
+      "syntax": "PUT code",
+      "summary": "Writes the character with the given code to the screen.",
+      "description": "PUT outputs a single character by its numeric code, as a single character, like the text of CHR$(code).",
+      "example": "10 PUT 72: PUT 73",
+      "seeAlso": [
+        "GET",
+        "CHR",
+        "PRINT"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Escribe en pantalla el carácter con el código dado.",
+          "description": "PUT saca un solo carácter por su código numérico, como un solo carácter, igual que el texto de CHR$(código)."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "SET",
+      "kind": "statement",
+      "syntax": "SET code, value",
+      "summary": "Changes an interpreter property.",
+      "description": "Settings survive NEW and CLR. Useful codes on TinyELF: 0 turns the token-stream debug on or off, 12 sets the lowest array index (0 starts arrays at index 0), 16 sets the default length of automatically created strings (32), 17 with 1 selects C-style booleans (true is 1), 19 with 1 makes RND(n) return 1 to n, 20 with 0 turns substring notation off, 21 with 1 makes DIM A(10) create elements 0 to 10, 23 with 1 allows lower-case names and 25 with 1 uses Microsoft-style numbers with spaces.\n\nDo not use SET 1 or SET 2 to SET 5: they come from other platforms and can lock you out.",
+      "example": "10 SET 12,0\n20 DIM A(10)\n30 A(0)=1",
+      "seeAlso": [
+        "RND",
+        "DIM",
+        "PRINT"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Cambia una propiedad del intérprete.",
+          "description": "Los ajustes sobreviven a NEW y CLR. Códigos útiles en TinyELF: 0 activa o desactiva la depuración del flujo de tokens, 12 fija el índice mínimo de las matrices (0 las empieza en el índice 0), 16 fija la longitud por defecto de las cadenas creadas automáticamente (32), 17 con 1 elige booleanos al estilo C (verdadero es 1), 19 con 1 hace que RND(n) devuelva de 1 a n, 20 con 0 desactiva la notación de subcadenas, 21 con 1 hace que DIM A(10) cree elementos de 0 a 10, 23 con 1 admite nombres en minúsculas y 25 con 1 usa números al estilo Microsoft, con espacios.\n\nNo uses SET 1 ni SET 2 a SET 5: vienen de otras plataformas y pueden dejarte sin control."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "CLS",
+      "kind": "statement",
+      "syntax": "CLS",
+      "summary": "Clears the screen and homes the cursor.",
+      "description": "CLS empties the text screen and puts the cursor in the top left corner. In GRAPHICS 3 and GRAPHICS 8 it also clears the graphics area.",
+      "example": "10 CLS\n20 PRINT \"CLEAN\"",
+      "seeAlso": [
+        "GRAPHICS",
+        "LOCATE"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Borra la pantalla y lleva el cursor al inicio.",
+          "description": "CLS vacía la pantalla de texto y pone el cursor en la esquina superior izquierda. En GRAPHICS 3 y GRAPHICS 8 también borra el área gráfica."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "LOCATE",
+      "kind": "statement",
+      "syntax": "LOCATE x, y",
+      "summary": "Moves the text cursor to column x, row y.",
+      "description": "Coordinates start at 1: columns 1 to 36 (1 to 18 in GRAPHICS 1) and rows 1 to 14. A position outside the screen is ignored and the cursor stays where it was.",
+      "example": "10 CLS\n20 LOCATE 10,5\n30 PRINT \"HERE\"",
+      "seeAlso": [
+        "CLS",
+        "PRINT",
+        "GRAPHICS"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Mueve el cursor de texto a la columna x, fila y.",
+          "description": "Las coordenadas empiezan en 1: columnas de 1 a 36 (de 1 a 18 en GRAPHICS 1) y filas de 1 a 14. Una posición fuera de la pantalla se ignora y el cursor no se mueve."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "ELSE",
+      "kind": "control",
+      "syntax": "IF cond THEN statement ELSE statement",
+      "summary": "Part of IF: what to do when the condition is false.",
+      "description": "ELSE can follow the THEN part on the same line, and it may also start the following program line.",
+      "example": "10 IF A=0 THEN PRINT \"ZERO\" ELSE PRINT \"NOT ZERO\"",
+      "seeAlso": [
+        "IF",
+        "THEN"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Parte de IF: qué hacer cuando la condición es falsa.",
+          "description": "ELSE puede seguir a la parte THEN en la misma línea y también puede empezar la línea de programa siguiente."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "DELAY",
+      "kind": "statement",
+      "syntax": "DELAY ms",
+      "summary": "Pauses the program for a number of milliseconds.",
+      "description": "The screen keeps running during the wait. TinyELF Basic runs at 60 frames per second, also on PAL consoles, so the time is rounded up to whole frames of 1/60 s.",
+      "example": "10 PRINT \"WAIT\": DELAY 2000: PRINT \"GO\"",
+      "seeAlso": [
+        "MILLIS",
+        "POKE"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Pausa el programa durante unos milisegundos.",
+          "description": "La pantalla sigue funcionando durante la espera. TinyELF Basic va a 60 cuadros por segundo, también en consolas PAL, así que el tiempo se redondea hacia arriba a cuadros enteros de 1/60 s."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "MILLIS",
+      "kind": "function",
+      "syntax": "MILLIS(n)",
+      "summary": "Milliseconds since power-on divided by n.",
+      "description": "MILLIS(1) is plain milliseconds. It counts in steps of one frame (1/60 s). The special variable @T gives the same as MILLIS(1).",
+      "example": "10 T=MILLIS(1)\n20 DELAY 1000\n30 PRINT MILLIS(1)-T",
+      "seeAlso": [
+        "DELAY"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Milisegundos desde el encendido divididos entre n.",
+          "description": "MILLIS(1) son milisegundos sin más. Cuenta en pasos de un cuadro (1/60 s). La variable especial @T da lo mismo que MILLIS(1)."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "PLAY",
+      "kind": "statement",
+      "syntax": "PLAY pin, frequency, duration",
+      "summary": "Plays a tone on a pin in Stefan's interpreter. (not in TinyELF)",
+      "description": "In the generic interpreter it drives a tone on an output pin. It is not compiled into the TinyELF build, so it is not a keyword there. The cartridge has no such pins; sound comes from POKE to the TIA audio registers.",
+      "example": "10 POKE 21,4: POKE 23,10: POKE 25,12\n20 DELAY 300\n30 POKE 25,0",
+      "available": false,
+      "seeAlso": [
+        "POKE",
+        "DELAY"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Toca un tono en un pin en el intérprete de Stefan. (no está en TinyELF)",
+          "description": "En el intérprete genérico saca un tono por un pin de salida. No está compilada en la versión TinyELF, así que allí no es una palabra clave. El cartucho no tiene esos pines; el sonido sale de POKE en los registros de audio del TIA."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "CATALOG",
+      "kind": "command",
+      "syntax": "CATALOG \"En:\"",
+      "summary": "Lists the files on a drive.",
+      "description": "Each line shows a file name and its length in sectors, not bytes; the last line shows the formatted size and the free data space in bytes. Files uploaded by other tools, such as SaveKey-Manager, also appear. Error 23 means a bad prefix or missing drive.",
+      "example": "CATALOG \"E1:\"",
+      "seeAlso": [
+        "SAVE",
+        "LOAD",
+        "FORMAT",
+        "DELETE"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Lista los archivos de una unidad.",
+          "description": "Cada línea muestra un nombre de archivo y su longitud en sectores, no en bytes; la última línea muestra el tamaño formateado y el espacio libre de datos en bytes. También aparecen archivos subidos con otras herramientas, como SaveKey-Manager. El error 23 indica prefijo incorrecto o unidad inexistente."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "ENTER",
+      "kind": "command",
+      "syntax": "ENTER \"En:file\"",
+      "summary": "Reads a text listing from a file into the program.",
+      "description": "Every line of the file that starts with a line number is stored as if typed. The lines merge with the program in memory: same-numbered lines are replaced and the rest stay, so use NEW first for a clean start. Lines without a number are ignored and lines starting with # are skipped. LF, CR or CRLF line ends all work.\n\nThe usual partner is LIST \"En:file\", which writes such a file. A missing file or drive gives error 20.",
+      "example": "NEW\nENTER \"E1:HELLO.LST\"",
+      "seeAlso": [
+        "LIST",
+        "LOAD",
+        "NEW"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Lee un listado de texto de un archivo y lo mete en el programa.",
+          "description": "Cada línea del archivo que empieza con un número de línea se guarda como si se hubiera tecleado. Las líneas se mezclan con el programa en memoria: las del mismo número se sustituyen y las demás se conservan, así que usa NEW antes para empezar limpio. Las líneas sin número se ignoran y las que empiezan por # se saltan. Valen finales de línea LF, CR o CRLF.\n\nSu pareja habitual es LIST \"En:archivo\", que escribe ese archivo. Un archivo o unidad inexistente da error 20."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "DELETE",
+      "kind": "command",
+      "syntax": "DELETE \"En:file\"",
+      "summary": "Deletes a file from a drive.",
+      "description": "DELETE frees the file's sectors and removes it from the directory. It gives error 20 if the file does not exist and 23 if the drive prefix is wrong, or the drive is missing or not formatted.",
+      "example": "DELETE \"E1:OLD.BAS\"",
+      "seeAlso": [
+        "SAVE",
+        "CATALOG",
+        "FORMAT"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Borra un archivo de una unidad.",
+          "description": "DELETE libera los sectores del archivo y lo quita del directorio. Da error 20 si el archivo no existe y 23 si el prefijo de unidad es incorrecto o la unidad no existe o no está formateada."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "OPEN",
+      "kind": "statement",
+      "syntax": "OPEN file",
+      "summary": "Opens a file in the generic file I/O set. (not in TinyELF)",
+      "description": "Part of the general file I/O set. It is not compiled into the TinyELF build, so it is not a keyword there. Files are handled with SAVE, LOAD, ENTER and LIST on the E1 to E8 drives instead.",
+      "example": "LOAD \"E1:HELLO.BAS\"",
+      "available": false,
+      "seeAlso": [
+        "LOAD",
+        "SAVE",
+        "ENTER"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Abre un archivo en el conjunto genérico de E/S de archivos. (no está en TinyELF)",
+          "description": "Forma parte del conjunto general de E/S de archivos. No está compilada en la versión TinyELF, así que allí no es una palabra clave. Los archivos se manejan con SAVE, LOAD, ENTER y LIST en las unidades E1 a E8."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "CLOSE",
+      "kind": "statement",
+      "syntax": "CLOSE",
+      "summary": "Closes a file in the generic file I/O set. (not in TinyELF)",
+      "description": "Part of the general file I/O set. It is not compiled into the TinyELF build, so it is not a keyword there. Files are handled with SAVE, LOAD, ENTER and LIST on the E1 to E8 drives instead.",
+      "example": "SAVE \"E1:HELLO.BAS\"",
+      "available": false,
+      "seeAlso": [
+        "SAVE",
+        "LOAD"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Cierra un archivo en el conjunto genérico de E/S de archivos. (no está en TinyELF)",
+          "description": "Forma parte del conjunto general de E/S de archivos. No está compilada en la versión TinyELF, así que allí no es una palabra clave. Los archivos se manejan con SAVE, LOAD, ENTER y LIST en las unidades E1 a E8."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "USR",
+      "kind": "function",
+      "syntax": "USR(...)",
+      "summary": "Calls a machine-code routine in Stefan's interpreter. (not in TinyELF)",
+      "description": "A low-level extension hook. It is not compiled into the TinyELF build, so it is not a keyword there. On this cartridge, POKE reaches the hardware map instead.",
+      "example": "10 POKE 25,12",
+      "available": false,
+      "seeAlso": [
+        "CALL",
+        "POKE"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Llama a una rutina de código máquina en el intérprete de Stefan. (no está en TinyELF)",
+          "description": "Es un gancho de extensión de bajo nivel. No está compilada en la versión TinyELF, así que allí no es una palabra clave. En este cartucho, POKE llega al mapa de hardware."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "CALL",
+      "kind": "statement",
+      "syntax": "CALL ...",
+      "summary": "Calls a machine-code routine in Stefan's interpreter. (not in TinyELF)",
+      "description": "A low-level extension hook. It is not compiled into the TinyELF build, so it is not a keyword there. On this cartridge, POKE reaches the hardware map instead.",
+      "example": "10 POKE 25,12",
+      "available": false,
+      "seeAlso": [
+        "USR",
+        "POKE"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Llama a una rutina de código máquina en el intérprete de Stefan. (no está en TinyELF)",
+          "description": "Es un gancho de extensión de bajo nivel. No está compilada en la versión TinyELF, así que allí no es una palabra clave. En este cartucho, POKE llega al mapa de hardware."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "SIN",
+      "kind": "function",
+      "syntax": "SIN(x)",
+      "summary": "The sine in floating-point builds of Stefan's interpreter. (not in TinyELF)",
+      "description": "A floating-point function. It is not compiled into the TinyELF build, so it is not a keyword there. TinyELF Basic is integer-only, so no floating-point functions exist; use tables in DATA or integer arithmetic.",
+      "example": "10 PRINT SQR(144)",
+      "available": false,
+      "seeAlso": [
+        "SQR",
+        "POW",
+        "INT"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "El seno en las versiones con coma flotante del intérprete de Stefan. (no está en TinyELF)",
+          "description": "Es una función de coma flotante. No está compilada en la versión TinyELF, así que allí no es una palabra clave. TinyELF Basic solo maneja enteros, así que no hay funciones de coma flotante; usa tablas en DATA o aritmética entera."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "COS",
+      "kind": "function",
+      "syntax": "COS(x)",
+      "summary": "The cosine in floating-point builds of Stefan's interpreter. (not in TinyELF)",
+      "description": "A floating-point function. It is not compiled into the TinyELF build, so it is not a keyword there. TinyELF Basic is integer-only, so no floating-point functions exist; use tables in DATA or integer arithmetic.",
+      "example": "10 PRINT SQR(144)",
+      "available": false,
+      "seeAlso": [
+        "SQR",
+        "POW",
+        "INT"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "El coseno en las versiones con coma flotante del intérprete de Stefan. (no está en TinyELF)",
+          "description": "Es una función de coma flotante. No está compilada en la versión TinyELF, así que allí no es una palabra clave. TinyELF Basic solo maneja enteros, así que no hay funciones de coma flotante; usa tablas en DATA o aritmética entera."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "TAN",
+      "kind": "function",
+      "syntax": "TAN(x)",
+      "summary": "The tangent in floating-point builds of Stefan's interpreter. (not in TinyELF)",
+      "description": "A floating-point function. It is not compiled into the TinyELF build, so it is not a keyword there. TinyELF Basic is integer-only, so no floating-point functions exist; use tables in DATA or integer arithmetic.",
+      "example": "10 PRINT SQR(144)",
+      "available": false,
+      "seeAlso": [
+        "SQR",
+        "POW",
+        "INT"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "El tangente en las versiones con coma flotante del intérprete de Stefan. (no está en TinyELF)",
+          "description": "Es una función de coma flotante. No está compilada en la versión TinyELF, así que allí no es una palabra clave. TinyELF Basic solo maneja enteros, así que no hay funciones de coma flotante; usa tablas en DATA o aritmética entera."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "ATAN",
+      "kind": "function",
+      "syntax": "ATAN(x)",
+      "summary": "The arctangent in floating-point builds of Stefan's interpreter. (not in TinyELF)",
+      "description": "A floating-point function. It is not compiled into the TinyELF build, so it is not a keyword there. TinyELF Basic is integer-only, so no floating-point functions exist; use tables in DATA or integer arithmetic.",
+      "example": "10 PRINT SQR(144)",
+      "available": false,
+      "seeAlso": [
+        "SQR",
+        "POW",
+        "INT"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "El arcotangente en las versiones con coma flotante del intérprete de Stefan. (no está en TinyELF)",
+          "description": "Es una función de coma flotante. No está compilada en la versión TinyELF, así que allí no es una palabra clave. TinyELF Basic solo maneja enteros, así que no hay funciones de coma flotante; usa tablas en DATA o aritmética entera."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "LOG",
+      "kind": "function",
+      "syntax": "LOG(x)",
+      "summary": "The natural logarithm in floating-point builds of Stefan's interpreter. (not in TinyELF)",
+      "description": "A floating-point function. It is not compiled into the TinyELF build, so it is not a keyword there. TinyELF Basic is integer-only, so no floating-point functions exist; use tables in DATA or integer arithmetic.",
+      "example": "10 PRINT SQR(144)",
+      "available": false,
+      "seeAlso": [
+        "SQR",
+        "POW",
+        "INT"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "El logaritmo natural en las versiones con coma flotante del intérprete de Stefan. (no está en TinyELF)",
+          "description": "Es una función de coma flotante. No está compilada en la versión TinyELF, así que allí no es una palabra clave. TinyELF Basic solo maneja enteros, así que no hay funciones de coma flotante; usa tablas en DATA o aritmética entera."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "EXP",
+      "kind": "function",
+      "syntax": "EXP(x)",
+      "summary": "The exponential function in floating-point builds of Stefan's interpreter. (not in TinyELF)",
+      "description": "A floating-point function. It is not compiled into the TinyELF build, so it is not a keyword there. TinyELF Basic is integer-only, so no floating-point functions exist; use tables in DATA or integer arithmetic.",
+      "example": "10 PRINT SQR(144)",
+      "available": false,
+      "seeAlso": [
+        "SQR",
+        "POW",
+        "INT"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "El función exponencial en las versiones con coma flotante del intérprete de Stefan. (no está en TinyELF)",
+          "description": "Es una función de coma flotante. No está compilada en la versión TinyELF, así que allí no es una palabra clave. TinyELF Basic solo maneja enteros, así que no hay funciones de coma flotante; usa tablas en DATA o aritmética entera."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "INT",
+      "kind": "function",
+      "syntax": "INT(x)",
+      "summary": "Integer part of a number.",
+      "description": "TinyELF Basic has only integers, so INT leaves the value unchanged; it exists so programs written for floating-point BASICs run unchanged.",
+      "example": "10 PRINT INT(7)",
+      "seeAlso": [
+        "ABS"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Parte entera de un número.",
+          "description": "TinyELF Basic solo tiene enteros, así que INT deja el valor igual; existe para que los programas escritos para BASIC con coma flotante funcionen sin cambios."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "DATA",
+      "kind": "statement",
+      "syntax": "DATA value [, value ...]",
+      "summary": "Holds numbers and strings for READ.",
+      "description": "DATA lines are never executed and can stand anywhere in the program. They hold numbers (also negative) and quoted strings, and READ takes them in line-number order.",
+      "example": "10 DATA 3,5,-2,\"HI\"\n20 READ A,B,C,S$\n30 PRINT A;B;C;S$",
+      "seeAlso": [
+        "READ",
+        "RESTORE"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Guarda números y cadenas para READ.",
+          "description": "Las líneas DATA nunca se ejecutan y pueden estar en cualquier parte del programa. Contienen números (también negativos) y cadenas entre comillas, y READ los toma por orden de número de línea."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "READ",
+      "kind": "statement",
+      "syntax": "READ var [, var ...]",
+      "summary": "Takes the next values from DATA into variables.",
+      "description": "READ goes through all DATA lines in line-number order. A READ after the last value gives 0 with no error, unlike in Dartmouth BASIC.",
+      "example": "10 DATA 1,2,3\n20 FOR I=1 TO 3: READ X: PRINT X: NEXT I",
+      "seeAlso": [
+        "DATA",
+        "RESTORE"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Toma los siguientes valores de DATA y los guarda en variables.",
+          "description": "READ recorre todas las líneas DATA por orden de número de línea. Un READ tras el último valor da 0 sin error, a diferencia del BASIC de Dartmouth."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "RESTORE",
+      "kind": "statement",
+      "syntax": "RESTORE [n]",
+      "summary": "Restarts reading DATA from the first value.",
+      "description": "RESTORE starts again with the first value; RESTORE n continues with the n-th value.",
+      "example": "10 DATA 1,2\n20 READ A\n30 RESTORE\n40 READ B\n50 PRINT A;B",
+      "seeAlso": [
+        "DATA",
+        "READ"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Reinicia la lectura de DATA desde el primer valor.",
+          "description": "RESTORE vuelve a empezar por el primer valor; RESTORE n continúa con el n-ésimo valor."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "DEF",
+      "kind": "statement",
+      "syntax": "DEF FN name(var) = expr\nDEF FN name() = expr",
+      "summary": "Defines a one-line function.",
+      "description": "A function is one expression with one numeric parameter, or none. The DEF line has to run before the function is used. Call it with FN.",
+      "example": "10 DEF FN F(X)=X*X+1\n20 PRINT FN F(4)",
+      "seeAlso": [
+        "FN"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Define una función de una línea.",
+          "description": "Una función es una expresión con un parámetro numérico, o ninguno. La línea DEF debe ejecutarse antes de usar la función. Se llama con FN."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "FN",
+      "kind": "function",
+      "syntax": "FN name(expr)",
+      "summary": "Calls a function defined with DEF FN.",
+      "description": "Functions can be nested, as in FN F(FN F(1)). FN only works in a running program; typed at the prompt it gives error 10. LIST prints FN F(X) as FNF(X); both forms are accepted.",
+      "example": "10 DEF FN F(X)=X*X+1\n20 PRINT FN F(FN F(1))",
+      "seeAlso": [
+        "DEF"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Llama a una función definida con DEF FN.",
+          "description": "Las funciones se pueden anidar, como en FN F(FN F(1)). FN solo funciona en un programa en marcha; escrito en el prompt da error 10. LIST muestra FN F(X) como FNF(X); se aceptan ambas formas."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "ON",
+      "kind": "control",
+      "syntax": "ON expr GOTO line [, line ...]\nON expr GOSUB line [, line ...]",
+      "summary": "Jumps to the n-th line of a list.",
+      "description": "Value 1 jumps to the first line, 2 to the second and so on. If the value is 0, negative or larger than the number of lines, there is no jump and execution continues with the next statement. It works with GOTO and GOSUB.",
+      "example": "10 INPUT K\n20 ON K GOTO 100,200,300\n30 PRINT \"NONE\"\n40 END\n100 PRINT \"ONE\": END\n200 PRINT \"TWO\": END\n300 PRINT \"THREE\": END",
+      "seeAlso": [
+        "GOTO",
+        "GOSUB",
+        "ERROR"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Salta a la línea n-ésima de una lista.",
+          "description": "El valor 1 salta a la primera línea, 2 a la segunda y así sucesivamente. Si el valor es 0, negativo o mayor que el número de líneas, no hay salto y se sigue con la sentencia siguiente. Funciona con GOTO y GOSUB."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "ERROR",
+      "kind": "statement",
+      "syntax": "ERROR GOTO line\nERROR STOP\nERROR CONT\nERROR (as a value)",
+      "summary": "Traps runtime errors.",
+      "description": "ERROR GOTO line sends the program to that line when an error occurs; ERROR STOP restores the normal behaviour of stopping and ERROR CONT continues after errors. Inside the handler, ERROR used as a value is the error code. After an error, the FOR and GOSUB stacks are gone.\n\nThe interpreter prints only numeric error codes, for example Error 10 for a syntax error and 16 for a value out of range.",
+      "example": "10 ERROR GOTO 100\n20 PRINT 1/0\n30 END\n100 PRINT \"ERROR \";ERROR\n110 END",
+      "seeAlso": [
+        "ON",
+        "STOP",
+        "CONT"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Captura los errores de ejecución.",
+          "description": "ERROR GOTO línea envía el programa a esa línea cuando ocurre un error; ERROR STOP restablece el comportamiento normal de detenerse y ERROR CONT continúa tras los errores. Dentro del manejador, ERROR usado como valor es el código de error. Tras un error se pierden las pilas de FOR y GOSUB.\n\nEl intérprete solo imprime códigos numéricos, por ejemplo Error 10 para un error de sintaxis y 16 para un valor fuera de rango."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "AFTER",
+      "kind": "statement",
+      "syntax": "AFTER time GOSUB line",
+      "summary": "Runs a subroutine once after a delay, in Stefan's interpreter. (not in TinyELF)",
+      "description": "A timer function. It is not compiled into the TinyELF build, so it is not a keyword there. Poll MILLIS in your own loop instead.",
+      "example": "10 T=MILLIS(1)\n20 IF MILLIS(1)-T<1000 THEN 20\n30 PRINT \"1 S\"",
+      "available": false,
+      "seeAlso": [
+        "EVERY",
+        "MILLIS",
+        "DELAY"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Ejecuta una subrutina una vez tras una espera, en el intérprete de Stefan. (no está en TinyELF)",
+          "description": "Es una función de temporizador. No está compilada en la versión TinyELF, así que allí no es una palabra clave. Consulta MILLIS en tu propio bucle."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "EVERY",
+      "kind": "statement",
+      "syntax": "EVERY time GOSUB line",
+      "summary": "Runs a subroutine periodically, in Stefan's interpreter. (not in TinyELF)",
+      "description": "A timer function. It is not compiled into the TinyELF build, so it is not a keyword there. Poll MILLIS in your own loop instead.",
+      "example": "10 T=MILLIS(1)\n20 IF MILLIS(1)-T<1000 THEN 20\n30 PRINT \"TICK\": GOTO 10",
+      "available": false,
+      "seeAlso": [
+        "AFTER",
+        "MILLIS",
+        "DELAY"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Ejecuta una subrutina periódicamente, en el intérprete de Stefan. (no está en TinyELF)",
+          "description": "Es una función de temporizador. No está compilada en la versión TinyELF, así que allí no es una palabra clave. Consulta MILLIS en tu propio bucle."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "EVENT",
+      "kind": "statement",
+      "syntax": "EVENT ...",
+      "summary": "Event handling in Stefan's interpreter. (not in TinyELF)",
+      "description": "An event-handling command. It is not compiled into the TinyELF build, so it is not a keyword there. Poll with GET, STICK and STRIG instead.",
+      "example": "10 GET K: IF K=0 THEN 10\n20 PRINT K",
+      "available": false,
+      "seeAlso": [
+        "GET",
+        "STICK"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Gestión de eventos en el intérprete de Stefan. (no está en TinyELF)",
+          "description": "Es un comando de gestión de eventos. No está compilada en la versión TinyELF, así que allí no es una palabra clave. Consulta con GET, STICK y STRIG."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "WHILE",
+      "kind": "control",
+      "syntax": "WHILE cond ... WEND",
+      "summary": "Marks a WHILE loop in Stefan's structured language set. (not in TinyELF)",
+      "description": "Part of the structured language set. It is not compiled into the TinyELF build, so it is not a keyword there. Use IF with GOTO, or FOR loops, instead.",
+      "example": "10 I=0\n20 I=I+1\n30 IF I<5 THEN 20",
+      "available": false,
+      "seeAlso": [
+        "IF",
+        "FOR",
+        "GOTO"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Marca un bucle WHILE en el conjunto de lenguaje estructurado de Stefan. (no está en TinyELF)",
+          "description": "Forma parte del conjunto de lenguaje estructurado. No está compilada en la versión TinyELF, así que allí no es una palabra clave. Usa IF con GOTO, o bucles FOR."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "WEND",
+      "kind": "control",
+      "syntax": "WHILE cond ... WEND",
+      "summary": "Marks the end of a WHILE loop in Stefan's structured language set. (not in TinyELF)",
+      "description": "Part of the structured language set. It is not compiled into the TinyELF build, so it is not a keyword there. Use IF with GOTO, or FOR loops, instead.",
+      "example": "10 I=0\n20 I=I+1\n30 IF I<5 THEN 20",
+      "available": false,
+      "seeAlso": [
+        "IF",
+        "FOR",
+        "GOTO"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Marca el final de un bucle WHILE en el conjunto de lenguaje estructurado de Stefan. (no está en TinyELF)",
+          "description": "Forma parte del conjunto de lenguaje estructurado. No está compilada en la versión TinyELF, así que allí no es una palabra clave. Usa IF con GOTO, o bucles FOR."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "REPEAT",
+      "kind": "control",
+      "syntax": "REPEAT ... UNTIL cond",
+      "summary": "Marks a REPEAT loop in Stefan's structured language set. (not in TinyELF)",
+      "description": "Part of the structured language set. It is not compiled into the TinyELF build, so it is not a keyword there. Use IF with GOTO, or FOR loops, instead.",
+      "example": "10 I=0\n20 I=I+1\n30 IF I<5 THEN 20",
+      "available": false,
+      "seeAlso": [
+        "IF",
+        "FOR",
+        "GOTO"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Marca un bucle REPEAT en el conjunto de lenguaje estructurado de Stefan. (no está en TinyELF)",
+          "description": "Forma parte del conjunto de lenguaje estructurado. No está compilada en la versión TinyELF, así que allí no es una palabra clave. Usa IF con GOTO, o bucles FOR."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "UNTIL",
+      "kind": "control",
+      "syntax": "REPEAT ... UNTIL cond",
+      "summary": "Marks the end of a REPEAT loop in Stefan's structured language set. (not in TinyELF)",
+      "description": "Part of the structured language set. It is not compiled into the TinyELF build, so it is not a keyword there. Use IF with GOTO, or FOR loops, instead.",
+      "example": "10 I=0\n20 I=I+1\n30 IF I<5 THEN 20",
+      "available": false,
+      "seeAlso": [
+        "IF",
+        "FOR",
+        "GOTO"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Marca el final de un bucle REPEAT en el conjunto de lenguaje estructurado de Stefan. (no está en TinyELF)",
+          "description": "Forma parte del conjunto de lenguaje estructurado. No está compilada en la versión TinyELF, así que allí no es una palabra clave. Usa IF con GOTO, o bucles FOR."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "SWITCH",
+      "kind": "control",
+      "syntax": "SWITCH expr CASE ... SWEND",
+      "summary": "Marks a SWITCH block in Stefan's structured language set. (not in TinyELF)",
+      "description": "Part of the structured language set. It is not compiled into the TinyELF build, so it is not a keyword there. Use IF with GOTO, or FOR loops, instead.",
+      "example": "10 I=0\n20 I=I+1\n30 IF I<5 THEN 20",
+      "available": false,
+      "seeAlso": [
+        "IF",
+        "FOR",
+        "GOTO"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Marca un bloque SWITCH en el conjunto de lenguaje estructurado de Stefan. (no está en TinyELF)",
+          "description": "Forma parte del conjunto de lenguaje estructurado. No está compilada en la versión TinyELF, así que allí no es una palabra clave. Usa IF con GOTO, o bucles FOR."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "CASE",
+      "kind": "control",
+      "syntax": "SWITCH expr CASE ... SWEND",
+      "summary": "Marks a branch of a SWITCH block in Stefan's structured language set. (not in TinyELF)",
+      "description": "Part of the structured language set. It is not compiled into the TinyELF build, so it is not a keyword there. Use IF with GOTO, or FOR loops, instead.",
+      "example": "10 I=0\n20 I=I+1\n30 IF I<5 THEN 20",
+      "available": false,
+      "seeAlso": [
+        "IF",
+        "FOR",
+        "GOTO"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Marca una rama de un bloque SWITCH en el conjunto de lenguaje estructurado de Stefan. (no está en TinyELF)",
+          "description": "Forma parte del conjunto de lenguaje estructurado. No está compilada en la versión TinyELF, así que allí no es una palabra clave. Usa IF con GOTO, o bucles FOR."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "SWEND",
+      "kind": "control",
+      "syntax": "SWITCH expr CASE ... SWEND",
+      "summary": "Marks the end of a SWITCH block in Stefan's structured language set. (not in TinyELF)",
+      "description": "Part of the structured language set. It is not compiled into the TinyELF build, so it is not a keyword there. Use IF with GOTO, or FOR loops, instead.",
+      "example": "10 I=0\n20 I=I+1\n30 IF I<5 THEN 20",
+      "available": false,
+      "seeAlso": [
+        "IF",
+        "FOR",
+        "GOTO"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Marca el final de un bloque SWITCH en el conjunto de lenguaje estructurado de Stefan. (no está en TinyELF)",
+          "description": "Forma parte del conjunto de lenguaje estructurado. No está compilada en la versión TinyELF, así que allí no es una palabra clave. Usa IF con GOTO, o bucles FOR."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "DO",
+      "kind": "control",
+      "syntax": "IF cond THEN DO ... DEND",
+      "summary": "Marks a multi-line IF body in Stefan's structured language set. (not in TinyELF)",
+      "description": "Part of the structured language set. It is not compiled into the TinyELF build, so it is not a keyword there. Use IF with GOTO, or FOR loops, instead.",
+      "example": "10 I=0\n20 I=I+1\n30 IF I<5 THEN 20",
+      "available": false,
+      "seeAlso": [
+        "IF",
+        "FOR",
+        "GOTO"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Marca el cuerpo de un IF de varias líneas en el conjunto de lenguaje estructurado de Stefan. (no está en TinyELF)",
+          "description": "Forma parte del conjunto de lenguaje estructurado. No está compilada en la versión TinyELF, así que allí no es una palabra clave. Usa IF con GOTO, o bucles FOR."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "DEND",
+      "kind": "control",
+      "syntax": "IF cond THEN DO ... DEND",
+      "summary": "Marks the end of a multi-line IF body in Stefan's structured language set. (not in TinyELF)",
+      "description": "Part of the structured language set. It is not compiled into the TinyELF build, so it is not a keyword there. Use IF with GOTO, or FOR loops, instead.",
+      "example": "10 I=0\n20 I=I+1\n30 IF I<5 THEN 20",
+      "available": false,
+      "seeAlso": [
+        "IF",
+        "FOR",
+        "GOTO"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Marca el final del cuerpo de un IF de varias líneas en el conjunto de lenguaje estructurado de Stefan. (no está en TinyELF)",
+          "description": "Forma parte del conjunto de lenguaje estructurado. No está compilada en la versión TinyELF, así que allí no es una palabra clave. Usa IF con GOTO, o bucles FOR."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "FEND",
+      "kind": "control",
+      "syntax": "DEF FN ... FEND",
+      "summary": "Marks the end of a multi-line function in Stefan's structured language set. (not in TinyELF)",
+      "description": "Part of the structured language set. It is not compiled into the TinyELF build, so it is not a keyword there. Use IF with GOTO, or FOR loops, instead.",
+      "example": "10 I=0\n20 I=I+1\n30 IF I<5 THEN 20",
+      "available": false,
+      "seeAlso": [
+        "IF",
+        "FOR",
+        "GOTO"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Marca el final de una función de varias líneas en el conjunto de lenguaje estructurado de Stefan. (no está en TinyELF)",
+          "description": "Forma parte del conjunto de lenguaje estructurado. No está compilada en la versión TinyELF, así que allí no es una palabra clave. Usa IF con GOTO, o bucles FOR."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "ASC",
+      "kind": "function",
+      "syntax": "ASC(s$)",
+      "summary": "Code of the first character.",
+      "description": "Returns 0 for an empty string.",
+      "example": "10 PRINT ASC(\"A\")",
+      "seeAlso": [
+        "CHR"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Código del primer carácter.",
+          "description": "Devuelve 0 para una cadena vacía."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "CHR",
+      "kind": "function",
+      "syntax": "CHR$(n)",
+      "summary": "A one-character string with code n.",
+      "description": "Written CHR$ in programs.",
+      "example": "10 PRINT CHR$(72);CHR$(73)",
+      "seeAlso": [
+        "ASC",
+        "PUT"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Cadena de un carácter con el código n.",
+          "description": "En los programas se escribe CHR$."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "RIGHT",
+      "kind": "function",
+      "syntax": "RIGHT$(s$, n)",
+      "summary": "The last n characters.",
+      "description": "Written RIGHT$ in programs.",
+      "example": "10 PRINT RIGHT$(\"TINYELF\",3)",
+      "seeAlso": [
+        "LEFT",
+        "MID"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Los últimos n caracteres.",
+          "description": "En los programas se escribe RIGHT$."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "LEFT",
+      "kind": "function",
+      "syntax": "LEFT$(s$, n)",
+      "summary": "The first n characters.",
+      "description": "Written LEFT$ in programs. The string can be any string expression.",
+      "example": "10 PRINT LEFT$(\"TINYELF\",4)",
+      "seeAlso": [
+        "RIGHT",
+        "MID"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Los primeros n caracteres.",
+          "description": "En los programas se escribe LEFT$. La cadena puede ser cualquier expresión de cadena."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "MID",
+      "kind": "function",
+      "syntax": "MID$(s$, p, n)\nMID$(s$, p)",
+      "summary": "n characters from position p.",
+      "description": "Written MID$ in programs. Without n, it returns the rest of the string from position p on.",
+      "example": "10 PRINT MID$(\"TINYELF\",2,3)",
+      "seeAlso": [
+        "LEFT",
+        "RIGHT",
+        "INSTR"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "n caracteres desde la posición p.",
+          "description": "En los programas se escribe MID$. Sin n devuelve el resto de la cadena desde la posición p."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "SPC",
+      "kind": "function",
+      "syntax": "SPC(n)",
+      "summary": "Inside PRINT, gives n spaces.",
+      "description": "SPC(n) is only valid as part of a PRINT statement and writes n spaces.",
+      "example": "10 PRINT SPC(5);\"X\"",
+      "seeAlso": [
+        "TAB",
+        "PRINT"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Dentro de PRINT, da n espacios.",
+          "description": "SPC(n) solo es válida dentro de una sentencia PRINT y escribe n espacios."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "EDIT",
+      "kind": "command",
+      "syntax": "EDIT line",
+      "summary": "Line editor in Stefan's interpreter. (not in TinyELF)",
+      "description": "A console line editor. It is not compiled into the TinyELF build, so it is not a keyword there. Retype a line to change it; typing just its number deletes it.",
+      "example": "10 PRINT \"NEW TEXT\"",
+      "available": false,
+      "seeAlso": [
+        "LIST"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Editor de líneas en el intérprete de Stefan. (no está en TinyELF)",
+          "description": "Es un editor de líneas de consola. No está compilada en la versión TinyELF, así que allí no es una palabra clave. Reescribe una línea para cambiarla; escribir solo su número la borra."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "HELP",
+      "kind": "command",
+      "syntax": "HELP",
+      "summary": "Lists the keywords in Stefan's interpreter. (not in TinyELF)",
+      "description": "A help command. It is not compiled into the TinyELF build, so it is not a keyword there.",
+      "example": "LIST",
+      "available": false,
+      "seeAlso": [
+        "LIST"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Lista las palabras clave en el intérprete de Stefan. (no está en TinyELF)",
+          "description": "Es un comando de ayuda. No está compilada en la versión TinyELF, así que allí no es una palabra clave."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "BIT",
+      "kind": "function",
+      "syntax": "BIT(v, n)",
+      "summary": "Non-zero if bit n of v is set.",
+      "description": "Tests a single bit of v. Together with << and >> it makes up the bitwise tools of the language.",
+      "example": "10 PRINT BIT(5,2)",
+      "seeAlso": [
+        "AND",
+        "OR"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Distinto de cero si el bit n de v está activo.",
+          "description": "Comprueba un solo bit de v. Junto con << y >> forma las herramientas de bits del lenguaje."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "GRAPHICS",
+      "kind": "statement",
+      "syntax": "GRAPHICS mode",
+      "summary": "Switches the display mode.",
+      "description": "The mode follows the Atari BASIC convention: the low four bits select the mode, +16 removes the text window and +32 keeps the current screen instead of clearing it. Available modes are 0 (36x14 text, the default), 1 (18 double-width columns), 3 (playfield blocks, 40 columns) and 8 (high resolution using the player objects). Any other mode gives error 16.\n\nIn modes 3 and 8 the bottom three text rows remain as a scrolling text window unless +16 is added. GRAPHICS also resets the graphics cursor to 0,0.",
+      "example": "10 GRAPHICS 8\n20 PLOT 0,0\n30 DRAWTO 144,100",
+      "seeAlso": [
+        "PLOT",
+        "DRAWTO",
+        "CLS",
+        "POKE"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Cambia el modo de pantalla.",
+          "description": "El modo sigue el convenio de Atari BASIC: los cuatro bits bajos eligen el modo, +16 quita la ventana de texto y +32 conserva la pantalla en lugar de borrarla. Los modos disponibles son 0 (texto 36x14, el de arranque), 1 (18 columnas de doble ancho), 3 (bloques de campo de juego, 40 columnas) y 8 (alta resolución con los objetos jugador). Cualquier otro modo da error 16.\n\nEn los modos 3 y 8 las tres filas inferiores siguen como ventana de texto con desplazamiento salvo que se sume 16. GRAPHICS también pone el cursor gráfico en 0,0."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "STICK",
+      "kind": "function",
+      "syntax": "STICK(n)",
+      "summary": "Joystick n as a 4-bit value.",
+      "description": "Bit 0 is up, bit 1 down, bit 2 left and bit 3 right, and a bit is 0 while its direction is pressed, so 15 means centred. n is 0 or 1. With a KeyPortari attached, a held key puts its ASCII code on the same port bits, so STICK shows it as well.",
+      "example": "10 IF (STICK(0) AND 1)=0 THEN PRINT \"UP\"\n20 GOTO 10",
+      "seeAlso": [
+        "STRIG",
+        "PTRIG",
+        "GET"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Joystick n como valor de 4 bits.",
+          "description": "El bit 0 es arriba, el 1 abajo, el 2 izquierda y el 3 derecha, y un bit vale 0 mientras se pulsa esa dirección, así que 15 significa centrado. n es 0 o 1. Con un KeyPortari conectado, una tecla pulsada pone su código ASCII en los mismos bits del puerto, así que STICK también lo muestra."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "STRIG",
+      "kind": "function",
+      "syntax": "STRIG(n)",
+      "summary": "Fire button of joystick n.",
+      "description": "Returns 0 while pressed and 1 while released. A KeyPortari never affects it.",
+      "example": "10 IF STRIG(0)=0 THEN PRINT \"FIRE\"\n20 GOTO 10",
+      "seeAlso": [
+        "STICK",
+        "PTRIG"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Botón de disparo del joystick n.",
+          "description": "Devuelve 0 mientras se pulsa y 1 al soltarlo. Un KeyPortari nunca lo afecta."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "PTRIG",
+      "kind": "function",
+      "syntax": "PTRIG(n)",
+      "summary": "Paddle trigger n (0 to 3).",
+      "description": "Returns 0 while pressed and 1 while released. Paddles 0 and 1 are the left and right lines of port 0, and paddles 2 and 3 those of port 1.",
+      "example": "10 IF PTRIG(0)=0 THEN PRINT \"PRESSED\"\n20 GOTO 10",
+      "seeAlso": [
+        "STICK",
+        "STRIG"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Gatillo n de las palas (0 a 3).",
+          "description": "Devuelve 0 mientras se pulsa y 1 al soltarlo. Las palas 0 y 1 son las líneas izquierda y derecha del puerto 0, y las 2 y 3 las del puerto 1."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "PLOT",
+      "kind": "statement",
+      "syntax": "PLOT x, y",
+      "summary": "Lights one pixel and remembers it as the start of the next DRAWTO.",
+      "description": "In GRAPHICS 3, x runs 0 to 39 and y 0 to 10 (0 to 13 with the +16 flag). In GRAPHICS 8, x runs 0 to 144 and y 0 to 142 (0 to 180 with +16). Coordinates out of range, or a call in a mode without graphics, give error 16.\n\nPixels can only be set, not erased; clear with CLS or GRAPHICS. There is no COLOR command; colours are set with POKE.",
+      "example": "10 GRAPHICS 8\n20 FOR I=0 TO 100\n30 PLOT I,I\n40 NEXT I",
+      "seeAlso": [
+        "DRAWTO",
+        "GRAPHICS",
+        "POKE"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Enciende un píxel y lo recuerda como inicio del siguiente DRAWTO.",
+          "description": "En GRAPHICS 3, x va de 0 a 39 e y de 0 a 10 (de 0 a 13 con +16). En GRAPHICS 8, x va de 0 a 144 e y de 0 a 142 (de 0 a 180 con +16). Coordenadas fuera de rango, o una llamada en un modo sin gráficos, dan error 16.\n\nSolo se pueden encender píxeles, no borrarlos; se limpia con CLS o GRAPHICS. No hay COLOR; los colores se cambian con POKE."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "DRAWTO",
+      "kind": "statement",
+      "syntax": "DRAWTO x, y",
+      "summary": "Draws a line from the last plotted point to x, y.",
+      "description": "The line is drawn with Bresenham's algorithm from the position of the last PLOT or DRAWTO, which then becomes x, y. The ranges are those of PLOT for the current mode.",
+      "example": "10 GRAPHICS 8\n20 PLOT 0,0\n30 DRAWTO 144,100\n40 DRAWTO 0,100\n50 DRAWTO 0,0",
+      "seeAlso": [
+        "PLOT",
+        "GRAPHICS"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Dibuja una línea desde el último punto hasta x, y.",
+          "description": "La línea se dibuja con el algoritmo de Bresenham desde la posición del último PLOT o DRAWTO, que pasa a ser x, y. Los rangos son los de PLOT para el modo actual."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "STR",
+      "kind": "function",
+      "syntax": "STR$(n)",
+      "summary": "The number as a string.",
+      "description": "Written STR$ in programs. There is no leading space: STR$(5) is \"5\" (SET 25,1 changes that).",
+      "example": "10 A$=STR$(42)\n20 PRINT LEN(A$)",
+      "seeAlso": [
+        "VAL",
+        "SET"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "El número como cadena.",
+          "description": "En los programas se escribe STR$. No lleva espacio inicial: STR$(5) es \"5\" (SET 25,1 lo cambia)."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "INSTR",
+      "kind": "function",
+      "syntax": "INSTR(s$, f$)\nINSTR(s$, f$, p)",
+      "summary": "Position of f$ in s$, 0 if not found.",
+      "description": "The optional third argument starts the search at position p.",
+      "example": "10 PRINT INSTR(\"TINYELF\",\"ELF\")",
+      "seeAlso": [
+        "MID",
+        "LEN"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Posición de f$ en s$, 0 si no se encuentra.",
+          "description": "El tercer argumento opcional empieza la búsqueda en la posición p."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    },
+    {
+      "word": "VAL",
+      "kind": "function",
+      "syntax": "VAL(s$)",
+      "summary": "The number at the start of a string.",
+      "description": "VAL(\"12AB\") is 12 and VAL(\"X\") is 0.",
+      "example": "10 PRINT VAL(\"12AB\")",
+      "seeAlso": [
+        "STR",
+        "ASC"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "El número del principio de una cadena.",
+          "description": "VAL(\"12AB\") es 12 y VAL(\"X\") es 0."
+        }
+      },
+      "sources": [
+        "tinyelf",
+        "tinybasic"
+      ]
+    }
+  ]
+}

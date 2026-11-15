@@ -400,6 +400,7 @@ OpenFile* App::openFile(const std::string& pathIn, int line) {
   newFile->editor.setDefaultIndent(IndentStyle{true, 4});  // tabs, as the templates
   {
     EditorHooks editorHooks = newFile->asmSyntax ? asmHooks() : tinyBasic ? tinyBasicHooks() : ext == ".bas" ? basicHooks() : cLike ? cHooks() : EditorHooks{};
+    newFile->docLanguage = newFile->asmSyntax ? "dasm" : tinyBasic ? "tinyelf" : ext == ".bas" ? "bb" : cLike && project_ && project_->language == Language::ElfC ? "elf" : "";
     OpenFile* self = newFile.get();
     // the files a line names (include, incbin, #include...)
     editorHooks.hasFile = [this, self](const std::string& name) { return !linkedFile(name, self->path).empty(); };
@@ -1649,21 +1650,30 @@ EditorHooks App::cHooks() {
   editorHooks.lineEndState = cLineEndState;
   editorHooks.hover = [this](const std::string& word, const std::string&) -> std::string {
     if (const Register* registerEntry = kb_.reg(word)) return registerHelp(*registerEntry);
+    if (project_ && project_->language == Language::ElfC)
+      if (const BasicKeyword* keyword = kb_.languageWord("elf", word)) return keyword->syntax + "\n" + keyword->summaryText();
     return {};
   };
   return editorHooks;
 }
 
-// TinyELF Basic: its keywords, and completion from them (no help text: TinyELF's manual has it).
+// TinyELF Basic: its keywords, with their help from the knowledge base, and completion from them.
 EditorHooks App::tinyBasicHooks() {
   EditorHooks editorHooks;
   editorHooks.tokenize = [](const std::string& lineText, int) { return tokenizeTinyBasic(lineText); };
-  editorHooks.complete = [](const std::string& prefix, const std::string&) {
+  editorHooks.hover = [this](const std::string& word, const std::string&) -> std::string {
+    if (const BasicKeyword* keyword = kb_.languageWord("tinyelf", word)) return keyword->syntax + "\n" + keyword->summaryText();
+    return {};
+  };
+  editorHooks.complete = [this](const std::string& prefix, const std::string&) {
     std::vector<Completion> completions;
     if (prefix.empty()) return completions;
     std::string upperPrefix = upper(prefix);
     for (auto& keyword : tinyBasicKeywords())
-      if (keyword.compare(0, upperPrefix.size(), upperPrefix) == 0) completions.push_back({keyword, "TinyELF Basic", TokenKind::Mnemonic});
+      if (keyword.compare(0, upperPrefix.size(), upperPrefix) == 0) {
+        const BasicKeyword* entry = kb_.languageWord("tinyelf", keyword);
+        completions.push_back({keyword, entry ? entry->summaryText() : "TinyELF Basic", TokenKind::Mnemonic});
+      }
     return completions;
   };
   return editorHooks;
@@ -1817,9 +1827,18 @@ bool App::gotoDefinition(const std::string& word, const std::string& fromFile, i
   return false;
 }
 
-void App::showDoc(const std::string& word) {
+void App::showDoc(const std::string& word, const std::string& languageId) {
   docTopic_ = word;
   focusDocs_ = true;
+  // the language's own word first (batari Basic's "if", not anything else called IF), and its words listed
+  for (int index = 0; index < 4; index++)
+    if (languageId == kDocLanguages[index]) docLanguageShown_[index] = true;
+  if (!languageId.empty() && languageId != "dasm" && kb_.languageWord(languageId, word)) {
+    const LanguageWords* words = kb_.language(languageId);
+    const BasicKeyword* entry = words->entry(word);
+    docTopic_ = "W:" + languageId + ":" + (entry ? entry->word : words->caseSensitive ? word : upper(word));
+    docReveal_ = true;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -2001,7 +2020,11 @@ void App::frame() {
     int wordStart = textEditor.cursor().col, wordEnd = wordStart;
     while (wordStart > 0 && (std::isalnum((unsigned char)lineText[wordStart - 1]) || lineText[wordStart - 1] == '_')) wordStart--;
     while (wordEnd < (int)lineText.size() && (std::isalnum((unsigned char)lineText[wordEnd]) || lineText[wordEnd] == '_')) wordEnd++;
-    if (wordEnd > wordStart) showDoc(lineText.substr(wordStart, wordEnd - wordStart));
+    std::string word = lineText.substr(wordStart, wordEnd - wordStart);
+    const std::string& language = files_[activeFile_]->docLanguage;
+    // batari Basic's blocks keep their colon: "player0:"
+    if (language == "bb" && wordEnd < (int)lineText.size() && lineText[wordEnd] == ':' && kb_.languageWord("bb", word + ":")) word += ":";
+    if (!word.empty()) showDoc(word, language);
   }
   if (io.KeyCtrl && io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_G, false) && !addresses_.empty()) showGoToAddress_ = true;
   if (io.KeyCtrl && io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_N, false) && hooks.newWindow) hooks.newWindow();
@@ -3586,13 +3609,51 @@ void App::docsPanel() {
   focusDocs_ = false;
   ImGui::SetNextItemWidth(-1);
   ImGui::InputTextWithHint("##q", T("Search"), &docQuery_);
+  // where the search looks, and whose words the list shows
+  if (ImGui::RadioButton(T("Titles"), !docSearchText_)) docSearchText_ = false;
+  ImGui::SameLine();
+  if (ImGui::RadioButton(T("Titles and text"), docSearchText_)) docSearchText_ = true;
+  {
+    const char* languageNames[4] = {"DASM", "batari Basic", "ELF", "TinyELF Basic"};
+    const char* languageTips[4] = {N_("The 6502 instructions"), N_("The words of batari Basic"), N_("The vcsLib functions of ELF games, in C"), N_("The words of TinyELF Basic")};
+    const ImGuiStyle& style = ImGui::GetStyle();
+    for (int index = 0; index < 4; index++) {
+      // on the same line while it fits: a narrow panel puts the rest below
+      float width = ImGui::GetFrameHeight() + style.ItemInnerSpacing.x + ImGui::CalcTextSize(languageNames[index]).x;
+      if (index > 0 && ImGui::GetItemRectMax().x + style.ItemSpacing.x + width <= ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x) ImGui::SameLine();
+      ImGui::Checkbox(languageNames[index], &docLanguageShown_[index]);
+      if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", T(languageTips[index]));
+    }
+  }
   std::string query = upper(docQuery_);
   auto match = [&](const std::string& text) { return query.empty() || upper(text).find(query) != std::string::npos; };
+  // the text of an entry, searched only when asked (a word is found in the titles otherwise)
+  auto matchText = [&](std::initializer_list<const std::string*> texts) {
+    if (query.empty() || !docSearchText_) return false;
+    for (auto* text : texts)
+      if (upper(*text).find(query) != std::string::npos) return true;
+    return false;
+  };
+  auto matchList = [&](const std::vector<std::string>& texts) {
+    if (query.empty() || !docSearchText_) return false;
+    for (auto& text : texts)
+      if (upper(text).find(query) != std::string::npos) return true;
+    return false;
+  };
 
   ImGui::BeginChild("list", ImVec2(0, ImGui::GetContentRegionAvail().y * 0.35f), ImGuiChildFlags_Borders | ImGuiChildFlags_ResizeY);
+  // a numbered word (W:bb:joy2up) is listed as its entry (W:bb:joyNup)
+  std::string listedTopic = docTopic_;
+  if (docTopic_.rfind("W:", 0) == 0) {
+    size_t colon = docTopic_.find(':', 2);
+    if (const LanguageWords* words = colon == std::string::npos ? nullptr : kb_.language(docTopic_.substr(2, colon - 2))) {
+      auto found = words->entryOf.find(docTopic_.substr(colon + 1));
+      if (found != words->entryOf.end()) listedTopic = docTopic_.substr(0, colon + 1) + found->second;
+    }
+  }
   auto item = [&](const std::string& id, const std::string& label, ImVec4 color) {
     ImGui::PushStyleColor(ImGuiCol_Text, color);
-    if (ImGui::Selectable((label + "##" + id).c_str(), docTopic_ == id)) docTopic_ = id;
+    if (ImGui::Selectable((label + "##" + id).c_str(), listedTopic == id)) docTopic_ = id;
     ImGui::PopStyleColor();
   };
   const ImVec4 legal = theme::colv(theme::Role::SynMnemonic), illegal = theme::colv(theme::Role::SynIllegal),
@@ -3614,9 +3675,10 @@ void App::docsPanel() {
   std::vector<std::vector<const Instruction*>> groupItems(3);
   for (auto& [mnemonic, instruction] : kb_.instructions()) {
     bool stable = instruction.opcodes.empty() || instruction.opcodes[0]->stable;
-    if (match(mnemonic) || match(instruction.summary)) groupItems[!instruction.illegal ? 0 : stable ? 1 : 2].push_back(&instruction);
+    if (match(mnemonic) || match(instruction.summary) || matchText({&instruction.description, &instruction.flags}) || matchList(instruction.aliases))
+      groupItems[!instruction.illegal ? 0 : stable ? 1 : 2].push_back(&instruction);
   }
-  if (!groupItems[0].empty() || !groupItems[1].empty() || !groupItems[2].empty()) {
+  if (docLanguageShown_[0] && (!groupItems[0].empty() || !groupItems[1].empty() || !groupItems[2].empty())) {
     if (openBranch("Instructions", true)) {
       for (int groupIndex = 0; groupIndex < 3; groupIndex++) {
         if (groupItems[groupIndex].empty()) continue;
@@ -3630,9 +3692,57 @@ void App::docsPanel() {
       ImGui::TreePop();
     }
   }
+  // the words of batari Basic, ELF (vcsLib) and TinyELF Basic, by kind
+  for (int index = 1; index < 4; index++) {
+    const LanguageWords* words = kb_.language(kDocLanguages[index]);
+    if (!docLanguageShown_[index] || !words || words->entries.empty()) continue;
+    static const char* kKinds[][2] = {{"statement", N_("Statements")}, {"control", N_("Control")}, {"command", N_("Commands")},
+                                      {"directive", N_("Directives")}, {"option", N_("Options")}, {"block", N_("Blocks")}, {"function", N_("Functions")},
+                                      {"variable", N_("Variables")}, {"operator", N_("Operators")}, {"macro", N_("Macros")},
+                                      {"constant", N_("Constants")}, {"comment", N_("Comments")}};
+    std::vector<std::pair<const char*, std::vector<const BasicKeyword*>>> shownKinds;
+    std::vector<const BasicKeyword*> otherKinds;
+    auto shown = [&](const BasicKeyword& keyword) {
+      return match(keyword.word) || match(keyword.summaryText()) || matchText({&keyword.syntax, &keyword.descriptionText(), &keyword.example});
+    };
+    for (auto& [kind, kindTitle] : kKinds) {
+      std::vector<const BasicKeyword*> kindWords;
+      for (auto& keyword : words->entries)
+        if (keyword.kind == kind && shown(keyword)) kindWords.push_back(&keyword);
+      if (!kindWords.empty()) shownKinds.push_back({kindTitle, kindWords});
+    }
+    for (auto& keyword : words->entries) {
+      bool known = false;
+      for (auto& kindEntry : kKinds) known = known || keyword.kind == kindEntry[0];
+      if (!known && shown(keyword)) otherKinds.push_back(&keyword);
+    }
+    if (!otherKinds.empty()) shownKinds.push_back({N_("Other"), otherKinds});
+    if (shownKinds.empty()) continue;
+    std::string prefix = std::string("W:") + kDocLanguages[index] + ":";
+    const bool revealHere = docReveal_ && docTopic_.rfind(prefix, 0) == 0;
+    if (!query.empty() || revealHere) ImGui::SetNextItemOpen(true, ImGuiCond_Always);
+    if (ImGui::TreeNode(words->title.c_str())) {
+      if (query.empty()) item(prefix, F("About {0}", {words->title}), plain);
+      for (auto& [kindTitle, kindWords] : shownKinds) {
+        bool holdsTopic = false;
+        for (auto* keyword : kindWords) holdsTopic = holdsTopic || listedTopic == prefix + keyword->word;
+        if (!query.empty() || (revealHere && holdsTopic)) ImGui::SetNextItemOpen(true, ImGuiCond_Always);
+        if (ImGui::TreeNode(T(kindTitle))) {
+          for (auto* keyword : kindWords) {
+            item(prefix + keyword->word, keyword->word + "  " + keyword->summaryText(), legal);
+            if (revealHere && listedTopic == prefix + keyword->word) ImGui::SetScrollHereY(0.3f), docReveal_ = false;
+          }
+          ImGui::TreePop();
+        }
+      }
+      ImGui::TreePop();
+    }
+  }
   std::vector<const Register*> shownRegisters;
   for (auto& registerEntry : kb_.registers())
-    if (match(registerEntry.name) || match(registerEntry.summary)) shownRegisters.push_back(&registerEntry);
+    if (match(registerEntry.name) || match(registerEntry.summary) ||
+        matchText({&registerEntry.description, &registerEntry.timing, &registerEntry.example}) || matchList(registerEntry.issues))
+      shownRegisters.push_back(&registerEntry);
   if (!shownRegisters.empty() && openBranch("Registers", false)) {
     for (auto* registerEntry : shownRegisters) item("R:" + registerEntry->name, registerEntry->name + "  " + registerEntry->address + "  " + registerEntry->summary, plain);
     ImGui::TreePop();
@@ -3641,7 +3751,8 @@ void App::docsPanel() {
   for (auto& technique : kb_.techniques()) {
     bool keyword = false;
     for (auto& word : technique.keywords) keyword = keyword || match(word);
-    if (match(technique.title) || match(technique.summary) || keyword) shownRecipes.push_back(&technique);
+    if (match(technique.title) || match(technique.summary) || keyword || matchText({&technique.example, &technique.note}) || matchList(technique.steps))
+      shownRecipes.push_back(&technique);
   }
   if (!shownRecipes.empty() && openBranch("Recipes", false)) {
     for (auto* technique : shownRecipes) item("K:" + technique->id, technique->title, plain);
@@ -3651,7 +3762,9 @@ void App::docsPanel() {
   for (auto& [category, categoryTitle] : formatCategories()) {
     std::vector<const CartFormat*> categoryFormats;
     for (auto& cartFormat : kb_.formats())
-      if (cartFormat.category == category && (match(cartFormat.id) || match(cartFormat.name))) categoryFormats.push_back(&cartFormat);
+      if (cartFormat.category == category &&
+          (match(cartFormat.id) || match(cartFormat.name) || matchText({&cartFormat.description, &cartFormat.ram}) || matchList(cartFormat.hotspots) || matchList(cartFormat.issues)))
+        categoryFormats.push_back(&cartFormat);
     if (categoryFormats.empty()) continue;
     std::sort(categoryFormats.begin(), categoryFormats.end(), [](auto* left, auto* right) { return naturalLess(left->name, right->name); });
     shownFormats.push_back({categoryTitle, categoryFormats});
@@ -3665,13 +3778,14 @@ void App::docsPanel() {
   }
   std::vector<const TvStandard*> shownTv;
   for (auto& tvStandard : kb_.tvStandards())
-    if (match(tvStandard.id)) shownTv.push_back(&tvStandard);
+    if (match(tvStandard.id) || matchList(tvStandard.notes)) shownTv.push_back(&tvStandard);
   if (!shownTv.empty() && openBranch("TV standards", false)) {
     for (auto* tvStandard : shownTv) item("T:" + tvStandard->id, tvStandard->id, plain);
     ImGui::TreePop();
   }
   ImGui::TreePop();
   }
+  docReveal_ = false;  // shown, or hidden by the search: either way only once
   ImGui::EndChild();
 
   ImGui::BeginChild("topic");
@@ -3681,8 +3795,11 @@ void App::docsPanel() {
   auto seeAlso = [&](const std::vector<DocLink>& links) {
     if (links.empty()) return;
     ImGui::SeparatorText(T("See also"));
-    for (auto& link : links)
-      if (ImGui::Selectable((link.label + "##see" + link.topic).c_str(), false)) docTopic_ = link.topic;
+    for (auto& link : links) {
+      std::string label = link.label;
+      std::replace(label.begin(), label.end(), '#', 'N');  // NUSIZ#: a # before "##" would end the label
+      if (ImGui::Selectable((label + "##see" + link.topic).c_str(), false)) docTopic_ = link.topic;
+    }
   };
   std::string topic = docTopic_;
   // a bare word (from F1) resolves to an instruction or a register
@@ -3692,7 +3809,71 @@ void App::docsPanel() {
     else if (kb_.format(topic)) topic = "F:" + kb_.format(topic)->id;
     docTopic_ = topic;
   }
-  if (topic.rfind("I:", 0) == 0) {
+  if (topic.rfind("W:", 0) == 0) {
+    // a word of a language: "W:bb:drawscreen"; "W:bb:" is the language itself
+    size_t colon = topic.find(':', 2);
+    const LanguageWords* words = colon == std::string::npos ? nullptr : kb_.language(topic.substr(2, colon - 2));
+    std::string wordName = colon == std::string::npos ? "" : topic.substr(colon + 1);
+    const BasicKeyword* keyword = words && !wordName.empty() ? words->entry(wordName) : nullptr;
+    if (words && wordName.empty()) {
+      ImGui::PushFont(mono_);
+      ImGui::TextColored(theme::colv(theme::Role::MsgName), "%s", words->title.c_str());
+      ImGui::PopFont();
+      for (auto& note : words->notes) bullet(note);
+      std::vector<std::string> sourceIds;
+      for (auto& written : words->entries)
+        for (auto& id : written.sources)
+          if (std::find(sourceIds.begin(), sourceIds.end(), id) == sourceIds.end()) sourceIds.push_back(id);
+      provenance(kb_, sourceIds);
+    } else if (keyword) {
+      ImGui::PushFont(mono_);
+      ImGui::TextColored(legal, "%s", keyword->word.c_str());
+      ImGui::PopFont();
+      ImGui::SameLine();
+      static const std::map<std::string, const char*> kKindNames = {
+          {"statement", N_("statement")}, {"control", N_("control")}, {"command", N_("command")}, {"directive", N_("directive")}, {"option", N_("option")},
+          {"block", N_("block")}, {"function", N_("function")}, {"variable", N_("variable")}, {"operator", N_("operator")},
+          {"macro", N_("macro")}, {"constant", N_("constant")}, {"comment", N_("comment")}};
+      auto kindName = kKindNames.find(keyword->kind);
+      ImGui::TextDisabled("%s  %s", words->title.c_str(), kindName != kKindNames.end() ? T(kindName->second) : keyword->kind.c_str());
+      ImGui::TextWrapped("%s", keyword->summaryText().c_str());
+      if (!keyword->available) {
+        ImGui::PushStyleColor(ImGuiCol_Text, theme::colv(theme::Role::MsgWarning));
+        ImGui::TextWrapped("%s", T("This word is in Stefan Lenz's BASIC, but TinyELF Basic is built without it."));
+        ImGui::PopStyleColor();
+      }
+      if (!keyword->syntax.empty()) {
+        ImGui::SeparatorText(T("Syntax"));
+        ImGui::PushFont(mono_);
+        ImGui::TextWrapped("%s", keyword->syntax.c_str());
+        ImGui::PopFont();
+      }
+      if (!keyword->descriptionText().empty()) {
+        ImGui::Separator();
+        std::string text = keyword->descriptionText();
+        for (size_t start = 0; start <= text.size();) {
+          size_t end = text.find("\n\n", start);
+          std::string paragraph = text.substr(start, end == std::string::npos ? std::string::npos : end - start);
+          if (!paragraph.empty()) ImGui::TextWrapped("%s", paragraph.c_str());
+          if (end == std::string::npos) break;
+          start = end + 2;
+        }
+      }
+      if (!keyword->example.empty()) {
+        ImGui::SeparatorText(T("Example"));
+        ImGui::PushFont(mono_);
+        ImGui::TextUnformatted(keyword->example.c_str());
+        ImGui::PopFont();
+      }
+      std::vector<DocLink> links;
+      for (auto& other : keyword->seeAlso)
+        if (words->entry(other)) links.push_back({"W:" + words->id + ":" + words->entry(other)->word, other});
+        else if (kb_.reg(other)) links.push_back({"R:" + kb_.reg(other)->name, other});
+        else if (kb_.instruction(other)) links.push_back({"I:" + upper(other), other});
+      seeAlso(links);
+      provenance(kb_, keyword->sources);
+    }
+  } else if (topic.rfind("I:", 0) == 0) {
     if (const Instruction* instruction = kb_.instruction(topic.substr(2))) {
       bool stable = instruction->opcodes.empty() || instruction->opcodes[0]->stable;
       ImGui::PushFont(mono_);

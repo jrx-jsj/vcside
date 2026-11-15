@@ -50,6 +50,7 @@ struct OpenFile {
   std::unique_ptr<ImageViewer> image;  // a PNG or BMP: shown, not edited
   std::unique_ptr<ProjectForm> form;   // a .vcsproj: a form, or its text in the editor
   bool asmSyntax = true;
+  std::string docLanguage;  // whose words F1 looks up first: "dasm", "bb", "tinyelf", "elf" or none
   bool requestFocus = false;
   // C: the compiler checks the editor's text a moment after each change (see c_check.h)
   bool cCheck = false;
@@ -102,7 +103,12 @@ class App {
   void testBuild() { build(0); }
   bool testBusy() const { return building_ || spaceRunning_; }
   void testSelect(int firstLine, int lastLine);
-  void testDoc(const std::string& word) { showDoc(word); }
+  // "WORD", or "language/WORD" as F1 in a file of that language (tinyelf/PRINT)
+  void testDoc(const std::string& word) {
+    size_t slash = word.find('/');
+    if (slash == std::string::npos || slash == 0) showDoc(word);
+    else showDoc(word.substr(slash + 1), word.substr(0, slash));
+  }
   std::string testMenuDump() { return nativeMenu_ ? nativeMenuDump() : std::string(); }
   bool testMenu(const std::string& path);  // "File/Save": the system menu, or the ImGui one
   void testGoToAddress(const std::string& address) { showGoToAddress_ = true, pendingAddress_ = address; }
@@ -204,7 +210,8 @@ class App {
   void emulatorOptionsDialog();
   std::string findProjectFile(const std::string& name) const;
   void lint(OpenFile& file);
-  void showDoc(const std::string& word);
+  // Opens the documentation at a word: first among the words of languageId (KnowledgeBase::languageIds, or "dasm").
+  void showDoc(const std::string& word, const std::string& languageId = "");
   bool gotoDefinition(const std::string& word, const std::string& fromFile, int fromLine);
   // Where a symbol is defined: the open file first, then the project's sources.
   bool findDefinition(const std::string& word, const std::string& fromFile, int fromLine, std::string& path, int& line);
@@ -371,6 +378,11 @@ class App {
   // docs
   std::string docQuery_;
   std::string docTopic_;  // instruction / register / format id currently shown
+  bool docSearchText_ = false;
+  bool docReveal_ = false;  // F1 opened a word: the list opens its branch and scrolls to it once  // the search looks in the entries' text too, not only their titles
+  // Which languages' words the list shows: DASM (the 6502 instructions), batari Basic, ELF, TinyELF Basic.
+  static constexpr const char* kDocLanguages[4] = {"dasm", "bb", "elf", "tinyelf"};
+  bool docLanguageShown_[4] = {true, true, true, true};
   bool focusDocs_ = false;
 
   // the optional AI assistant (docs/design-assistant.md)

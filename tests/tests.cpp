@@ -1852,11 +1852,27 @@ static void testBasicSyntax(const KnowledgeBase& kb) {
   CHECK(kb.basic("joy0up") && kb.basic("joy3fire") && !kb.basic("joy4up"));
   CHECK(kb.basic("joy1left") && kb.basic("joy1left")->summary.find("joystick 1") != std::string::npos);
   CHECK(kb.basic("player2:") && kb.basic("player0color:") && kb.basic("temp7") && !kb.basic("temp8"));
-  CHECK(kb.basic("player1x")->syntax == "player1x = 50");
+  CHECK(kb.basic("player1x")->syntax == "player1x = value");
+  // the documented languages: batari Basic as written, TinyELF Basic in any case, ELF's vcsLib
+  CHECK(kb.languageWord("bb", "drawscreen") == kb.basic("drawscreen") || (kb.languageWord("bb", "drawscreen") && kb.languageWord("bb", "drawscreen")->word == "drawscreen"));
+  CHECK(kb.language("bb") && kb.language("bb")->entry("joyNup") && kb.language("bb")->entry("joy2up") && kb.language("bb")->entry("joy2up")->word == "joy2up");
+  CHECK(kb.languageWord("tinyelf", "print") && kb.languageWord("tinyelf", "PRINT")->word == "PRINT" && !kb.languageWord("tinyelf", "drawscreen"));
+  CHECK(kb.languageWord("elf", "vcsWrite5") && !kb.languageWord("elf", "VCSWRITE5") && kb.languageWord("elf", "RAM_FUNC")->kind == "macro");
+  for (auto& keyword : tinyBasicKeywords()) CHECK(kb.languageWord("tinyelf", keyword) != nullptr);
+  // capitals mark the number with #: NUSIZ# is NUSIZ2 ... NUSIZ9; the values of set are documented but not coloured
+  CHECK(kb.languageWord("bb", "NUSIZ3") && kb.languageWord("bb", "NUSIZ3")->syntax.find("NUSIZ3") != std::string::npos && !kb.languageWord("bb", "NUSIZN"));
+  CHECK(kb.languageWord("bb", "DF2FRACINC") && kb.languageWord("bb", "COLUM1"));
+  CHECK(kb.languageWord("bb", "size") && !kb.basic("size") && kb.basic("romsize"));
+  for (auto& id : KnowledgeBase::languageIds())
+    for (auto& entry : kb.language(id)->entries) CHECK(!entry.summary.empty() && !entry.description.empty() && !entry.syntax.empty());
   CHECK(!kb.basic("Drawscreen"));  // the compiler wants lowercase
   for (auto& [word, keyword] : kb.basicKeywords()) {
-    CHECK(!keyword.summary.empty() && !keyword.syntax.empty() && word.find('N') == std::string::npos);
-    if (keyword.summary.empty()) std::fprintf(stderr, "  %s\n", word.c_str());
+    // every number marker expanded: no # left, nor an N after a lowercase letter or a dash (joyNup, player1-N:)
+    bool marker = word.find('#') != std::string::npos;
+    for (size_t position = 1; position < word.size(); position++)
+      marker = marker || (word[position] == 'N' && (std::islower((unsigned char)word[position - 1]) || word[position - 1] == '-'));
+    CHECK(!keyword.summary.empty() && !keyword.syntax.empty() && !marker);
+    if (keyword.summary.empty() || marker) std::fprintf(stderr, "  %s\n", word.c_str());
   }
   CHECK(basicLabelOf("main") == "main" && basicLabelOf("10 goto 10") == "10" && basicLabelOf(" drawscreen").empty());
   CHECK(basicLabelOf("player0:").empty() && basicLabelOf("").empty());

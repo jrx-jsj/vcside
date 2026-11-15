@@ -2,6 +2,8 @@
 // Copyright (C) 2026 Juan Sánchez Jurado
 #include "kb.h"
 
+#include <filesystem>
+
 #include "i18n.h"
 
 #include <algorithm>
@@ -255,30 +257,65 @@ bool KnowledgeBase::load(const std::string& dir, std::string* error) {
         emulators_.push_back(info);
       }
   }
+  ok = loadLanguage(dir + "/batari-basic.json", "bb", "batari Basic", true, error) && ok;
+  ok = loadLanguage(dir + "/tinyelf-basic.json", "tinyelf", "TinyELF Basic", false, error) && ok;
+  ok = loadLanguage(dir + "/elf.json", "elf", "ELF", true, error) && ok;
+  // the editor's batari Basic words: not the values of set and kernel_options ("size", "pal"...),
+  // which would colour the variables a program names so; the documentation and F1 still have them
+  basic_.clear();
+  if (languages_.count("bb"))
+    for (auto& [word, keyword] : languages_["bb"].words)
+      if (keyword.kind != "option") basic_[word] = keyword;
+  return ok && (!error || error->empty());
+}
+
+// The words of a language (batari-basic.json, tinyelf-basic.json, elf.json); a missing file is no error.
+bool KnowledgeBase::loadLanguage(const std::string& path, const std::string& id, const std::string& title, bool caseSensitive, std::string* error) {
   json basicDocument;
-  if (readJson(dir + "/batari-basic.json", basicDocument, error)) {
-    readSources(basicDocument, sources_);
+  std::error_code existsError;
+  if (!std::filesystem::exists(path, existsError)) return true;
+  if (!readJson(path, basicDocument, error)) return false;
+  LanguageWords& languageWords = languages_[id];
+  languageWords.id = id, languageWords.title = title, languageWords.caseSensitive = caseSensitive;
+  languageWords.notes = stringList(basicDocument, "notes");
+  std::map<std::string, BasicKeyword>& basic_ = languageWords.words;
+  readSources(basicDocument, sources_);
     if (basicDocument.contains("keywords") && basicDocument["keywords"].is_array())
       for (auto& keywordJson : basicDocument["keywords"]) {
         BasicKeyword keyword;
         keyword.word = stringValue(keywordJson, "word");
+        if (!caseSensitive) keyword.word = upper(keyword.word);
         keyword.kind = stringValue(keywordJson, "kind");
         keyword.syntax = stringValue(keywordJson, "syntax");
         keyword.summary = stringValue(keywordJson, "summary");
+        keyword.description = stringValue(keywordJson, "description");
+        keyword.example = stringValue(keywordJson, "example");
         keyword.sources = stringList(keywordJson, "sources");
+        keyword.seeAlso = stringList(keywordJson, "seeAlso");
+        keyword.available = keywordJson.value("available", true);
+        // "es": "summary", or "es": {"summary": ..., "description": ...}
         if (keywordJson.contains("i18n") && keywordJson["i18n"].is_object())
-          for (auto& [language, translation] : keywordJson["i18n"].items())
+          for (auto& [language, translation] : keywordJson["i18n"].items()) {
             if (translation.is_string()) keyword.i18n[language] = translation.get<std::string>();
-        // "joyNup" with "range": [0, 3] is joy0up ... joy3up
-        auto markerPosition = keyword.word.find('N');
+            else if (translation.is_object()) {
+              keyword.i18n[language] = stringValue(translation, "summary");
+              keyword.i18nDescription[language] = stringValue(translation, "description");
+            }
+          }
+        // "joyNup" with "range": [0, 3] is joy0up ... joy3up; a word in capitals marks the number
+        // with # instead ("NUSIZ#": NUSIZ2 ... NUSIZ9), since its own letters may be N
+        const bool hashMarker = keyword.word.find('#') != std::string::npos;
+        auto markerPosition = hashMarker ? keyword.word.find('#') : keyword.word.find('N');
         if (markerPosition != std::string::npos && keywordJson.contains("range") && keywordJson["range"].is_array() && keywordJson["range"].size() == 2) {
           for (int i = keywordJson["range"][0].get<int>(); i <= keywordJson["range"][1].get<int>(); i++) {
             BasicKeyword one = keyword;
-            // N after a lowercase letter (joyNup) or standing alone ("joystick N")
+            // # anywhere; N after a lowercase letter (joyNup) or standing alone ("joystick N")
             auto put = [&](std::string& text) {
               auto alnum = [&](size_t position) { return position < text.size() && std::isalnum((unsigned char)text[position]); };
+              for (size_t position = 0; (position = text.find('#', position)) != std::string::npos; position++)
+                if (hashMarker) text.replace(position, 1, std::to_string(i));
               for (size_t position = 0; (position = text.find('N', position)) != std::string::npos; position++) {
-                bool after = position > 0 && std::islower((unsigned char)text[position - 1]);
+                bool after = !hashMarker && position > 0 && std::islower((unsigned char)text[position - 1]);
                 bool alone = (position == 0 || !alnum(position - 1)) && !alnum(position + 1);
                 if (after || alone) text.replace(position, 1, std::to_string(i));
               }
@@ -286,15 +323,20 @@ bool KnowledgeBase::load(const std::string& dir, std::string* error) {
             put(one.word);
             put(one.syntax);
             put(one.summary);
+            put(one.description);
+            put(one.example);
             for (auto& [language, translation] : one.i18n) put(translation);
+            for (auto& [language, translation] : one.i18nDescription) put(translation);
+            for (auto& other : one.seeAlso) put(other);
+            languageWords.entryOf[one.word] = keyword.word;
             basic_[one.word] = one;
           }
         } else {
           basic_[keyword.word] = keyword;
         }
+        languageWords.entries.push_back(keyword);
       }
-  }
-  return ok && (!error || error->empty());
+  return true;
 }
 
 const EmulatorInfo* KnowledgeBase::emulator(const std::string& id) const {
@@ -340,6 +382,42 @@ const std::string& BasicKeyword::summaryText() const {
     if (dash == std::string::npos) return summary;
     language.resize(dash);
   }
+}
+
+const std::string& BasicKeyword::descriptionText() const {
+  std::string language = currentLanguage();
+  for (;;) {
+    auto found = i18nDescription.find(language);
+    if (found != i18nDescription.end() && !found->second.empty()) return found->second;
+    size_t dash = language.find_last_of("-_");
+    if (dash == std::string::npos) return description;
+    language.resize(dash);
+  }
+}
+
+const BasicKeyword* LanguageWords::entry(const std::string& word) const {
+  std::string key = caseSensitive ? word : upper(word);
+  for (auto& written : entries)
+    if (written.word == key) return &written;
+  auto found = words.find(key);
+  return found == words.end() ? nullptr : &found->second;
+}
+
+const std::vector<std::string>& KnowledgeBase::languageIds() {
+  static const std::vector<std::string> ids = {"bb", "tinyelf", "elf"};
+  return ids;
+}
+
+const LanguageWords* KnowledgeBase::language(const std::string& id) const {
+  auto found = languages_.find(id);
+  return found == languages_.end() ? nullptr : &found->second;
+}
+
+const BasicKeyword* KnowledgeBase::languageWord(const std::string& languageId, const std::string& word) const {
+  const LanguageWords* words = language(languageId);
+  if (!words) return nullptr;
+  auto found = words->words.find(words->caseSensitive ? word : upper(word));
+  return found == words->words.end() ? nullptr : &found->second;
 }
 
 const BasicKeyword* KnowledgeBase::basic(const std::string& word) const {

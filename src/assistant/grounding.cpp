@@ -117,9 +117,12 @@ std::string tvText(const TvStandard& tv) {
   return text;
 }
 
-std::string basicText(const BasicKeyword& keyword) {
-  std::string text = "batari Basic " + keyword.kind + " " + keyword.word + ": " + keyword.summaryText();
+std::string basicText(const BasicKeyword& keyword, const std::string& language) {
+  std::string text = language + " " + keyword.kind + " " + keyword.word + ": " + keyword.summaryText();
+  if (!keyword.available) text += " (not in this build)";
   if (!keyword.syntax.empty()) text += "\nSyntax: " + keyword.syntax;
+  if (!keyword.description.empty()) text += "\n" + keyword.description;
+  if (!keyword.example.empty()) text += "\nExample:\n" + keyword.example;
   return text;
 }
 
@@ -258,7 +261,7 @@ const std::map<std::string, std::vector<std::string>>& synonyms() {
 
 struct TopicDoc {
   std::string kind, id, name, title, body;
-  int source = 0;      // 0 register, 1 format, 2 TV, 3 batari Basic, 4 TIA note, 5 6502 note, 6 how-to, 7 7800 note
+  int source = 0;      // 0 register, 1 format, 2 TV, 3 batari Basic, 4 TIA note, 5 6502 note, 6 how-to, 7 7800 note, 8 TinyELF / ELF word (index: language)
   size_t index = 0;
   bool verified = true;
 };
@@ -325,10 +328,18 @@ std::vector<GroundedEntry> topicSearch(const KnowledgeBase& kb, const std::strin
     docs.push_back(doc);
   }
   for (auto& item : kb.basicKeywords()) {
-    TopicDoc doc{"batari Basic", item.second.word, item.second.word, item.second.summary, item.second.syntax};
+    TopicDoc doc{"batari Basic", item.second.word, item.second.word, item.second.summary, item.second.syntax + " " + item.second.description};
     doc.source = 3;
     docs.push_back(doc);
   }
+  // TinyELF Basic and ELF's vcsLib (KnowledgeBase::languageIds after "bb")
+  for (size_t languageIndex = 1; languageIndex < KnowledgeBase::languageIds().size(); languageIndex++)
+    if (const LanguageWords* words = kb.language(KnowledgeBase::languageIds()[languageIndex]))
+      for (auto& [word, keyword] : words->words) {
+        TopicDoc doc{words->title, word, word, keyword.summary, keyword.syntax + " " + keyword.description};
+        doc.source = 8, doc.index = languageIndex;
+        docs.push_back(doc);
+      }
   for (size_t i = 0; i < kb.tiaNotes().size(); i++) {
     TopicDoc doc{"TIA note", "TIA-note-" + std::to_string(i + 1), "", kb.tiaNotes()[i], ""};
     doc.source = 4, doc.index = i;
@@ -405,7 +416,12 @@ std::vector<GroundedEntry> topicSearch(const KnowledgeBase& kb, const std::strin
       case 0: entry.text = registerText(kb.registers()[doc.index]); break;
       case 1: entry.text = formatText(kb.formats()[doc.index]); break;
       case 2: entry.text = tvText(kb.tvStandards()[doc.index]); break;
-      case 3: entry.text = basicText(kb.basicKeywords().at(doc.id)); break;
+      case 3: entry.text = basicText(kb.basicKeywords().at(doc.id), "batari Basic"); break;
+      case 8: {
+        const LanguageWords* words = kb.language(KnowledgeBase::languageIds()[doc.index]);
+        entry.text = basicText(*kb.languageWord(words->id, doc.id), words->title);
+        break;
+      }
       case 4: entry.text = "TIA note: " + kb.tiaNotes()[doc.index]; break;
       case 6: entry.text = techniqueText(kb.techniques()[doc.index]); break;
       case 7: entry.text = "Atari 7800 note: " + kb.a7800Notes()[doc.index]; break;
@@ -458,7 +474,7 @@ std::vector<GroundedEntry> groundText(const KnowledgeBase& kb, const std::string
     if (context.batariBasic || word.size() >= 6) {
       const BasicKeyword* keyword = kb.basic(word);
       if (!keyword && word.back() != ':') keyword = kb.basic(word + ":");
-      if (keyword) add("batari Basic", keyword->word, 6, [&] { return basicText(*keyword); }, true);
+      if (keyword) add("batari Basic", keyword->word, 6, [&] { return basicText(*keyword, "batari Basic"); }, true);
     }
   }
   // code and errors: any case
@@ -471,7 +487,7 @@ std::vector<GroundedEntry> groundText(const KnowledgeBase& kb, const std::string
     if (context.batariBasic) {
       const BasicKeyword* keyword = kb.basic(word);
       if (!keyword && word.back() != ':') keyword = kb.basic(word + ":");
-      if (keyword && word.size() >= 5) add("batari Basic", keyword->word, 1, [&] { return basicText(*keyword); }, true);
+      if (keyword && word.size() >= 5) add("batari Basic", keyword->word, 1, [&] { return basicText(*keyword, "batari Basic"); }, true);
     }
   }
   // a question that names nothing the knowledge base knows is searched by topic

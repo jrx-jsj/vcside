@@ -1,0 +1,836 @@
+{
+  "language": "ELF",
+  "notes": [
+    "An ELF game is a relocatable ARM object that the cartridge's loader links and runs (PlusCart, UnoCart, Chameleon Cart; Stella and Gopher2600 too). The ARM feeds the 6507 one instruction at a time through the vcsLib functions; the number at the end of each name is the 6507 cycles it takes.",
+    "These entries follow VCSIDE's vcsLib.h (the ELF template's include/vcsLib.h). The loaders' functions are reached with long calls, because on the PlusCart vcsLib stays in flash and the game runs in RAM.",
+    "Registers (WSYNC, COLUBK, SWCHA...) are defined in vcsLib.h with their TIA and RIOT addresses; their own entries are under Registers."
+  ],
+  "sources": [
+    {
+      "id": "vcside-vcslib",
+      "title": "VCSIDE's ELF template: include/vcsLib.h",
+      "author": "VCSIDE",
+      "url": "https://github.com/jrx-jsj/vcside/blob/main/data/templates/elf/include/vcsLib.h"
+    },
+    {
+      "id": "tinyelf-vcslib",
+      "title": "TinyELF Basic: vcsLib.h",
+      "author": "Al_Nafuur",
+      "url": "https://github.com/Al-Nafuur/TinyELF-Basic"
+    }
+  ],
+  "keywords": [
+    {
+      "word": "elf_main",
+      "kind": "function",
+      "syntax": "int elf_main(uint32_t *args)",
+      "summary": "Where the game starts: the loader calls it once the ELF is linked.",
+      "description": "The cartridge's loader links the relocatable ELF, copies what has to run from RAM and calls elf_main with an array of words about the console: args[MP_SYSTEM_TYPE], args[MP_CLOCK_HZ] and args[MP_FEATURE_FLAGS].\n\nA game normally never returns from it. When FF_MULTI_CART is set it was started from a menu, and returning from elf_main goes back to that menu.",
+      "example": "int elf_main(uint32_t *args) {\n  int pal = args[MP_SYSTEM_TYPE] == ST_PAL_2600;\n  for (;;) frame(pal);\n}",
+      "seeAlso": [
+        "MP_SYSTEM_TYPE",
+        "MP_FEATURE_FLAGS"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Donde empieza el juego: el cargador la llama una vez enlazado el ELF.",
+          "description": "El cargador del cartucho enlaza el ELF reubicable, copia lo que debe correr en RAM y llama a elf_main con una tabla de palabras sobre la consola: args[MP_SYSTEM_TYPE], args[MP_CLOCK_HZ] y args[MP_FEATURE_FLAGS].\n\nUn juego normalmente no vuelve nunca de ella. Si FF_MULTI_CART está activo, se arrancó desde un menú, y volver de elf_main regresa a ese menú."
+        }
+      },
+      "sources": [
+        "vcside-vcslib"
+      ]
+    },
+    {
+      "word": "MP_SYSTEM_TYPE",
+      "kind": "constant",
+      "syntax": "args[MP_SYSTEM_TYPE]  /* 0 */",
+      "summary": "Index of the console type in elf_main's arguments: one of the ST_ values.",
+      "description": "args[MP_SYSTEM_TYPE] says which console and TV standard the game runs on: ST_NTSC_2600, ST_PAL_2600, ST_PAL60_2600, ST_NTSC_7800 or ST_PAL_7800. A game that also runs on the 7800 picks its renderer from it.",
+      "example": "if (args[MP_SYSTEM_TYPE] == ST_NTSC_7800 || args[MP_SYSTEM_TYPE] == ST_PAL_7800) run7800();",
+      "seeAlso": [
+        "ST_NTSC_2600",
+        "elf_main"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Índice del tipo de consola en los argumentos de elf_main: uno de los valores ST_.",
+          "description": "args[MP_SYSTEM_TYPE] dice en qué consola y norma de televisión corre el juego: ST_NTSC_2600, ST_PAL_2600, ST_PAL60_2600, ST_NTSC_7800 o ST_PAL_7800. Un juego que también corre en la 7800 elige con él cómo dibujar."
+        }
+      },
+      "sources": [
+        "vcside-vcslib"
+      ]
+    },
+    {
+      "word": "MP_CLOCK_HZ",
+      "kind": "constant",
+      "syntax": "args[MP_CLOCK_HZ]  /* 1 */",
+      "summary": "Index of the ARM's clock frequency, in hertz, in elf_main's arguments.",
+      "description": "args[MP_CLOCK_HZ] is the speed the cartridge's ARM runs at. It is useful to time work done while the 6507 waits, for example during the overblank.",
+      "example": "uint32_t clockHz = args[MP_CLOCK_HZ];",
+      "seeAlso": [
+        "elf_main"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Índice de la frecuencia del ARM, en hercios, en los argumentos de elf_main.",
+          "description": "args[MP_CLOCK_HZ] es la velocidad a la que va el ARM del cartucho. Sirve para medir el trabajo que se hace mientras el 6507 espera, por ejemplo durante el overblank."
+        }
+      },
+      "sources": [
+        "vcside-vcslib"
+      ]
+    },
+    {
+      "word": "MP_FEATURE_FLAGS",
+      "kind": "constant",
+      "syntax": "args[MP_FEATURE_FLAGS]  /* 2 */",
+      "summary": "Index of the feature flags (FF_ values) in elf_main's arguments.",
+      "description": "args[MP_FEATURE_FLAGS] is a set of bits: FF_MULTI_CART (started from a menu, elf_main may return), FF_CHAMELEON_CART (a Chameleon Cart: elf_main starts during the overblank) and FF_REDUCED_HMOVE (a late HMOVE moves one pixel less on this console).",
+      "example": "int fromMenu = args[MP_FEATURE_FLAGS] & FF_MULTI_CART;",
+      "seeAlso": [
+        "FF_MULTI_CART",
+        "FF_CHAMELEON_CART",
+        "FF_REDUCED_HMOVE"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Índice de los indicadores (valores FF_) en los argumentos de elf_main.",
+          "description": "args[MP_FEATURE_FLAGS] es un conjunto de bits: FF_MULTI_CART (arrancado desde un menú, elf_main puede volver), FF_CHAMELEON_CART (un Chameleon Cart: elf_main empieza durante el overblank) y FF_REDUCED_HMOVE (en esta consola un HMOVE tardío mueve un píxel menos)."
+        }
+      },
+      "sources": [
+        "vcside-vcslib"
+      ]
+    },
+    {
+      "word": "ST_NTSC_2600",
+      "kind": "constant",
+      "syntax": "ST_NTSC_2600  /* 0 */",
+      "summary": "Value of args[MP_SYSTEM_TYPE]: a 2600 (or a 7800 in 2600 mode) with an NTSC TV.",
+      "description": "A 2600 (or a 7800 in 2600 mode) with an NTSC TV. Compare args[MP_SYSTEM_TYPE] with it to choose the timing, the colours or, on the 7800, the renderer.",
+      "example": "if (args[MP_SYSTEM_TYPE] == ST_NTSC_2600) ...",
+      "seeAlso": [
+        "MP_SYSTEM_TYPE"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Valor de args[MP_SYSTEM_TYPE]: una 2600 (o una 7800 en modo 2600) con televisión NTSC.",
+          "description": "Una 2600 (o una 7800 en modo 2600) con televisión NTSC. Compara args[MP_SYSTEM_TYPE] con él para elegir los tiempos, los colores o, en la 7800, cómo dibujar."
+        }
+      },
+      "sources": [
+        "vcside-vcslib"
+      ]
+    },
+    {
+      "word": "ST_PAL_2600",
+      "kind": "constant",
+      "syntax": "ST_PAL_2600  /* 1 */",
+      "summary": "Value of args[MP_SYSTEM_TYPE]: a PAL 2600.",
+      "description": "A PAL 2600. Compare args[MP_SYSTEM_TYPE] with it to choose the timing, the colours or, on the 7800, the renderer.",
+      "example": "if (args[MP_SYSTEM_TYPE] == ST_PAL_2600) ...",
+      "seeAlso": [
+        "MP_SYSTEM_TYPE"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Valor de args[MP_SYSTEM_TYPE]: una 2600 PAL.",
+          "description": "Una 2600 PAL. Compara args[MP_SYSTEM_TYPE] con él para elegir los tiempos, los colores o, en la 7800, cómo dibujar."
+        }
+      },
+      "sources": [
+        "vcside-vcslib"
+      ]
+    },
+    {
+      "word": "ST_PAL60_2600",
+      "kind": "constant",
+      "syntax": "ST_PAL60_2600  /* 2 */",
+      "summary": "Value of args[MP_SYSTEM_TYPE]: a PAL 2600 running at 60 Hz (PAL60).",
+      "description": "A PAL 2600 running at 60 Hz (PAL60). Compare args[MP_SYSTEM_TYPE] with it to choose the timing, the colours or, on the 7800, the renderer.",
+      "example": "if (args[MP_SYSTEM_TYPE] == ST_PAL60_2600) ...",
+      "seeAlso": [
+        "MP_SYSTEM_TYPE"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Valor de args[MP_SYSTEM_TYPE]: una 2600 PAL a 60 Hz (PAL60).",
+          "description": "Una 2600 PAL a 60 Hz (PAL60). Compara args[MP_SYSTEM_TYPE] con él para elegir los tiempos, los colores o, en la 7800, cómo dibujar."
+        }
+      },
+      "sources": [
+        "vcside-vcslib"
+      ]
+    },
+    {
+      "word": "ST_NTSC_7800",
+      "kind": "constant",
+      "syntax": "ST_NTSC_7800  /* 3 */",
+      "summary": "Value of args[MP_SYSTEM_TYPE]: an NTSC 7800 in its own mode (MARIA), with INPTCTRL already locked.",
+      "description": "An NTSC 7800 in its own mode (MARIA), with INPTCTRL already locked. Compare args[MP_SYSTEM_TYPE] with it to choose the timing, the colours or, on the 7800, the renderer.",
+      "example": "if (args[MP_SYSTEM_TYPE] == ST_NTSC_7800) ...",
+      "seeAlso": [
+        "MP_SYSTEM_TYPE"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Valor de args[MP_SYSTEM_TYPE]: una 7800 NTSC en su propio modo (MARIA), con INPTCTRL ya bloqueado.",
+          "description": "Una 7800 NTSC en su propio modo (MARIA), con INPTCTRL ya bloqueado. Compara args[MP_SYSTEM_TYPE] con él para elegir los tiempos, los colores o, en la 7800, cómo dibujar."
+        }
+      },
+      "sources": [
+        "vcside-vcslib"
+      ]
+    },
+    {
+      "word": "ST_PAL_7800",
+      "kind": "constant",
+      "syntax": "ST_PAL_7800  /* 4 */",
+      "summary": "Value of args[MP_SYSTEM_TYPE]: a PAL 7800 in its own mode (MARIA).",
+      "description": "A PAL 7800 in its own mode (MARIA). Compare args[MP_SYSTEM_TYPE] with it to choose the timing, the colours or, on the 7800, the renderer.",
+      "example": "if (args[MP_SYSTEM_TYPE] == ST_PAL_7800) ...",
+      "seeAlso": [
+        "MP_SYSTEM_TYPE"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Valor de args[MP_SYSTEM_TYPE]: una 7800 PAL en su propio modo (MARIA).",
+          "description": "Una 7800 PAL en su propio modo (MARIA). Compara args[MP_SYSTEM_TYPE] con él para elegir los tiempos, los colores o, en la 7800, cómo dibujar."
+        }
+      },
+      "sources": [
+        "vcside-vcslib"
+      ]
+    },
+    {
+      "word": "FF_MULTI_CART",
+      "kind": "constant",
+      "syntax": "FF_MULTI_CART  /* 1 */",
+      "summary": "Bit of args[MP_FEATURE_FLAGS]: the game was started from a menu.",
+      "description": "The game was started from a menu (a multicart such as the PlusCart's): elf_main may return to it.",
+      "example": "if (args[MP_FEATURE_FLAGS] & FF_MULTI_CART) ...",
+      "seeAlso": [
+        "MP_FEATURE_FLAGS"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Bit de args[MP_FEATURE_FLAGS]: el juego se arrancó desde un menú.",
+          "description": "El juego se arrancó desde un menú (un multicart como el del PlusCart): elf_main puede volver a él."
+        }
+      },
+      "sources": [
+        "vcside-vcslib"
+      ]
+    },
+    {
+      "word": "FF_CHAMELEON_CART",
+      "kind": "constant",
+      "syntax": "FF_CHAMELEON_CART  /* 2 */",
+      "summary": "Bit of args[MP_FEATURE_FLAGS]: the cartridge is a Chameleon Cart.",
+      "description": "The cartridge is a Chameleon Cart: elf_main starts during the overblank, and code that feeds the 6507 outside it must be in RAM (RAM_FUNC).",
+      "example": "if (args[MP_FEATURE_FLAGS] & FF_CHAMELEON_CART) ...",
+      "seeAlso": [
+        "MP_FEATURE_FLAGS"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Bit de args[MP_FEATURE_FLAGS]: el cartucho es un Chameleon Cart.",
+          "description": "El cartucho es un Chameleon Cart: elf_main empieza durante el overblank, y el código que alimenta al 6507 fuera de él debe estar en RAM (RAM_FUNC)."
+        }
+      },
+      "sources": [
+        "vcside-vcslib"
+      ]
+    },
+    {
+      "word": "FF_REDUCED_HMOVE",
+      "kind": "constant",
+      "syntax": "FF_REDUCED_HMOVE  /* 4 */",
+      "summary": "Bit of args[MP_FEATURE_FLAGS]: on this console a late HMOVE.",
+      "description": "On this console a late HMOVE (cycles 73-74) moves one pixel less, as on some late 2600 Jr models; test it with a mask.",
+      "example": "if (args[MP_FEATURE_FLAGS] & FF_REDUCED_HMOVE) ...",
+      "seeAlso": [
+        "MP_FEATURE_FLAGS"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Bit de args[MP_FEATURE_FLAGS]: en esta consola un HMOVE tardío.",
+          "description": "En esta consola un HMOVE tardío (ciclos 73-74) mueve un píxel menos, como en algunas 2600 Jr tardías; compruébalo con una máscara."
+        }
+      },
+      "sources": [
+        "vcside-vcslib"
+      ]
+    },
+    {
+      "word": "vcsJmp3",
+      "kind": "function",
+      "syntax": "void vcsJmp3(void)",
+      "summary": "Puts jmp $1000 on the bus (3 cycles): keeps the 6507 inside the cartridge's 4 KB.",
+      "description": "The 6507 runs whatever the ARM puts on the bus, and its program counter keeps going up. vcsJmp3 sends it back to the start of the cartridge window so it never leaves it. Call it where there are three spare cycles, usually once per line or after a block of writes.",
+      "example": "vcsWrite5(WSYNC, 0);\nvcsJmp3();",
+      "seeAlso": [
+        "vcsNop2"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Pone jmp $1000 en el bus (3 ciclos): mantiene al 6507 dentro de los 4 KB del cartucho.",
+          "description": "El 6507 ejecuta lo que el ARM pone en el bus, y su contador de programa sigue subiendo. vcsJmp3 lo devuelve al principio de la ventana del cartucho para que nunca salga de ella. Llámala donde sobren tres ciclos, normalmente una vez por línea o tras un bloque de escrituras."
+        }
+      },
+      "sources": [
+        "vcside-vcslib"
+      ]
+    },
+    {
+      "word": "vcsNop2",
+      "kind": "function",
+      "syntax": "void vcsNop2(void)",
+      "summary": "Puts a nop on the bus (2 cycles).",
+      "description": "Wastes two 6507 cycles. Use it to place a write at an exact cycle of the line.",
+      "example": "vcsNop2();\nvcsSta3(RESP0);",
+      "seeAlso": [
+        "vcsNop2n"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Pone un nop en el bus (2 ciclos).",
+          "description": "Gasta dos ciclos del 6507. Sirve para colocar una escritura en un ciclo exacto de la línea."
+        }
+      },
+      "sources": [
+        "vcside-vcslib"
+      ]
+    },
+    {
+      "word": "vcsNop2n",
+      "kind": "function",
+      "syntax": "void vcsNop2n(uint16_t count)",
+      "summary": "Puts count nops on the bus (2 × count cycles).",
+      "description": "Waits 2 × count cycles of the 6507, for example to reach a position on the line before RESP0.",
+      "example": "vcsNop2n(10);  /* 20 cycles */",
+      "seeAlso": [
+        "vcsNop2"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Pone count nops en el bus (2 × count ciclos).",
+          "description": "Espera 2 × count ciclos del 6507, por ejemplo para llegar a una posición de la línea antes de RESP0."
+        }
+      },
+      "sources": [
+        "vcside-vcslib"
+      ]
+    },
+    {
+      "word": "vcsLda2",
+      "kind": "function",
+      "syntax": "void vcsLda2(uint8_t value)",
+      "summary": "Puts lda #value on the bus (2 cycles): loads the 6507's A.",
+      "description": "Loads a value into the 6507's A register so a later vcsSta3 stores it. Loading early and storing on the right cycle is how a kernel writes a register at an exact moment.",
+      "example": "vcsLda2(0x0E);\nvcsSta3(COLUBK);",
+      "seeAlso": [
+        "vcsSta3"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Pone lda #value en el bus (2 ciclos): carga el A del 6507.",
+          "description": "Carga un valor en el registro A del 6507 para que un vcsSta3 posterior lo guarde. Cargar antes y guardar en el ciclo justo es como un kernel escribe un registro en un momento exacto."
+        }
+      },
+      "sources": [
+        "vcside-vcslib"
+      ]
+    },
+    {
+      "word": "vcsSta3",
+      "kind": "function",
+      "syntax": "void vcsSta3(uint8_t zeroPage)",
+      "summary": "Puts sta zeroPage on the bus (3 cycles): stores the 6507's A.",
+      "description": "Writes the 6507's A register to a zero-page address, which is where the TIA's registers are (WSYNC, COLUBK, GRP0...).",
+      "example": "vcsLda2(0);\nvcsSta3(GRP0);",
+      "seeAlso": [
+        "vcsLda2"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Pone sta zeroPage en el bus (3 ciclos): guarda el A del 6507.",
+          "description": "Escribe el registro A del 6507 en una dirección de la página cero, que es donde están los registros del TIA (WSYNC, COLUBK, GRP0...)."
+        }
+      },
+      "sources": [
+        "vcside-vcslib"
+      ]
+    },
+    {
+      "word": "vcsLdx2",
+      "kind": "function",
+      "syntax": "void vcsLdx2(uint8_t value)",
+      "summary": "Puts ldx #value on the bus (2 cycles): loads the 6507's X.",
+      "description": "Loads a value into the 6507's X register so a later vcsStx3 stores it. Loading early and storing on the right cycle is how a kernel writes a register at an exact moment.",
+      "example": "vcsLdx2(0x0E);\nvcsStx3(COLUBK);",
+      "seeAlso": [
+        "vcsStx3"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Pone ldx #value en el bus (2 ciclos): carga el X del 6507.",
+          "description": "Carga un valor en el registro X del 6507 para que un vcsStx3 posterior lo guarde. Cargar antes y guardar en el ciclo justo es como un kernel escribe un registro en un momento exacto."
+        }
+      },
+      "sources": [
+        "vcside-vcslib"
+      ]
+    },
+    {
+      "word": "vcsStx3",
+      "kind": "function",
+      "syntax": "void vcsStx3(uint8_t zeroPage)",
+      "summary": "Puts stx zeroPage on the bus (3 cycles): stores the 6507's X.",
+      "description": "Writes the 6507's X register to a zero-page address, which is where the TIA's registers are (WSYNC, COLUBK, GRP0...).",
+      "example": "vcsLdx2(0);\nvcsStx3(GRP0);",
+      "seeAlso": [
+        "vcsLdx2"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Pone stx zeroPage en el bus (3 ciclos): guarda el X del 6507.",
+          "description": "Escribe el registro X del 6507 en una dirección de la página cero, que es donde están los registros del TIA (WSYNC, COLUBK, GRP0...)."
+        }
+      },
+      "sources": [
+        "vcside-vcslib"
+      ]
+    },
+    {
+      "word": "vcsLdy2",
+      "kind": "function",
+      "syntax": "void vcsLdy2(uint8_t value)",
+      "summary": "Puts ldy #value on the bus (2 cycles): loads the 6507's Y.",
+      "description": "Loads a value into the 6507's Y register so a later vcsSty3 stores it. Loading early and storing on the right cycle is how a kernel writes a register at an exact moment.",
+      "example": "vcsLdy2(0x0E);\nvcsSty3(COLUBK);",
+      "seeAlso": [
+        "vcsSty3"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Pone ldy #value en el bus (2 ciclos): carga el Y del 6507.",
+          "description": "Carga un valor en el registro Y del 6507 para que un vcsSty3 posterior lo guarde. Cargar antes y guardar en el ciclo justo es como un kernel escribe un registro en un momento exacto."
+        }
+      },
+      "sources": [
+        "vcside-vcslib"
+      ]
+    },
+    {
+      "word": "vcsSty3",
+      "kind": "function",
+      "syntax": "void vcsSty3(uint8_t zeroPage)",
+      "summary": "Puts sty zeroPage on the bus (3 cycles): stores the 6507's Y.",
+      "description": "Writes the 6507's Y register to a zero-page address, which is where the TIA's registers are (WSYNC, COLUBK, GRP0...).",
+      "example": "vcsLdy2(0);\nvcsSty3(GRP0);",
+      "seeAlso": [
+        "vcsLdy2"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Pone sty zeroPage en el bus (3 ciclos): guarda el Y del 6507.",
+          "description": "Escribe el registro Y del 6507 en una dirección de la página cero, que es donde están los registros del TIA (WSYNC, COLUBK, GRP0...)."
+        }
+      },
+      "sources": [
+        "vcside-vcslib"
+      ]
+    },
+    {
+      "word": "vcsSta4",
+      "kind": "function",
+      "syntax": "void vcsSta4(uint8_t zeroPage)",
+      "summary": "Puts sta $00zp in its absolute form on the bus (4 cycles): a cycle more than vcsSta3.",
+      "description": "The same store as vcsSta3, one cycle slower, for when a write must land one cycle later. In VCSIDE's template it takes the zero-page address: Gopher2600 and the Chameleon Cart use only its low byte, although Stella's takes a whole 16-bit address.",
+      "example": "vcsLda2(0x80);\nvcsSta4(HMP0);",
+      "seeAlso": [
+        "vcsSta3"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Pone sta $00zp en su forma absoluta en el bus (4 ciclos): un ciclo más que vcsSta3.",
+          "description": "La misma escritura que vcsSta3, un ciclo más lenta, para cuando una escritura debe caer un ciclo después. En la plantilla de VCSIDE recibe la dirección de página cero: Gopher2600 y el Chameleon Cart solo usan su byte bajo, aunque la de Stella admite una dirección entera de 16 bits."
+        }
+      },
+      "sources": [
+        "vcside-vcslib"
+      ]
+    },
+    {
+      "word": "vcsWrite5",
+      "kind": "function",
+      "syntax": "void vcsWrite5(uint8_t zeroPage, uint8_t value)",
+      "summary": "Puts lda #value and sta zeroPage on the bus (5 cycles): writes a TIA register.",
+      "description": "The usual way to write a register when the exact cycle is not critical: one call loads and stores. It leaves the value in the 6507's A.",
+      "example": "vcsWrite5(VSYNC, 2);\nvcsWrite5(WSYNC, 0);",
+      "seeAlso": [
+        "vcsWrite6",
+        "vcsSta3"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Pone lda #value y sta zeroPage en el bus (5 ciclos): escribe un registro del TIA.",
+          "description": "La forma habitual de escribir un registro cuando el ciclo exacto no importa: una llamada carga y guarda. Deja el valor en el A del 6507."
+        }
+      },
+      "sources": [
+        "vcside-vcslib"
+      ]
+    },
+    {
+      "word": "vcsWrite6",
+      "kind": "function",
+      "syntax": "void vcsWrite6(uint16_t address, uint8_t value)",
+      "summary": "Puts lda #value and sta address on the bus (6 cycles): writes any address, such as the RIOT's.",
+      "description": "Like vcsWrite5 with an absolute address, for registers outside the zero page such as TIM64T, or for the extra cycle.",
+      "example": "vcsWrite6(TIM64T, 43);",
+      "seeAlso": [
+        "vcsWrite5"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Pone lda #value y sta address en el bus (6 ciclos): escribe cualquier dirección, como las del RIOT.",
+          "description": "Como vcsWrite5 con una dirección absoluta, para registros fuera de la página cero como TIM64T, o por el ciclo de más."
+        }
+      },
+      "sources": [
+        "vcside-vcslib"
+      ]
+    },
+    {
+      "word": "vcsRead4",
+      "kind": "function",
+      "syntax": "uint8_t vcsRead4(uint16_t address)",
+      "summary": "Puts lda address on the bus (4 cycles) and returns what the 6507 read.",
+      "description": "Reads an input or the RIOT from the ARM: the 6507 does the read and the cartridge sees the byte on the bus. Use it for the joysticks (SWCHA), the buttons (INPT4) and the switches (SWCHB).",
+      "example": "uint8_t joystick = vcsRead4(SWCHA);\nint fire = !(vcsRead4(INPT4) & 0x80);",
+      "seeAlso": [
+        "SWCHA"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Pone lda address en el bus (4 ciclos) y devuelve lo que leyó el 6507.",
+          "description": "Lee una entrada o el RIOT desde el ARM: el 6507 hace la lectura y el cartucho ve el byte en el bus. Sirve para los joysticks (SWCHA), los botones (INPT4) y los interruptores (SWCHB)."
+        }
+      },
+      "sources": [
+        "vcside-vcslib"
+      ]
+    },
+    {
+      "word": "vcsCopyOverblankToRiotRam",
+      "kind": "function",
+      "syntax": "void vcsCopyOverblankToRiotRam(void)",
+      "summary": "Copies the overblank program into the RIOT's RAM; call it once at the start.",
+      "description": "The overblank is a small 6507 program that runs VSYNC, VBLANK and overscan on its own from the console's RAM, so the ARM is free meanwhile. This copies it there; it has to be done once before the first vcsStartOverblank.",
+      "example": "vcsCopyOverblankToRiotRam();\nfor (;;) { kernel(); vcsStartOverblank(); update(); vcsEndOverblank(); }",
+      "seeAlso": [
+        "vcsStartOverblank",
+        "vcsEndOverblank"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Copia el programa del overblank en la RAM del RIOT; se llama una vez al empezar.",
+          "description": "El overblank es un pequeño programa del 6507 que hace VSYNC, VBLANK y el overscan por su cuenta desde la RAM de la consola, así que el ARM queda libre mientras tanto. Esta función lo copia allí; hay que hacerlo una vez antes del primer vcsStartOverblank."
+        }
+      },
+      "sources": [
+        "vcside-vcslib"
+      ]
+    },
+    {
+      "word": "vcsStartOverblank",
+      "kind": "function",
+      "syntax": "void vcsStartOverblank(void)",
+      "summary": "Hands the 6507 to the overblank program: the ARM is free until vcsEndOverblank.",
+      "description": "After the last line of the picture, the 6507 jumps to the program in the RIOT's RAM and runs the vertical sync, the vertical blank and the overscan (63 lines in all) by itself. The game logic, the music and anything slow go between this call and vcsEndOverblank.",
+      "example": "vcsStartOverblank();\nupdateGame();\nvcsEndOverblank();",
+      "seeAlso": [
+        "vcsEndOverblank",
+        "vcsCopyOverblankToRiotRam"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Pasa el 6507 al programa del overblank: el ARM queda libre hasta vcsEndOverblank.",
+          "description": "Tras la última línea de la imagen, el 6507 salta al programa de la RAM del RIOT y hace el sincronismo vertical, el borrado vertical y el overscan (63 líneas en total) él solo. La lógica del juego, la música y todo lo lento va entre esta llamada y vcsEndOverblank."
+        }
+      },
+      "sources": [
+        "vcside-vcslib"
+      ]
+    },
+    {
+      "word": "vcsEndOverblank",
+      "kind": "function",
+      "syntax": "void vcsEndOverblank(void)",
+      "summary": "Waits for the overblank to end and takes the 6507 back to the cartridge.",
+      "description": "Returns when the overblank program has finished; the next call feeds the first line of the picture. Work between vcsStartOverblank and this call must fit in the overblank's time, or the frame runs long.",
+      "example": "vcsEndOverblank();\ndrawKernel();",
+      "seeAlso": [
+        "vcsStartOverblank"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Espera a que acabe el overblank y devuelve el 6507 al cartucho.",
+          "description": "Vuelve cuando el programa del overblank ha terminado; la siguiente llamada alimenta la primera línea de la imagen. El trabajo entre vcsStartOverblank y esta llamada debe caber en el tiempo del overblank, o el fotograma se alarga."
+        }
+      },
+      "sources": [
+        "vcside-vcslib"
+      ]
+    },
+    {
+      "word": "vcsJmpToRam3",
+      "kind": "function",
+      "syntax": "void vcsJmpToRam3(uint16_t address)",
+      "summary": "Atari 7800: puts jmp address on the bus (3 cycles), so the 6502 goes on in the console's RAM.",
+      "description": "On a 7800 the ARM fills the console's RAM with a small program and parks the 6502 there while MARIA draws. Only Chameleon Cart games running on a 7800 call it; the PlusCart's and the UnoCart's loaders lack the 7800 functions.",
+      "example": "vcsJmpToRam3(0x2000);",
+      "seeAlso": [
+        "vcsWaitForAddress",
+        "vcsInjectDmaData"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Atari 7800: pone jmp address en el bus (3 ciclos), y el 6502 sigue en la RAM de la consola.",
+          "description": "En una 7800 el ARM llena la RAM de la consola con un pequeño programa y deja allí al 6502 mientras MARIA dibuja. Solo la llaman los juegos del Chameleon Cart que corren en una 7800; los cargadores del PlusCart y del UnoCart no tienen las funciones de la 7800."
+        }
+      },
+      "sources": [
+        "vcside-vcslib"
+      ]
+    },
+    {
+      "word": "vcsWaitForAddress",
+      "kind": "function",
+      "syntax": "void vcsWaitForAddress(uint16_t address)",
+      "summary": "Atari 7800: waits until the console puts address on the bus.",
+      "description": "Addresses are what the cartridge sees: 13 bits (address & 0x1FFF). The Chameleon template's firmware lacks this function, so the template does not use it.",
+      "example": "vcsWaitForAddress(0x1FF0);",
+      "seeAlso": [
+        "vcsJmpToRam3"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Atari 7800: espera hasta que la consola pone address en el bus.",
+          "description": "Las direcciones son lo que ve el cartucho: 13 bits (address & 0x1FFF). El firmware de la plantilla del Chameleon no tiene esta función, así que la plantilla no la usa."
+        }
+      },
+      "sources": [
+        "vcside-vcslib"
+      ]
+    },
+    {
+      "word": "vcsInjectDmaData",
+      "kind": "function",
+      "syntax": "void vcsInjectDmaData(uint16_t address, uint8_t count, const uint8_t *bytes)",
+      "summary": "Atari 7800: serves bytes[0..count-1] as the console reads address, address + 1...",
+      "description": "Answers MARIA's DMA reads from the ARM: the bytes go onto the bus as the console reads that run of consecutive addresses. A read from elsewhere in between ends the run.",
+      "example": "vcsInjectDmaData(0x1000, 32, displayList);",
+      "seeAlso": [
+        "vcsSnoopRead"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Atari 7800: sirve bytes[0..count-1] mientras la consola lee address, address + 1...",
+          "description": "Responde a las lecturas DMA de MARIA desde el ARM: los bytes salen al bus mientras la consola lee esa serie de direcciones seguidas. Una lectura de otro sitio entre medias corta la serie."
+        }
+      },
+      "sources": [
+        "vcside-vcslib"
+      ]
+    },
+    {
+      "word": "vcsSnoopRead",
+      "kind": "function",
+      "syntax": "uint8_t vcsSnoopRead(uint16_t address)",
+      "summary": "Atari 7800: waits for address and returns what the console put on the bus.",
+      "description": "Lets the ARM see a byte the console writes or reads, such as a value the 6502 program in RAM leaves for it. The PlusCart's and the UnoCart's loaders refuse an ELF that names this function.",
+      "example": "uint8_t input = vcsSnoopRead(0x1FF8);",
+      "seeAlso": [
+        "vcsInjectDmaData"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Atari 7800: espera a address y devuelve lo que la consola puso en el bus.",
+          "description": "Permite al ARM ver un byte que la consola escribe o lee, como un valor que le deja el programa del 6502 en RAM. Los cargadores del PlusCart y del UnoCart rechazan un ELF que nombre esta función."
+        }
+      },
+      "sources": [
+        "vcside-vcslib"
+      ]
+    },
+    {
+      "word": "memset",
+      "kind": "function",
+      "syntax": "void *memset(void *dst, int value, unsigned int count)",
+      "summary": "Fills count bytes at dst with value (the loader's own).",
+      "description": "The C library is not linked into an ELF game: the loader provides memset and memcpy, and the compiler may also call them for array initialisations.",
+      "example": "memset(screen, 0, sizeof screen);",
+      "seeAlso": [
+        "memcpy"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Llena count bytes en dst con value (la del propio cargador).",
+          "description": "La biblioteca de C no se enlaza en un juego ELF: el cargador da memset y memcpy, y el compilador también puede llamarlas al inicializar tablas."
+        }
+      },
+      "sources": [
+        "vcside-vcslib"
+      ]
+    },
+    {
+      "word": "memcpy",
+      "kind": "function",
+      "syntax": "void *memcpy(void *dst, const void *src, unsigned int count)",
+      "summary": "Copies count bytes from src to dst (the loader's own).",
+      "description": "Provided by the loader, as memset. The areas must not overlap.",
+      "example": "memcpy(frameBuffer, level, sizeof level);",
+      "seeAlso": [
+        "memset"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Copia count bytes de src a dst (la del propio cargador).",
+          "description": "La da el cargador, como memset. Las zonas no deben solaparse."
+        }
+      },
+      "sources": [
+        "vcside-vcslib"
+      ]
+    },
+    {
+      "word": "RAM_FUNC",
+      "kind": "macro",
+      "syntax": "RAM_FUNC void kernel(void)",
+      "summary": "Puts a function in RAM (.RamFunc), callable from code in flash.",
+      "description": "On the Chameleon Cart the game runs from flash, whose wait states can leave the 6507 without its next instruction. Code that feeds the 6507 outside the overblank goes to RAM: the firmware copies .RamFunc there at startup. RAM_FUNC is for functions called from flash (it makes them long calls and keeps them from being inlined); the other loaders run everything from RAM anyway.",
+      "example": "RAM_FUNC void drawLines(void) {\n  for (int line = 0; line < 192; line++) vcsWrite5(WSYNC, 0);\n}",
+      "seeAlso": [
+        "RAM_K"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Pone una función en RAM (.RamFunc), a la que se puede llamar desde código en flash.",
+          "description": "En el Chameleon Cart el juego corre desde la flash, cuyas esperas pueden dejar al 6507 sin su siguiente instrucción. El código que alimenta al 6507 fuera del overblank va a RAM: el firmware copia allí .RamFunc al arrancar. RAM_FUNC es para funciones a las que se llama desde la flash (las convierte en llamadas largas y evita que se inserten en línea); los demás cargadores ejecutan todo desde RAM de todos modos."
+        }
+      },
+      "sources": [
+        "vcside-vcslib"
+      ]
+    },
+    {
+      "word": "RAM_K",
+      "kind": "macro",
+      "syntax": "RAM_K void line(void)",
+      "summary": "Puts a function in RAM (.RamFunc) that only other RAM functions call.",
+      "description": "Like RAM_FUNC but without the long call, for helpers called only from functions that are already in RAM, so the call stays short and fast.",
+      "example": "RAM_K static void oneLine(uint8_t colour) { vcsWrite5(COLUBK, colour); vcsWrite5(WSYNC, 0); }",
+      "seeAlso": [
+        "RAM_FUNC"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Pone en RAM (.RamFunc) una función a la que solo llaman otras funciones en RAM.",
+          "description": "Como RAM_FUNC pero sin la llamada larga, para funciones auxiliares a las que solo se llama desde funciones que ya están en RAM, así la llamada sigue siendo corta y rápida."
+        }
+      },
+      "sources": [
+        "vcside-vcslib"
+      ]
+    },
+    {
+      "word": "vcsWrite3",
+      "kind": "function",
+      "syntax": "void vcsWrite3(uint8_t zeroPage, uint8_t value)",
+      "summary": "Bus stuffing: a 3-cycle write of any value (PlusCart and Stella; not in VCSIDE's template).",
+      "description": "With bus stuffing the cartridge drives the data lines while the 6507 stores a register, so one sta writes any value without loading it first. A, X and Y must be loaded once with vcsLdaForBusStuff2, vcsLdxForBusStuff2 and vcsLdyForBusStuff2. The Chameleon Cart's current firmware lacks it, so VCSIDE's vcsLib.h leaves it out; TinyELF's has it.",
+      "example": "vcsLdaForBusStuff2();\nvcsWrite3(GRP0, 0x3C);",
+      "seeAlso": [
+        "vcsLdaForBusStuff2"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Bus stuffing: una escritura de 3 ciclos de cualquier valor (PlusCart y Stella; no está en la plantilla de VCSIDE).",
+          "description": "Con bus stuffing el cartucho fuerza las líneas de datos mientras el 6507 guarda un registro, así que un sta escribe cualquier valor sin cargarlo antes. A, X e Y se cargan una vez con vcsLdaForBusStuff2, vcsLdxForBusStuff2 y vcsLdyForBusStuff2. El firmware actual del Chameleon Cart no lo tiene, así que el vcsLib.h de VCSIDE lo deja fuera; el de TinyELF sí lo tiene."
+        }
+      },
+      "sources": [
+        "vcside-vcslib",
+        "tinyelf-vcslib"
+      ]
+    },
+    {
+      "word": "vcsLdaForBusStuff2",
+      "kind": "function",
+      "syntax": "void vcsLdaForBusStuff2(void)",
+      "summary": "Bus stuffing: loads the 6507's A for vcsWrite3 (PlusCart and Stella; not in VCSIDE's template).",
+      "description": "Prepares the A register so that later bus-stuffing stores can write any value. Call it before a run of vcsWrite3 calls.",
+      "example": "vcsLdaForBusStuff2();",
+      "seeAlso": [
+        "vcsWrite3"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Bus stuffing: carga el A del 6507 para vcsWrite3 (PlusCart y Stella; no está en la plantilla de VCSIDE).",
+          "description": "Prepara el registro A para que las escrituras con bus stuffing posteriores puedan escribir cualquier valor. Llámala antes de una serie de vcsWrite3."
+        }
+      },
+      "sources": [
+        "vcside-vcslib",
+        "tinyelf-vcslib"
+      ]
+    },
+    {
+      "word": "vcsLdxForBusStuff2",
+      "kind": "function",
+      "syntax": "void vcsLdxForBusStuff2(void)",
+      "summary": "Bus stuffing: loads the 6507's X for vcsWrite3 (PlusCart and Stella; not in VCSIDE's template).",
+      "description": "Prepares the X register so that later bus-stuffing stores can write any value. Call it before a run of vcsWrite3 calls.",
+      "example": "vcsLdxForBusStuff2();",
+      "seeAlso": [
+        "vcsWrite3"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Bus stuffing: carga el X del 6507 para vcsWrite3 (PlusCart y Stella; no está en la plantilla de VCSIDE).",
+          "description": "Prepara el registro X para que las escrituras con bus stuffing posteriores puedan escribir cualquier valor. Llámala antes de una serie de vcsWrite3."
+        }
+      },
+      "sources": [
+        "vcside-vcslib",
+        "tinyelf-vcslib"
+      ]
+    },
+    {
+      "word": "vcsLdyForBusStuff2",
+      "kind": "function",
+      "syntax": "void vcsLdyForBusStuff2(void)",
+      "summary": "Bus stuffing: loads the 6507's Y for vcsWrite3 (PlusCart and Stella; not in VCSIDE's template).",
+      "description": "Prepares the Y register so that later bus-stuffing stores can write any value. Call it before a run of vcsWrite3 calls.",
+      "example": "vcsLdyForBusStuff2();",
+      "seeAlso": [
+        "vcsWrite3"
+      ],
+      "i18n": {
+        "es": {
+          "summary": "Bus stuffing: carga el Y del 6507 para vcsWrite3 (PlusCart y Stella; no está en la plantilla de VCSIDE).",
+          "description": "Prepara el registro Y para que las escrituras con bus stuffing posteriores puedan escribir cualquier valor. Llámala antes de una serie de vcsWrite3."
+        }
+      },
+      "sources": [
+        "vcside-vcslib",
+        "tinyelf-vcslib"
+      ]
+    }
+  ]
+}
