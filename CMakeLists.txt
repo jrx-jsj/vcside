@@ -115,13 +115,16 @@ if(NOT SDL3_FOUND OR SDL3_VERSION VERSION_LESS 3.4)
   target_include_directories(vcside SYSTEM PRIVATE ${stb_SOURCE_DIR})
 endif()
 
-# The knowledge base travels next to the executable (inside the bundle on macOS).
+# The knowledge base travels next to the executable (inside the bundle on macOS). The folder is
+# emptied first: copy_directory only adds and overwrites, so a file removed from data/ would
+# stay in the build (and, from a template, in every project made with it).
 if(APPLE)
   set(VCSIDE_DATA_DIR $<TARGET_BUNDLE_CONTENT_DIR:vcside>/Resources/data)
 else()
   set(VCSIDE_DATA_DIR $<TARGET_FILE_DIR:vcside>/data)
 endif()
 add_custom_command(TARGET vcside POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E rm -rf ${VCSIDE_DATA_DIR}
   COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/data ${VCSIDE_DATA_DIR}
   COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/licenses ${VCSIDE_DATA_DIR}/licenses
   COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/LICENSE ${VCSIDE_DATA_DIR}/licenses/VCSIDE-GPL-3.0.txt)
