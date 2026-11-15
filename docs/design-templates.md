@@ -62,6 +62,14 @@ MARIA's screen: a DLL with one zone per room line and one display list of three 
 
 The Chameleon image is always made (it is the only cartridge that runs the 7800 side); `make ace` builds with the 7800 calls stubbed. Build > *Run on the Atari 7800 (Test7800)* runs it in Test7800 without changing the project's emulator. Checked in Test7800 (NTSC, PAL, joystick, button, PAUSE), Stella and Gopher2600; what only real hardware can tell is in [sources.md](sources.md#atari-7800-on-the-chameleon-cart-2026-11-15).
 
+## ELF: VCSIDE The Game for the 2600 and the 7800 (`elf-game-dual`, 2026-11-15)
+
+*Start from* offers, for ELF, "VCSIDE The Game (2600 + 7800, Chameleon Cart)". The 2600 side is VCSIDE The Game as it is: `src/tia_game.c` is `elf-game`'s `main.c` with `elf_main` renamed `tia_game_run` (a test checks the rest is the same). The 7800 side (`src/maria_game.c`) runs the same rules and menu (`game.c`, `menu.c`, the texts of `screen.c`) and the same sampled song, with its own art (`src/art7800.c`, drawn as text, a character a pixel): wooden walls, a floor of bevelled tiles, the hero in four frames (idle, two steps, a blink) and the enemy in two, all 8 pixels wide and twice the 2600's height; the title shows a cartridge with a label, stripes and a connector, THE GAME and the menu's texts with a shadow. The 7800 menu has PLAY and SYSTEM (the colours: NTSC or PAL; the console sets the lines); no HMOVE, no PAL60.
+
+How the 7800 side is drawn: zones of 16 lines in 160B (three objects of 32 + 32 + 16 bytes), line k of a zone read from `GFX + (h - 1 - k) * 256`, so MARIA reads the DLL once a zone and the 6502's loop keeps its line (with one zone a line, it lost one and the ARM then missed every other frame). The ARM waits for MARIA's first read of the DLL, then on each line serves the line's 80 bytes and the two samples (La Abadía del Crimen 2600's loop), and draws the next line in what is left of the line: a word at a time (walls as masks over the floor, the cartridge and the texts copied from rows packed when they change) plus the sprites' pixels. Drawing a text pixel by pixel there was too slow in Test7800 (the ARM at 70 MHz) and lost the frame.
+
+Checked in Test7800 (NTSC and PAL: the title, SYSTEM, the game, moving, shooting, losing lives, back to the title), the 2600 side in Stella and Gopher2600; `make chameleon` (21.8 KB of 36 KB RAM) and `make ace` link.
+
 ## What is shared
 
 - **Graphics**: `hero.vcsgfx`, `enemy.vcsgfx`, the title's letters: one copy each in `shared/`, copied by `shared.json`.

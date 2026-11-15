@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 Juan Sánchez Jurado
 // Tests without GUI: knowledge base, cycle counter, output parsers.
+#include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <string>
@@ -1325,7 +1326,7 @@ static void testElfSpace() {
     const std::vector<std::pair<Language, std::string>> notedTemplates = {
         {Language::Dasm, ""},  {Language::Dasm, "animation"}, {Language::Dasm, "game"},   {Language::Dasm, "cdfj"},
         {Language::BatariBasic, ""}, {Language::BatariBasic, "game"}, {Language::BatariBasic, "square"}, {Language::ElfC, ""},   {Language::ElfC, "animation"},
-        {Language::ElfC, "game"},    {Language::ElfC, "dual"},    {Language::AceC, ""},        {Language::AceC, "animation"}, {Language::AceC, "vcslib"}, {Language::AceC, "game"}};
+        {Language::ElfC, "game"},    {Language::ElfC, "dual"},    {Language::ElfC, "game-dual"}, {Language::AceC, ""},        {Language::AceC, "animation"}, {Language::AceC, "vcslib"}, {Language::AceC, "game"}};
     int notesIndex = 0;
     for (auto& [language, example] : notedTemplates) {
       fs::path notedDir = dir / ("notes-" + std::to_string(notesIndex++));
@@ -1459,7 +1460,7 @@ static void testElfSpace() {
   }
   CHECK(stellaFormat("CDFJ") == "CDF" && stellaFormat("DPC+") == "DPCP");
   // the ELF example: the template with the example's main.c, and hero.gfx.h next to it
-  CHECK(Project::examples(Language::ElfC).size() == 3 && Project::examples(Language::ElfC)[0].first == "game");
+  CHECK(Project::examples(Language::ElfC).size() == 4 && Project::examples(Language::ElfC)[0].first == "game");
   fs::path elfDir = dir / "anim-elf";
   CHECK(Project::create(elfDir.string(), "walker", Language::ElfC, "NTSC", &project, &error, "animation"));
   for (auto fileName : {"Makefile", "include/vcsLib.h", "src/main.c", "src/memcpy_long.S", "src/hero.vcsgfx", "src/hero.gfx.h", "src/theme.vcsmusic", "src/music.h"})
@@ -1531,6 +1532,47 @@ static void testElfSpace() {
     if (!gcc.empty() && !make.empty()) {
       std::string command = "cd \"" + dualDir.string() + "\" && \"" + make + "\" > make.log 2>&1 && \"" + make + "\" ace > make-ace.log 2>&1";
       CHECK(std::system(command.c_str()) == 0 && fs::exists(dualDir / "build" / "both.bin") && romFormat((dualDir / "build" / "both.ace").string()) == "ACE");
+    }
+  }
+  // VCSIDE The Game for the 2600 and the 7800: the 2600 side is VCSIDE The Game's main.c
+  // unchanged but for elf_main's name; the 7800 side draws the same game with its own art; it
+  // always has the Chameleon image's glue and builds as ELF and ACE
+  {
+    CHECK(Project::examples(Language::ElfC)[3].first == "game-dual");
+    fs::path gameDualDir = dir / "game-dual";
+    CHECK(Project::create(gameDualDir.string(), "game", Language::ElfC, "NTSC", &project, &error, "game-dual"));
+    CHECK(project.format == "ELF" && project.output == "build/game.bin");
+    for (auto fileName : {"src/main.c", "src/tia_game.c", "src/maria_game.c", "src/art7800.c", "src/art7800.h", "src/screens.h", "src/game.c",
+                          "src/menu.c", "src/screen.c", "src/hero.gfx.h", "src/enemy.gfx.h", "src/room.gfx.h", "src/music.h", "chameleon/support.c"})
+      CHECK(fs::exists(inProject(gameDualDir, fileName)));
+    auto readText = [](const fs::path& path) {
+      std::ifstream file(path);
+      return std::string((std::istreambuf_iterator<char>(file)), {});
+    };
+    std::string dualMainText = readText(inProject(gameDualDir, "src/main.c")), tiaText = readText(inProject(gameDualDir, "src/tia_game.c"));
+    std::string mariaText = readText(inProject(gameDualDir, "src/maria_game.c"));
+    std::string gameMainText = readText(inProject(dir / "elf-game-NTSC", "src/main.c"));
+    CHECK(dualMainText.find("ST_NTSC_7800") != std::string::npos && dualMainText.find(".elf7800") != std::string::npos);
+    CHECK(tiaText.find("{{") == std::string::npos && mariaText.find("{{") == std::string::npos);
+    auto between = [](const std::string& text, const std::string& from, const std::string& to) {
+      size_t start = text.find(from), end = text.find(to);
+      return start == std::string::npos || end == std::string::npos || end < start ? std::string() : text.substr(start, end - start);
+    };
+    std::string shared = between(gameMainText, "/* ---- The 6507", "/* ---- elf_main");
+    CHECK(!shared.empty() && shared == between(tiaText, "/* ---- The 6507", "/* ---- tia_game_run"));
+    // elf_main's body (to the end of the file) is tia_game_run's (to the 7800's part)
+    auto trimmed = [](std::string text) {
+      while (!text.empty() && std::isspace(static_cast<unsigned char>(text.back()))) text.pop_back();
+      return text;
+    };
+    const std::string elfMain = "int elf_main(uint32_t *args)", tiaRun = "int tia_game_run(uint32_t *args)";
+    size_t elfMainAt = gameMainText.find(elfMain);
+    std::string tiaRunText = between(tiaText, tiaRun, "/* ---- For the 7800");
+    CHECK(elfMainAt != std::string::npos && !tiaRunText.empty() &&
+          trimmed(gameMainText.substr(elfMainAt + elfMain.size())) == trimmed(tiaRunText.substr(tiaRun.size())));
+    if (!gcc.empty() && !make.empty()) {
+      std::string command = "cd \"" + gameDualDir.string() + "\" && \"" + make + "\" > make.log 2>&1 && \"" + make + "\" ace > make-ace.log 2>&1";
+      CHECK(std::system(command.c_str()) == 0 && fs::exists(gameDualDir / "build" / "game.bin") && romFormat((gameDualDir / "build" / "game.ace").string()) == "ACE");
     }
   }
   // the ACE files an ELF project gets for make ace, and its TV system

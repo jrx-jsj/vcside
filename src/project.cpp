@@ -784,7 +784,8 @@ std::vector<std::pair<std::string, const char*>> Project::examples(Language lang
   if (language == Language::ElfC)
     return {{"game", N_("VCSIDE The Game")},
             {"animation", N_("Example: an animated sprite")},
-            {"dual", N_("Example: one game for the 2600 and the 7800 (Chameleon Cart)")}};
+            {"dual", N_("Example: one game for the 2600 and the 7800 (Chameleon Cart)")},
+            {"game-dual", N_("VCSIDE The Game (2600 + 7800, Chameleon Cart)")}};
   if (language == Language::AceC)
     return {{"game", N_("VCSIDE The Game")},
             {"animation", N_("Example: an animated sprite")},
@@ -1117,7 +1118,7 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
     // the ELF project's other builds, each with its glue folder: the Chameleon image and the
     // ACE file (ACE's vcsLib example is the ACE build alone)
     // the dual example always has the Chameleon image: it is the only cartridge that runs it on a 7800
-    const bool chameleonBuild = !ace && (elfBuilds.chameleon || example == "dual"), aceBuild = vcsLibOnAce || (!ace && elfBuilds.ace);
+    const bool chameleonBuild = !ace && (elfBuilds.chameleon || example == "dual" || example == "game-dual"), aceBuild = vcsLibOnAce || (!ace && elfBuilds.ace);
     std::string extraBuilds, glue;
     if (aceBuild)
       extraBuilds += " `make ace`: the same game as `build/" + projName + ".ace` (vcsLib on VCSIDE's ACE bus library in `ace/`)" +
