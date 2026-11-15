@@ -31,6 +31,7 @@
 #include "project.h"
 #include "project_form.h"
 #include "elf_space.h"
+#include "find_in_files.h"
 #include "pluscart_server.h"
 #include "image_viewer.h"
 #include "space.h"
@@ -136,6 +137,7 @@ class App {
   void editorsPanel();
   void outputPanel();
   void problemsPanel();
+  void findInFilesPanel();  // find_in_files_panel.cpp
   void spacePanel();
   void docsPanel();
   void statusBar();
@@ -337,6 +339,29 @@ class App {
   void measureBasic(long romSize);
   void measureTinyElf(long romSize);
   std::string spaceNote_;      // why there is no report (ELF, custom build...)
+
+  // Find in files (find_in_files_panel.cpp): a panel docked with the Project panel
+  struct FindInFiles {
+    std::string query, replacement, include, exclude;
+    bool matchCase = false, wholeWord = false, regex = false;
+    bool showReplace = false, showFilters = false;
+    fif::Search search;
+    std::vector<fif::FileResult> results;
+    std::unique_ptr<fif::Matcher> matcher;  // the results' query (replace previews)
+    std::set<std::string> collapsed;        // files whose lines are hidden
+    std::string error;                      // the regular expression does not compile
+    bool searched = false;                  // results are for the query as it is
+    std::string folder;                     // the project they are from
+    double changedAt = -1;                  // the query changed: search a moment later
+    int focusQuery = 0;                     // frames left to put the keyboard in the search box
+    bool confirmReplaceAll = false;
+  } find_;
+  void openFindInFiles();   // Ctrl/Cmd+Shift+F: the panel, its box focused, the selection in it
+  void startFindInFiles();
+  // Replaces the matches of the results' files (fileIndex -1: all of them); open editors
+  // change their text (it can be undone), other files are written.
+  void replaceInFiles(int fileIndex);
+  void findResultClicked(const fif::FileResult& result, const fif::ResultLine& line, const fif::Span& span);
 
   // docs
   std::string docQuery_;

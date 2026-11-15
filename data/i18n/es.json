@@ -1320,7 +1320,31 @@
     "modern": "moderno",
     "mono": "mono",
     "Run on the Atari 7800 (Test7800)": "Ejecutar en la Atari 7800 (Test7800)",
-    "stereo": "estéreo"
+    "stereo": "estéreo",
+    "Find in files": "Buscar en archivos",
+    "Find in files...": "Buscar en archivos...",
+    "Regular expression": "Expresión regular",
+    "Replace ($1 for a group)": "Reemplazar ($1 para un grupo)",
+    "Files to include and exclude": "Archivos en los que buscar y archivos excluidos",
+    "Only some files": "Solo algunos archivos",
+    "Files to include": "Archivos en los que buscar",
+    "Files to exclude": "Archivos excluidos",
+    "Invalid regular expression: {0}": "Expresión regular no válida: {0}",
+    "Searching...": "Buscando...",
+    "No results.": "Sin resultados.",
+    "{0} results in {1} files": "{0} resultados en {1} archivos",
+    "Expand all": "Desplegar todo",
+    "Collapse all": "Plegar todo",
+    "Only the first {0} results are shown: there are more. Narrow the search or the files to see the rest.": "Solo se muestran los {0} primeros resultados: hay más. Afina la búsqueda o los archivos para ver el resto.",
+    "Replace the {0} matches in {1}": "Reemplazar las {0} coincidencias de {1}",
+    "{0}, line {1}": "{0}, línea {1}",
+    "Replace {0} matches in {1} files with \"{2}\"?": "¿Reemplazar {0} coincidencias en {1} archivos por «{2}»?",
+    "Open files change in their editor (Undo brings them back); the others are saved.": "Los archivos abiertos cambian en su editor (Deshacer los recupera); los demás se guardan.",
+    "Only the files in the list: the search stopped before the end.": "Solo los archivos de la lista: la búsqueda se detuvo antes del final.",
+    "Hide replace": "Ocultar reemplazar",
+    "Replaced {0} matches in {1} files.": "Reemplazadas {0} coincidencias en {1} archivos.",
+    "1 result in 1 file": "1 resultado en 1 archivo",
+    "{0} results in 1 file": "{0} resultados en 1 archivo"
   },
-  "total": 1315
+  "total": 1339
 }

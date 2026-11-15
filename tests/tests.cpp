@@ -48,6 +48,7 @@
 #include "assistant/context_items.h"
 #include "assistant/edits.h"
 #include "file_operations.h"
+#include "find_in_files.h"
 #include "assistant/domain_checks.h"
 #include "assistant/validate.h"
 #include "assistant/first_pass.h"
@@ -5033,6 +5034,111 @@ static void testFileOperations() {
   fs::remove_all(root);
 }
 
+static void testFindInFiles() {
+  namespace fs = std::filesystem;
+  using namespace vcs::fif;
+  // plain text: case, whole words (dots count as word characters, as in the editor)
+  Query query;
+  query.text = "lda";
+  CHECK(Matcher(query).find("  LDA #0 ; lda").size() == 2);
+  query.matchCase = true;
+  CHECK(Matcher(query).find("  LDA #0 ; lda").size() == 1 && Matcher(query).find("  LDA #0 ; lda")[0].start == 11);
+  query.matchCase = false, query.wholeWord = true, query.text = "loop";
+  CHECK(Matcher(query).find("loop .loop loops loop").size() == 2);
+  query.wholeWord = false, query.text = "aa";
+  CHECK(Matcher(query).find("aaaa").size() == 2);  // no overlapping matches
+  CHECK(!Matcher(Query{}).valid());
+  // regular expressions: groups in the replacement, empty matches skipped, bad ones report why
+  Query regexQuery;
+  regexQuery.regex = true, regexQuery.text = R"(\$([0-9A-F]{2})\b)";
+  Matcher hex(regexQuery);
+  CHECK(hex.valid() && hex.find("lda #$1f ; sta $80").size() == 2);
+  int count = 0;
+  CHECK(hex.replace("lda #$1f ; sta $80", "0x$1", &count) == "lda #0x1f ; sta 0x80" && count == 2);
+  regexQuery.text = "x*";
+  CHECK(Matcher(regexQuery).find("abc").empty());
+  regexQuery.text = "(unclosed";
+  Matcher broken(regexQuery);
+  CHECK(!broken.valid() && !broken.error().empty() && broken.find("(unclosed").empty());
+  regexQuery.text = "^\\s+rts", regexQuery.matchCase = true;
+  CHECK(Matcher(regexQuery).find("  rts").size() == 1 && Matcher(regexQuery).find("  RTS").empty());
+  // replacing in a whole text keeps CRLF and the last line without a newline
+  query = Query{}, query.text = "foo";
+  count = 0;
+  CHECK(replaceInText("foo bar\r\nFOO\nbaz foo", Matcher(query), "qux", &count) == "qux bar\r\nqux\nbaz qux" && count == 3);
+  CHECK(replaceInText("foo\n", Matcher(query), "") == "\n");
+  // globs
+  CHECK(globMatches("*.asm", "src/kernel.asm") && !globMatches("*.asm", "src/kernel.h"));
+  CHECK(globMatches("src", "src/gfx/hero.asm") && globMatches("gfx", "src/gfx/hero.asm") && !globMatches("src", "srcs/a.asm"));
+  CHECK(globMatches("src/*.asm", "src/kernel.asm") && !globMatches("src/*.asm", "src/gfx/hero.asm"));
+  CHECK(globMatches("src/**/*.asm", "src/gfx/hero.asm") && globMatches("src/**/*.asm", "src/kernel.asm"));
+  CHECK(globMatches("**/hero.*", "src/gfx/hero.asm") && globMatches("src/gfx/", "src/gfx/hero.asm"));
+  CHECK(globMatches("*.{asm,h}", "a/b.h") && !globMatches("*.{asm,h}", "a/b.c") && globMatches("?ain.asm", "main.asm"));
+  CHECK(globMatches("*.ASM", "main.asm"));
+  CHECK(globListMatches("*.h, *.inc", "x/vcs.inc") && !globListMatches(" , ", "x") && globListMatches("*.{a,b}, c", "c/d"));
+  // a project: build output, dot folders, ignored paths, binaries and other extensions left out
+  fs::path root = fs::temp_directory_path() / "vcside_find_test";
+  fs::remove_all(root);
+  fs::create_directories(root / "src" / "gfx");
+  fs::create_directories(root / "build");
+  fs::create_directories(root / ".git");
+  fs::create_directories(root / "out");
+  std::ofstream(root / "main.asm") << "  lda #0\n  sta COLUBK\nloop: jmp loop\n";
+  std::ofstream(root / "src" / "kernel.asm") << "kernel:\n  lda COLUBK\n";
+  std::ofstream(root / "src" / "gfx" / "hero.vcsgfx") << "{\"COLUBK\": 1}";
+  std::ofstream(root / "src" / "notes.txt") << "colubk notes";
+  std::ofstream(root / "build" / "game.lst") << "COLUBK";
+  std::ofstream(root / ".git" / "config") << "COLUBK";
+  std::ofstream(root / "out" / "game.sym") << "COLUBK";
+  std::ofstream(root / "ignored.asm") << "COLUBK";
+  { std::ofstream binary(root / "src" / "rom.bin", std::ios::binary); binary << std::string("COLUBK\0\1\2", 9); }
+  Scope scope;
+  scope.root = root.string();
+  scope.skipPaths = {"out", "ignored.asm"};
+  scope.skipExtensions = {".vcsgfx"};
+  std::vector<std::string> listed = listFiles(scope, Query{});
+  CHECK((listed == std::vector<std::string>{"src/kernel.asm", "src/notes.txt", "src/rom.bin", "main.asm"}));
+  Query onlyAsm;
+  onlyAsm.include = "*.asm";
+  CHECK((listFiles(scope, onlyAsm) == std::vector<std::string>{"src/kernel.asm", "main.asm"}));
+  onlyAsm.exclude = "src";
+  CHECK((listFiles(scope, onlyAsm) == std::vector<std::string>{"main.asm"}));
+  CHECK(looksBinary(std::string("ab\0c", 4)) && !looksBinary("plain"));
+  // in the background; an open editor's text instead of the file on disk
+  Query colours;
+  colours.text = "colubk";
+  std::string mainPath = (fs::weakly_canonical(root) / "main.asm").make_preferred().string();
+  scope.openTexts[mainPath] = "COLUBK\nnothing\n  sta COLUBK ; COLUBK\n";
+  Search search;
+  search.start(colours, scope);
+  while (search.running()) std::this_thread::sleep_for(std::chrono::milliseconds(2));
+  std::vector<FileResult> results;
+  search.take(results);
+  CHECK(results.size() == 3 && !search.truncated());
+  if (results.size() == 3) {
+    CHECK(results[0].relative == "src/kernel.asm" && results[0].matches == 1 && results[0].lines[0].line == 1 && results[0].lines[0].spans[0].start == 6);
+    CHECK(results[1].relative == "src/notes.txt" && !results[1].unsaved);
+    CHECK(results[2].relative == "main.asm" && results[2].unsaved && results[2].matches == 3 && results[2].lines.size() == 2 && results[2].lines[1].line == 2);
+    CHECK(results[2].path == mainPath);
+  }
+  // the cap: stops at it and says there are more
+  search.start(colours, scope, 2);
+  while (search.running()) std::this_thread::sleep_for(std::chrono::milliseconds(2));
+  results.clear();
+  search.take(results);
+  int total = 0;
+  for (auto& result : results) total += result.matches;
+  CHECK(total == 2 && search.truncated());
+  // an invalid expression finds nothing and ends
+  colours.regex = true, colours.text = "[";
+  search.start(colours, scope);
+  while (search.running()) std::this_thread::sleep_for(std::chrono::milliseconds(2));
+  results.clear();
+  search.take(results);
+  CHECK(results.empty());
+  fs::remove_all(root);
+}
+
 static void testProjectIndex() {
   namespace fs = std::filesystem;
   using vcs::assistant::ProjectIndex;
@@ -5969,6 +6075,7 @@ int main() {
   testChatTabs();
   testInvalidUtf8();
   testFileOperations();
+  testFindInFiles();
   testProjectIndex();
   testEmbeddings();
   testContextChips();

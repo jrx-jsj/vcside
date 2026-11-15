@@ -512,6 +512,12 @@ void TextEditor::goTo(int line, int col) {
   reveal(cursor_.line);
 }
 
+void TextEditor::selectRange(Coord start, Coord end) {
+  setSelection(start, end);
+  reveal(cursor_.line);
+  centerOnCursor_ = true;
+}
+
 std::pair<int, int> TextEditor::selectedLines() const {
   if (!hasSelection()) return {cursor_.line, cursor_.line};
   int last = selEnd_.line;
@@ -979,9 +985,12 @@ bool TextEditor::render(const char* id, ImFont* font) {
   {
     ImGuiIO& shortcutIo = ImGui::GetIO();
     bool here = ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows);
+    // Ctrl/Cmd+Shift+F is find in files (the app's); replace is Ctrl+H, or Ctrl/Cmd+Alt+F
+    // where Cmd+H hides the app (macOS)
+    if (here && shortcutIo.KeyCtrl && shortcutIo.KeyAlt && !shortcutIo.KeyShift && ImGui::IsKeyPressed(ImGuiKey_F, false)) openFind(true);
     if (here && shortcutIo.KeyCtrl && !shortcutIo.KeyAlt) {
-      if (ImGui::IsKeyPressed(ImGuiKey_F, false)) openFind(false);
-      if (ImGui::IsKeyPressed(ImGuiKey_H, false) || (shortcutIo.KeyShift && ImGui::IsKeyPressed(ImGuiKey_F, false))) openFind(true);
+      if (!shortcutIo.KeyShift && ImGui::IsKeyPressed(ImGuiKey_F, false)) openFind(false);
+      if (ImGui::IsKeyPressed(ImGuiKey_H, false)) openFind(true);
       if (!shortcutIo.KeyShift && ImGui::IsKeyPressed(ImGuiKey_G, false)) openGoto();  // Ctrl+Shift+G: go to address (app)
     }
     if (here && ImGui::IsKeyPressed(ImGuiKey_F9, false)) toggleBreakpoint(cursor_.line);

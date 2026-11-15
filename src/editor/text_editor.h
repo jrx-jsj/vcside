@@ -101,6 +101,8 @@ class TextEditor {
   std::pair<int, int> selectedLines() const;
   Coord cursor() const { return cursor_; }
   void goTo(int line, int col = 0);
+  // Selects a range (byte offsets) and scrolls it to the middle of the view (find in files).
+  void selectRange(Coord start, Coord end);
   bool dirty() const { return dirty_; }
   void markSaved() { dirty_ = false; }
 

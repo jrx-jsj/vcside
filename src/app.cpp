@@ -36,7 +36,7 @@ using nlohmann::json;
 
 namespace vcs {
 
-static const int kLayoutVersion = 2;  // bump when a docked panel is added
+static const int kLayoutVersion = 3;  // bump when a docked panel is added
 static const char* kLangIds[] = {"dasm", "batari-basic", "elf-c", "ace-c", "tinyelf-basic"};
 static const char* kTvMultipleHelp = N_("The program runs on more than one system and handles it in its code: the DASM template chooses with -DPAL=1, batari Basic with set tv, C detects it when it starts. The emulator is not told one: it detects it from the frame.");
 static const char* kLangNames[] = {N_("Assembler (DASM)"), N_("batari Basic"), N_("C for ELF (vcsLib)"), N_("C for ACE (PlusCart, UnoCart)"),
@@ -1997,6 +1997,7 @@ void App::frame() {
   }
   if (io.KeyCtrl && io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_G, false) && !addresses_.empty()) showGoToAddress_ = true;
   if (io.KeyCtrl && io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_N, false) && hooks.newWindow) hooks.newWindow();
+  if (io.KeyCtrl && io.KeyShift && !io.KeyAlt && ImGui::IsKeyPressed(ImGuiKey_F, false) && hasProject()) openFindInFiles();
   if (io.KeyCtrl && io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_W, false)) requestQuit();
   // zoom (Ctrl/Cmd + "+", "-", "0"): main.cpp, from the SDL key events
   if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_S, false)) {
@@ -2010,6 +2011,7 @@ void App::frame() {
   } else {
     dockspace();
     projectPanel();
+    findInFilesPanel();  // after it: a new layout shows the Project tab
     editorsPanel();
     outputPanel();
     problemsPanel();
@@ -2122,7 +2124,7 @@ MenuBar App::buildMenuBar(bool native) {
   // Edit
   bool asmFile = hasFile && files_[activeFile_]->asmSyntax;
 #ifdef __APPLE__
-  const char* replaceKey = "Ctrl+Shift+F";  // Cmd+H hides the app on macOS
+  const char* replaceKey = "Ctrl+Alt+F";  // Cmd+H hides the app on macOS
 #else
   const char* replaceKey = "Ctrl+H";
 #endif
@@ -2131,23 +2133,24 @@ MenuBar App::buildMenuBar(bool native) {
         if (activeFile_ >= 0 && files_[activeFile_]->gfx) files_[activeFile_]->gfx->undo();
         else if (activeFile_ >= 0 && files_[activeFile_]->music) files_[activeFile_]->music->undo();
         else if (TextEditor* textEditor = editor()) textEditor->undo();
-      }),
+      }, hasFile),
       item(T("Redo"), "Ctrl+Shift+Z", [this, editor] {
         if (activeFile_ >= 0 && files_[activeFile_]->gfx) files_[activeFile_]->gfx->redo();
         else if (activeFile_ >= 0 && files_[activeFile_]->music) files_[activeFile_]->music->redo();
         else if (TextEditor* textEditor = editor()) textEditor->redo();
-      }),
+      }, hasFile),
       MenuItem::sep(),
-      item(T("Cut"), "Ctrl+X", onEditor([](TextEditor& textEditor) { textEditor.cut(); })),
-      item(T("Copy"), "Ctrl+C", onEditor([](TextEditor& textEditor) { textEditor.copy(); })),
-      item(T("Paste"), "Ctrl+V", onEditor([](TextEditor& textEditor) { textEditor.paste(); })),
-      item(T("Select all"), "Ctrl+A", onEditor([](TextEditor& textEditor) { textEditor.selectAll(); })),
+      item(T("Cut"), "Ctrl+X", onEditor([](TextEditor& textEditor) { textEditor.cut(); }), hasFile),
+      item(T("Copy"), "Ctrl+C", onEditor([](TextEditor& textEditor) { textEditor.copy(); }), hasFile),
+      item(T("Paste"), "Ctrl+V", onEditor([](TextEditor& textEditor) { textEditor.paste(); }), hasFile),
+      item(T("Select all"), "Ctrl+A", onEditor([](TextEditor& textEditor) { textEditor.selectAll(); }), hasFile),
       MenuItem::sep(),
-      item(T("Find..."), "Ctrl+F", onEditor([](TextEditor& textEditor) { textEditor.openFind(false); })),
-      item(T("Replace..."), replaceKey, onEditor([](TextEditor& textEditor) { textEditor.openFind(true); })),
-      item(T("Find next"), "F3", onEditor([](TextEditor& textEditor) { textEditor.findNext(false); })),
-      item(T("Find previous"), "Shift+F3", onEditor([](TextEditor& textEditor) { textEditor.findNext(true); })),
-      item(T("Go to line..."), "Ctrl+G", onEditor([](TextEditor& textEditor) { textEditor.openGoto(); })),
+      item(T("Find..."), "Ctrl+F", onEditor([](TextEditor& textEditor) { textEditor.openFind(false); }), hasFile),
+      item(T("Replace..."), replaceKey, onEditor([](TextEditor& textEditor) { textEditor.openFind(true); }), hasFile),
+      item(T("Find next"), "F3", onEditor([](TextEditor& textEditor) { textEditor.findNext(false); }), hasFile),
+      item(T("Find previous"), "Shift+F3", onEditor([](TextEditor& textEditor) { textEditor.findNext(true); }), hasFile),
+      item(T("Find in files..."), "Ctrl+Shift+F", [this] { openFindInFiles(); }, hasProject()),
+      item(T("Go to line..."), "Ctrl+G", onEditor([](TextEditor& textEditor) { textEditor.openGoto(); }), hasFile),
       item(T("Go to address..."), "Ctrl+Shift+G", [this] { showGoToAddress_ = true; }, !addresses_.empty()),
       item(T("Go to definition"), "F12", [this] {
         if (activeFile_ < 0) return;
@@ -2155,17 +2158,17 @@ MenuBar App::buildMenuBar(bool native) {
         gotoDefinition(openedFile.editor.wordAtCursor(), openedFile.path, openedFile.editor.cursor().line);
       }, asmFile),
       MenuItem::sep(),
-      item(T("Toggle comment"), "Ctrl+/", onEditor([](TextEditor& textEditor) { textEditor.toggleComment(); })),
-      item(T("Duplicate lines"), "Ctrl+D", onEditor([](TextEditor& textEditor) { textEditor.duplicateLines(); })),
-      item(T("Move lines up"), "Alt+Up", onEditor([](TextEditor& textEditor) { textEditor.moveLines(-1); })),
-      item(T("Move lines down"), "Alt+Down", onEditor([](TextEditor& textEditor) { textEditor.moveLines(1); })),
-      item(T("Delete lines"), "Ctrl+Shift+K", onEditor([](TextEditor& textEditor) { textEditor.deleteLines(); })),
+      item(T("Toggle comment"), "Ctrl+/", onEditor([](TextEditor& textEditor) { textEditor.toggleComment(); }), hasFile),
+      item(T("Duplicate lines"), "Ctrl+D", onEditor([](TextEditor& textEditor) { textEditor.duplicateLines(); }), hasFile),
+      item(T("Move lines up"), "Alt+Up", onEditor([](TextEditor& textEditor) { textEditor.moveLines(-1); }), hasFile),
+      item(T("Move lines down"), "Alt+Down", onEditor([](TextEditor& textEditor) { textEditor.moveLines(1); }), hasFile),
+      item(T("Delete lines"), "Ctrl+Shift+K", onEditor([](TextEditor& textEditor) { textEditor.deleteLines(); }), hasFile),
       MenuItem::sep(),
-      item(T("Fold"), "Ctrl+Alt+Up", onEditor([](TextEditor& textEditor) { textEditor.foldAt(textEditor.cursor().line); })),
-      item(T("Unfold"), "Ctrl+Alt+Down", onEditor([](TextEditor& textEditor) { textEditor.unfoldAt(textEditor.cursor().line); })),
-      item(T("Fold all"), "", onEditor([](TextEditor& textEditor) { textEditor.foldAll(); })),
-      item(T("Unfold all"), "", onEditor([](TextEditor& textEditor) { textEditor.unfoldAll(); })),
-  }, hasFile));
+      item(T("Fold"), "Ctrl+Alt+Up", onEditor([](TextEditor& textEditor) { textEditor.foldAt(textEditor.cursor().line); }), hasFile),
+      item(T("Unfold"), "Ctrl+Alt+Down", onEditor([](TextEditor& textEditor) { textEditor.unfoldAt(textEditor.cursor().line); }), hasFile),
+      item(T("Fold all"), "", onEditor([](TextEditor& textEditor) { textEditor.foldAll(); }), hasFile),
+      item(T("Unfold all"), "", onEditor([](TextEditor& textEditor) { textEditor.unfoldAll(); }), hasFile),
+  }, hasFile || hasProject()));
 
   // Build
   bool canBuild = (project_.has_value() || !folder_.empty()) && !building_;  // a folder: build() looks at what it has
@@ -2354,6 +2357,7 @@ void App::dockspace() {
     right = ImGui::DockBuilderSplitNode(center, ImGuiDir_Right, 0.30f, nullptr, &center);
     bottom = ImGui::DockBuilderSplitNode(center, ImGuiDir_Down, 0.25f, nullptr, &center);
     ImGui::DockBuilderDockWindow("###project", left);
+    ImGui::DockBuilderDockWindow("###findinfiles", left);
     ImGui::DockBuilderDockWindow("###docs", right);
     ImGui::DockBuilderDockWindow("###output", bottom);
     ImGui::DockBuilderDockWindow("###problems", bottom);
