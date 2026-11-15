@@ -59,18 +59,14 @@ bool beginModal(const char* name, bool* open, ImGuiWindowFlags flags) {
 bool beginPanel(const char* name, bool* open, ImGuiWindowFlags flags) {
   // docked on the last frame: the dock's tabs show the name, there is no title band.
   // (DockIsActive is false for a window alone in its dock node, so the node is what says
-  // "docked": pushing the title colours then would paint the node's tab bar with them.)
+  // "docked": the taller padding then would make the node's tab bar taller too.)
   ImGuiWindow* previous = ImGui::FindWindowByName(name);
   bool floating = !previous || !previous->DockNode;
   int colours = 0, styles = 0;
   if (floating) {
-    ImU32 title = col(Role::DlgTitle);
-    ImGui::PushStyleColor(ImGuiCol_TitleBg, title);
-    ImGui::PushStyleColor(ImGuiCol_TitleBgActive, title);
-    ImGui::PushStyleColor(ImGuiCol_TitleBgCollapsed, title);
-    ImGui::PushStyleColor(ImGuiCol_Text, col(Role::DlgTitleText));  // the title and its close button
+    // the theme's own title colours, as the docked panels' tab bars: the dark band is for dialogs
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(em(12), em(8)));  // a taller title band
-    colours = 4, styles = 1;
+    styles = 1;
   }
   // docked, each closable tab has its own ×: the dock's extra × at the end of the row would
   // close the tab in front, a second button for the same thing
