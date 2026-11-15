@@ -26,7 +26,7 @@ src/
   project.*         workspace and project (.vcsproj): files, toolchain, format, TV
   toolchain.*       tool detection (PATH, typical paths per system, user settings)
   builder.*         runs the build and parses errors (file:line → jump to the editor)
-  emulator.*        launches Stella / Gopher2600 with the project's ROM, format and TV
+  emulator.*        launches Stella / Gopher2600 / Test7800 with the project's ROM, format and TV
   kb.*              knowledge base: opcodes, registers, formats, TV standards
   cycles.*          cycle counter for a selection of assembly
   editor/*          code tabs, highlighting, autocompletion, hover help
@@ -93,6 +93,7 @@ Checked with Stella 7.0 and Gopher2600 v0.56.1, by reading their source code and
 - **ACE:** only Gopher2600 runs ACE files (`-mapping ACE`); choosing the ACE format switches the project to it, and Stella is marked "no ACE" in the *Emulator* menu. See [design-ace.md](design-ace.md).
 - **ROMs in the tree:** a double click on a ROM in the *Project* panel runs it with the project's emulator and options; the format comes from its header (ACE), from the project for its own ROM, or AUTO.
 - **ELF:** breakpoints are not passed on (neither Stella nor Gopher2600 can stop at a C line); `-bs ELF` and `-mapping ELF`.
+- **Test7800** (JetSetIlly's Atari 7800 emulator, v0.9): the third emulator, for ELF games with a 7800 side (the Chameleon Cart in a 7800). It is offered only for ELF (`formatSupported`) and with NTSC, PAL or AUTO. VCSIDE passes `-run -dialog=false -bios=false` (an ELF has no signature for the BIOS to check; *BIOS* in the options passes `-bios=true` after it), `-overlay` when debugging and `-tv`. It keeps no preferences, only save files (SaveKey, high score cartridge, ELF NVRAM): VCSIDE always runs it portable, in `<VCSIDE config>/emulators/test7800` with `portable.txt` and a copy of the user's files in `Test7800_UserData`, so a test never writes over the user's saves. Build > *Run on the Atari 7800 (Test7800)* runs an ELF project there without changing its emulator. How faithful it is to the Chameleon Cart: [sources.md](sources.md#atari-7800-on-the-chameleon-cart-2026-11-15).
 
 ## ELF projects
 
@@ -101,6 +102,7 @@ Checked with Stella 7.0 and Gopher2600 v0.56.1, by reading their source code and
 - **Cartridges, chosen in the new-project dialog** (*Cartridges*: the ELF ROM always, since the emulators run it and the Chameleon image is made from it; the Chameleon Cart, ticked by default, which the space report then measures against; the ACE file. *Default build*: the ROM, or the ACE file with `make ace` in Gopher2600; never the Chameleon image, which needs the firmware and runs in no emulator). Only the chosen builds get their glue folder, their Makefile target (the `{{CHAMELEON}}`/`{{ACE}}` sections of the template's Makefile) and their lines in `VCSIDE.md`.
 - **ACE:** `make ace` builds the same game as an ACE file for the PlusCart and the UnoCart, with vcsLib written on the ACE template's bus library (`ace/` in the project). See [design-ace.md](design-ace.md#elf-games-as-ace-files-make-ace-phase-5).
 - **Chameleon Cart:** `make chameleon CHAMELEON_FW=<chameleon_cart folder of its template>`. Zack's template is not included because it has no licence.
+- **Atari 7800:** on a Chameleon Cart an ELF game also runs on a 7800; `elf_main` gets `ST_NTSC_7800` or `ST_PAL_7800` and talks to MARIA through four more vcsLib calls (`vcsJmpToRam3`, `vcsWaitForAddress`, `vcsInjectDmaData`, `vcsSnoopRead`, declared in `vcsLib.h`; `make ace` stubs them). The example "one game for the 2600 and the 7800" (`data/templates/elf-dual`) is described in [design-templates.md](design-templates.md#elf-one-game-for-the-2600-and-the-7800-elf-dual-2026-11-15); the knowledge base's 7800 entries (`a7800.json`) are searched only when a question names the 7800, MARIA or INPTCTRL.
 - **Errors:** besides `file:line:`, messages without a line (the checks, `arm-none-eabi-gcc: error:`), those from ld (`main.c:(.text+0x1c): undefined reference`, with the function; overflowed region) and the make ones that do not repeat another error. Files that ld gives without a folder are looked up in the project.
 - **Space:** VCSIDE reads the ELF directly. From the ROM (relocatable): code, `.RamFunc`, constants, initialised and zeroed variables. If there is a `build/<rom>-chameleon.elf` newer than the ROM, its program headers give the exact flash (what is stored from `0x0800_0000`) and RAM (what lives at `0x2000_0000`); otherwise it is estimated from what the template's firmware of 2025-10-23 takes up, measured: about 10,100 bytes of flash and 6,000 of RAM (the Abadía estimate ends up 41 bytes from the real one). STM32G070RB limits: 128 KB and 36 KB.
 
