@@ -7,6 +7,9 @@
 #include <SDL3/SDL.h>
 
 namespace vcs {
+// Choosing a project: a .vcsproj file, or a folder that has one (macOS; SDL's dialogs elsewhere
+// choose files only, so there just the .vcsproj files show).
+void showProjectDialog(SDL_DialogFileCallback callback, void* userdata, SDL_Window* window);
 // As SDL_ShowOpenFolderDialog: callback gets the chosen folder (or none), once.
 void showFolderDialog(SDL_DialogFileCallback callback, void* userdata, SDL_Window* window, const char* defaultLocation);
 }  // namespace vcs

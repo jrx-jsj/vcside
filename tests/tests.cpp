@@ -1055,6 +1055,18 @@ static void testElfSpace() {
     CHECK(Project::detect(madeDir.string(), &detected));
     CHECK(detected.buildCommand == "make" && detected.main == "game.asm" && detected.output == "out/game.bin" && detected.language == Language::Dasm && detected.name == "made");
     CHECK(!Project::detect((dir / "bb").string(), &detected));
+    // Open project: a .vcsproj, or a folder with one (the first by name); nothing else
+    {
+      fs::path twoDir = dir / "twoprojects";
+      fs::create_directories(twoDir, errorCode);
+      std::ofstream(twoDir / "b.vcsproj") << "{}";
+      std::ofstream(twoDir / "a.vcsproj") << "{}";
+      CHECK(Project::projectFileAt(twoDir.string()) == (twoDir / "a.vcsproj").string());
+      CHECK(Project::projectFileAt((twoDir / "b.vcsproj").string()) == (twoDir / "b.vcsproj").string());
+      CHECK(Project::projectFileAt(madeDir.string()).empty());
+      CHECK(Project::projectFileAt((madeDir / "game.asm").string()).empty());
+      CHECK(Project::projectFileAt((twoDir / "missing.vcsproj").string()).empty());
+    }
     fs::path scriptedDir = dir / "scripted";
     fs::create_directories(scriptedDir, errorCode);
     std::ofstream(scriptedDir / "build.sh") << "bb main.bas\n";

@@ -119,6 +119,10 @@ struct Project {
   // VCSIDE found; "" if neither.
   std::string toolPath(Toolchain& toolchain, const std::string& id) const;
 
+  // The project file a path names: the path itself if it is a .vcsproj, or the .vcsproj in a
+  // folder (the first, by name, if there are several). Empty if neither.
+  static std::string projectFileAt(const std::string& path);
+
   // A folder without a .vcsproj that can be built: one that builds by itself (Makefile,
   // build.sh, build.bat, make.bat), with that command, the main source and the ROM it seems
   // to write; or one with a DASM source (a "processor" line) or a batari Basic one, in it or

@@ -199,8 +199,8 @@ void App::pushDialogResult(const std::string& kind, const std::string& path) {
 void App::openPath(const std::string& path) {
   std::error_code errorCode;
   if (fs::is_directory(path, errorCode)) {
-    for (auto& entry : fs::directory_iterator(path, errorCode))
-      if (entry.path().extension() == ".vcsproj") return openProject(entry.path().string());
+    std::string projectFile = Project::projectFileAt(path);
+    if (!projectFile.empty()) return openProject(projectFile);
     openFolder(path);
   } else if (fs::path(path).extension() == ".vcsproj") {
     openProject(path);
@@ -1910,7 +1910,11 @@ void App::frame() {
     while (!dialogResults_.empty()) {
       auto [kind, path] = dialogResults_.front();
       dialogResults_.pop_front();
-      if (kind == "project") openPath(path);
+      if (kind == "project") {  // a .vcsproj, or a folder with one: nothing else opens as a project
+        std::string projectFile = Project::projectFileAt(path);
+        if (!projectFile.empty()) openProject(projectFile);
+        else lastStatus_ = F("{0} is not a VCSIDE project: choose a .vcsproj file, or a folder that has one.", {path});
+      }
       else if (kind == "folder") openPath(path);
       else if (kind == "file") openFile(path);
       else if (kind == "newdir") npDir_ = path;
@@ -2092,10 +2096,7 @@ MenuBar App::buildMenuBar(bool native) {
   for (auto& recentPath : recent_) recent.push_back(item(recentPath, "", [this, recentPath] { openPath(recentPath); }));
   std::vector<MenuItem> file = {
       item(T("New project..."), "", [this] { showNewProject_ = true; }),
-      item(T("Open project..."), "", [this] {
-        static const SDL_DialogFileFilter filters[] = {{"VCSIDE project", "vcsproj"}, {"All files", "*"}};
-        SDL_ShowOpenFileDialog(dialogCallback, new DialogCtx{this, "project"}, window_, filters, 2, nullptr, false);
-      }),
+      item(T("Open project..."), "", [this] { showProjectDialog(dialogCallback, new DialogCtx{this, "project"}, window_); }),
       item(T("Open folder..."), "", [this] { showFolderDialog(dialogCallback, new DialogCtx{this, "folder"}, window_, nullptr); }),
       sub(T("Recent projects"), recent, !recent.empty()),
       item(T("New window"), "Ctrl+Shift+N", [] { if (hooks.newWindow) hooks.newWindow(); }),
@@ -2673,10 +2674,7 @@ void App::welcome() {
     return clicked;
   };
   if (link(T("New project..."))) showNewProject_ = true;
-  if (link(T("Open project..."))) {
-    static const SDL_DialogFileFilter filters[] = {{"VCSIDE project", "vcsproj"}};
-    SDL_ShowOpenFileDialog(dialogCallback, new DialogCtx{this, "project"}, window_, filters, 1, nullptr, false);
-  }
+  if (link(T("Open project..."))) showProjectDialog(dialogCallback, new DialogCtx{this, "project"}, window_);
   if (link(T("Open folder...")))
     showFolderDialog(dialogCallback, new DialogCtx{this, "folder"}, window_, nullptr);
 

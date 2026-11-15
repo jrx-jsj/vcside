@@ -450,6 +450,18 @@ static std::string readAll(const fs::path& path) {
   return stream.str();
 }
 
+std::string Project::projectFileAt(const std::string& path) {
+  std::error_code errorCode;
+  if (fs::is_directory(path, errorCode)) {
+    std::vector<std::string> found;
+    for (auto& entry : fs::directory_iterator(path, errorCode))
+      if (entry.path().extension() == ".vcsproj" && entry.is_regular_file(errorCode)) found.push_back(entry.path().string());
+    std::sort(found.begin(), found.end());
+    return found.empty() ? "" : found.front();
+  }
+  return fs::path(path).extension() == ".vcsproj" && fs::is_regular_file(path, errorCode) ? path : "";
+}
+
 bool Project::detect(const std::string& dirIn, Project* result) {
   std::error_code errorCode;
   fs::path directory = fs::absolute(dirIn);
