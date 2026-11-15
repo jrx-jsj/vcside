@@ -26,7 +26,11 @@ bool beginModal(const char* name, bool* open, ImGuiWindowFlags flags) {
   ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, em(4));
   ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(em(16), em(14)));
   ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(em(12), em(8)));  // a taller title band
-  bool shown = ImGui::BeginPopupModal(name, open, flags);
+  // A dialog's size comes from its content or its code every time it opens, never from layout.ini: a size saved
+  // with another text, language or zoom cut the text at the right edge. And it never grows past the window.
+  ImVec2 workSize = ImGui::GetMainViewport()->WorkSize;
+  ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(workSize.x * 0.92f, workSize.y * 0.92f));
+  bool shown = ImGui::BeginPopupModal(name, open, flags | ImGuiWindowFlags_NoSavedSettings);
   ImGui::PopStyleVar(4);
   ImGui::PopStyleColor(6);
   if (!shown) return false;

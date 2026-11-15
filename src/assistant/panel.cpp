@@ -2263,16 +2263,18 @@ void AssistantPanel::firstStartDialog() {
   if (!opened) ImGui::OpenPopup("###assistant_first"), opened = true;
   char title[96];
   snprintf(title, sizeof title, "%s###assistant_first", T("AI tools"));
-  if (!theme::beginModal(title)) return;
-  ImGui::PushTextWrapPos(theme::em(460));
+  if (!theme::beginModal(title, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) return;  // as big as its text and buttons
+  // the text and the checkboxes' labels wrap to one width, so no label sets the window wider than the rest
+  const float wrapWidth = theme::em(460);
+  ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + wrapWidth);
   ImGui::TextUnformatted(T("VCSIDE can include optional AI tools. Nothing is sent anywhere and nothing is installed unless you turn them on and set up a model. You can change this at any time in the Assistant settings."));
   ImGui::PopTextWrapPos();
   ImGui::Spacing();
-  ImGui::Checkbox(T("Chat (ask about your project and the 2600)"), &chat);
-  ImGui::Checkbox(T("Agent (reads project files, proposes edits, builds when you allow it)"), &agent);
-  ImGui::Checkbox(T("Explain errors (a button in Problems and in the assistant)"), &explain);
+  wrappedCheckbox(T("Chat (ask about your project and the 2600)"), &chat, wrapWidth);
+  wrappedCheckbox(T("Agent (reads project files, proposes edits, builds when you allow it)"), &agent, wrapWidth);
+  wrappedCheckbox(T("Explain errors (a button in Problems and in the assistant)"), &explain, wrapWidth);
   ImGui::BeginDisabled();
-  ImGui::Checkbox(T("Extra code completion (coming later)"), &completion);
+  wrappedCheckbox(T("Extra code completion (coming later)"), &completion, wrapWidth);
   ImGui::EndDisabled();
   ImGui::Spacing();
   if (theme::dialogButton(T("Use none"))) {
@@ -2350,6 +2352,9 @@ void AssistantPanel::settingsDialog() {
   if (!opened) return;
   char title[96];
   snprintf(title, sizeof title, "%s###assistant_settings", T("Assistant settings"));
+  // wide enough for the text's wrap width (em(560) below) and a scrollbar; as tall as the window allows
+  ImVec2 workSize = ImGui::GetMainViewport()->WorkSize;
+  ImGui::SetNextWindowSize(ImVec2(theme::em(560) + theme::em(16) * 3 + ImGui::GetStyle().ScrollbarSize, workSize.y * 0.85f), ImGuiCond_Appearing);
   bool open = true;
   if (!theme::beginModal(title, &open)) {
     if (!open) opened = false;
@@ -2546,7 +2551,7 @@ void AssistantPanel::inspectorDialog() {
   if (wantInspector_) ImGui::OpenPopup("###assistant_inspector"), wantInspector_ = false;
   char title[96];
   snprintf(title, sizeof title, "%s###assistant_inspector", T("Last request, exactly as sent"));
-  if (!theme::beginModal(title)) return;
+  if (!theme::beginModal(title, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) return;
   std::string pretty = nlohmann::json::parse(lastRequest_, nullptr, false).dump(2);
   ImGui::BeginChild("request", ImVec2(theme::em(640), theme::em(380)), ImGuiChildFlags_Borders, ImGuiWindowFlags_HorizontalScrollbar);
   ImGui::TextUnformatted(pretty.c_str());
@@ -2586,7 +2591,7 @@ void AssistantPanel::historyDialog() {
   if (wantHistory_) ImGui::OpenPopup("###assistant_history"), wantHistory_ = false;
   char title[96];
   snprintf(title, sizeof title, "%s###assistant_history", T("Chats of this project"));
-  if (!theme::beginModal(title)) return;
+  if (!theme::beginModal(title, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) return;
   if (projectDir_.empty()) {
     ImGui::TextUnformatted(T("Open a project to keep chats."));
   } else {
