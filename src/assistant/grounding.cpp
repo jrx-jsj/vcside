@@ -297,6 +297,10 @@ std::vector<GroundedEntry> topicSearch(const KnowledgeBase& kb, const std::strin
   bool about7800 = false;
   for (const char* word : {"7800", "maria", "prosystem", "inptctrl"}) about7800 = about7800 || query.count(stem(word));
   auto is7800Technique = [](const Technique& technique) { return technique.id.rfind("7800-", 0) == 0; };
+  // the TinyELF Basic entries only answer questions that name TinyELF: a "sprite" or a "tone" is the 2600's.
+  // Such a question is about a BASIC program, so the assembly how-tos are left out of it
+  const bool aboutTinyElf = query.count(stem("tinyelf")) > 0;
+  auto isTinyElfTechnique = [](const Technique& technique) { return technique.id.rfind("tinyelf-", 0) == 0; };
 
   std::vector<TopicDoc> docs;
   for (auto& reg : kb.registers()) {
@@ -345,6 +349,7 @@ std::vector<GroundedEntry> topicSearch(const KnowledgeBase& kb, const std::strin
   for (size_t i = 0; i < kb.techniques().size(); i++) {
     const Technique& technique = kb.techniques()[i];
     if (!about7800 && is7800Technique(technique)) continue;
+    if (aboutTinyElf != isTinyElfTechnique(technique)) continue;
     std::string keywords = technique.id + " " + technique.title;
     for (auto& word : technique.keywords) keywords += " " + word;
     TopicDoc doc{"how-to", technique.id, keywords, technique.summary, ""};
@@ -470,10 +475,11 @@ std::vector<GroundedEntry> groundText(const KnowledgeBase& kb, const std::string
     }
   }
   // a question that names nothing the knowledge base knows is searched by topic
+  std::map<std::string, size_t> topicRank;  // the topic search's own order, for entries with the same score
   if (found.size() < maxEntries) {
     for (auto& hit : topicSearch(kb, userText, maxEntries, formatWord)) {
       std::string key = hit.kind + "/" + hit.id;
-      if (!found.count(key)) found[key] = hit;
+      if (!found.count(key)) found[key] = hit, topicRank.emplace(key, topicRank.size());
     }
   }
   // the project's own format and TV standard are context, not hits: they only break ties
@@ -482,7 +488,11 @@ std::vector<GroundedEntry> groundText(const KnowledgeBase& kb, const std::string
     if (!context.format.empty() && item.second.kind == "cartridge format" && upper(item.second.id) == upper(context.format)) item.second.score += 2;
     ranked.push_back(item.second);
   }
-  std::stable_sort(ranked.begin(), ranked.end(), [](const GroundedEntry& a, const GroundedEntry& b) { return a.score > b.score; });
+  auto rankOf = [&](const GroundedEntry& entry) {
+    auto it = topicRank.find(entry.kind + "/" + entry.id);
+    return it == topicRank.end() ? topicRank.size() : it->second;
+  };
+  std::stable_sort(ranked.begin(), ranked.end(), [&](const GroundedEntry& a, const GroundedEntry& b) { return a.score != b.score ? a.score > b.score : rankOf(a) < rankOf(b); });
   std::vector<GroundedEntry> result;
   size_t total = 0;
   for (auto& entry : ranked) {

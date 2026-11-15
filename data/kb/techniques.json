@@ -1,5 +1,21 @@
 {
  "_comment": "How-to entries for the assistant: what a programmer wants to do, with the registers and the steps. Each one is a short recipe built from the register entries and notes in tia.json, riot.json, formats.json and tv.json (the sources are the same). 'verified': false means a part could not be confirmed from those sources (the routines marked so were not run for this entry). Written for VCSIDE in our own words.",
+ "sources": [
+  {
+   "id": "tinyelf-basic-src",
+   "title": "TinyELF Basic source code (main.c, MANUAL.md)",
+   "author": "Al_Nafuur, on Stefan Lenz's Basic2",
+   "url": "https://github.com/Al-Nafuur/TinyELF-Basic",
+   "used_for": "The frame budget (tokenBudget from the ARM clock, a token counter in gettoken), how IF, GOTO and GOSUB move through the program, the GRAPHICS 8 video RAM and the POKE addresses of the TIA shadow; GPL-3"
+  },
+  {
+   "id": "tinyelf-measured",
+   "title": "Timings of TinyELF Basic programs in Gopher2600 v0.58.0 (VCSIDE's TinyELF game template)",
+   "author": "VCSIDE",
+   "url": "https://github.com/jrx-jsj/vcside",
+   "used_for": "Measured: turns per second of the game loop before and after each change, the GRAPHICS 8 byte 18 and column 16 behaviour, the budget of 107 in Gopher2600"
+  }
+ ],
  "techniques": [
   {
    "id": "position-object-x",
@@ -999,6 +1015,114 @@
   "verified": false,
   "example": "",
   "note": "VCSIDE's template 'Example: one game for the 2600 and the 7800' (C for ELF) follows these steps."
- }
-]
+ },
+  {
+   "id": "tinyelf-basic-speed",
+   "title": "Make a TinyELF Basic program run faster",
+   "keywords": [
+    "tinyelf",
+    "basic",
+    "speed",
+    "fast",
+    "faster",
+    "slow",
+    "performance",
+    "frame",
+    "budget",
+    "token",
+    "if",
+    "gosub",
+    "goto",
+    "rem",
+    "loop"
+   ],
+   "summary": "A frame is drawn after a budget of statements or of tokens read (four per statement): tokens that are only skipped count too.",
+   "steps": [
+    "The budget is the ARM clock / 650000: 332 on a 216 MHz PlusCart, 107 in Gopher2600 (about three times slower).",
+    "A false IF reads the rest of its line: when it is usually false, keep it short and call a subroutine (IF T<>MS THEN GOSUB 610).",
+    "GOTO or GOSUB to a REM line reads the comment: jump to the line after it (GOSUB 702).",
+    "Work out tables at start-up, so a wall test is one array look-up.",
+    "Move by time (MILLIS) and share the work out between turns: one enemy a turn, redraw only what moved. Count turns a second to measure."
+   ],
+   "related": [],
+   "sources": [
+    "tinyelf-basic-src",
+    "tinyelf-measured"
+   ],
+   "verified": true,
+   "example": "602 T=MILLIS(100)%64+1: IF T<>MS THEN GOSUB 610\n604 IF EF THEN GOSUB 616",
+   "note": "VCSIDE's TinyELF game went from 7-8 to about 19 turns a second in Gopher2600 this way. Raising the budget by hand (POKE 653/652) stops Gopher2600's picture."
+  },
+  {
+   "id": "tinyelf-graphics8-sprites",
+   "title": "Draw a sprite in TinyELF Basic's GRAPHICS 8",
+   "keywords": [
+    "tinyelf",
+    "basic",
+    "graphics",
+    "graphics 8",
+    "sprite",
+    "poke",
+    "video ram",
+    "pixel",
+    "draw",
+    "playfield",
+    "character",
+    "print"
+   ],
+   "summary": "GRAPHICS 8's picture is video RAM at 4096 + line*20 + byte (bytes 0-17, 8 pixels each, bit 7 on the left); a sprite is POKEd there in two bytes per line.",
+   "steps": [
+    "At start-up, shift each line of the sprite by 0, 2, 4 and 6 pixels into a left and a right byte (and mirror it if it turns round).",
+    "Draw at x with two POKEs a line into bytes x/8 and x/8+1; clear only what the move uncovered.",
+    "After writing byte 0 or 2 of a line, write (byte 0 AND 7) OR (byte 2 AND 248) into byte 18. Keep sprites out of byte 16, which also shows near the right edge.",
+    "Walls: the playfield shadow at 128 + row*8 (COLUPF, CTRLPF, PF0-PF2); only the left half is used, so CTRLPF 5 and a symmetric room. Colours: 256 + text row, background 1024 + line.",
+    "POKE 654,14 after GRAPHICS 8 makes the whole screen the text window, for LOCATE and PRINT anywhere."
+   ],
+   "related": [],
+   "sources": [
+    "tinyelf-basic-src",
+    "tinyelf-measured"
+   ],
+   "verified": true,
+   "example": "704 FOR I=I+1 TO IZ: POKE A,GL(I): POKE A+1,GR(I): A=A+20: NEXT I",
+   "note": "VCSIDE's TinyELF template 'VCSIDE The Game' draws this way (lines 700-762)."
+  },
+  {
+   "id": "tinyelf-sound",
+   "title": "Play music and sound effects in TinyELF Basic",
+   "keywords": [
+    "tinyelf",
+    "basic",
+    "sound",
+    "music",
+    "effect",
+    "audio",
+    "audc",
+    "audf",
+    "audv",
+    "poke",
+    "millis",
+    "song"
+   ],
+   "summary": "POKE 21/22 sets AUDC0/1, 23/24 AUDF0/1 and 25/26 AUDV0/1; a song is a table played by time with MILLIS.",
+   "steps": [
+    "Pack each row as AUDC*512 + AUDF*16 + AUDV per channel in DATA; unpack into arrays at start-up.",
+    "Each turn, T=MILLIS(100)%64+1 is the row of a 64-row song; POKE it only when T changes.",
+    "An effect takes channel 1 for a few MILLIS(50) steps, then gives it back to the song.",
+    "POKE 25,0: POKE 26,0 when the game stops; VCSIDE's TinyELF build also silences both when the program ends or ESC stops it."
+   ],
+   "related": [
+    "AUDC0",
+    "AUDF0",
+    "AUDV0"
+   ],
+   "sources": [
+    "tinyelf-basic-src",
+    "tinyelf-measured"
+   ],
+   "verified": true,
+   "example": "602 T=MILLIS(100)%64+1: IF T<>MS THEN GOSUB 610\n610 MS=T: POKE 21,MC(T): POKE 23,MF(T): POKE 25,MV(T)\n612 RETURN",
+   "note": ""
+  }
+ ]
 }

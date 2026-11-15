@@ -5885,6 +5885,10 @@ static void testAssistant(const KnowledgeBase& kb) {
       CHECK(ids("How do I read the two buttons of the 7800 joystick?").count("7800-read-controllers"));
       CHECK(ids("One ELF for both the 2600 and the 7800 on the Chameleon").count("7800-dual-elf"));
       CHECK(ids("¿Cómo funciona la pausa de la 7800?").size() > 0);
+      // the TinyELF Basic entries (speed, GRAPHICS 8 sprites, sound)
+      CHECK(ids("My TinyELF Basic game is slow, how do I make it faster?").count("tinyelf-basic-speed"));
+      CHECK(ids("How do I draw a sprite in TinyELF GRAPHICS 8?").count("tinyelf-graphics8-sprites"));
+      CHECK(ids("How do I play music in TinyELF Basic?").count("tinyelf-sound"));
       CHECK(ids("Why does my picture roll?").count("fix-rolling-picture") || ids("Why does my picture roll?").count("frame-structure"));
       auto how = groundText(kb, "How do I position a sprite horizontally?", "", context);
       CHECK(!how.empty() && how[0].text.find("How-to:") == 0 && how[0].text.find("NOT VERIFIED") != std::string::npos);  // the unrun routine says so
