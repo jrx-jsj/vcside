@@ -1,0 +1,196 @@
+diff --git a/Makefile b/Makefile
+index 7d63944..443d23d 100644
+--- a/Makefile
++++ b/Makefile
+@@ -27,6 +27,12 @@ CFLAGS_COMPILE += -Os -ffunction-sections -fdata-sections
+ # Flags für relocatable single-line build (dein altes Verhalten)
+ CFLAGS_RELOC := -r -mlong-calls -fno-exceptions -fno-builtin-memmove -march=armv7-m -Os -Wall -Wl,-T,tinyelf.ld
+ 
++# Optional: build a BASIC listing into the ROM and RUN it at power-on,
++# e.g.  make AUTORUN=examples/20demos/TinyMaze.lst  (see autorun() in main.c)
++ifdef AUTORUN
++CFLAGS_RELOC += -DTINYELF_AUTORUN='"$(AUTORUN)"'
++endif
++
+ # Linker flags für ELF (erzeugen Map, gc-sections, Memory-usage)
+ LDFLAGS := -lgcc
+ LDFLDFLAGS_MAP := -Wl,-Map=$(MAP),--gc-sections,--print-memory-usage
+@@ -38,7 +44,7 @@ all: $(RELOC_OUT)
+ 
+ # Erzeuge relocatable kombinierte Datei (wie vorher)
+ # Achtung: bei diesem single-line -r-Aufruf funktioniert --gc-sections nicht; für GC siehe reloc-gc target
+-$(RELOC_OUT): $(SRCS)
++$(RELOC_OUT): $(SRCS) $(AUTORUN)
+ 	$(CC) $(CFLAGS_RELOC) $(SRCS) -o $@ $(LDFLAGS)
+ 	$(STRIP) $@ -d -R.comment -R.ARM.attributes
+ 
+diff --git a/main.c b/main.c
+index 5e8ae4a..17eb2f5 100644
+--- a/main.c
++++ b/main.c
+@@ -2139,6 +2139,26 @@ void eload() {
+ #endif
+ }
+ 
++#ifdef TINYELF_AUTORUN
++/*
++ 	TinyELF autorun: a BASIC listing built into the ROM, entered and RUN at
++ 	power-on, so the cartridge works on its own - no KeyPortari, no SaveKey.
++ 	Build with  make AUTORUN=game.bas  (or -DTINYELF_AUTORUN='"game.bas"').
++ 	The listing is plain text like a LIST "En:file" export; .incbin puts it
++ 	into .rodata as it is, the trailing line end makes sure the last line
++ 	is stored too. Only the tokenized program takes BASIC memory, the text
++ 	itself stays in flash.
++*/
++__asm__(".section .rodata\n"
++        ".global autorunprogram\n"
++        "autorunprogram:\n"
++        ".incbin \"" TINYELF_AUTORUN "\"\n"
++        ".byte 10, 0\n"
++        ".previous\n");
++extern const char autorunprogram[];
++static void enterchars(const uint8_t *chars, uint16_t count); /* further down, next to xenter() */
++#endif
++
+ /* autorun something from EEPROM or a filesystem */
+ char autorun() {
+ #ifdef EEPROMMEMINTERFACE
+@@ -2161,6 +2181,37 @@ char autorun() {
+   }
+ #endif
+ 
++  /* the listing built into the ROM: entered like ENTER does, then RUN.
++     When it ends (END, an error or ESC) the interpreter shows READY with
++     the program still in memory, so it can be listed and changed */
++#ifdef TINYELF_AUTORUN
++  {
++    const char *line = autorunprogram, *end;
++
++    iodefaults(); /* loop() only sets id/od after a run, ESC needs them now */
++
++    /* line by line, with a frame after each one: storing a line is not
++       free, and a long listing must not keep the 6507 waiting in overblank
++       for many frames (Gopher2600 stops the ARM after 1.5M cycles) */
++    bi = ibuffer + 1;
++    while (*line && er == 0) {
++      for (end = line; *end && *end != '\n'; end++);
++      if (*end) end++;
++      enterchars((const uint8_t *)line, (uint16_t)(end - line));
++      byield();
++      line = end;
++    }
++    ibuffer[0] = 0;
++    ibuffer[1] = 0;
++    bi = ibuffer + 1;
++    if (er == 0 && top > 0) {
++      st = SRUN;
++      return 1;
++    }
++    er = 0;
++  }
++#endif
++
+   /* on a platform with a file system, autoexec from a file */
+ #if defined(FILESYSTEMDRIVER)
+   if (ifileopen("autoexec.bas")) {
+@@ -8372,39 +8423,18 @@ void xlist() {
+  	slate if that's what's wanted.
+ */
+ #ifdef STM32
+-void xenter() {
+-  char filename[SBUFSIZE];
+-  uint8_t chunk[256];
+-  uint16_t chunkLen = 0, chunkPos = 0;
++/*
++ 	Tokenizes program text exactly as if it had been typed: every line that
++ 	starts with a number is stored, lines starting with a # are skipped.
++ 	bi must be ibuffer + 1 before the first call; a line may continue in the
++ 	next call, ENTER feeds the file sector by sector. Also used by autorun()
++ 	for a listing built into the ROM (TINYELF_AUTORUN).
++*/
++static void enterchars(const uint8_t *chars, uint16_t count) {
+   uint8_t ch;
+ 
+-  nexttoken();
+-  geteefilename(filename);
+-  if (!USELONGJUMP && er) return;
+-
+-  if (!sdenteropen(filename)) {
+-    error(EFILE);
+-    return;
+-  }
+-
+-  bi = ibuffer + 1;
+-  for (;;) {
+-    if (chunkPos >= chunkLen) {
+-      chunkLen = sdenterchunk(chunk, sizeof(chunk));
+-      chunkPos = 0;
+-      if (chunkLen == 0) break; /* end of chain */
+-      if (chunkLen == SD_ENTER_ERROR) { /* broken sector chain / read error */
+-        error(EFILE);
+-        break;
+-      }
+-
+-      /* No frame is rendered between the chunks: like LOAD, the screen
+-         stays in the storage colour while ENTER runs. The long gaps without
+-         a frame used to hang the console, which the UCA firmware's
+-         vcsEndOverblank() fix (sync to the WaitForCart loop at $00A9)
+-         solved; a frame per chunk also cost one frame per sector. */
+-    }
+-    ch = chunk[chunkPos++];
++  while (count--) {
++    ch = *chars++;
+ 
+     if (ch == '\n' || ch == '\r') {
+       *bi = 0;
+@@ -8415,7 +8445,7 @@ void xenter() {
+           ax = x;
+           storeline();
+         }
+-        if (er != 0) break;
++        if (er != 0) return;
+         bi = ibuffer + 1;
+       }
+     } else {
+@@ -8424,8 +8454,41 @@ void xenter() {
+ 
+     if ((bi - ibuffer) > BUFSIZE) {
+       error(EOUTOFMEMORY);
++      return;
++    }
++  }
++}
++
++void xenter() {
++  char filename[SBUFSIZE];
++  uint8_t chunk[256];
++  uint16_t chunkLen;
++
++  nexttoken();
++  geteefilename(filename);
++  if (!USELONGJUMP && er) return;
++
++  if (!sdenteropen(filename)) {
++    error(EFILE);
++    return;
++  }
++
++  bi = ibuffer + 1;
++  for (;;) {
++    chunkLen = sdenterchunk(chunk, sizeof(chunk));
++    if (chunkLen == 0) break; /* end of chain */
++    if (chunkLen == SD_ENTER_ERROR) { /* broken sector chain / read error */
++      error(EFILE);
+       break;
+     }
++
++    /* No frame is rendered between the chunks: like LOAD, the screen
++       stays in the storage colour while ENTER runs. The long gaps without
++       a frame used to hang the console, which the UCA firmware's
++       vcsEndOverblank() fix (sync to the WaitForCart loop at $00A9)
++       solved; a frame per chunk also cost one frame per sector. */
++    enterchars(chunk, chunkLen);
++    if (er != 0) break;
+   }
+ 
+   /* This loop reused ibuffer/bi (the interactive input line's own buffer)

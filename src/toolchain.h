@@ -39,6 +39,9 @@ class Toolchain {
 
   void loadSettings(const std::map<std::string, std::string>& userPaths);
   std::map<std::string, std::string> userPaths() const;
+  // Every place a tool was found (the user's path first, then where VCSIDE looks), for a
+  // project that needs one with something the first one lacks.
+  std::vector<std::string> foundPaths(const std::string& id) const;
 
  private:
   std::vector<std::string> candidates(const Tool& tool) const;

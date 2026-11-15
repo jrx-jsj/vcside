@@ -204,6 +204,7 @@ class App {
   EditorHooks asmHooks();
   EditorHooks basicHooks();
   EditorHooks cHooks();
+  EditorHooks tinyBasicHooks();
   std::string registerHelp(const Register& reg) const;
   std::vector<Token> tokenizeAsm(const std::string& line) const;
   std::optional<int> lookupSymbol(const std::string& name) const;
@@ -318,6 +319,7 @@ class App {
   void updatePlusCartRoms();
   bool finishBasicBuild();
   void measureBasic(long romSize);
+  void measureTinyElf(long romSize);
   std::string spaceNote_;      // why there is no report (ELF, custom build...)
 
   // docs

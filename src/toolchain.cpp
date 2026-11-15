@@ -34,7 +34,7 @@ Toolchain::Toolchain() {
        N_("batari Basic 1.9 runs its compiler on it (WebAssembly). macOS: brew install wasmtime; Windows: winget install BytecodeAlliance.Wasmtime.Portable.")},
       {"arm-gcc", "Arm GNU toolchain (ELF-VCS)", N_("compiler"), "", "",
        "https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads",
-       N_("arm-none-eabi-gcc, for C games on ELF cartridges with vcsLib.")},
+       N_("arm-none-eabi-gcc, for C games on ELF cartridges with vcsLib. TinyELF Basic also needs its C library (newlib), which Arm's own build brings and Homebrew's arm-none-eabi-gcc lacks: install Arm's, or unpack its tarball into VCSIDE's tools folder.")},
       {"make", "GNU Make", N_("build tool"), "", "", "https://www.gnu.org/software/make/",
        N_("ELF projects build with their Makefile. macOS: xcode-select --install. Linux: your package manager (build-essential). Windows: MSYS2 (pacman -S make) or another GNU Make build.")},
   };
@@ -166,6 +166,20 @@ std::vector<std::string> Toolchain::candidates(const Tool& tool) const {
       std::sort(found.rbegin(), found.rend());
       for (auto& candidate : found) add(candidate);
     };
+    // Arm's tarball unpacked into VCSIDE's tools folder (arm-gnu-toolchain-<version>-<host>-arm-none-eabi)
+    {
+      std::error_code errorCode;
+      std::vector<std::string> unpacked;
+      for (auto& entry : fs::directory_iterator(toolsFolder, errorCode))
+        if (entry.is_directory() && entry.path().filename().string().rfind("arm-gnu-toolchain", 0) == 0)
+          unpacked.push_back((entry.path() / "bin" / "arm-none-eabi-gcc").string());
+      std::sort(unpacked.rbegin(), unpacked.rend());
+#ifdef _WIN32
+      for (auto& candidate : unpacked) add(candidate + ".exe");
+#else
+      for (auto& candidate : unpacked) add(candidate);
+#endif
+    }
 #if defined(__APPLE__)
     versions("/Applications/ArmGNUToolchain", "arm-none-eabi/bin/arm-none-eabi-gcc");
 #elif defined(_WIN32)
@@ -183,6 +197,17 @@ std::vector<std::string> Toolchain::candidates(const Tool& tool) const {
 #endif
   }
   return paths;
+}
+
+std::vector<std::string> Toolchain::foundPaths(const std::string& id) const {
+  std::vector<std::string> found;
+  for (auto& tool : tools_) {
+    if (tool.id != id) continue;
+    if (fileExists(tool.userPath)) found.push_back(tool.userPath);
+    for (auto& candidatePath : candidates(tool))
+      if (fileExists(candidatePath) && std::find(found.begin(), found.end(), candidatePath) == found.end()) found.push_back(candidatePath);
+  }
+  return found;
 }
 
 void Toolchain::detect() {

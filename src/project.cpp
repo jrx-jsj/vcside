@@ -30,6 +30,7 @@ const char* languageId(Language language) {
     case Language::BatariBasic: return "batari-basic";
     case Language::ElfC: return "elf-c";
     case Language::AceC: return "ace-c";
+    case Language::TinyElfBasic: return "tinyelf-basic";
     default: return "unknown";
   }
 }
@@ -38,6 +39,7 @@ Language languageFromId(const std::string& id) {
   if (id == "batari-basic") return Language::BatariBasic;
   if (id == "elf-c") return Language::ElfC;
   if (id == "ace-c") return Language::AceC;
+  if (id == "tinyelf-basic") return Language::TinyElfBasic;
   return Language::Unknown;
 }
 const char* illegalId(IllegalOpcodes policy) {
@@ -258,6 +260,7 @@ std::vector<std::string> Project::buildTools(Toolchain& toolchain) const {
       if (!bb.empty() && fs::exists(fs::path(bb).parent_path() / "2600basic.wasm", errorCode)) tools.push_back("wasmtime");
       return tools;
     }
+    case Language::TinyElfBasic: return toolPaths.count("arm-gcc") && !toolPath(toolchain, "arm-gcc").empty() ? std::vector<std::string>{} : std::vector<std::string>{"arm-gcc"};
     default: return {};
   }
 }
@@ -346,6 +349,39 @@ std::vector<std::string> Project::buildArgs(Toolchain& toolchain, std::string* e
       return {"/bin/sh", bbPath, sourceArgument};
 #endif
     }
+    case Language::TinyElfBasic: {
+      // TinyELF's sources (data/tinyelf), compiled as its README says, with the program's
+      // path in TINYELF_AUTORUN: the assembler puts the file into the ROM (.incbin). The
+      // compiler runs in that folder and writes only the ROM. -w: the warnings would be
+      // TinyELF's, not the program's.
+      std::string gcc = tinyElfCompiler(toolchain);
+      if (gcc.empty()) {
+        if (error) *error = toolPaths.count("arm-gcc") ? F("The project's arm-none-eabi-gcc ({0}) does not exist.", {toolPaths.at("arm-gcc")})
+                                                       : std::string(T("The Arm GNU toolchain (arm-none-eabi-gcc) not found. Install it or set its path in Settings > Tools."));
+        return {};
+      }
+      fs::path sources = fs::path(dataDir()) / "tinyelf";
+      std::vector<std::string> files;
+      for (auto& entry : fs::directory_iterator(sources, errorCode))
+        if (entry.path().extension() == ".c") files.push_back(entry.path().filename().string());
+      std::sort(files.begin(), files.end());
+      if (files.empty() || !fs::exists(sources / "tinyelf.ld", errorCode)) {
+        if (error) *error = F("Template not found in {0}", {sources.string()});
+        return {};
+      }
+      // the path goes into a C string and an assembler line: forward slashes, no quotes
+      std::string program = fs::path(abs(main)).generic_string();
+      if (program.find_first_of("\"\\") != std::string::npos) {
+        if (error) *error = F("The program's path cannot have quotes or backslashes in it: {0}", {program});
+        return {};
+      }
+      if (workDir) *workDir = sources.string();
+      std::vector<std::string> arguments = {gcc, "-r", "-mlong-calls", "-fno-exceptions", "-fno-builtin-memmove", "-march=armv7-m", "-Os", "-w",
+                                            "-Wl,-T,tinyelf.ld", "-DTINYELF_AUTORUN=\"" + program + "\""};
+      arguments.insert(arguments.end(), files.begin(), files.end());
+      arguments.insert(arguments.end(), {"-o", outputPath(), "-lgcc"});
+      return arguments;
+    }
     case Language::ElfC:
     case Language::AceC:
       if (error) *error = T("C projects build with their Makefile: set \"build_command\" (e.g. \"make\") in the project.");
@@ -377,6 +413,24 @@ std::vector<std::string> Project::pxeLinkArgs(Toolchain& toolchain, std::string*
   return {gcc, "-mcpu=cortex-m0", "-mthumb", "-O2", "-std=c11", "-Wall", "-ffreestanding", "-fno-builtin", "-mlong-calls",
           "-nostdlib", "-r", "-Wl,--wrap=vcsEndOverblank", "-I" + fs::path(source).parent_path().string(), "-I" + generatedFolder(source, "music"),
           "-o", basicOutput(".linked"), source, basicOutput(".bin")};
+}
+
+// Where an arm-none-eabi-gcc keeps newlib's headers: <prefix>/arm-none-eabi/include (Arm's
+// own builds), <prefix>/lib/arm-none-eabi/include (Debian's and Ubuntu's packages).
+static bool hasNewlib(const std::string& compiler) {
+  std::error_code errorCode;
+  fs::path prefix = fs::weakly_canonical(compiler, errorCode).parent_path().parent_path();
+  for (auto& include : {prefix / "arm-none-eabi" / "include", prefix / "lib" / "arm-none-eabi" / "include"})
+    if (fs::exists(include / "stdio.h", errorCode)) return true;
+  return false;
+}
+
+std::string Project::tinyElfCompiler(Toolchain& toolchain) const {
+  std::string compiler = toolPath(toolchain, "arm-gcc");
+  if (compiler.empty() || toolPaths.count("arm-gcc") || hasNewlib(compiler)) return compiler;
+  for (auto& candidate : toolchain.foundPaths("arm-gcc"))
+    if (hasNewlib(candidate)) return candidate;
+  return compiler;  // the build says what is missing
 }
 
 std::string Project::toolPath(Toolchain& toolchain, const std::string& id) const {
@@ -499,7 +553,7 @@ const std::vector<std::string>& tvStandardIds() {
 std::string tvLabel(const std::string& tv) { return tv == "AUTO" ? std::string(T("Multiple (in the code)")) : tv; }
 
 std::vector<std::string> tvStandardsFor(Language language) {
-  if (language == Language::BatariBasic || isC(language)) return {"NTSC", "PAL", "PAL60"};
+  if (language == Language::BatariBasic || isC(language) || language == Language::TinyElfBasic) return {"NTSC", "PAL", "PAL60"};
   std::vector<std::string> result;
   for (auto& standard : tvStandardIds())
     if (standard != "AUTO") result.push_back(standard);
@@ -537,6 +591,10 @@ std::vector<std::string> Project::runArgs(Toolchain& toolchain, bool debug, std:
   }
   if (!formatSupported(emulator, format)) {
     if (error) *error = F("{0} cannot run {1} cartridges: choose Gopher2600 in Build > Emulator.", {tool->name, format});
+    return {};
+  }
+  if (language == Language::TinyElfBasic && emulator != "gopher2600") {
+    if (error) *error = F("{0} cannot run TinyELF Basic (its ARM code is for the PlusCart's and UnoCart's Cortex-M4): choose Gopher2600 in Build > Emulator.", {tool->name});
     return {};
   }
   std::vector<std::string> arguments = {tool->path};
@@ -786,6 +844,7 @@ std::vector<std::pair<std::string, const char*>> Project::examples(Language lang
             {"animation", N_("Example: an animated sprite")},
             {"dual", N_("Example: one game for the 2600 and the 7800 (Chameleon Cart)")},
             {"game-dual", N_("VCSIDE The Game (2600 + 7800, Chameleon Cart)")}};
+  if (language == Language::TinyElfBasic) return {{"sketchpad", N_("Example: a sketch pad for the keyboard or the joystick")}};
   if (language == Language::AceC)
     return {{"game", N_("VCSIDE The Game")},
             {"animation", N_("Example: an animated sprite")},
@@ -1090,6 +1149,30 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
                       {"{{TITLE_NOTE}}", titleScreen ? "It starts on a title screen (the cartridge and THE GAME): the button starts a game, and the game ends back there."
                                                      : "There is no title screen: the game starts at once and starts again after the last life."},
                       {"{{TITLE_WHERE}}", titleScreen ? "; on the title, `titleLoop` (the cartridge: `title.vcsgfx`, sprite `cart`)" : ""}});
+  } else if (projectLanguage == Language::TinyElfBasic) {
+    // one program, src/main.bas (plain TinyELF listing, line numbers and all), built into
+    // TinyELF Basic's ROM; no graphics or music files of its own (the program draws them)
+    if (!example.empty() && example != "sketchpad") {
+      if (error) *error = F("Template not found in {0}", {example});
+      return false;
+    }
+    fs::path templateDir = fs::path(dataDir()) / "templates" / (example.empty() ? "tinyelf" : "tinyelf-" + example);
+    std::string text = readFile((templateDir / "main.bas").string());
+    if (text.empty()) {
+      if (error) *error = F("Template not found in {0}", {(templateDir / "main.bas").string()});
+      return false;
+    }
+    replaceAll(text, "{{NAME}}", projName);
+    fs::path mainFile = sourceFolder / "main.bas";
+    if (!fs::exists(mainFile)) std::ofstream(mainFile, std::ios::binary) << text;
+    copyProjectNotes({templateDir, fs::path(dataDir()) / "templates" / "tinyelf"}, newProject.dir, projName);
+    newProject.main = "src/main.bas";
+    newProject.format = "ELF";
+    newProject.resourcesDir.clear(), newProject.generatedDir.clear();
+    // TinyELF is made for a keyboard: Gopher2600's KeyPortari, which also passes a held
+    // key to the joystick port (STICK); Stella runs no Cortex-M4 code
+    newProject.emulator = "gopher2600";
+    newProject.emulatorOptions["gopher2600"]["keyportari"] = "ASCII";
   } else if (isC(projectLanguage)) {
     bool ace = projectLanguage == Language::AceC;
     if (projName.find_first_of(" \t") != std::string::npos) {

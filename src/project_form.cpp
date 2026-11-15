@@ -228,9 +228,9 @@ void ProjectForm::render(TextEditor& text, ImFont* mono, const KnowledgeBase& kb
 
     section(T("Build"));
     row(T("Build command"), T("A command of the project's own, run in its folder (make, sh build.sh...). With &&, | or ; the system's shell runs it. Empty: VCSIDE runs the tool."));
-    text1("##cmd", project_.buildCommand, project_.language == Language::BatariBasic ? T("(batari Basic)") : isC(project_.language) ? "make" : T("(DASM)"));
+    text1("##cmd", project_.buildCommand, project_.language == Language::BatariBasic ? T("(batari Basic)") : project_.language == Language::TinyElfBasic ? T("(TinyELF Basic)") : isC(project_.language) ? "make" : T("(DASM)"));
     if (project_.buildCommand.empty() && !isC(project_.language)) {
-      const char* id = project_.language == Language::BatariBasic ? "bb" : "dasm";
+      const char* id = project_.language == Language::BatariBasic ? "bb" : project_.language == Language::TinyElfBasic ? "arm-gcc" : "dasm";
       Tool* tool = toolchain.get(project_.language == Language::BatariBasic ? project_.basicTool() : id);  // PXE: the PXE beta
       std::string label = F("{0} of the project", {tool ? tool->name : id});
       row(label.c_str(), T("A path to use this project's own copy (a version of its own) instead of the one in Settings > Tools. Relative to the project or absolute."));

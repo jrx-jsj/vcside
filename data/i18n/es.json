@@ -4,6 +4,7 @@
   "strings": {
     "#RRGGBB or #RRGGBBAA, $name for a palette colour, @role for another colour of the list (@ui.accent). /40 after any of them sets its alpha (#40 of 255).": "#RRGGBB o #RRGGBBAA, $nombre para un color de la paleta, @papel para otro color de la lista (@ui.accent). /40 tras cualquiera de ellos fija su alfa (#40 de 255).",
     "(+1) page crossing; branches: +1 taken, +2 taken to another page": "(+1) al cruzar de página; saltos: +1 si se toman, +2 si van a otra página",
+    "(TinyELF Basic)": "(TinyELF Basic)",
     "(bank {0})": "(banco {0})",
     "(batari Basic)": "(batari Basic)",
     "(C, F, V: AUDC, AUDF, AUDV)": "(C, F, V: AUDC, AUDF, AUDV)",
@@ -31,11 +32,23 @@
     "; {0} warnings": "; {0} avisos",
     "@ adds a file or a folder": "@ añade un archivo o una carpeta",
     "Addresses instead of cycles": "Direcciones en lugar de ciclos",
+    "Al_Nafuur's BASIC machine for the PlusCart and the UnoCart: the program is built into its ROM and runs at power-on. F5 runs it in Gopher2600 with the computer's keyboard as a KeyPortari. It needs the Arm GNU Toolchain with its C library (newlib).": "La máquina BASIC de Al_Nafuur para el PlusCart y el UnoCart: el programa va dentro de su ROM y se ejecuta al encender. F5 lo abre en Gopher2600 con el teclado del ordenador como KeyPortari. Necesita la Arm GNU Toolchain con su biblioteca de C (newlib).",
+    "Example: a sketch pad for the keyboard or the joystick": "Ejemplo: un bloc de dibujo para el teclado o el joystick",
+    "ROM: {0} of the loader's {1} bytes. BASIC memory: about {2} bytes of {3} (Gopher2600; 64 KB on the cartridges).": "ROM: {0} de los {1} bytes del cargador. Memoria BASIC: unos {2} bytes de {3} (Gopher2600; 64 KB en los cartuchos).",
+    "The Arm GNU toolchain (arm-none-eabi-gcc) not found. Install it or set its path in Settings > Tools.": "No se encuentra la Arm GNU toolchain (arm-none-eabi-gcc). Instálala o indica su ruta en Ajustes > Herramientas.",
+    "The ROM fills {0}% of the cartridge loader's 96 KB.": "La ROM ocupa el {0} % de los 96 KB del cargador del cartucho.",
+    "The ROM is larger than the cartridge loader's 96 KB: the PlusCart and the UnoCart may not load it. Shorten the program.": "La ROM pasa de los 96 KB del cargador del cartucho: puede que el PlusCart y el UnoCart no la carguen. Acorta el programa.",
+    "The program takes almost all of TinyELF's BASIC memory in Gopher2600 (48 KB): it may not fit when it is entered.": "El programa ocupa casi toda la memoria BASIC de TinyELF en Gopher2600 (48 KB): puede que no quepa al introducirlo.",
+    "The program's path cannot have quotes or backslashes in it: {0}": "La ruta del programa no puede llevar comillas ni barras invertidas: {0}",
+    "The project's arm-none-eabi-gcc ({0}) does not exist.": "El arm-none-eabi-gcc del proyecto ({0}) no existe.",
+    "TinyELF Basic (PlusCart, UnoCart, keyboard)": "TinyELF Basic (PlusCart, UnoCart, teclado)",
+    "arm-none-eabi-gcc, for C games on ELF cartridges with vcsLib. TinyELF Basic also needs its C library (newlib), which Arm's own build brings and Homebrew's arm-none-eabi-gcc lacks: install Arm's, or unpack its tarball into VCSIDE's tools folder.": "arm-none-eabi-gcc, para juegos en C en cartuchos ELF con vcsLib. TinyELF Basic necesita además su biblioteca de C (newlib), que trae la versión de Arm y a la de Homebrew le falta: instala la de Arm o descomprime su tarball en la carpeta de herramientas de VCSIDE.",
     "page {0} starts inside this line": "la página {0} empieza dentro de esta línea",
     "bank {0}": "banco {0}",
     "Where a new 6502 page starts": "Donde empieza una página nueva del 6502",
     "Where a new bank starts": "Donde empieza un banco nuevo",
     "Set up services...": "Configurar servicios...",
+    "{0} cannot run TinyELF Basic (its ARM code is for the PlusCart's and UnoCart's Cortex-M4): choose Gopher2600 in Build > Emulator.": "{0} no puede ejecutar TinyELF Basic (su código ARM es para el Cortex-M4 del PlusCart y el UnoCart): elige Gopher2600 en Compilar > Emulador.",
     "{0} cycles, {1}": "{0} ciclos, {1}",
     "Cycles unknown": "Ciclos desconocidos",
     "Bits": "Bits",
@@ -114,7 +127,6 @@
     "archived": "archivado",
     "ARM (DPC+, CDFJ, ELF)": "ARM (DPC+, CDFJ, ELF)",
     "ARM cartridges (Harmony, PlusCart, Chameleon...)": "Cartuchos con ARM (Harmony, PlusCart, Chameleon...)",
-    "arm-none-eabi-gcc, for C games on ELF cartridges with vcsLib.": "arm-none-eabi-gcc, para juegos en C en cartuchos ELF con vcsLib.",
     "Ask": "Preguntar",
     "Ask about your code, the TIA, the 6502 or the cartridge formats. The names VCSIDE knows in your question and in what you attach are looked up in its knowledge base and shown to the model.": "Pregunta sobre tu código, el TIA, el 6502 o los formatos de cartucho. Los nombres que VCSIDE conoce, en tu pregunta y en lo que adjuntes, se buscan en su base de conocimiento y se muestran al modelo.",
     "Ask before sending to it": "Preguntar antes de enviarle nada",
@@ -1310,5 +1322,5 @@
     "Run on the Atari 7800 (Test7800)": "Ejecutar en la Atari 7800 (Test7800)",
     "stereo": "estéreo"
   },
-  "total": 1302
+  "total": 1315
 }

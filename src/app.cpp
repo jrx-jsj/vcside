@@ -36,9 +36,10 @@ using nlohmann::json;
 namespace vcs {
 
 static const int kLayoutVersion = 2;  // bump when a docked panel is added
-static const char* kLangIds[] = {"dasm", "batari-basic", "elf-c", "ace-c"};
+static const char* kLangIds[] = {"dasm", "batari-basic", "elf-c", "ace-c", "tinyelf-basic"};
 static const char* kTvMultipleHelp = N_("The program runs on more than one system and handles it in its code: the DASM template chooses with -DPAL=1, batari Basic with set tv, C detects it when it starts. The emulator is not told one: it detects it from the frame.");
-static const char* kLangNames[] = {N_("Assembler (DASM)"), N_("batari Basic"), N_("C for ELF (vcsLib)"), N_("C for ACE (PlusCart, UnoCart)")};
+static const char* kLangNames[] = {N_("Assembler (DASM)"), N_("batari Basic"), N_("C for ELF (vcsLib)"), N_("C for ACE (PlusCart, UnoCart)"),
+                                   N_("TinyELF Basic (PlusCart, UnoCart, keyboard)")};
 
 // The language's name for people, as the New project dialog shows it.
 static std::string languageName(Language language) {
@@ -388,11 +389,12 @@ OpenFile* App::openFile(const std::string& pathIn, int line) {
   std::string ext = lower(fs::path(path).extension().string());
   bool cLike = ext == ".c" || ext == ".cpp" || ext == ".hpp" || (ext == ".h" && project_ && isC(project_->language));
   if (cLike) newFile->asmSyntax = false;
-  newFile->editor.setCommentPrefix(cLike ? "//" : ext == ".bas" ? "rem" : ";");
-  newFile->editor.setFoldSyntax(cLike ? FoldSyntax::C : ext == ".bas" ? FoldSyntax::Basic : newFile->asmSyntax ? FoldSyntax::Asm : FoldSyntax::None);
+  const bool tinyBasic = ext == ".bas" && project_ && project_->language == Language::TinyElfBasic;  // TinyELF's numbered lines
+  newFile->editor.setCommentPrefix(cLike ? "//" : tinyBasic ? "REM " : ext == ".bas" ? "rem" : ";");
+  newFile->editor.setFoldSyntax(cLike ? FoldSyntax::C : tinyBasic ? FoldSyntax::None : ext == ".bas" ? FoldSyntax::Basic : newFile->asmSyntax ? FoldSyntax::Asm : FoldSyntax::None);
   newFile->editor.setDefaultIndent(IndentStyle{true, 4});  // tabs, as the templates
   {
-    EditorHooks editorHooks = newFile->asmSyntax ? asmHooks() : ext == ".bas" ? basicHooks() : cLike ? cHooks() : EditorHooks{};
+    EditorHooks editorHooks = newFile->asmSyntax ? asmHooks() : tinyBasic ? tinyBasicHooks() : ext == ".bas" ? basicHooks() : cLike ? cHooks() : EditorHooks{};
     OpenFile* self = newFile.get();
     // the files a line names (include, incbin, #include...)
     editorHooks.hasFile = [this, self](const std::string& name) { return !linkedFile(name, self->path).empty(); };
@@ -400,7 +402,7 @@ OpenFile* App::openFile(const std::string& pathIn, int line) {
       std::string linkedPath = linkedFile(name, self->path);
       if (!linkedPath.empty()) openFile(linkedPath);
     };
-    if (newFile->asmSyntax || ext == ".bas") {
+    if (newFile->asmSyntax || (ext == ".bas" && !tinyBasic)) {
     editorHooks.gotoDefinition = [this, self](const std::string& word) { return gotoDefinition(word, self->path, self->editor.cursor().line); };
     editorHooks.hasDefinition = [this, self](const std::string& word, int line) {
       std::string path;
@@ -618,7 +620,7 @@ void App::pollBuild() {
   output_ = earlierOutput_ + jobOutput;
   const bool linking = linkingPxe_;
   linkingPxe_ = false;
-  bool gcc = project_ && (isC(project_->language) || !project_->buildCommand.empty());
+  bool gcc = project_ && (isC(project_->language) || project_->language == Language::TinyElfBasic || !project_->buildCommand.empty());
   bool basic = project_ && project_->language == Language::BatariBasic && project_->buildCommand.empty();
   // the first line repeats the command ("> make ..."): only what it printed is parsed
   std::string printed = jobOutput.rfind("> ", 0) == 0 && jobOutput.find('\n') != std::string::npos ? jobOutput.substr(jobOutput.find('\n') + 1) : jobOutput;
@@ -679,6 +681,7 @@ void App::pollBuild() {
     if (isC(project_->language) && (project_->language == Language::AceC || project_->format == "ACE")) measureAce();
     else if (project_->language == Language::ElfC) measureElf();
     else if (basic) measureBasic(errorCode ? 0 : (long)size);
+    else if (project_->language == Language::TinyElfBasic) measureTinyElf(errorCode ? 0 : (long)size);
     else startSpace();
   }
   for (auto& file : files_) lint(*file);
@@ -726,6 +729,26 @@ void App::measureBasic(long romSize) {
     diagnostics_.push_back(diagnostic);
   }
   output_ += space_->summary() + "\n";
+}
+
+// TinyELF Basic: the ROM against the cartridge loader's 96 KB buffer (tinyelf.ld), and the
+// BASIC memory the program takes when it is entered (about its text: SketchPad's 1080 bytes
+// took 1118, Dungeon's 7050 took 7638, measured with SIZE in Gopher2600, which has 48 KB).
+void App::measureTinyElf(long romSize) {
+  constexpr long kLoaderBytes = 96 * 1024, kBasicBytes = 48 * 1024;
+  std::error_code errorCode;
+  long programSize = (long)fs::file_size(project_->abs(project_->main), errorCode);
+  if (errorCode) programSize = 0;
+  const long programMemory = programSize + programSize / 10;
+  spaceNote_ = F("ROM: {0} of the loader's {1} bytes. BASIC memory: about {2} bytes of {3} (Gopher2600; 64 KB on the cartridges).",
+                 {std::to_string(romSize), std::to_string(kLoaderBytes), std::to_string(programMemory), std::to_string(kBasicBytes)});
+  output_ += spaceNote_ + "\n";
+  if (romSize > kLoaderBytes)
+    diagnostics_.push_back({Diagnostic::Warning, project_->main, 0, T("The ROM is larger than the cartridge loader's 96 KB: the PlusCart and the UnoCart may not load it. Shorten the program.")});
+  else if (romSize * 100 > kLoaderBytes * project_->spaceWarnPercent)
+    diagnostics_.push_back({Diagnostic::Warning, project_->main, 0, F("The ROM fills {0}% of the cartridge loader's 96 KB.", {std::to_string(romSize * 100 / kLoaderBytes)})});
+  if (programMemory * 100 > kBasicBytes * project_->spaceWarnPercent)
+    diagnostics_.push_back({Diagnostic::Warning, project_->main, 0, T("The program takes almost all of TinyELF's BASIC memory in Gopher2600 (48 KB): it may not fit when it is entered.")});
 }
 
 // Space report: DASM again with -f2 (exact blocks of emitted bytes), then the listing for RAM.
@@ -1396,10 +1419,11 @@ std::string App::liveSymbolText(const LiveSymbol& liveSymbol, bool full) const {
 std::string App::testComplete(const std::string& word) {
   if (activeFile_ < 0) return "no file\n";
   refreshLiveSymbols(true);
-  EditorHooks editorHooks = files_[activeFile_]->asmSyntax ? asmHooks() : basicHooks();
+  const bool tinyBasic = project_ && project_->language == Language::TinyElfBasic;
+  EditorHooks editorHooks = files_[activeFile_]->asmSyntax ? asmHooks() : tinyBasic ? tinyBasicHooks() : basicHooks();
   std::string result;
   for (auto& completion : editorHooks.complete(word, "")) result += completion.word + "\t" + completion.detail + "\n";
-  return result + "hover: " + editorHooks.hover(word, "") + "\n";
+  return result + "hover: " + (editorHooks.hover ? editorHooks.hover(word, "") : std::string()) + "\n";
 }
 
 // A file named by a tool: absolute, relative to the project or an include folder, or
@@ -1623,6 +1647,21 @@ EditorHooks App::cHooks() {
   editorHooks.hover = [this](const std::string& word, const std::string&) -> std::string {
     if (const Register* registerEntry = kb_.reg(word)) return registerHelp(*registerEntry);
     return {};
+  };
+  return editorHooks;
+}
+
+// TinyELF Basic: its keywords, and completion from them (no help text: TinyELF's manual has it).
+EditorHooks App::tinyBasicHooks() {
+  EditorHooks editorHooks;
+  editorHooks.tokenize = [](const std::string& lineText, int) { return tokenizeTinyBasic(lineText); };
+  editorHooks.complete = [](const std::string& prefix, const std::string&) {
+    std::vector<Completion> completions;
+    if (prefix.empty()) return completions;
+    std::string upperPrefix = upper(prefix);
+    for (auto& keyword : tinyBasicKeywords())
+      if (keyword.compare(0, upperPrefix.size(), upperPrefix) == 0) completions.push_back({keyword, "TinyELF Basic", TokenKind::Mnemonic});
+    return completions;
   };
   return editorHooks;
 }
@@ -2978,7 +3017,7 @@ void App::assistantPanel() {
   context.kb = &kb_;
   if (project_) {
     context.projectDir = project_->dir;
-    const char* language = project_->language == Language::BatariBasic ? "batari Basic" : project_->language == Language::ElfC ? "C for ELF" : project_->language == Language::AceC ? "C for ACE" : "DASM";
+    const char* language = project_->language == Language::BatariBasic ? "batari Basic" : project_->language == Language::ElfC ? "C for ELF" : project_->language == Language::AceC ? "C for ACE" : project_->language == Language::TinyElfBasic ? "TinyELF Basic" : "DASM";
     context.projectInfo = std::string(language) + ", " + project_->format + ", " + project_->tv + ", " + project_->main;
     context.grounding.format = project_->format;
     context.grounding.tv = project_->tv;
@@ -3867,6 +3906,10 @@ void App::newProjectDialog() {
     if (!npCdfjError_.empty()) ImGui::TextColored(theme::colv(theme::Role::MsgError), "%s", npCdfjError_.c_str());
     else if (!npCdfjDriver_.empty()) ImGui::TextUnformatted(F("Driver: {0}", {fs::path(npCdfjDriver_).filename().string()}).c_str());
     else ImGui::TextDisabled("%s", T("No driver chosen: the project is made without it."));
+    ImGui::PopTextWrapPos();
+  } else if (npLanguage == Language::TinyElfBasic) {
+    ImGui::PushTextWrapPos(0);
+    ImGui::TextDisabled("%s", T("Al_Nafuur's BASIC machine for the PlusCart and the UnoCart: the program is built into its ROM and runs at power-on. F5 runs it in Gopher2600 with the computer's keyboard as a KeyPortari. It needs the Arm GNU Toolchain with its C library (newlib)."));
     ImGui::PopTextWrapPos();
   } else if (npLanguage == Language::Dasm && npFormat_ == "DPC+" && Project::dpcPlusDriver().empty()) {
     ImGui::PushTextWrapPos(0);
