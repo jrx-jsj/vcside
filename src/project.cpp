@@ -844,7 +844,8 @@ std::vector<std::pair<std::string, const char*>> Project::examples(Language lang
             {"animation", N_("Example: an animated sprite")},
             {"dual", N_("Example: one game for the 2600 and the 7800 (Chameleon Cart)")},
             {"game-dual", N_("VCSIDE The Game (2600 + 7800, Chameleon Cart)")}};
-  if (language == Language::TinyElfBasic) return {{"sketchpad", N_("Example: a sketch pad for the keyboard or the joystick")}};
+  if (language == Language::TinyElfBasic)
+    return {{"game", N_("VCSIDE The Game")}, {"sketchpad", N_("Example: a sketch pad for the keyboard or the joystick")}};
   if (language == Language::AceC)
     return {{"game", N_("VCSIDE The Game")},
             {"animation", N_("Example: an animated sprite")},
@@ -1152,7 +1153,7 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
   } else if (projectLanguage == Language::TinyElfBasic) {
     // one program, src/main.bas (plain TinyELF listing, line numbers and all), built into
     // TinyELF Basic's ROM; no graphics or music files of its own (the program draws them)
-    if (!example.empty() && example != "sketchpad") {
+    if (!example.empty() && example != "game" && example != "sketchpad") {
       if (error) *error = F("Template not found in {0}", {example});
       return false;
     }

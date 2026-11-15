@@ -1690,8 +1690,8 @@ static void testElfSpace() {
 static void testTinyElfBasic(const KnowledgeBase& kb) {
   namespace fs = std::filesystem;
   CHECK(languageFromId(languageId(Language::TinyElfBasic)) == Language::TinyElfBasic && !isC(Language::TinyElfBasic));
-  CHECK(Project::cartridgeFormats(Language::TinyElfBasic).empty() && Project::examples(Language::TinyElfBasic).size() == 1 &&
-        Project::examples(Language::TinyElfBasic)[0].first == "sketchpad");
+  CHECK(Project::cartridgeFormats(Language::TinyElfBasic).empty() && Project::examples(Language::TinyElfBasic).size() == 2 &&
+        Project::examples(Language::TinyElfBasic)[0].first == "game" && Project::examples(Language::TinyElfBasic)[1].first == "sketchpad");
   std::error_code errorCode;
   fs::path dir = fs::temp_directory_path() / "vcside-test-tinyelf";
   fs::remove_all(dir, errorCode);
@@ -1722,6 +1722,29 @@ static void testTinyElfBasic(const KnowledgeBase& kb) {
   std::ifstream sketchFile(dir / "sketch" / "src" / "main.bas");
   std::string sketch((std::istreambuf_iterator<char>(sketchFile)), {});
   CHECK(sketch.find("SKETCH PAD") != std::string::npos && sketch.find("STRIG(0)") != std::string::npos && fs::exists(dir / "sketch" / "VCSIDE.md"));
+  // VCSIDE The Game: GRAPHICS 8 sprites POKEd into video RAM, the room as the playfield,
+  // with its own notes; every line numbered, under TinyELF's 256-character line
+  Project game;
+  CHECK(Project::create((dir / "game").string(), "game", Language::TinyElfBasic, "NTSC", &game, &error, "game"));
+  std::ifstream gameFile(dir / "game" / "src" / "main.bas");
+  std::string gameText((std::istreambuf_iterator<char>(gameFile)), {});
+  CHECK(gameText.rfind("1 REM game - VCSIDE The Game", 0) == 0 && gameText.find("GRAPHICS 8") != std::string::npos &&
+        gameText.find("{{") == std::string::npos && gameText.find("STRIG(0)") != std::string::npos);
+  {
+    std::istringstream lines(gameText);
+    std::string line;
+    int previous = 0;
+    bool ordered = true;
+    while (std::getline(lines, line)) {
+      int number = std::atoi(line.c_str());
+      ordered = ordered && number > previous && line.size() < 256;
+      previous = number;
+    }
+    CHECK(ordered && previous > 1000);
+  }
+  std::ifstream gameNotesFile(dir / "game" / "VCSIDE.md");
+  std::string gameNotes((std::istreambuf_iterator<char>(gameNotesFile)), {});
+  CHECK(gameNotes.find("VCSIDE The Game") != std::string::npos && gameNotes.find("{{") == std::string::npos);
   CHECK(!Project::create((dir / "none").string(), "x", Language::TinyElfBasic, "NTSC", nullptr, &error, "nope") && !error.empty());
 
   // the build: the compiler in data/tinyelf, the program's absolute path in TINYELF_AUTORUN
@@ -1768,6 +1791,16 @@ static void testTinyElfBasic(const KnowledgeBase& kb) {
     std::ifstream romFile(project.outputPath(), std::ios::binary);
     std::string rom((std::istreambuf_iterator<char>(romFile)), {});
     CHECK(rom.compare(0, 4, "\x7F" "ELF") == 0 && rom.find("40 POKE 653,0: POKE 652,100") != std::string::npos);
+    // the game, the biggest listing: still under the loader's 96 KB
+    game.toolPaths["arm-gcc"] = testCompiler;
+    std::string gameWorkDir;
+    auto gameArgs = game.buildArgs(toolchain, &error, &gameWorkDir);
+    Job gameCompiler;
+    gameCompiler.start(gameArgs, gameWorkDir);
+    while (gameCompiler.running()) std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    CHECK(gameCompiler.exitCode() == 0);
+    auto gameSize = fs::file_size(game.outputPath(), errorCode);
+    CHECK(!errorCode && gameSize > size && gameSize < 96 * 1024);
   }
 
   // colouring: the line number, keywords in any case, line numbers after GOTO/THEN, REM
