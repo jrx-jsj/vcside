@@ -25,7 +25,7 @@ index 7d63944..443d23d 100644
  	$(STRIP) $@ -d -R.comment -R.ARM.attributes
  
 diff --git a/main.c b/main.c
-index 5e8ae4a..17eb2f5 100644
+index 5e8ae4a..5c0e70f 100644
 --- a/main.c
 +++ b/main.c
 @@ -2139,6 +2139,26 @@ void eload() {
@@ -194,3 +194,16 @@ index 5e8ae4a..17eb2f5 100644
    }
  
    /* This loop reused ibuffer/bi (the interactive input line's own buffer)
+@@ -12971,6 +13034,12 @@ void loop() {
+     here = 0;
+     xrun();
+     st = SINT;
++#ifdef TINYELF_AUTORUN
++    /* the built-in program has stopped (END, an error or ESC): a game's
++       music would otherwise go on at READY, so both voices are silenced */
++    tiaShadowRAM[AUDV0] = 0;
++    tiaShadowRAM[AUDV1] = 0;
++#endif
+   }
+ 
+   /* always return to default io channels once interactive mode is reached */

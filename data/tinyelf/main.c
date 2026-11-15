@@ -13034,6 +13034,12 @@ void loop() {
     here = 0;
     xrun();
     st = SINT;
+#ifdef TINYELF_AUTORUN
+    /* the built-in program has stopped (END, an error or ESC): a game's
+       music would otherwise go on at READY, so both voices are silenced */
+    tiaShadowRAM[AUDV0] = 0;
+    tiaShadowRAM[AUDV1] = 0;
+#endif
   }
 
   /* always return to default io channels once interactive mode is reached */

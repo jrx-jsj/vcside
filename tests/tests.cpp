@@ -1684,7 +1684,7 @@ static void testElfSpace() {
   if (!std::getenv("VCSIDE_TEST_KEEP")) fs::remove_all(dir, errorCode);
 }
 
-// TinyELF Basic: the project (one numbered listing in src/main.bas, Gopher2600 with the
+// TinyELF Basic: the project (one numbered listing in src/main.lst, Gopher2600 with the
 // KeyPortari), the compiler's command line on data/tinyelf, its colouring, and a real build
 // when an arm-none-eabi-gcc with newlib is there (VCSIDE_TEST_ARM_GCC names one).
 static void testTinyElfBasic(const KnowledgeBase& kb) {
@@ -1698,9 +1698,9 @@ static void testTinyElfBasic(const KnowledgeBase& kb) {
   Project project;
   std::string error;
   CHECK(Project::create((dir / "hello").string(), "hello", Language::TinyElfBasic, "NTSC", &project, &error));
-  CHECK(project.main == "src/main.bas" && project.format == "ELF" && project.emulator == "gopher2600" && project.output == "build/hello.bin");
+  CHECK(project.main == "src/main.lst" && project.format == "ELF" && project.emulator == "gopher2600" && project.output == "build/hello.bin");
   CHECK(project.emulatorOptions["gopher2600"]["keyportari"] == "ASCII" && project.generatedDir.empty() && project.resourcesDir.empty());
-  std::ifstream helloFile(dir / "hello" / "src" / "main.bas");
+  std::ifstream helloFile(dir / "hello" / "src" / "main.lst");
   std::string hello((std::istreambuf_iterator<char>(helloFile)), {});
   CHECK(hello.rfind("10 REM hello", 0) == 0 && hello.find("{{") == std::string::npos);
   {
@@ -1719,14 +1719,14 @@ static void testTinyElfBasic(const KnowledgeBase& kb) {
     CHECK(std::search(options.begin(), options.end(), keyboard.begin(), keyboard.end()) != options.end());
   }
   CHECK(Project::create((dir / "sketch").string(), "sketch", Language::TinyElfBasic, "PAL", &project, &error, "sketchpad"));
-  std::ifstream sketchFile(dir / "sketch" / "src" / "main.bas");
+  std::ifstream sketchFile(dir / "sketch" / "src" / "main.lst");
   std::string sketch((std::istreambuf_iterator<char>(sketchFile)), {});
   CHECK(sketch.find("SKETCH PAD") != std::string::npos && sketch.find("STRIG(0)") != std::string::npos && fs::exists(dir / "sketch" / "VCSIDE.md"));
   // VCSIDE The Game: GRAPHICS 8 sprites POKEd into video RAM, the room as the playfield,
   // with its own notes; every line numbered, under TinyELF's 256-character line
   Project game;
   CHECK(Project::create((dir / "game").string(), "game", Language::TinyElfBasic, "NTSC", &game, &error, "game"));
-  std::ifstream gameFile(dir / "game" / "src" / "main.bas");
+  std::ifstream gameFile(dir / "game" / "src" / "main.lst");
   std::string gameText((std::istreambuf_iterator<char>(gameFile)), {});
   CHECK(gameText.rfind("1 REM game - VCSIDE The Game", 0) == 0 && gameText.find("GRAPHICS 8") != std::string::npos &&
         gameText.find("{{") == std::string::npos && gameText.find("STRIG(0)") != std::string::npos);

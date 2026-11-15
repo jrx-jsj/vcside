@@ -1151,23 +1151,23 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
                                                      : "There is no title screen: the game starts at once and starts again after the last life."},
                       {"{{TITLE_WHERE}}", titleScreen ? "; on the title, `titleLoop` (the cartridge: `title.vcsgfx`, sprite `cart`)" : ""}});
   } else if (projectLanguage == Language::TinyElfBasic) {
-    // one program, src/main.bas (plain TinyELF listing, line numbers and all), built into
+    // one program, src/main.lst (a plain TinyELF listing, line numbers and all, as LIST writes it), built into
     // TinyELF Basic's ROM; no graphics or music files of its own (the program draws them)
     if (!example.empty() && example != "game" && example != "sketchpad") {
       if (error) *error = F("Template not found in {0}", {example});
       return false;
     }
     fs::path templateDir = fs::path(dataDir()) / "templates" / (example.empty() ? "tinyelf" : "tinyelf-" + example);
-    std::string text = readFile((templateDir / "main.bas").string());
+    std::string text = readFile((templateDir / "main.lst").string());
     if (text.empty()) {
-      if (error) *error = F("Template not found in {0}", {(templateDir / "main.bas").string()});
+      if (error) *error = F("Template not found in {0}", {(templateDir / "main.lst").string()});
       return false;
     }
     replaceAll(text, "{{NAME}}", projName);
-    fs::path mainFile = sourceFolder / "main.bas";
+    fs::path mainFile = sourceFolder / "main.lst";
     if (!fs::exists(mainFile)) std::ofstream(mainFile, std::ios::binary) << text;
     copyProjectNotes({templateDir, fs::path(dataDir()) / "templates" / "tinyelf"}, newProject.dir, projName);
-    newProject.main = "src/main.bas";
+    newProject.main = "src/main.lst";
     newProject.format = "ELF";
     newProject.resourcesDir.clear(), newProject.generatedDir.clear();
     // TinyELF is made for a keyboard: Gopher2600's KeyPortari, which also passes a held

@@ -393,7 +393,8 @@ OpenFile* App::openFile(const std::string& pathIn, int line) {
   // headers are only checked through the sources that include them: alone, they may rely on what comes before
   newFile->cCheck = cLike && ext != ".h" && ext != ".hpp";
   if (newFile->cCheck) newFile->checkDueAt = 0;
-  const bool tinyBasic = ext == ".bas" && project_ && project_->language == Language::TinyElfBasic;  // TinyELF's numbered lines
+  // TinyELF's numbered lines: a listing (.lst, as LIST writes it), or .bas, as the first TinyELF projects had it
+  const bool tinyBasic = (ext == ".lst" || ext == ".bas") && project_ && project_->language == Language::TinyElfBasic;
   newFile->editor.setCommentPrefix(cLike ? "//" : tinyBasic ? "REM " : ext == ".bas" ? "rem" : ";");
   newFile->editor.setFoldSyntax(cLike ? FoldSyntax::C : tinyBasic ? FoldSyntax::None : ext == ".bas" ? FoldSyntax::Basic : newFile->asmSyntax ? FoldSyntax::Asm : FoldSyntax::None);
   newFile->editor.setDefaultIndent(IndentStyle{true, 4});  // tabs, as the templates
