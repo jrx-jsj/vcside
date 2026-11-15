@@ -10,20 +10,22 @@ VCSIDE The Game as a TinyELF Basic program, from VCSIDE's template. TinyELF Basi
 ## How it draws (GRAPHICS 8, with its three-row text window for the score and the lives)
 - Video RAM: `4096 + line*20 + byte`. Lines 0-131 are the room (11 text rows of 12 lines; the kernel adds a blank line between rows). Bytes 0-17 are 8 pixels each, bit 7 on the left. The kernel draws every other byte column on alternate frames, so sprites flicker at 30 Hz, like its text.
 - Byte 18 of a line holds byte 2's left five pixels for the kernel: after writing byte 2, write `PEEK(byte 2) AND 248` into byte 18 (lines 760-762).
-- The sprites (`GL`, `GR`) are each frame shifted by 0, 2, 4 and 6 pixels into a left and a right byte; the hero's are also mirrored. A sprite's routine (lines 700-716) writes the new bytes over the old ones and clears only what the move uncovered. Sprites one byte apart overwrite each other's bytes, which is why the hero is redrawn while an enemy is near.
+- The sprites (`GL`, `GR`) are each frame shifted by 0, 2, 4 and 6 pixels into a left and a right byte; the hero's are also mirrored. A sprite's routine (lines 700-716) writes the new bytes over the old ones and clears only what the move uncovered. Sprites one byte apart overwrite each other's bytes, which is why the hero is redrawn while an enemy is near. The kernel echoes byte 16's pixels beyond the right wall, so `PC` treats pixels from 128 on as wall.
 - The walls are the playfield shadow (`128 + row*8`: COLUPF, CTRLPF, PF0-PF2 twice), mirrored (CTRLPF 5). In GRAPHICS 8 the kernel shows the left half's bytes on both sides, so the room has to be symmetric. `WM` is the same room as a grid (40 playfield columns by 11 rows) for the collisions, and `PC(x+1)` the playfield column of pixel x.
 - Colours: one per text row (`256 + row`), so actors on the same row share a colour; a background colour per line (`1024 + line`).
 - Sound: the song is a row of AUDC/AUDF/AUDV for both channels every 100 ms (`MILLIS(100)`); an effect takes channel 1 for a few 50 ms steps; the lose sound plays with `DELAY`.
 
 ## Speed
-- The interpreter runs a budget of tokens (332) between two frames, the same on the cartridge and in Gopher2600: a turn of the game loop takes about 75 ms (4 or 5 frames), mostly the `POKE`s of the sprites. Fewer lines to draw or fewer tests per turn make it faster; a bigger budget (`POKE 653,…: POKE 652,…`) can make the TV lose its sync.
+- The interpreter renders a frame after a budget of statements, which TinyELF sets from the cartridge's clock: 332 on a 216 MHz PlusCart, but 107 in Gopher2600, whose emulated ARM is slower. The same listing runs about three times faster on the cartridge. Raising the budget in Gopher2600 (`POKE 653,…: POKE 652,…`) stops its picture.
+- So the game moves by time, not by turns: each turn counts the ticks of two frames since the last one (`N`, from `MILLIS(33)`, four at most) and moves that much: the hero 2 pixels and 3 lines a tick, the enemies 1 and 1, the shot a byte every two ticks. In Gopher2600 a turn takes about 80 ms, so the steps are bigger; on the cartridge it should take about a third of that (not yet measured there), with smaller, smoother steps at the same speed.
+- A turn draws the hero (only when it moved, turned or an enemy is near) and one of the two enemies; the other moves on the next turn. Most of the time goes to the sprites' `POKE`s.
 - Only the first two letters of a name count (`HX`, `EX`…), and a name must not contain a keyword. Comparisons bind weaker than `AND` and `OR`: write `(A=1) AND (B=2)`.
 - Arrays start at 1.
 
 ## Build
 - F7 compiles TinyELF Basic's sources (VCSIDE's `data/tinyelf`, GPL-3) with the program in it into `build/{{NAME}}.bin`. It needs the Arm GNU Toolchain with its C library (newlib); Homebrew's `arm-none-eabi-gcc` has none.
 - F5 runs it in Gopher2600 with `-keyportari ASCII` (Project > Emulator options): the computer's keyboard is the KeyPortari. Stella cannot run it (Cortex-M4 code).
-- Size: TinyELF and this listing make about 93 KB of the loader's 96 KB; long comments can push it over.
+- Size: TinyELF and this listing make about 94 KB of the loader's 96 KB; long comments can push it over.
 
 ## Do not touch
 - Nothing is generated: every file is the user's.
