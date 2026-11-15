@@ -1639,6 +1639,111 @@ static void testElfSpace() {
   if (!std::getenv("VCSIDE_TEST_KEEP")) fs::remove_all(dir, errorCode);
 }
 
+// TinyELF Basic: the project (one numbered listing in src/main.bas, Gopher2600 with the
+// KeyPortari), the compiler's command line on data/tinyelf, its colouring, and a real build
+// when an arm-none-eabi-gcc with newlib is there (VCSIDE_TEST_ARM_GCC names one).
+static void testTinyElfBasic(const KnowledgeBase& kb) {
+  namespace fs = std::filesystem;
+  CHECK(languageFromId(languageId(Language::TinyElfBasic)) == Language::TinyElfBasic && !isC(Language::TinyElfBasic));
+  CHECK(Project::cartridgeFormats(Language::TinyElfBasic).empty() && Project::examples(Language::TinyElfBasic).size() == 1 &&
+        Project::examples(Language::TinyElfBasic)[0].first == "sketchpad");
+  std::error_code errorCode;
+  fs::path dir = fs::temp_directory_path() / "vcside-test-tinyelf";
+  fs::remove_all(dir, errorCode);
+  Project project;
+  std::string error;
+  CHECK(Project::create((dir / "hello").string(), "hello", Language::TinyElfBasic, "NTSC", &project, &error));
+  CHECK(project.main == "src/main.bas" && project.format == "ELF" && project.emulator == "gopher2600" && project.output == "build/hello.bin");
+  CHECK(project.emulatorOptions["gopher2600"]["keyportari"] == "ASCII" && project.generatedDir.empty() && project.resourcesDir.empty());
+  std::ifstream helloFile(dir / "hello" / "src" / "main.bas");
+  std::string hello((std::istreambuf_iterator<char>(helloFile)), {});
+  CHECK(hello.rfind("10 REM hello", 0) == 0 && hello.find("{{") == std::string::npos);
+  {
+    std::ifstream notesFile(dir / "hello" / "VCSIDE.md");
+    std::string notes((std::istreambuf_iterator<char>(notesFile)), {});
+    CHECK(notes.find("# hello: notes for the assistant") == 0 && notes.find("## Kernel rules") != std::string::npos &&
+          notes.find("## Do not touch") != std::string::npos && notes.size() <= 4000);
+  }
+  Project loaded;
+  CHECK(loaded.load(project.file, &error) && loaded.language == Language::TinyElfBasic && loaded.emulatorOptions["gopher2600"]["keyportari"] == "ASCII");
+  const EmulatorInfo* gopher = kb.emulator("gopher2600");
+  CHECK(gopher);
+  if (gopher) {
+    auto options = emulatorOptionArgs(loaded, *gopher);
+    const std::vector<std::string> keyboard = {"-keyportari", "ASCII"};
+    CHECK(std::search(options.begin(), options.end(), keyboard.begin(), keyboard.end()) != options.end());
+  }
+  CHECK(Project::create((dir / "sketch").string(), "sketch", Language::TinyElfBasic, "PAL", &project, &error, "sketchpad"));
+  std::ifstream sketchFile(dir / "sketch" / "src" / "main.bas");
+  std::string sketch((std::istreambuf_iterator<char>(sketchFile)), {});
+  CHECK(sketch.find("SKETCH PAD") != std::string::npos && sketch.find("STRIG(0)") != std::string::npos && fs::exists(dir / "sketch" / "VCSIDE.md"));
+  CHECK(!Project::create((dir / "none").string(), "x", Language::TinyElfBasic, "NTSC", nullptr, &error, "nope") && !error.empty());
+
+  // the build: the compiler in data/tinyelf, the program's absolute path in TINYELF_AUTORUN
+  Toolchain toolchain;
+  toolchain.get("arm-gcc")->path.clear(), toolchain.get("arm-gcc")->userPath.clear();
+  project.toolPaths["arm-gcc"] = "missing/arm-none-eabi-gcc";
+  CHECK(project.buildTools(toolchain).size() == 1 && project.buildTools(toolchain)[0] == "arm-gcc");
+  CHECK(project.buildArgs(toolchain, &error).empty() && error.find("missing/arm-none-eabi-gcc") != std::string::npos);
+  const char* testCompiler = std::getenv("VCSIDE_TEST_ARM_GCC");
+  fs::path fakeCompiler = dir / "sketch" / "missing" / "arm-none-eabi-gcc";
+  fs::create_directories(fakeCompiler.parent_path(), errorCode);
+  std::ofstream(fakeCompiler) << "";
+  if (testCompiler && *testCompiler) project.toolPaths["arm-gcc"] = testCompiler;
+  std::string workDir;
+  auto args = project.buildArgs(toolchain, &error, &workDir);
+  const std::string program = fs::path(project.abs(project.main)).generic_string();
+  CHECK(args.size() > 12 && fs::path(workDir).filename() == "tinyelf" && fs::exists(fs::path(workDir) / "tinyelf.ld"));
+  CHECK(std::find(args.begin(), args.end(), "-DTINYELF_AUTORUN=\"" + program + "\"") != args.end() &&
+        std::find(args.begin(), args.end(), "main.c") != args.end() && std::find(args.begin(), args.end(), "-Wl,-T,tinyelf.ld") != args.end());
+  CHECK(args.size() >= 3 && args[args.size() - 3] == "-o" && args[args.size() - 2] == project.outputPath() && args.back() == "-lgcc");
+  // run: Gopher2600 only
+  {
+    Toolchain emulators;
+    emulators.get("gopher2600")->path = "/usr/bin/gopher2600";
+    emulators.get("stella")->path = "/usr/bin/stella";
+    fs::create_directories(fs::path(project.outputPath()).parent_path(), errorCode);
+    if (!fs::exists(project.outputPath())) std::ofstream(project.outputPath()) << "ELF";
+    std::string runError;
+    auto gopherRun = project.runArgs(emulators, false, &runError);
+    CHECK(gopherRun.size() >= 4 && gopherRun[1] == "RUN" && gopherRun[2] == "-mapping" && gopherRun[3] == "ELF");
+    project.emulator = "stella";
+    CHECK(project.runArgs(emulators, false, &runError).empty() && runError.find("Gopher2600") != std::string::npos);
+    project.emulator = "gopher2600";
+    fs::remove(project.outputPath(), errorCode);
+  }
+  if (testCompiler && *testCompiler) {
+    Job compiler;
+    compiler.start(args, workDir);
+    while (compiler.running()) std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    CHECK(compiler.exitCode() == 0);
+    if (compiler.exitCode() != 0) std::fprintf(stderr, "%s\n", compiler.output().c_str());
+    auto size = fs::file_size(project.outputPath(), errorCode);
+    CHECK(!errorCode && size > 80000 && size < 96 * 1024);  // TinyELF and the listing, under the loader's 96 KB
+    std::ifstream romFile(project.outputPath(), std::ios::binary);
+    std::string rom((std::istreambuf_iterator<char>(romFile)), {});
+    CHECK(rom.compare(0, 4, "\x7F" "ELF") == 0 && rom.find("40 POKE 653,0: POKE 652,100") != std::string::npos);
+  }
+
+  // colouring: the line number, keywords in any case, line numbers after GOTO/THEN, REM
+  auto kinds = [](const std::string& line) {
+    std::vector<std::pair<std::string, TokenKind>> result;
+    for (auto& token : tokenizeTinyBasic(line)) result.push_back({line.substr(token.start, token.end - token.start), token.kind});
+    return result;
+  };
+  using K = TokenKind;
+  auto tokens = kinds("160 IF K=13 OR STRIG(0)=0 THEN GOSUB 300: GOTO 100");
+  CHECK(tokens.size() == 13 && tokens[0].second == K::Label && tokens[1].second == K::Mnemonic && tokens[2].second == K::Symbol &&
+        tokens[3].second == K::Number && tokens[5].first == "STRIG" && tokens[5].second == K::Mnemonic && tokens[10].first == "300" &&
+        tokens[10].second == K::Label && tokens[12].first == "100" && tokens[12].second == K::Label);
+  tokens = kinds("10 rem a comment: PRINT");
+  CHECK(tokens.size() == 2 && tokens[1].second == K::Comment && tokens[1].first == "rem a comment: PRINT");
+  tokens = kinds("20 print \"HI\";chr$(65): on x goto 10,20");
+  CHECK(tokens.size() == 10 && tokens[1].second == K::Mnemonic && tokens[2].second == K::String && tokens[3].first == "chr$" &&
+        tokens[3].second == K::Mnemonic && tokens[8].second == K::Label && tokens[9].first == "20" && tokens[9].second == K::Label);
+  if (!std::getenv("VCSIDE_TEST_KEEP")) fs::remove_all(dir, errorCode);
+}
+
 static void testFormatOrder(const KnowledgeBase& kb) {
   CHECK(naturalLess("Atari 8K (F8)", "Atari 16K (F6)") && !naturalLess("Atari 16K (F6)", "Atari 8K (F8)"));
   CHECK(naturalLess("Atari 8K (F8)", "Atari 8K with Superchip (F8SC)") && naturalLess("bus", "CDF") && naturalLess("x2", "x010"));
@@ -5721,6 +5826,7 @@ int main() {
   loadLanguages(data + "/i18n");
   testEmulatorOptions(kb);
   testElfSpace();
+  testTinyElfBasic(kb);
   testPlusCartServer();
   testMusic();
   testSong();

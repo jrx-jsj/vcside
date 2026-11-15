@@ -18,4 +18,11 @@ std::vector<Token> tokenizeBasic(const KnowledgeBase& kb, const std::string& lin
 // The label defined at the start of the line ("main", "10", "player0:" is not one), or "".
 std::string basicLabelOf(const std::string& line);
 
+// TinyELF Basic (Stefan Lenz's Basic2 on the PlusCart and UnoCart): every line starts with
+// its number; keywords and functions in any case (the listing has them in capitals); REM
+// comments the rest of the line. The numbers after GOTO, GOSUB, THEN and ELSE are lines.
+std::vector<Token> tokenizeTinyBasic(const std::string& line);
+// Its keywords and functions, in capitals, from the keyword table in TinyELF's main.c.
+const std::vector<std::string>& tinyBasicKeywords();
+
 }  // namespace vcs

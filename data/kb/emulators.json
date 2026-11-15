@@ -35,6 +35,13 @@
    "author": "JetSetIlly",
    "url": "https://github.com/JetSetIlly/test7800",
    "used_for": "Flags, their values and meaning, where it keeps its files; GPL-3, consulted only"
+  },
+  {
+   "id": "gopher2600-nightly-07d8de5",
+   "title": "Gopher2600 nightly 07d8de5 (2026-11-05): RUN -help and the KeyPortari peripheral (hardware/peripherals/keyportari)",
+   "author": "JetSetIlly",
+   "url": "https://github.com/JetSetIlly/Gopher2600",
+   "used_for": "The -keyportari flag and its protocols; GPL-3, consulted only"
   }
  ],
  "emulators": {
@@ -1826,6 +1833,41 @@
       "es": {
        "label": "Cambiar puertos",
        "description": "Intercambia los puertos izquierdo y derecho."
+      }
+     }
+    },
+    {
+     "id": "keyportari",
+     "group": "Controllers",
+     "label": "KeyPortari keyboard",
+     "description": "Al_Nafuur's keyboard adapter: the computer's keyboard types into the game through both joystick ports. ASCII is the protocol TinyELF Basic reads.",
+     "type": "choice",
+     "sources": [
+      "gopher2600-nightly-07d8de5"
+     ],
+     "flag": "-keyportari",
+     "modes": [
+      "RUN",
+      "DEBUG"
+     ],
+     "values": [
+      {
+       "value": "NONE",
+       "label": "none"
+      },
+      {
+       "value": "ASCII",
+       "label": "ASCII"
+      },
+      {
+       "value": "24CHAR",
+       "label": "24CHAR"
+      }
+     ],
+     "i18n": {
+      "es": {
+       "label": "Teclado KeyPortari",
+       "description": "El adaptador de teclado de Al_Nafuur: el teclado del ordenador escribe en el juego por los dos puertos de mando. ASCII es el protocolo que lee TinyELF Basic."
       }
      }
     },

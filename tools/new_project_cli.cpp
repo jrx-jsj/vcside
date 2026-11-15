@@ -11,7 +11,7 @@
 
 int main(int argc, char** argv) {
   if (argc < 5) {
-    std::fprintf(stderr, "usage: vcside_new <folder> <name> <dasm|batari-basic|elf-c|ace-c> <NTSC|PAL|PAL60|AUTO> [example|-] [format]\n");
+    std::fprintf(stderr, "usage: vcside_new <folder> <name> <dasm|batari-basic|elf-c|ace-c|tinyelf-basic> <NTSC|PAL|PAL60|AUTO> [example|-] [format]\n");
     return 2;
   }
   vcs::Language language = vcs::languageFromId(argv[3]);

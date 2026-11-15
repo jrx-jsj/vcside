@@ -11,9 +11,12 @@
 
 namespace vcs {
 
-enum class Language { Dasm, BatariBasic, ElfC, AceC, Unknown };
+enum class Language { Dasm, BatariBasic, ElfC, AceC, TinyElfBasic, Unknown };
 // C on a cartridge's ARM (ELF or ACE): built with the project's Makefile and arm-none-eabi-gcc.
 inline bool isC(Language language) { return language == Language::ElfC || language == Language::AceC; }
+// TinyELF Basic (Al_Nafuur's BASIC machine for the PlusCart and UnoCart): the project's
+// program, plain BASIC text, is built into a ROM with TinyELF's sources (data/tinyelf), which
+// enters it and runs it at power-on. Built with arm-none-eabi-gcc, run in Gopher2600.
 enum class IllegalOpcodes { Allow, StableOnly, Warn, Forbid };
 
 // An ELF project's builds besides its ROM, each with its glue folder and its Makefile
@@ -107,6 +110,9 @@ struct Project {
   bool pxe() const { return language == Language::BatariBasic && format == "ELF" && buildCommand.empty(); }
   std::string basicTool() const { return pxe() && !toolPaths.count("bb") ? "bb-pxe" : "bb"; }
   std::vector<std::string> pxeLinkArgs(Toolchain& toolchain, std::string* error) const;
+  // TinyELF Basic: the compiler, the one VCSIDE uses unless it lacks the C library TinyELF
+  // needs (newlib: Homebrew's arm-none-eabi-gcc has none) and another one found has it.
+  std::string tinyElfCompiler(Toolchain& toolchain) const;
   std::vector<std::string> runArgs(Toolchain& toolchain, bool debug, std::string* error) const;
 
   // The tool this project uses: its own path if it has one and it exists, else the one
