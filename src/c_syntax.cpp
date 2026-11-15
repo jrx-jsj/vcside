@@ -89,7 +89,6 @@ static int scanLine(const KnowledgeBase* kb, const std::string& line, int state,
       while (index < length && wordChar(line[index])) index++;
       if (!tokens) continue;
       std::string word = line.substr(tokenStart, index - tokenStart);
-      size_t next = line.find_first_not_of(" \t", index);
       TokenKind kind = TokenKind::Text;
       bool hasLower = false, hasLetter = false;
       for (char letter : word) {
@@ -99,7 +98,7 @@ static int scanLine(const KnowledgeBase* kb, const std::string& line, int state,
       if (controlKeywords().count(word)) kind = TokenKind::Mnemonic;
       else if (typeKeywords().count(word)) kind = TokenKind::Directive;
       else if (!hasLower && kb && kb->reg(word)) kind = TokenKind::Register;  // COLUBK; a variable called swcha is not one
-      else if (next != std::string::npos && line[next] == '(') kind = TokenKind::Label;  // a call or a definition
+      else if (index < length && line[index] == '(') kind = TokenKind::Label;  // a call or a definition (#define NAME (x) is not one)
       else if (!hasLower && hasLetter && word.size() > 1) kind = TokenKind::Symbol;  // a macro or a constant, by the usual convention
       if (kind != TokenKind::Text) push(tokenStart, index, kind);
     } else {

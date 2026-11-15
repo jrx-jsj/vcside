@@ -50,6 +50,13 @@ struct OpenFile {
   std::unique_ptr<ProjectForm> form;   // a .vcsproj: a form, or its text in the editor
   bool asmSyntax = true;
   bool requestFocus = false;
+  // C: the compiler checks the editor's text a moment after each change (see c_check.h)
+  bool cCheck = false;
+  double checkDueAt = -1;                    // when to check next (ImGui time; -1 = nothing to check)
+  std::unique_ptr<Job> checkJob;
+  std::string checkCopy;                     // the temporary copy being checked
+  bool checked = false;                      // liveDiagnostics are this text's (they replace the last build's)
+  std::vector<Diagnostic> liveDiagnostics;
   bool dirty() const { return gfx ? gfx->dirty() : music ? music->dirty() : form ? form->dirty(editor) : editor.dirty(); }
 };
 
@@ -266,6 +273,15 @@ class App {
   std::string output_;
   bool outputScroll_ = false;
   std::vector<Diagnostic> diagnostics_;
+  // the last build's problems, with those of each checked C file replaced by its check
+  std::vector<Diagnostic> shownDiagnostics() const;
+  bool sameFile(const Diagnostic& diagnostic, const std::string& path) const;
+  // checking C files as they are edited: the Makefile's commands (make -n -B), then each file
+  void updateCChecks();
+  std::unique_ptr<Job> dryRunJob_;
+  std::string dryRunOutput_, dryRunFor_;  // its output, and the project and Makefile time it is for
+  std::string dryRunStartedFor_, dryRunWorkDir_;
+  EnvVars dryRunEnv_;  // the build's environment (PATH with the toolchain), also for the checks
   std::map<std::string, int> symbols_;
   // What the sources define now, before building: the open files as they are in the
   // editor and the project's other .asm files on disk (rescanned when they change).

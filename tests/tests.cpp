@@ -17,6 +17,7 @@
 #include "space.h"
 #include "debugmap.h"
 #include "basic_syntax.h"
+#include "c_check.h"
 #include "c_syntax.h"
 #include "elf_space.h"
 #include "pluscart_server.h"
@@ -1858,6 +1859,8 @@ static void testCSyntax(const KnowledgeBase& kb) {
         tokens[2].first == "COLUBK" && tokens[2].second == K::Register && tokens[3].second == K::Comment && tokens[4].second == K::Mnemonic);
   tokens = kinds("char* text = \"a // b /* c\"; // d");
   CHECK(tokens.size() == 3 && tokens[1].first == "\"a // b /* c\"" && tokens[1].second == K::String && tokens[2].first == "// d");
+  tokens = kinds("#define RIGHT_EDGE (WIDTH - 8)");
+  CHECK(tokens.size() == 4 && tokens[1].first == "RIGHT_EDGE" && tokens[1].second == K::Symbol);
   tokens = kinds("uint8_t swcha = SWCHA;");
   CHECK(tokens.size() == 2 && tokens[1].first == "SWCHA" && tokens[1].second == K::Register);
   // a /* */ comment over several lines
@@ -1869,6 +1872,42 @@ static void testCSyntax(const KnowledgeBase& kb) {
   CHECK(tokens.size() == 1 && tokens[0].second == K::Comment);
   tokens = kinds("ends */ return 0;", CLineBlockComment);
   CHECK(tokens.size() == 3 && tokens[0].first == "ends */" && tokens[0].second == K::Comment && tokens[1].second == K::Mnemonic && tokens[2].second == K::Number);
+}
+
+static void testCCheck() {
+  const std::string dryRun =
+      "mkdir -p build/elf\n"
+      "arm-none-eabi-gcc -mcpu=cortex-m0 -mthumb -O2 -std=c11 -Wall -ffreestanding -Iinclude -I generated/gfx -DPAL=1 -c src/game.c -o build/elf/game.o\n"
+      "arm-none-eabi-gcc -mcpu=cortex-m0 -mthumb -O2 -std=c11 -DSCREEN=2 -c src/main.c -o build/elf/main.o\n"
+      "arm-none-eabi-gcc -mcpu=cortex-m0 -r -nostdlib -Wl,--gc-sections -o build/game.bin build/elf/game.o build/elf/main.o -lgcc\n";
+  CompileCommand command = compileCommandFor(dryRun, "/p", "/p/src/game.c");
+  CHECK(command.compiler == "arm-none-eabi-gcc");
+  std::vector<std::string> expected = {"-mcpu=cortex-m0", "-mthumb", "-O2", "-std=c11", "-Wall", "-ffreestanding", "-I", "/p/include", "-I", "/p/generated/gfx", "-DPAL=1"};
+  CHECK(command.flags == expected);
+  command = compileCommandFor(dryRun, "/p", "/p/src/main.c");
+  CHECK(command.flags.back() == "-DSCREEN=2");
+  command = compileCommandFor(dryRun, "/p", "/p/src/other.c");  // not in the Makefile: the first compile's flags
+  CHECK(command.flags.back() == "-DPAL=1");
+  CHECK(compileCommandFor("make: Nothing to be done for 'all'.\n", "/p", "/p/src/game.c").empty());
+  // a link line that also compiles (CDFJ's arm code): its flags without the link's
+  command = compileCommandFor("arm-none-eabi-gcc -mcpu=arm7tdmi -nostdlib -T arm.ld -Wl,-Map=x.map -o build/arm.elf src/main.c src/a.c -lgcc\n", "/p", "/p/src/a.c");
+  CHECK(command.flags == std::vector<std::string>{"-mcpu=arm7tdmi"});
+
+  auto args = syntaxCheckArgs({"arm-none-eabi-gcc", {"-std=c11"}}, "/tmp/check/game.c", "/p/src/game.c");
+  CHECK(args.size() == 9 && args[2] == "-iquote" && args[3] == "/p/src" && args[4] == "-fsyntax-only" && args[7] == "c" && args[8] == "/tmp/check/game.c");
+  CHECK(syntaxCheckArgs({"g++", {}}, "/t/x.cpp", "/p/x.cpp")[6] == "c++");
+
+  const std::string output =
+      "/tmp/check/game.c: In function 'game_colours':\n"
+      "/tmp/check/game.c:72:9: error: 'VARIABLE_INEXISTENTE' undeclared (first use in this function)\n"
+      "   72 |         VARIABLE_INEXISTENTE = 1;\n"
+      "/tmp/check/game.c:72:9: note: each undeclared identifier is reported only once\n"
+      "/tmp/check/game.c:73:19: error: lvalue required as left operand of assignment\n"
+      "/p/src/game.h:4:1: warning: a header's own warning\n"
+      "/tmp/check/game.c:80:6: warning: unused variable 'n' [-Wunused-variable]\n";
+  auto diagnostics = syntaxCheckDiagnostics(output, "/tmp/check/game.c", "src/game.c");
+  CHECK(diagnostics.size() == 3 && diagnostics[0].file == "src/game.c" && diagnostics[0].line == 72 && diagnostics[0].severity == Diagnostic::Error &&
+        diagnostics[1].line == 73 && diagnostics[1].message == "lvalue required as left operand of assignment" && diagnostics[2].severity == Diagnostic::Warning);
 }
 
 static void testBasic() {
@@ -5915,6 +5954,7 @@ int main() {
   testBasic();
   testBasicSyntax(kb);
   testCSyntax(kb);
+  testCCheck();
   testFormatOrder(kb);
   testGfx();
   testFolding();

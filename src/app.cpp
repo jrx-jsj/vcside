@@ -20,6 +20,7 @@
 #include "doc_markdown.h"
 #include "file_icons.h"
 #include "cycles.h"
+#include "c_check.h"
 #include "c_syntax.h"
 #include "window_icon.h"
 #include "emulator_launch.h"
@@ -389,6 +390,9 @@ OpenFile* App::openFile(const std::string& pathIn, int line) {
   std::string ext = lower(fs::path(path).extension().string());
   bool cLike = ext == ".c" || ext == ".cpp" || ext == ".hpp" || (ext == ".h" && project_ && isC(project_->language));
   if (cLike) newFile->asmSyntax = false;
+  // headers are only checked through the sources that include them: alone, they may rely on what comes before
+  newFile->cCheck = cLike && ext != ".h" && ext != ".hpp";
+  if (newFile->cCheck) newFile->checkDueAt = 0;
   const bool tinyBasic = ext == ".bas" && project_ && project_->language == Language::TinyElfBasic;  // TinyELF's numbered lines
   newFile->editor.setCommentPrefix(cLike ? "//" : tinyBasic ? "REM " : ext == ".bas" ? "rem" : ";");
   newFile->editor.setFoldSyntax(cLike ? FoldSyntax::C : tinyBasic ? FoldSyntax::None : ext == ".bas" ? FoldSyntax::Basic : newFile->asmSyntax ? FoldSyntax::Asm : FoldSyntax::None);
@@ -1452,12 +1456,8 @@ std::string App::findProjectFile(const std::string& name) const {
 // Build diagnostics for this file plus the illegal-opcode policy of the project.
 void App::lint(OpenFile& file) {
   std::map<int, std::pair<bool, std::string>> markers;
-  for (auto& diagnostic : diagnostics_) {
-    if (diagnostic.line <= 0) continue;
-    fs::path path(diagnostic.file);
-    if (!path.is_absolute() && project_) path = fs::path(project_->dir) / path;
-    std::error_code errorCode;
-    if (fs::weakly_canonical(path, errorCode).string() != file.path && fs::path(diagnostic.file).filename() != fs::path(file.path).filename()) continue;
+  for (auto& diagnostic : shownDiagnostics()) {
+    if (diagnostic.line <= 0 || !sameFile(diagnostic, file.path)) continue;
     auto& entry = markers[diagnostic.line];
     entry.first = entry.first || diagnostic.severity == Diagnostic::Error;
     entry.second += (entry.second.empty() ? "" : "\n") + diagnostic.message;
@@ -1898,6 +1898,7 @@ void App::requestQuit() {
 
 void App::frame() {
   syncSettings();
+  updateCChecks();
   if (plusCart_.running())
     for (auto& line : plusCart_.takeLog()) output_ += line + "\n", outputScroll_ = true;
   {
@@ -2832,6 +2833,7 @@ void App::editorsPanel() {
           openedFile.gfx->render(gfxTv(), gfxProfile());
           ImGui::EndChild();
         } else if (openedFile.editor.setTabSize(tabSize_), openedFile.editor.render("##code", editorFont())) {
+          if (openedFile.cCheck) openedFile.checkDueAt = ImGui::GetTime() + 0.6;  // once typing pauses
           lint(openedFile);
         }
         if (int zoomDelta = openedFile.editor.takeZoomSteps()) zoomEditor(zoomDelta);
@@ -3011,6 +3013,79 @@ static std::string relativeToProject(const std::string& projectDir, const std::s
   return ignored || relative.empty() ? path : relative.generic_string();
 }
 
+bool App::sameFile(const Diagnostic& diagnostic, const std::string& path) const {
+  fs::path diagnosticPath(diagnostic.file);
+  if (!diagnosticPath.is_absolute() && project_) diagnosticPath = fs::path(project_->dir) / diagnosticPath;
+  std::error_code errorCode;
+  return fs::weakly_canonical(diagnosticPath, errorCode).string() == path || fs::path(diagnostic.file).filename() == fs::path(path).filename();
+}
+
+std::vector<Diagnostic> App::shownDiagnostics() const {
+  std::vector<Diagnostic> shown;
+  for (auto& file : files_)
+    if (file->checked) shown.insert(shown.end(), file->liveDiagnostics.begin(), file->liveDiagnostics.end());
+  for (auto& diagnostic : diagnostics_) {
+    // a checked file's lines are its check's (the build's may be older); a link error without a line stays
+    bool replaced = false;
+    for (auto& file : files_) replaced = replaced || (file->checked && diagnostic.line > 0 && sameFile(diagnostic, file->path));
+    if (!replaced) shown.push_back(diagnostic);
+  }
+  return shown;
+}
+
+void App::updateCChecks() {
+  bool anyC = false;
+  for (auto& file : files_) anyC = anyC || file->cCheck;
+  if (!anyC || !project_ || !isC(project_->language) || project_->buildCommand.empty()) return;
+  // the Makefile's commands: once per project, and again when the Makefile changes
+  std::error_code errorCode;
+  auto makefileTime = fs::last_write_time(fs::path(project_->dir) / "Makefile", errorCode);
+  std::string key = project_->dir + "|" + (errorCode ? std::string() : std::to_string((long long)makefileTime.time_since_epoch().count()));
+  if (dryRunJob_ && dryRunJob_->finished()) {
+    dryRunOutput_ = dryRunJob_->output();
+    dryRunFor_ = dryRunStartedFor_;
+    dryRunJob_.reset();
+    for (auto& file : files_)
+      if (file->cCheck) file->checkDueAt = 0;
+  }
+  if (!dryRunJob_ && dryRunFor_ != key) {
+    std::string error;
+    dryRunEnv_.clear(), dryRunWorkDir_.clear(), dryRunOutput_.clear();
+    std::vector<std::string> args = project_->buildArgs(tools_, &error, &dryRunWorkDir_, &dryRunEnv_);
+    bool usesMake = !args.empty() && fs::path(args[0]).stem().string().find("make") != std::string::npos;
+    if (usesMake) {
+      args.insert(args.end(), {"-n", "-B"});  // prints every command, runs none
+      dryRunJob_ = std::make_unique<Job>();
+      if (dryRunJob_->start(args, dryRunWorkDir_, dryRunEnv_)) dryRunStartedFor_ = key;
+      else dryRunJob_.reset();
+    }
+    if (!dryRunJob_) dryRunFor_ = key;  // no Makefile to ask: nothing is checked
+  }
+  if (dryRunFor_ != key) return;
+  double now = ImGui::GetTime();
+  for (auto& file : files_) {
+    if (!file->cCheck) continue;
+    if (file->checkJob && file->checkJob->finished()) {
+      file->liveDiagnostics = syntaxCheckDiagnostics(file->checkJob->output(), file->checkCopy, relativeToProject(project_->dir, file->path));
+      file->checked = true;
+      file->checkJob.reset();
+      fs::remove(file->checkCopy, errorCode);
+      lint(*file);
+    }
+    if (file->checkJob || file->checkDueAt < 0 || now < file->checkDueAt) continue;
+    file->checkDueAt = -1;
+    CompileCommand command = compileCommandFor(dryRunOutput_, project_->dir, file->path);
+    if (command.empty()) continue;
+    // the editor's text, unsaved changes included, in a folder of its own
+    fs::path folder = fs::temp_directory_path(errorCode) / ("vcside-check-" + std::to_string((uintptr_t)this)) / std::to_string((uintptr_t)file.get());
+    fs::create_directories(folder, errorCode);
+    file->checkCopy = (folder / fs::path(file->path).filename()).string();
+    std::ofstream(file->checkCopy, std::ios::binary) << file->editor.text();
+    file->checkJob = std::make_unique<Job>();
+    if (!file->checkJob->start(syntaxCheckArgs(command, file->checkCopy, file->path), dryRunWorkDir_, dryRunEnv_)) file->checkJob.reset();
+  }
+}
+
 void App::assistantPanel() {
   if (!assistant_.enabled() || !showAssistant_) return;
   assistant::PanelContext context;
@@ -3045,7 +3120,7 @@ void App::assistantPanel() {
     return false;
   };
   std::string errors;
-  for (auto& diagnostic : diagnostics_) {
+  for (auto& diagnostic : shownDiagnostics()) {
     if (diagnostic.severity != Diagnostic::Error) continue;
     errors += fs::path(diagnostic.file).filename().string() + (diagnostic.line ? ":" + std::to_string(diagnostic.line) : "") + ": " + diagnostic.message + "\n";
     if (errors.size() > 3000) break;
@@ -3108,14 +3183,15 @@ static const char* kCdfjDriverHelp =
 
 void App::problemsPanel() {
   char title[64];
-  snprintf(title, sizeof title, "%s (%d)###problems", T("Problems"), (int)diagnostics_.size());
+  std::vector<Diagnostic> shown = shownDiagnostics();
+  snprintf(title, sizeof title, "%s (%d)###problems", T("Problems"), (int)shown.size());
   if (theme::beginPanel(title)) {
     if (ImGui::BeginTable("diag", 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable | ImGuiTableFlags_ScrollY)) {
       ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 60);
       ImGui::TableSetupColumn(T("File"), ImGuiTableColumnFlags_WidthFixed, 200);
       ImGui::TableSetupColumn("");
-      for (size_t i = 0; i < diagnostics_.size(); i++) {
-        auto& diagnostic = diagnostics_[i];
+      for (size_t i = 0; i < shown.size(); i++) {
+        auto& diagnostic = shown[i];
         ImGui::TableNextRow();
         ImGui::TableNextColumn();
         ImVec4 colour = theme::colv(diagnostic.severity == Diagnostic::Error ? theme::Role::MsgError : diagnostic.severity == Diagnostic::Warning ? theme::Role::MsgWarning : theme::Role::MsgInfo);
