@@ -329,6 +329,11 @@ class App {
   unsigned bottomDock_ = 0;    // dock node of the output panel (the space panel joins it)
   std::optional<SpaceReport> space_;
   std::optional<ElfSpace> elfSpace_;  // ELF projects
+  // TinyELF Basic: the ROM and, estimated from the program's text, the BASIC memory it takes
+  struct TinyElfSpace {
+    long romSize = 0, programMemory = 0;
+  };
+  std::optional<TinyElfSpace> tinyElfSpace_;
   void measureElf();
   void measureAce();
   // The PlusCart on the local network: the project's ROMs served as its API host.

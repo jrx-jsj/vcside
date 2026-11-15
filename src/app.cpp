@@ -603,6 +603,7 @@ void App::build(int thenRun) {
   diagnostics_.clear();
   space_.reset();
   elfSpace_.reset();
+  tinyElfSpace_.reset();
   spaceNote_.clear();
   building_ = true;
   runAfterBuild_ = thenRun;
@@ -736,23 +737,24 @@ void App::measureBasic(long romSize) {
   output_ += space_->summary() + "\n";
 }
 
+constexpr long kTinyElfLoaderBytes = 96 * 1024, kTinyElfBasicBytes = 48 * 1024, kTinyElfCartBasicBytes = 64 * 1024;
+
 // TinyELF Basic: the ROM against the cartridge loader's 96 KB buffer (tinyelf.ld), and the
 // BASIC memory the program takes when it is entered (about its text: SketchPad's 1080 bytes
 // took 1118, Dungeon's 7050 took 7638, measured with SIZE in Gopher2600, which has 48 KB).
 void App::measureTinyElf(long romSize) {
-  constexpr long kLoaderBytes = 96 * 1024, kBasicBytes = 48 * 1024;
   std::error_code errorCode;
   long programSize = (long)fs::file_size(project_->abs(project_->main), errorCode);
   if (errorCode) programSize = 0;
   const long programMemory = programSize + programSize / 10;
-  spaceNote_ = F("ROM: {0} of the loader's {1} bytes. BASIC memory: about {2} bytes of {3} (Gopher2600; 64 KB on the cartridges).",
-                 {std::to_string(romSize), std::to_string(kLoaderBytes), std::to_string(programMemory), std::to_string(kBasicBytes)});
-  output_ += spaceNote_ + "\n";
-  if (romSize > kLoaderBytes)
+  tinyElfSpace_ = TinyElfSpace{romSize, programMemory};
+  output_ += F("ROM: {0} of the loader's {1} bytes. BASIC memory: about {2} bytes of {3} (Gopher2600; 64 KB on the cartridges).",
+               {std::to_string(romSize), std::to_string(kTinyElfLoaderBytes), std::to_string(programMemory), std::to_string(kTinyElfBasicBytes)}) + "\n";
+  if (romSize > kTinyElfLoaderBytes)
     diagnostics_.push_back({Diagnostic::Warning, project_->main, 0, T("The ROM is larger than the cartridge loader's 96 KB: the PlusCart and the UnoCart may not load it. Shorten the program.")});
-  else if (romSize * 100 > kLoaderBytes * project_->spaceWarnPercent)
-    diagnostics_.push_back({Diagnostic::Warning, project_->main, 0, F("The ROM fills {0}% of the cartridge loader's 96 KB.", {std::to_string(romSize * 100 / kLoaderBytes)})});
-  if (programMemory * 100 > kBasicBytes * project_->spaceWarnPercent)
+  else if (romSize * 100 > kTinyElfLoaderBytes * project_->spaceWarnPercent)
+    diagnostics_.push_back({Diagnostic::Warning, project_->main, 0, F("The ROM fills {0}% of the cartridge loader's 96 KB.", {std::to_string(romSize * 100 / kTinyElfLoaderBytes)})});
+  if (programMemory * 100 > kTinyElfBasicBytes * project_->spaceWarnPercent)
     diagnostics_.push_back({Diagnostic::Warning, project_->main, 0, T("The program takes almost all of TinyELF's BASIC memory in Gopher2600 (48 KB): it may not fit when it is entered.")});
 }
 
@@ -1868,6 +1870,7 @@ void App::doCloseProject() {
   lastStatus_.clear();
   space_.reset();
   elfSpace_.reset();
+  tinyElfSpace_.reset();
   spaceNote_.clear();
   addresses_ = AddressMap();
   addressColumns_.clear();
@@ -3513,6 +3516,17 @@ void App::spacePanel() {
         ImGui::TextDisabled("%s", T("The 512 KB Chameleon Cart (STM32G0B0RE) has 512 KB of flash and 144 KB of RAM: set them in the project settings."));
       }
       if (!ace) ImGui::TextDisabled("%s", T("Stella and Gopher2600 load the whole ROM into RAM."));
+      ImGui::PopTextWrapPos();
+    } else if (tinyElfSpace_) {
+      int warnPercent = project_ ? project_->spaceWarnPercent : 90;
+      ImGui::SeparatorText(F("ROM ({0} bytes)", {std::to_string(tinyElfSpace_->romSize)}).c_str());
+      spaceBar({T("Loader"), tinyElfSpace_->romSize, kTinyElfLoaderBytes, true, ""}, warnPercent);
+      ImGui::PushTextWrapPos(0);
+      ImGui::TextDisabled("%s", T("The cartridge loader reads the ROM into its 96 KB buffer. Stella and Gopher2600 load the whole ROM into RAM."));
+      ImGui::SeparatorText(T("BASIC memory"));
+      spaceBar({"Gopher2600", tinyElfSpace_->programMemory, kTinyElfBasicBytes, true, ""}, warnPercent);
+      spaceBar({T("Cartridges"), tinyElfSpace_->programMemory, kTinyElfCartBasicBytes, true, ""}, warnPercent);
+      ImGui::TextDisabled("%s", T("Estimate: the program's text plus about a tenth, as SIZE reports it once the program is entered."));
       ImGui::PopTextWrapPos();
     } else if (!space_) {
       if (!spaceRunning_ && spaceNote_.empty()) ImGui::TextDisabled("%s", T("Build the project (F7) to see the space used."));

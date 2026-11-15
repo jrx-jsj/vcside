@@ -1344,7 +1344,11 @@
     "Hide replace": "Ocultar reemplazar",
     "Replaced {0} matches in {1} files.": "Reemplazadas {0} coincidencias en {1} archivos.",
     "1 result in 1 file": "1 resultado en 1 archivo",
-    "{0} results in 1 file": "{0} resultados en 1 archivo"
+    "{0} results in 1 file": "{0} resultados en 1 archivo",
+    "Loader": "Cargador",
+    "BASIC memory": "Memoria BASIC",
+    "The cartridge loader reads the ROM into its 96 KB buffer. Stella and Gopher2600 load the whole ROM into RAM.": "El cargador del cartucho lee la ROM en su búfer de 96 KB. Stella y Gopher2600 cargan la ROM entera en RAM.",
+    "Estimate: the program's text plus about a tenth, as SIZE reports it once the program is entered.": "Estimación: el texto del programa más una décima parte, como lo da SIZE una vez metido el programa."
   },
-  "total": 1339
+  "total": 1343
 }
