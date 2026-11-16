@@ -607,13 +607,13 @@ const std::vector<ArmCartridge>& builtInArmCartridges() {
 }
 
 std::string armCartridgeMemoryName(const std::string& memory) {
-  return memory == "chameleon" ? std::string("Chameleon Cart") : std::string(T("PlusCart and UnoCart"));
+  return memory == "chameleon" ? std::string(T("Game in flash, variables in RAM")) : std::string(T("Game loaded into a RAM buffer"));
 }
 
 std::string ArmCartridge::summary() const {
   if (memory == "chameleon")
-    return F("{0} MHz, Chameleon Cart memory: {1} KB of flash, {2} KB of RAM", {std::to_string(clockMhz), std::to_string(flashKb), std::to_string(ramKb)});
-  return F("{0} MHz, PlusCart and UnoCart loader: {1} KB buffer", {std::to_string(clockMhz), std::to_string(ramKb)});
+    return F("{0} MHz, game in flash: {1} KB of flash, {2} KB of RAM", {std::to_string(clockMhz), std::to_string(flashKb), std::to_string(ramKb)});
+  return F("{0} MHz, game loaded into RAM: {1} KB buffer", {std::to_string(clockMhz), std::to_string(ramKb)});
 }
 
 bool ArmCartridge::sameValues(const ArmCartridge& other) const {

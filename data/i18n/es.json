@@ -1380,14 +1380,11 @@
     "Emulated cartridge": "Cartucho emulado",
     "ARM clock (MHz)": "Reloj del ARM (MHz)",
     "Passed to the program in MP_CLOCK_HZ and how fast the emulated ARM runs: 216 on the PlusCart and UnoCart, 64 on the Chameleon Cart. Stella takes 50 to 300.": "Lo recibe el programa en MP_CLOCK_HZ y marca lo rápido que va el ARM emulado: 216 en el PlusCart y el UnoCart, 64 en el Chameleon Cart. Stella admite de 50 a 300.",
-    "PlusCart and UnoCart": "PlusCart y UnoCart",
     "Stella's ARM runs at {0} to {1} MHz: {2} MHz becomes {3}.": "El ARM de Stella va de {0} a {1} MHz: {2} MHz pasa a ser {3}.",
     "{0} MHz": "{0} MHz",
     "{0}: {1}": "{0}: {1}",
     "Set by Build > Emulated cartridge.": "Lo fija Compilar > Cartucho emulado.",
     "{0} (this project's memory)": "{0} (memoria de este proyecto)",
-    "{0} MHz, Chameleon Cart memory: {1} KB of flash, {2} KB of RAM": "{0} MHz, memoria del Chameleon Cart: {1} KB de flash, {2} KB de RAM",
-    "{0} MHz, PlusCart and UnoCart loader: {1} KB buffer": "{0} MHz, cargador del PlusCart y el UnoCart: búfer de {1} KB",
     "My cartridge": "Mi cartucho",
     "The cartridge the emulators imitate (its ARM clock: how much the ARM does per frame) and, for ELF, the one the space report measures against. Your own: Build > Emulated cartridge > Cartridges...": "El cartucho que imitan los emuladores (el reloj de su ARM: cuánto hace el ARM en cada cuadro) y, en ELF, con el que se mide el informe de espacio. Los tuyos: Compilar > Cartucho emulado > Cartuchos...",
     "Cartridges...": "Cartuchos...",
@@ -1395,7 +1392,6 @@
     "Mine": "Míos",
     "(none yet)": "(todavía ninguno)",
     "This project's": "De este proyecto",
-    "Which cartridge's memory the space report measures against: the PlusCart's loader buffer or the Chameleon Cart's flash and RAM. With the Chameleon's, only ELF projects can use it.": "Con la memoria de qué cartucho se mide el informe de espacio: el búfer del cargador del PlusCart o la flash y la RAM del Chameleon Cart. Con la del Chameleon, solo lo pueden usar los proyectos ELF.",
     "Built-in cartridges keep the real ones' values. Duplicate makes one of yours from it.": "Los cartuchos incluidos tienen los valores de los de verdad. «Duplicar» hace uno tuyo a partir de él.",
     "Only in this project (made on another computer, or deleted from yours). Save it to use it in other projects.": "Solo está en este proyecto (se hizo en otro ordenador o lo borraste de los tuyos). Guárdalo para usarlo en otros proyectos.",
     "Yours: kept for every project. A project that uses it also keeps a copy, so it opens the same on another computer.": "Tuyo: se guarda para todos los proyectos. Cada proyecto que lo usa guarda también una copia, así que en otro ordenador se abre igual.",
@@ -1403,7 +1399,13 @@
     "{0} copy": "{0} (copia)",
     "Use in this project": "Usar en este proyecto",
     "The Chameleon Cart's Cortex-M0+ runs ELF games only, not ACE files nor TinyELF.": "El Cortex-M0+ del Chameleon Cart solo ejecuta juegos ELF, ni archivos ACE ni TinyELF.",
-    "Memory configuration": "Configuración de memoria"
+    "Memory configuration": "Configuración de memoria",
+    "Where the game lives, which is what the space report measures: read whole into a RAM buffer by the loader (as on the PlusCart and the UnoCart), or run from flash with its variables in RAM (as on the Chameleon Cart; ELF projects only).": "Dónde está el juego, que es lo que mide el informe de espacio: el cargador lo lee entero a un búfer de RAM (como en el PlusCart y el UnoCart), o se ejecuta desde la flash con sus variables en RAM (como en el Chameleon Cart; solo proyectos ELF).",
+    "RAM buffer (KB)": "Búfer de RAM (KB)",
+    "Game in flash, variables in RAM": "Juego en flash, variables en RAM",
+    "Game loaded into a RAM buffer": "Juego cargado en un búfer de RAM",
+    "{0} MHz, game in flash: {1} KB of flash, {2} KB of RAM": "{0} MHz, juego en flash: {1} KB de flash, {2} KB de RAM",
+    "{0} MHz, game loaded into RAM: {1} KB buffer": "{0} MHz, juego cargado en RAM: búfer de {1} KB"
   },
-  "total": 1398
+  "total": 1400
 }

@@ -3512,7 +3512,7 @@ void App::cartridgesDialog() {
     ImGui::InputText("##name", &edited.name);
     row(T("ARM clock (MHz)"), T("Passed to the program in MP_CLOCK_HZ and how fast the emulated ARM runs: 216 on the PlusCart and UnoCart, 64 on the Chameleon Cart. Stella takes 50 to 300."));
     if (ImGui::InputInt("##clock", &edited.clockMhz, 0)) edited.clockMhz = std::clamp(edited.clockMhz, 1, 1000);
-    row(T("Memory configuration"), T("Which cartridge's memory the space report measures against: the PlusCart's loader buffer or the Chameleon Cart's flash and RAM. With the Chameleon's, only ELF projects can use it."));
+    row(T("Memory configuration"), T("Where the game lives, which is what the space report measures: read whole into a RAM buffer by the loader (as on the PlusCart and the UnoCart), or run from flash with its variables in RAM (as on the Chameleon Cart; ELF projects only)."));
     std::string memory = edited.memory;
     if (ImGui::BeginCombo("##memory", armCartridgeMemoryName(memory).c_str())) {
       for (const char* option : {"pluscart", "chameleon"})
@@ -3527,8 +3527,8 @@ void App::cartridgesDialog() {
       row(T("Flash (KB)"), T("128 on the Chameleon Cart; 512 on its 512 KB model."));
       if (ImGui::InputInt("##flash", &edited.flashKb, 0)) edited.flashKb = std::clamp(edited.flashKb, 1, 65536);
     }
-    row(T("RAM (KB)"), edited.memory == "chameleon" ? T("36 on the Chameleon Cart; 144 on its 512 KB model.")
-                                                     : T("The loader's buffer: 96 in the PlusCart and UnoCart firmware."));
+    if (edited.memory == "chameleon") row(T("RAM (KB)"), T("36 on the Chameleon Cart; 144 on its 512 KB model."));
+    else row(T("RAM buffer (KB)"), T("The loader's buffer: 96 in the PlusCart and UnoCart firmware."));
     if (ImGui::InputInt("##ram", &edited.ramKb, 0)) edited.ramKb = std::clamp(edited.ramKb, 1, 65536);
     ImGui::EndDisabled();
     ImGui::EndTable();
