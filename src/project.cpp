@@ -11,6 +11,7 @@
 #include <fstream>
 #include <nlohmann/json.hpp>
 #include <sstream>
+#include <cctype>
 
 #include "gfx.h"
 #include "music/export.h"
@@ -18,6 +19,7 @@
 #include "i18n.h"
 #include "paths.h"
 #include "toolchain.h"
+#include "elf_space.h"
 
 namespace fs = std::filesystem;
 using nlohmann::json;
@@ -57,10 +59,13 @@ IllegalOpcodes illegalFromId(const std::string& id) {
   return IllegalOpcodes::Warn;
 }
 
+static ArmCartridge cartridgeFromJson(const json& value);
+static json cartridgeToJson(const ArmCartridge& cartridge);
+
 // The keys VCSIDE writes; the others are kept as they are.
 static const char* kKnownKeys[] = {"name", "language", "main", "output", "format", "tv", "emulator", "illegal_opcodes",
                                    "include_dirs", "build_command", "tool_paths", "build_flags", "space_warn_percent",
-                                   "stack_reserve", "cartridge", "cartridge_base", "cartridge_clock_mhz", "elf_cartridge", "elf_flash_kb", "elf_ram_kb", "emulator_options",
+                                   "stack_reserve", "cartridge", "cartridge_definition", "cartridge_base", "cartridge_clock_mhz", "elf_cartridge", "elf_flash_kb", "elf_ram_kb", "emulator_options",
                                    "emulator_args", "source_dir", "resources_dir", "generated_dir", "build_dir"};
 
 bool Project::fromJson(const std::string& text, const std::string& path, std::string* error) {
@@ -92,10 +97,28 @@ bool Project::fromJson(const std::string& text, const std::string& path, std::st
     parsed.stackReserve = document.value("stack_reserve", 8);
     // "elf_cartridge" (chameleon or pluscart) is how projects before 2026-11-16 kept it
     parsed.cartridge = document.value("cartridge", document.value("elf_cartridge", std::string()));
-    parsed.cartridgeBase = document.value("cartridge_base", parsed.cartridgeBase) == "chameleon" ? "chameleon" : "pluscart";
-    parsed.cartridgeClockMhz = std::clamp(document.value("cartridge_clock_mhz", parsed.cartridgeClockMhz), 1, 1000);
-    parsed.elfFlashKb = std::max(0, document.value("elf_flash_kb", 0));
-    parsed.elfRamKb = std::max(0, document.value("elf_ram_kb", 0));
+    if (document.contains("cartridge_definition") && document["cartridge_definition"].is_object()) {
+      parsed.cartridgeCopy = cartridgeFromJson(document["cartridge_definition"]);
+      parsed.cartridgeCopy.id = parsed.cartridge;
+    } else if (parsed.cartridge == "custom") {
+      // 2026-11-16, before cartridges had names: a clock and the memory of a built-in one
+      bool chameleon = document.value("cartridge_base", std::string()) == "chameleon";
+      parsed.cartridgeCopy = builtInArmCartridges()[chameleon ? 2 : 1];
+      parsed.cartridgeCopy.id = "custom", parsed.cartridgeCopy.name = T("Custom"), parsed.cartridgeCopy.builtIn = false;
+      parsed.cartridgeCopy.clockMhz = std::clamp(document.value("cartridge_clock_mhz", parsed.cartridgeCopy.clockMhz), 1, 1000);
+    }
+    // the ELF space report's sizes, set in the project until cartridges had them
+    int flashKb = std::max(0, document.value("elf_flash_kb", 0)), ramKb = std::max(0, document.value("elf_ram_kb", 0));
+    if ((flashKb > 0 || ramKb > 0) && parsed.runsOnArmCartridge()) {
+      ArmCartridge base = parsed.armCartridgeInfo();
+      ArmCartridge sized = base;
+      if (flashKb > 0 && base.memory == "chameleon") sized.flashKb = flashKb;
+      if (ramKb > 0) sized.ramKb = ramKb;
+      if (!sized.sameValues(base)) {
+        if (base.builtIn) sized.id = "custom", sized.name = F("{0} (this project's memory)", {base.name}), sized.builtIn = false;
+        parsed.useCartridge(sized);
+      }
+    }
     if (document.contains("emulator_options") && document["emulator_options"].is_object())
       for (auto& [emulatorId, options] : document["emulator_options"].items())
         for (auto& [key, value] : options.items())
@@ -141,15 +164,9 @@ std::string Project::toJson() const {
   if (spaceWarnPercent != 90) document["space_warn_percent"] = spaceWarnPercent;
   if (stackReserve != 8) document["stack_reserve"] = stackReserve;
   if (runsOnArmCartridge()) {
-    document["cartridge"] = armCartridge();
-    if (armCartridge() == "custom") {
-      document["cartridge_clock_mhz"] = cartridgeClockMhz;
-      if (language == Language::ElfC) document["cartridge_base"] = cartridgeBase;
-    }
-  }
-  if (language == Language::ElfC) {
-    if (elfFlashKb > 0 && memoryCartridge() == "chameleon") document["elf_flash_kb"] = elfFlashKb;
-    if (elfRamKb > 0) document["elf_ram_kb"] = elfRamKb;
+    ArmCartridge inEffect = armCartridgeInfo();
+    document["cartridge"] = inEffect.id;
+    if (!inEffect.builtIn) document["cartridge_definition"] = cartridgeToJson(inEffect);
   }
   json optionsJson = json::object(), argsJson = json::object();
   for (auto& [emulatorId, options] : emulatorOptions)
@@ -578,36 +595,178 @@ bool Project::runsOnArmCartridge() const {
          format == "ACE";
 }
 
-std::vector<std::string> armCartridgeIds(Language language, const std::string& format) {
+// What ELF, ACE and TinyELF Basic projects have to choose from, in menu order. Sources: the
+// UCA firmware's SystemClock_Config (HSI 16 MHz / 16 * 432 / 2 = 216 MHz) and main.h
+// (BUFFER_SIZE 96 KB); the Chameleon Cart's STM32G070RB (64 MHz, 128 KB flash, 36 KB RAM).
+const std::vector<ArmCartridge>& builtInArmCartridges() {
+  static const std::vector<ArmCartridge> cartridges = {
+      {"unocart", "UnoCart", ArmCartridge::kUcaClockMhz, "pluscart", 0, (int)(kPlusCartBuffer / 1024), true},
+      {"pluscart", "PlusCart", ArmCartridge::kUcaClockMhz, "pluscart", 0, (int)(kPlusCartBuffer / 1024), true},
+      {"chameleon", "Chameleon Cart", ArmCartridge::kChameleonClockMhz, "chameleon", (int)(kChameleonFlash / 1024), (int)(kChameleonRam / 1024), true}};
+  return cartridges;
+}
+
+std::string armCartridgeMemoryName(const std::string& memory) {
+  return memory == "chameleon" ? std::string("Chameleon Cart") : std::string(T("PlusCart and UnoCart"));
+}
+
+std::string ArmCartridge::summary() const {
+  if (memory == "chameleon")
+    return F("{0} MHz, Chameleon Cart memory: {1} KB of flash, {2} KB of RAM", {std::to_string(clockMhz), std::to_string(flashKb), std::to_string(ramKb)});
+  return F("{0} MHz, PlusCart and UnoCart loader: {1} KB buffer", {std::to_string(clockMhz), std::to_string(ramKb)});
+}
+
+bool ArmCartridge::sameValues(const ArmCartridge& other) const {
+  return clockMhz == other.clockMhz && memory == other.memory && ramKb == other.ramKb && (memory != "chameleon" || flashKb == other.flashKb);
+}
+
+static ArmCartridge cartridgeFromJson(const json& value) {
+  ArmCartridge cartridge;
+  cartridge.id = value.value("id", std::string());
+  cartridge.name = value.value("name", std::string());
+  cartridge.memory = value.value("memory", std::string()) == "chameleon" ? "chameleon" : "pluscart";
+  const ArmCartridge& base = builtInArmCartridges()[cartridge.memory == "chameleon" ? 2 : 1];
+  cartridge.clockMhz = std::clamp(value.value("clock_mhz", base.clockMhz), 1, 1000);
+  cartridge.flashKb = cartridge.memory == "chameleon" ? std::clamp(value.value("flash_kb", base.flashKb), 1, 65536) : 0;
+  cartridge.ramKb = std::clamp(value.value("ram_kb", base.ramKb), 1, 65536);
+  return cartridge;
+}
+
+static json cartridgeToJson(const ArmCartridge& cartridge) {
+  json value = {{"name", cartridge.name}, {"clock_mhz", cartridge.clockMhz}, {"memory", cartridge.memory}};
+  if (cartridge.memory == "chameleon") value["flash_kb"] = cartridge.flashKb;
+  value["ram_kb"] = cartridge.ramKb;
+  return value;
+}
+
+void CartridgeLibrary::load(const std::string& path) {
+  path_ = path;
+  mine_.clear();
+  version_++;
+  try {
+    std::ifstream file(path);
+    if (!file) return;
+    json document = json::parse(file);
+    if (!document.is_object() || !document.contains("cartridges") || !document["cartridges"].is_array()) return;
+    for (auto& value : document["cartridges"]) {
+      if (!value.is_object()) continue;
+      ArmCartridge cartridge = cartridgeFromJson(value);
+      if (cartridge.id.empty() || find(cartridge.id)) continue;
+      if (cartridge.name.empty()) cartridge.name = cartridge.id;
+      mine_.push_back(cartridge);
+    }
+  } catch (...) {
+  }
+}
+
+bool CartridgeLibrary::save(std::string* error) const {
+  if (path_.empty()) return true;  // tests and the command-line tools: nothing to keep
+  json list = json::array();
+  for (auto& cartridge : mine_) {
+    json value = cartridgeToJson(cartridge);
+    value["id"] = cartridge.id;
+    list.push_back(value);
+  }
+  std::ofstream file(path_);
+  file << json{{"cartridges", list}}.dump(2) << "\n";
+  if (!file) {
+    if (error) *error = F("Cannot write {0}", {path_});
+    return false;
+  }
+  return true;
+}
+
+const ArmCartridge* CartridgeLibrary::find(const std::string& id) const {
+  for (auto& cartridge : builtInArmCartridges())
+    if (cartridge.id == id) return &cartridge;
+  for (auto& cartridge : mine_)
+    if (cartridge.id == id) return &cartridge;
+  return nullptr;
+}
+
+std::string CartridgeLibrary::uniqueName(const std::string& base) const {
+  auto taken = [&](const std::string& name) {
+    for (auto* list : {&builtInArmCartridges(), &mine_})
+      for (auto& cartridge : *list)
+        if (cartridge.name == name) return true;
+    return false;
+  };
+  if (!taken(base)) return base;
+  for (int number = 2;; number++)
+    if (!taken(base + " " + std::to_string(number))) return base + " " + std::to_string(number);
+}
+
+const ArmCartridge& CartridgeLibrary::add(ArmCartridge cartridge) {
+  cartridge.name = uniqueName(cartridge.name.empty() ? std::string(T("My cartridge")) : cartridge.name);
+  cartridge.builtIn = false;
+  // the id: the name in lowercase letters, digits and dashes ("custom" is a project's own)
+  std::string slug;
+  for (unsigned char character : cartridge.name) {
+    if (std::isalnum(character) && character < 128) slug += (char)std::tolower(character);
+    else if (!slug.empty() && slug.back() != '-') slug += '-';
+  }
+  while (!slug.empty() && slug.back() == '-') slug.pop_back();
+  if (slug.empty()) slug = "cartridge";
+  std::string id = slug;
+  for (int number = 2; find(id) || id == "custom"; number++) id = slug + "-" + std::to_string(number);
+  cartridge.id = id;
+  mine_.push_back(cartridge);
+  version_++;
+  return mine_.back();
+}
+
+bool CartridgeLibrary::update(const ArmCartridge& cartridge) {
+  for (auto& mineCartridge : mine_)
+    if (mineCartridge.id == cartridge.id) {
+      mineCartridge = cartridge;
+      mineCartridge.builtIn = false;
+      version_++;
+      return true;
+    }
+  return false;
+}
+
+bool CartridgeLibrary::remove(const std::string& id) {
+  auto found = std::find_if(mine_.begin(), mine_.end(), [&](const ArmCartridge& cartridge) { return cartridge.id == id; });
+  if (found == mine_.end()) return false;
+  mine_.erase(found);
+  version_++;
+  return true;
+}
+
+CartridgeLibrary& cartridgeLibrary() {
+  static CartridgeLibrary library;
+  return library;
+}
+
+static bool runsOn(const ArmCartridge& cartridge, Language language, const std::string& format) {
   bool elf = language == Language::ElfC || (language != Language::AceC && language != Language::TinyElfBasic && format == "ELF");
-  if (elf) return {"unocart", "pluscart", "chameleon", "custom"};
-  return {"unocart", "pluscart", "custom"};
+  return elf || cartridge.runsAce();
 }
 
-std::string armCartridgeName(const std::string& id) {
-  if (id == "unocart") return "UnoCart";
-  if (id == "pluscart") return "PlusCart";
-  if (id == "chameleon") return "Chameleon Cart";
-  return T("Custom");
+bool Project::canUse(const ArmCartridge& candidate) const { return runsOnArmCartridge() && runsOn(candidate, language, format); }
+
+ArmCartridge Project::armCartridgeInfo() const {
+  if (!runsOnArmCartridge()) return {"", "", 0, "pluscart", 0, 0, false};
+  if (const ArmCartridge* known = cartridgeLibrary().find(cartridge); known && runsOn(*known, language, format)) return *known;
+  if (!cartridge.empty() && cartridgeCopy.id == cartridge && runsOn(cartridgeCopy, language, format)) return cartridgeCopy;
+  return *cartridgeLibrary().find(language == Language::ElfC ? "chameleon" : "pluscart");
 }
 
-std::string Project::armCartridge() const {
-  if (!runsOnArmCartridge()) return "";
-  auto allowed = armCartridgeIds(language, format);
-  if (std::find(allowed.begin(), allowed.end(), cartridge) != allowed.end()) return cartridge;
-  return language == Language::ElfC ? "chameleon" : "pluscart";
+std::vector<ArmCartridge> Project::armCartridgeChoices() const {
+  std::vector<ArmCartridge> choices;
+  if (!runsOnArmCartridge()) return choices;
+  for (auto* list : {&builtInArmCartridges(), &cartridgeLibrary().mine()})
+    for (auto& candidate : *list)
+      if (runsOn(candidate, language, format)) choices.push_back(candidate);
+  ArmCartridge inEffect = armCartridgeInfo();
+  if (!cartridgeLibrary().find(inEffect.id)) choices.push_back(inEffect);
+  return choices;
 }
 
-int Project::armClockMhz() const {
-  std::string id = armCartridge();
-  if (id == "custom") return cartridgeClockMhz;
-  return id == "chameleon" ? kChameleonClockMhz : kUcaClockMhz;
-}
-
-std::string Project::memoryCartridge() const {
-  std::string id = armCartridge();
-  if (id == "custom") return cartridgeBase == "chameleon" ? "chameleon" : "pluscart";
-  return id == "chameleon" ? "chameleon" : "pluscart";
+void Project::useCartridge(const ArmCartridge& chosen) {
+  cartridge = chosen.id;
+  cartridgeCopy = chosen.builtIn ? ArmCartridge{} : chosen;
 }
 
 std::vector<std::string> tvStandardsFor(Language language) {

@@ -3,6 +3,7 @@
 // The .vcsproj in a tab: a form with the project's settings, or its JSON as text.
 // Both edit the same file; switching shows the other one with the changes.
 #pragma once
+#include <functional>
 #include <string>
 
 #include "editor/text_editor.h"
@@ -25,6 +26,7 @@ class ProjectForm {
   void saved(TextEditor& text, const std::string& written);  // after writing: both clean
   bool showingText() const { return asText_; }
   bool showText(TextEditor& text, bool show);  // false: the text has an error and stays
+  std::function<void()> openCartridges;  // the Cartridges dialog (the user's own cartridges)
 
  private:
   bool asText_ = false;

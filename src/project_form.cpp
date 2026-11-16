@@ -220,30 +220,24 @@ void ProjectForm::render(TextEditor& text, ImFont* mono, const KnowledgeBase& kb
       combo("##emu", project_.emulator, items, project_.emulator);
     }
     if (project_.runsOnArmCartridge()) {
-      row(T("Emulated cartridge"), T("The cartridge the emulators imitate (its ARM clock: how much the ARM does per frame) and, for ELF, the one the space report measures against."));
-      std::vector<std::pair<std::string, std::string>> cartridges;
-      for (auto& id : armCartridgeIds(project_.language, project_.format)) {
-        std::string label = armCartridgeName(id);
-        if (id != "custom") label += F(" ({0} MHz)", {std::to_string(id == "chameleon" ? Project::kChameleonClockMhz : Project::kUcaClockMhz)});
-        cartridges.push_back({id, label});
-      }
-      std::string chosen = project_.armCartridge();
-      combo("##cart", chosen, cartridges, chosen);
-      if (chosen != project_.armCartridge()) project_.cartridge = chosen;
-      if (chosen == "custom") {
-        row(T("ARM clock (MHz)"), T("Passed to the program in MP_CLOCK_HZ and how fast the emulated ARM runs: 216 on the PlusCart and UnoCart, 64 on the Chameleon Cart. Stella takes 50 to 300."));
-        int clock = project_.cartridgeClockMhz;
-        if (ImGui::InputInt("##clock", &clock, 0)) {
-          project_.cartridgeClockMhz = std::clamp(clock, 1, 1000);
-          changed = true;
+      row(T("Emulated cartridge"), T("The cartridge the emulators imitate (its ARM clock: how much the ARM does per frame) and, for ELF, the one the space report measures against. Your own: Build > Emulated cartridge > Cartridges..."));
+      ArmCartridge inEffect = project_.armCartridgeInfo();
+      float buttonWidth = ImGui::CalcTextSize(T("Cartridges...")).x + ImGui::GetStyle().FramePadding.x * 2;
+      ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - buttonWidth - ImGui::GetStyle().ItemSpacing.x);
+      if (ImGui::BeginCombo("##cart", F("{0} ({1} MHz)", {inEffect.name, std::to_string(inEffect.clockMhz)}).c_str())) {
+        bool mineStarted = false;
+        for (auto& choice : project_.armCartridgeChoices()) {
+          if (!choice.builtIn && !mineStarted) ImGui::Separator(), mineStarted = true;
+          if (ImGui::Selectable(F("{0} ({1} MHz)", {choice.name, std::to_string(choice.clockMhz)}).c_str(), choice.id == inEffect.id) && choice.id != inEffect.id) {
+            project_.useCartridge(choice);
+            changed = true;
+          }
         }
-        if (project_.language == Language::ElfC) {
-          row(T("Memory like"), T("Which cartridge's memory the space report measures against: the PlusCart's loader buffer or the Chameleon Cart's flash and RAM."));
-          std::string base = project_.cartridgeBase;
-          combo("##base", base, {{"pluscart", T("PlusCart and UnoCart")}, {"chameleon", "Chameleon Cart"}}, base);
-          project_.cartridgeBase = base;
-        }
+        ImGui::EndCombo();
       }
+      ImGui::SameLine();
+      if (ImGui::Button(T("Cartridges...")) && openCartridges) openCartridges();
+      ImGui::TextDisabled("%s", inEffect.summary().c_str());
     }
     if (project_.language == Language::Dasm) {
       row(T("Illegal opcodes"), nullptr);
@@ -283,25 +277,6 @@ void ProjectForm::render(TextEditor& text, ImFont* mono, const KnowledgeBase& kb
     }
 
     section(T("Space report"));
-    if (project_.language == Language::ElfC) {
-      std::string memory = project_.memoryCartridge();
-      // the cartridge's own size shows when none is set; setting it back to that unsets it
-      auto sizeField = [&](const char* id, int& kilobytes, long defaultKb) {
-        int shown = kilobytes > 0 ? kilobytes : (int)defaultKb;
-        if (ImGui::InputInt(id, &shown, 0)) {
-          shown = std::clamp(shown, 1, 65536);
-          kilobytes = shown == defaultKb ? 0 : shown;
-          changed = true;
-        }
-      };
-      if (memory == "chameleon") {
-        row(T("Flash (KB)"), T("128 on the Chameleon Cart; 512 on its 512 KB model."));
-        sizeField("##flash", project_.elfFlashKb, defaultElfFlashKb(memory));
-      }
-      row(T("RAM (KB)"), memory == "chameleon" ? T("36 on the Chameleon Cart; 144 on its 512 KB model.")
-                                               : T("The loader's buffer: 96 in the PlusCart and UnoCart firmware."));
-      sizeField("##ram", project_.elfRamKb, defaultElfRamKb(memory));
-    }
     row(T("Warn when fuller than"), T("A bank or a RAM area fuller than this gets a warning."));
     if (ImGui::SliderInt("##warn", &project_.spaceWarnPercent, 50, 100, "%d %%")) changed = true;
     row(T("Bytes kept for the stack"), T("Bytes of the 2600's RAM that the RAM count leaves free for the stack."));

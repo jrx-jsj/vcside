@@ -101,6 +101,8 @@ void App::loadSettings() {
   setLanguage(code.empty() ? systemLanguage() : code);
   recent_ = settings.value("recent", std::vector<std::string>{});
   themes_.load(dataDir() + "/themes", configDir() + "themes");
+  static bool cartridgesLoaded = false;  // one library for every window
+  if (!cartridgesLoaded) cartridgeLibrary().load(configDir() + "cartridges.json"), cartridgesLoaded = true;
   useTheme(settings.value("theme", std::string("dark")), false);
   showCycles_ = settings.value("show_cycles", true);
   tabSize_ = std::clamp(settings.value("tab_size", 4), 1, 16);
@@ -347,6 +349,7 @@ OpenFile* App::openFile(const std::string& pathIn, int line) {
   if (lower(fs::path(path).extension().string()) == ".vcsproj") {
     newFile->asmSyntax = false;
     newFile->form = std::make_unique<ProjectForm>();
+    newFile->form->openCartridges = [this] { showCartridges_ = true; };
     std::string error;
     if (!newFile->form->load(path, newFile->editor, &error)) {
       output_ += error + "\n";
@@ -779,7 +782,8 @@ void App::measureElf() {
     return;
   }
   std::error_code errorCode;
-  ElfLimits limits = elfLimits(project_->memoryCartridge(), project_->elfFlashKb, project_->elfRamKb);
+  ArmCartridge cartridge = project_->armCartridgeInfo();
+  ElfLimits limits = elfLimits(cartridge.memory, cartridge.flashKb, cartridge.ramKb);
   bool useChameleon = limits.cartridge == ElfCartridge::Chameleon && fs::exists(chameleonPath, errorCode) &&
                       fs::last_write_time(chameleonPath, errorCode) >= fs::last_write_time(rom, errorCode) &&
                       readElf(readFile(chameleonPath), chameleonElf, &error) && chameleonElf.type == 2;
@@ -2077,6 +2081,7 @@ void App::frame() {
   fileDialogs();
   goToAddressDialog();
   emulatorOptionsDialog();
+  cartridgesDialog();
 }
 
 // The menu bar as data: ImGui draws it on Windows and Linux, macOS puts it in the
@@ -2289,20 +2294,15 @@ MenuBar App::buildMenuBar(bool native) {
       // what the emulators imitate: the ARM clock (how much the ARM does per frame)
       std::vector<MenuItem> cartridgeItems;
       std::string current = project_->armCartridge();
-      for (auto& id : armCartridgeIds(project_->language, project_->format)) {
-        std::string label = id == "custom" ? std::string(T("Custom...")) : armCartridgeName(id);
-        MenuItem cartridgeItem = item(label, "", set([id](Project& project) { project.cartridge = id; }), true, current == id);
-        if (id == "custom") {
-          cartridgeItem.action = [this, apply = cartridgeItem.action] {
-            apply();
-            projectSettings();  // where its clock is set
-          };
-          if (current == "custom") cartridgeItem.hint = F("{0} MHz", {std::to_string(project_->cartridgeClockMhz)});
-        } else {
-          cartridgeItem.hint = F("{0} MHz", {std::to_string(id == "chameleon" ? Project::kChameleonClockMhz : Project::kUcaClockMhz)});
-        }
+      bool mineStarted = false;
+      for (auto& choice : project_->armCartridgeChoices()) {
+        if (!choice.builtIn && !mineStarted) cartridgeItems.push_back(MenuItem::sep()), mineStarted = true;
+        MenuItem cartridgeItem = item(choice.name, "", set([choice](Project& project) { project.useCartridge(choice); }), true, current == choice.id);
+        cartridgeItem.hint = F("{0} MHz", {std::to_string(choice.clockMhz)});
         cartridgeItems.push_back(cartridgeItem);
       }
+      cartridgeItems.push_back(MenuItem::sep());
+      cartridgeItems.push_back(item(T("Cartridges..."), "", [this] { showCartridges_ = true; }));
       buildMenu.push_back(sub(T("Emulated cartridge"), cartridgeItems));
     }
     buildMenu.push_back(item(T("Emulator options..."), "", [this] { showEmuOptions_ = true; }));
@@ -3369,7 +3369,7 @@ void App::emulatorOptionsDialog() {
           int clock = project_->armClockMhz();
           if (option.id == "dev.arm.mips") clock = std::clamp(clock, kStellaArmMipsMin, kStellaArmMipsMax);
           ImGui::AlignTextToFramePadding();
-          ImGui::TextDisabled("%s", F("{0}: {1}", {armCartridgeName(project_->armCartridge()), std::to_string(clock)}).c_str());
+          ImGui::TextDisabled("%s", F("{0}: {1}", {project_->armCartridgeInfo().name, std::to_string(clock)}).c_str());
           wrappedTooltip(std::string(T("Set by Build > Emulated cartridge.")));
         } else if (option.type == "int" || option.type == "text") {
           std::string hint = T("default");
@@ -3437,6 +3437,168 @@ void App::emulatorOptionsDialog() {
     std::string error;
     if (!project_->save(&error)) lastStatus_ = error;
   }
+  ImGui::EndPopup();
+}
+
+// Build > Emulated cartridge > Cartridges...: the built-in ones (fixed, the real cartridges'
+// values) and the user's own, kept in cartridges.json for every project.
+void App::cartridgesDialog() {
+  CartridgeLibrary& library = cartridgeLibrary();
+  if (showCartridges_) {
+    ImGui::OpenPopup("###cartridges");
+    showCartridges_ = false;
+    if (project_ && project_->runsOnArmCartridge()) cartridgeSelected_ = project_->armCartridge();
+    if (cartridgeSelected_.empty()) cartridgeSelected_ = "pluscart";
+  }
+  char title[96];
+  snprintf(title, sizeof title, "%s###cartridges", T("Cartridges"));
+  float fontSize = ImGui::GetFontSize();
+  ImGui::SetNextWindowSize(ImVec2(fontSize * 46, fontSize * 26), ImGuiCond_Appearing);
+  bool open = true;
+  if (!theme::beginModal(title, &open)) return;
+  bool armProject = project_ && project_->runsOnArmCartridge();
+  // the project's own cartridge when the library lacks it (made elsewhere, or deleted)
+  ArmCartridge projectCopy;
+  if (armProject && !library.find(project_->armCartridge())) projectCopy = project_->armCartridgeInfo();
+  std::string message;
+  auto saveLibrary = [&] {
+    std::string error;
+    if (!library.save(&error)) lastStatus_ = error;
+  };
+  auto saveProject = [&] {
+    std::string error;
+    if (!projectUnsaved_ && !project_->save(&error)) lastStatus_ = error;  // its copy of the cartridge, up to date
+  };
+
+  float footer = ImGui::GetFrameHeightWithSpacing() * 2.5f;
+  ImGui::BeginChild("list", ImVec2(fontSize * 14, -footer), ImGuiChildFlags_Borders);
+  auto listItem = [&](const ArmCartridge& cartridge) {
+    bool inUse = armProject && project_->armCartridge() == cartridge.id;
+    std::string label = cartridge.name + (inUse ? "  \xE2\x80\xA2" : "") + "###" + cartridge.id;  // the bullet: this project's
+    if (ImGui::Selectable(label.c_str(), cartridgeSelected_ == cartridge.id)) cartridgeSelected_ = cartridge.id;
+  };
+  ImGui::SeparatorText(T("Built in"));
+  for (auto& cartridge : builtInArmCartridges()) listItem(cartridge);
+  ImGui::SeparatorText(T("Mine"));
+  for (auto& cartridge : library.mine()) listItem(cartridge);
+  if (library.mine().empty()) ImGui::TextDisabled("%s", T("(none yet)"));
+  if (!projectCopy.id.empty()) {
+    ImGui::SeparatorText(T("This project's"));
+    listItem(projectCopy);
+  }
+  ImGui::EndChild();
+  ImGui::SameLine();
+
+  ImGui::BeginChild("detail", ImVec2(0, -footer), ImGuiChildFlags_Borders);
+  const ArmCartridge* selected = library.find(cartridgeSelected_);
+  if (!selected && !projectCopy.id.empty() && projectCopy.id == cartridgeSelected_) selected = &projectCopy;
+  if (!selected) selected = library.find("pluscart"), cartridgeSelected_ = "pluscart";
+  ArmCartridge edited = *selected;
+  bool mine = !selected->builtIn && selected != &projectCopy;
+  if (ImGui::BeginTable("fields", 2, ImGuiTableFlags_SizingStretchProp)) {
+    ImGui::TableSetupColumn("label", ImGuiTableColumnFlags_WidthStretch, 2);
+    ImGui::TableSetupColumn("value", ImGuiTableColumnFlags_WidthStretch, 3);
+    auto row = [&](const char* label, const char* tip) {
+      ImGui::TableNextRow();
+      ImGui::TableNextColumn();
+      ImGui::AlignTextToFramePadding();
+      ImGui::TextUnformatted(label);
+      if (tip) wrappedTooltip(std::string(tip));
+      ImGui::TableNextColumn();
+      ImGui::SetNextItemWidth(-1);
+    };
+    ImGui::BeginDisabled(!mine);
+    row(T("Name"), nullptr);
+    ImGui::InputText("##name", &edited.name);
+    row(T("ARM clock (MHz)"), T("Passed to the program in MP_CLOCK_HZ and how fast the emulated ARM runs: 216 on the PlusCart and UnoCart, 64 on the Chameleon Cart. Stella takes 50 to 300."));
+    if (ImGui::InputInt("##clock", &edited.clockMhz, 0)) edited.clockMhz = std::clamp(edited.clockMhz, 1, 1000);
+    row(T("Memory like"), T("Which cartridge's memory the space report measures against: the PlusCart's loader buffer or the Chameleon Cart's flash and RAM. With the Chameleon's, only ELF projects can use it."));
+    std::string memory = edited.memory;
+    if (ImGui::BeginCombo("##memory", armCartridgeMemoryName(memory).c_str())) {
+      for (const char* option : {"pluscart", "chameleon"})
+        if (ImGui::Selectable(armCartridgeMemoryName(option).c_str(), memory == option)) memory = option;
+      ImGui::EndCombo();
+    }
+    if (memory != edited.memory) {  // the sizes of the cartridge it is like
+      const ArmCartridge& base = *library.find(memory == "chameleon" ? "chameleon" : "pluscart");
+      edited.memory = memory, edited.flashKb = base.flashKb, edited.ramKb = base.ramKb;
+    }
+    if (edited.memory == "chameleon") {
+      row(T("Flash (KB)"), T("128 on the Chameleon Cart; 512 on its 512 KB model."));
+      if (ImGui::InputInt("##flash", &edited.flashKb, 0)) edited.flashKb = std::clamp(edited.flashKb, 1, 65536);
+    }
+    row(T("RAM (KB)"), edited.memory == "chameleon" ? T("36 on the Chameleon Cart; 144 on its 512 KB model.")
+                                                     : T("The loader's buffer: 96 in the PlusCart and UnoCart firmware."));
+    if (ImGui::InputInt("##ram", &edited.ramKb, 0)) edited.ramKb = std::clamp(edited.ramKb, 1, 65536);
+    ImGui::EndDisabled();
+    ImGui::EndTable();
+  }
+  ImGui::Dummy(ImVec2(0, fontSize * 0.5f));
+  ImGui::PushTextWrapPos(0);
+  if (selected->builtIn)
+    ImGui::TextDisabled("%s", T("Built-in cartridges keep the real ones' values. Duplicate makes one of yours from it."));
+  else if (!mine)
+    ImGui::TextDisabled("%s", T("Only in this project (made on another computer, or deleted from yours). Save it to use it in other projects."));
+  else
+    ImGui::TextDisabled("%s", T("Yours: kept for every project. A project that uses it also keeps a copy, so it opens the same on another computer."));
+  ImGui::PopTextWrapPos();
+  ImGui::EndChild();
+  if (mine && (edited.name != selected->name || !edited.sameValues(*selected))) {
+    if (edited.name.empty()) edited.name = selected->name;
+    library.update(edited);
+    saveLibrary();
+    if (armProject && project_->armCartridge() == edited.id) project_->useCartridge(edited), saveProject();
+  }
+
+  if (theme::dialogButton(T("New"))) {
+    ArmCartridge created = *library.find("pluscart");
+    created.name = T("My cartridge");
+    cartridgeSelected_ = library.add(created).id;
+    saveLibrary();
+  }
+  ImGui::SameLine();
+  if (theme::dialogButton(selected == &projectCopy ? T("Save among mine") : T("Duplicate"))) {
+    ArmCartridge copy = *selected;
+    bool fromProject = selected == &projectCopy;
+    std::string oldId = copy.id;
+    if (!fromProject) copy.name = F("{0} copy", {copy.name});
+    const ArmCartridge& added = library.add(copy);
+    cartridgeSelected_ = added.id;
+    if (fromProject && armProject && project_->armCartridge() == oldId) project_->useCartridge(added), saveProject();
+    saveLibrary();
+  }
+  ImGui::SameLine();
+  ImGui::BeginDisabled(!mine);
+  if (theme::dialogButton(T("Delete"))) {
+    // a project that uses it keeps its copy
+    library.remove(cartridgeSelected_);
+    saveLibrary();
+    cartridgeSelected_ = armProject ? project_->armCartridge() : "pluscart";
+  }
+  ImGui::EndDisabled();
+  if (armProject) {
+    ImGui::SameLine();
+    const ArmCartridge* current = library.find(cartridgeSelected_);
+    if (!current && cartridgeSelected_ == projectCopy.id) current = &projectCopy;
+    bool usable = current && project_->canUse(*current) && project_->armCartridge() != cartridgeSelected_;
+    ImGui::BeginDisabled(!usable);
+    if (theme::dialogButton(T("Use in this project"))) {
+      project_->useCartridge(*current);
+      saveProject();
+      for (auto& openedFile : files_)  // an open settings tab with no changes of its own shows it
+        if (openedFile->form && !openedFile->dirty() && fs::weakly_canonical(openedFile->path) == fs::weakly_canonical(project_->file)) {
+          std::string error;
+          bool text = openedFile->form->showingText();
+          openedFile->form->load(openedFile->path, openedFile->editor, &error);
+          openedFile->form->showText(openedFile->editor, text);
+        }
+    }
+    ImGui::EndDisabled();
+    if (current && !project_->canUse(*current) && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+      ImGui::SetTooltip("%s", T("The Chameleon Cart's Cortex-M0+ runs ELF games only, not ACE files nor TinyELF."));
+  }
+  ImGui::Dummy(ImVec2(0, fontSize * 0.25f));
+  if (theme::primaryButton(T("Close")) || theme::dialogEscape()) ImGui::CloseCurrentPopup();
   ImGui::EndPopup();
 }
 
@@ -4151,7 +4313,6 @@ void App::newProjectDialog() {
         ImGui::SetTooltip("%s", T("make: the ROM. Always built: the emulators run it, and the Chameleon image is made from it."));
       if (ImGui::Checkbox("Chameleon Cart", &npChameleonBuild_)) {
         npElfCartridge_ = npChameleonBuild_ ? "chameleon" : "pluscart";
-        npFlashKb_ = (int)defaultElfFlashKb(npElfCartridge_), npRamKb_ = (int)defaultElfRamKb(npElfCartridge_);
       }
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("%s", T("make chameleon: the game linked with the Chameleon Cart's firmware, to flash. Adds chameleon/. The space report measures against the Chameleon, the tighter one."));
@@ -4168,14 +4329,18 @@ void App::newProjectDialog() {
       ImGui::EndDisabled();
       if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
         ImGui::SetTooltip("%s", T("What F7 builds and F5 runs (the ACE file in Gopher2600). The Chameleon image is built with make chameleon: it needs the firmware and no emulator runs it."));
-      if (npElfCartridge_ == "chameleon") {
-        row(T("Flash (KB)"));
-        ImGui::InputInt("##flash", &npFlashKb_, 0);
-        npFlashKb_ = std::clamp(npFlashKb_, 1, 65536);
+      // the cartridge the emulators imitate and the space report measures against
+      row(T("Emulated cartridge"));
+      Project elfProject;
+      elfProject.language = Language::ElfC;
+      const ArmCartridge* chosen = cartridgeLibrary().find(npElfCartridge_);
+      if (!chosen) chosen = cartridgeLibrary().find("chameleon"), npElfCartridge_ = "chameleon";
+      if (ImGui::BeginCombo("##cartridge", chosen->name.c_str())) {
+        for (auto& choice : elfProject.armCartridgeChoices())
+          if (ImGui::Selectable(F("{0} ({1} MHz)", {choice.name, std::to_string(choice.clockMhz)}).c_str(), choice.id == npElfCartridge_)) npElfCartridge_ = choice.id;
+        ImGui::EndCombo();
       }
-      row(T("RAM (KB)"));
-      ImGui::InputInt("##ram", &npRamKb_, 0);
-      npRamKb_ = std::clamp(npRamKb_, 1, 65536);
+      if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", chosen->summary().c_str());
     }
     if (!formats.empty()) {
       row(T("Cartridge"));
@@ -4230,10 +4395,8 @@ void App::newProjectDialog() {
     std::string example = startIds[npExample_];
     bool made = Project::create(target.string(), npName_, npLanguage, npTvId_, &created, &error, example, formats.empty() ? "" : npFormat_,
                                 {npChameleonBuild_, npAceBuild_, npAceDefault_});
-    if (made && created.language == Language::ElfC) {  // the cartridge; its own sizes are left unset
-      created.cartridge = npElfCartridge_;
-      created.elfFlashKb = npFlashKb_ == defaultElfFlashKb(npElfCartridge_) ? 0 : npFlashKb_;
-      created.elfRamKb = npRamKb_ == defaultElfRamKb(npElfCartridge_) ? 0 : npRamKb_;
+    if (made && created.language == Language::ElfC) {  // the emulated cartridge
+      if (const ArmCartridge* chosen = cartridgeLibrary().find(npElfCartridge_)) created.useCartridge(*chosen);
       made = created.save(&error);
     }
     if (made && npLanguage == Language::Dasm && npFormat_ == "CDFJ" && !npCdfjDriver_.empty()) {

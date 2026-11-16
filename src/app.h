@@ -208,6 +208,7 @@ class App {
   std::vector<std::string> debugArgs(const std::string& emulator);  // writes the scripts, returns extra arguments
   void goToAddressDialog();
   void emulatorOptionsDialog();
+  void cartridgesDialog();
   std::string findProjectFile(const std::string& name) const;
   void lint(OpenFile& file);
   // Opens the documentation at a word: first among the words of languageId (KnowledgeBase::languageIds, or "dasm").
@@ -327,6 +328,8 @@ class App {
   void updateGitIgnored();
   bool showGoToAddress_ = false;
   bool showEmuOptions_ = false;
+  bool showCartridges_ = false;  // Build > Emulated cartridge > Cartridges...
+  std::string cartridgeSelected_;
   std::string emuOptionsTab_;  // emulator whose tab to select when the dialog opens
   char goToAddress_[64] = "";
   std::string pendingAddress_;  // tests
@@ -405,8 +408,7 @@ class App {
   std::string npTvId_ = "NTSC";  // 0 = empty, then Project::examples()
   std::string npFormat_ = "4K";                // DASM and batari Basic: the cartridge (formats.json id)
   std::string npCdfjDriver_, npCdfjError_;    // CDFJ: the user's own driver, chosen before Create
-  std::string npElfCartridge_ = "chameleon";  // ELF: the cartridge, and its sizes in KB
-  int npFlashKb_ = 128, npRamKb_ = 36;
+  std::string npElfCartridge_ = "chameleon";  // ELF: the emulated cartridge's id
   bool npChameleonBuild_ = true, npAceBuild_ = false, npAceDefault_ = false;  // ELF: the builds besides the ROM, and F7's
 
   // settings

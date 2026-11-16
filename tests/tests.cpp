@@ -693,15 +693,28 @@ static void testEmulatorOptions(const KnowledgeBase& kb) {
     CHECK(armProject.armCartridge() == "chameleon" && armPrefs["hardware.arm7.clock"] == "64");  // ELF: the Chameleon Cart
     armProject.cartridge = "pluscart";
     CHECK(has(emulatorOptionArgs(armProject, *stella), {"-dev.arm.mips", "216"}) && has(emulatorOptionArgs(armProject, *stella), {"-dev.settings", "1"}));
-    armProject.cartridge = "custom", armProject.cartridgeClockMhz = 400;
-    CHECK(has(emulatorOptionArgs(armProject, *stella), {"-dev.arm.mips", "300"}));  // Stella's limit
+    ArmCartridge fast = *cartridgeLibrary().find("pluscart");
+    fast.name = "Fast", fast.clockMhz = 400;
+    const std::string fastId = cartridgeLibrary().add(fast).id;  // the user's own (no file in the tests)
+    armProject.useCartridge(*cartridgeLibrary().find(fastId));
+    CHECK(fastId == "fast" && has(emulatorOptionArgs(armProject, *stella), {"-dev.arm.mips", "300"}));  // Stella's limit
     armPrefs.clear();
     emulatorOptionArgs(armProject, *gopher, &armPrefs);
     CHECK(armPrefs["hardware.arm7.clock"] == "400" && armProject.memoryCartridge() == "pluscart");
-    armProject.cartridgeBase = "chameleon";
-    CHECK(armProject.memoryCartridge() == "chameleon");
+    ArmCartridge bigChameleon = *cartridgeLibrary().find("chameleon");
+    bigChameleon.name = "Fast";  // a name taken: made unique
+    const ArmCartridge& added = cartridgeLibrary().add(bigChameleon);
+    CHECK(added.name == "Fast 2" && added.id == "fast-2" && !added.builtIn);
+    armProject.useCartridge(added);
+    CHECK(armProject.memoryCartridge() == "chameleon" && armProject.armCartridgeChoices().size() == 5);
+    bigChameleon = added, bigChameleon.flashKb = 512;
+    CHECK(cartridgeLibrary().update(bigChameleon) && armProject.armCartridgeInfo().flashKb == 512);  // the library's, over its copy
+    CHECK(!cartridgeLibrary().update(*cartridgeLibrary().find("pluscart")) && !cartridgeLibrary().remove("pluscart"));  // built-in: fixed
+    CHECK(cartridgeLibrary().remove(added.id) && armProject.armCartridge() == "fast-2" && armProject.armCartridgeInfo().flashKb == 128);  // its copy
     armProject.language = Language::TinyElfBasic, armProject.cartridge = "chameleon";  // no Chameleon for TinyELF
-    CHECK(armProject.armCartridge() == "pluscart" && armProject.armClockMhz() == 216 && armCartridgeIds(Language::TinyElfBasic, "ELF").size() == 3);
+    CHECK(armProject.armCartridge() == "pluscart" && armProject.armClockMhz() == 216 && armProject.armCartridgeChoices().size() == 3);
+    CHECK(!armProject.canUse(*cartridgeLibrary().find("chameleon")) && armProject.canUse(*cartridgeLibrary().find(fastId)));
+    CHECK(cartridgeLibrary().remove(fastId) && cartridgeLibrary().mine().empty());
     armProject.cartridge = "unocart";
     CHECK(armProject.armCartridge() == "unocart" && armProject.armClockMhz() == 216);
     Project tiaProject;  // a 4K game: the options as they are, no cartridge
@@ -1020,17 +1033,26 @@ static void testElfSpace() {
   CHECK(Project::create(dir.string(), "rainbow", Language::ElfC, "NTSC", &project, &error));
   CHECK(project.buildCommand == "make" && project.format == "ELF" && project.output == "build/rainbow.bin" && project.main == "src/main.c");
   CHECK(project.armCartridge() == "chameleon" && project.toJson().find("\"cartridge\": \"chameleon\"") != std::string::npos);
-  project.cartridge = "pluscart", project.elfFlashKb = 512, project.elfRamKb = 64;
+  project.useCartridge(*cartridgeLibrary().find("pluscart"));
   {
     Project reread;
     CHECK(reread.fromJson(project.toJson(), project.file, &error));
-    CHECK(reread.armCartridge() == "pluscart" && reread.elfFlashKb == 0 && reread.elfRamKb == 64 && reread.otherKeys.empty());
+    CHECK(reread.armCartridge() == "pluscart" && reread.otherKeys.empty() && project.toJson().find("cartridge_definition") == std::string::npos);
     CHECK(reread.fromJson("{\"language\": \"elf-c\", \"format\": \"ELF\", \"elf_cartridge\": \"pluscart\"}", project.file, &error));
     CHECK(reread.armCartridge() == "pluscart" && reread.otherKeys.empty());  // as projects kept it before
-    project.cartridge = "custom", project.cartridgeClockMhz = 100, project.cartridgeBase = "chameleon";
-    CHECK(reread.fromJson(project.toJson(), project.file, &error));
-    CHECK(reread.armCartridge() == "custom" && reread.armClockMhz() == 100 && reread.memoryCartridge() == "chameleon");
-    project.cartridge = "pluscart";
+    // the sizes and the custom clock of 2026-11-16: now a cartridge of the project's own
+    CHECK(reread.fromJson("{\"language\": \"elf-c\", \"format\": \"ELF\", \"cartridge\": \"chameleon\", \"elf_flash_kb\": 512, \"elf_ram_kb\": 144}", project.file, &error));
+    CHECK(reread.armCartridge() == "custom" && reread.armCartridgeInfo().flashKb == 512 && reread.armCartridgeInfo().ramKb == 144 && reread.armClockMhz() == 64);
+    CHECK(reread.fromJson("{\"language\": \"elf-c\", \"format\": \"ELF\", \"cartridge\": \"custom\", \"cartridge_clock_mhz\": 100, \"cartridge_base\": \"chameleon\"}", project.file, &error));
+    CHECK(reread.armCartridge() == "custom" && reread.armClockMhz() == 100 && reread.memoryCartridge() == "chameleon" && reread.otherKeys.empty());
+    // a cartridge of the user's travels in the project: it opens the same without the library
+    ArmCartridge mine = {"my-uno", "My Uno", 168, "pluscart", 0, 64, false};
+    project.useCartridge(mine);
+    std::string saved = project.toJson();
+    CHECK(saved.find("\"cartridge_definition\"") != std::string::npos);
+    CHECK(reread.fromJson(saved, project.file, &error) && reread.armCartridge() == "my-uno" && reread.armCartridgeInfo().name == "My Uno" &&
+          reread.armClockMhz() == 168 && reread.armCartridgeInfo().ramKb == 64 && reread.armCartridgeChoices().back().id == "my-uno");
+    project.useCartridge(*cartridgeLibrary().find("pluscart"));
   }
   {  // the project's folders: kept in the .vcsproj; exports go to generated/<kind>, with the
      // subfolder of resources/<kind> they come from; none set: next to the file

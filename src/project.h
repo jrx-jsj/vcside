@@ -17,6 +17,50 @@ inline bool isC(Language language) { return language == Language::ElfC || langua
 // TinyELF Basic (Al_Nafuur's BASIC machine for the PlusCart and UnoCart): the project's
 // program, plain BASIC text, is built into a ROM with TinyELF's sources (data/tinyelf), which
 // enters it and runs it at power-on. Built with arm-none-eabi-gcc, run in Gopher2600.
+// A cartridge with an ARM that ELF, ACE and TinyELF Basic projects run on: its clock is what
+// the emulators pass to the program in MP_CLOCK_HZ and how much the ARM does per 6507 cycle
+// (TinyELF Basic sizes its work per frame by it); its memory is what the ELF space report
+// measures against. The built-in ones are fixed; the user's own are kept in cartridgeLibrary().
+struct ArmCartridge {
+  std::string id, name;
+  int clockMhz = 216;
+  // "pluscart": the UCA firmware's loader (PlusCart and UnoCart), ramKb its buffer;
+  // "chameleon": the Chameleon Cart's flash and RAM (flashKb, ramKb), its firmware included.
+  std::string memory = "pluscart";
+  int flashKb = 0, ramKb = 96;
+  bool builtIn = false;
+  static constexpr int kUcaClockMhz = 216;       // PlusCart and UnoCart: the UCA firmware runs the STM32F407 at 216 MHz
+  static constexpr int kChameleonClockMhz = 64;  // STM32G070
+  // The Chameleon Cart's Cortex-M0+ runs ELF games only, not ACE files nor TinyELF.
+  bool runsAce() const { return memory != "chameleon"; }
+  std::string summary() const;  // "216 MHz, PlusCart loader, 96 KB" for people
+  bool sameValues(const ArmCartridge& other) const;
+};
+const std::vector<ArmCartridge>& builtInArmCartridges();
+std::string armCartridgeMemoryName(const std::string& memory);
+
+// The user's own cartridges, in a JSON file of the config folder (cartridges.json); one for
+// the whole program, so every window sees the same.
+class CartridgeLibrary {
+ public:
+  void load(const std::string& path);  // no file: none of the user's
+  bool save(std::string* error) const;
+  const std::vector<ArmCartridge>& mine() const { return mine_; }
+  const ArmCartridge* find(const std::string& id) const;  // built-in or the user's
+  // Adds it with a new id made from its name (made unique among all names first).
+  const ArmCartridge& add(ArmCartridge cartridge);
+  bool update(const ArmCartridge& cartridge);  // by id; false for a built-in or unknown one
+  bool remove(const std::string& id);
+  std::string uniqueName(const std::string& base) const;
+  int version() const { return version_; }  // bumped on every change
+
+ private:
+  std::vector<ArmCartridge> mine_;
+  std::string path_;
+  int version_ = 0;
+};
+CartridgeLibrary& cartridgeLibrary();
+
 enum class IllegalOpcodes { Allow, StableOnly, Warn, Forbid };
 
 // An ELF project's builds besides its ROM, each with its glue folder and its Makefile
@@ -57,25 +101,26 @@ struct Project {
   int spaceWarnPercent = 90;    // warn when a bank or RAM area is fuller than this
   int stackReserve = 8;         // bytes of 2600 RAM to keep free for the stack
   // ELF, ACE and TinyELF Basic: the cartridge the emulators imitate (its ARM clock) and the
-  // space report measures against: "unocart", "pluscart", "chameleon" (ELF only) or "custom";
-  // empty: the language's own (see armCartridge()). A custom one has its own clock and the
-  // memory of cartridgeBase ("pluscart" or "chameleon"). The flash and RAM in KB: 0 for the
-  // cartridge's own sizes.
+  // space report measures against, by id: a built-in one ("unocart", "pluscart", "chameleon")
+  // or one of the user's (cartridgeLibrary()); empty: the language's own (see
+  // armCartridgeInfo()). A cartridge that is not built in is also kept in the project
+  // (cartridgeCopy, "cartridge_definition"), so it opens the same where the library lacks it.
   std::string cartridge;
-  std::string cartridgeBase = "pluscart";
-  int cartridgeClockMhz = kUcaClockMhz;
-  int elfFlashKb = 0, elfRamKb = 0;
-  // The cartridge's ARM clock is what emulators pass to an ELF program in MP_CLOCK_HZ and
-  // how much the ARM does per 6507 cycle: TinyELF Basic sizes its work per frame by it.
-  static constexpr int kUcaClockMhz = 216;       // PlusCart and UnoCart: the UCA firmware runs the STM32F407 at 216 MHz
-  static constexpr int kChameleonClockMhz = 64;  // STM32G070
+  ArmCartridge cartridgeCopy;
   // True for the projects whose ROM runs on a cartridge's ARM: ELF, ACE and TinyELF Basic.
   bool runsOnArmCartridge() const;
-  // The cartridge in effect: `cartridge` when this language allows it, else its default
-  // (ELF: chameleon; ACE and TinyELF Basic: pluscart). Empty when runsOnArmCartridge() is false.
-  std::string armCartridge() const;
-  int armClockMhz() const;           // the clock of armCartridge()
-  std::string memoryCartridge() const;  // "pluscart" or "chameleon": how the space report measures it
+  // The cartridge in effect: `cartridge` from the library (or its copy) when this language can
+  // run on it, else the language's default (ELF: the Chameleon Cart; ACE and TinyELF Basic:
+  // the PlusCart). An empty id when runsOnArmCartridge() is false.
+  ArmCartridge armCartridgeInfo() const;
+  // What this project can choose, in menu order: the built-in ones, the user's, and its own
+  // copy when the library lacks it.
+  std::vector<ArmCartridge> armCartridgeChoices() const;
+  bool canUse(const ArmCartridge& candidate) const;  // the Chameleon Cart's memory: ELF only
+  void useCartridge(const ArmCartridge& chosen);
+  std::string armCartridge() const { return armCartridgeInfo().id; }
+  int armClockMhz() const { return armCartridgeInfo().clockMhz; }
+  std::string memoryCartridge() const { return armCartridgeInfo().memory; }  // how the space report measures it
   // Launch options per emulator: option id (emulators.json) -> value. Unset = not passed.
   std::map<std::string, std::map<std::string, std::string>> emulatorOptions;
   std::map<std::string, std::string> emulatorArgs;  // extra arguments per emulator, before the ROM
@@ -192,11 +237,6 @@ bool formatSupported(const std::string& emulator, const std::string& formatId);
 // The format a ROM file shows by itself, from its first bytes: "ACE" for an ACE header
 // (ACE-2600, ACE-UF00, ACE-PC00, ACE-UC00), else "" (the emulator detects it).
 std::string romFormat(const std::string& path);
-// The cartridges an ELF, ACE or TinyELF Basic project can choose to emulate, in menu order
-// (the Chameleon Cart only for ELF: its Cortex-M0+ runs neither ACE nor TinyELF), and
-// their names for people.
-std::vector<std::string> armCartridgeIds(Language language, const std::string& format);
-std::string armCartridgeName(const std::string& id);
 const char* languageId(Language language);
 Language languageFromId(const std::string& id);
 const char* illegalId(IllegalOpcodes policy);
