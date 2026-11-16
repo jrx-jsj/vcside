@@ -1380,7 +1380,6 @@
     "Emulated cartridge": "Cartucho emulado",
     "ARM clock (MHz)": "Reloj del ARM (MHz)",
     "Passed to the program in MP_CLOCK_HZ and how fast the emulated ARM runs: 216 on the PlusCart and UnoCart, 64 on the Chameleon Cart. Stella takes 50 to 300.": "Lo recibe el programa en MP_CLOCK_HZ y marca lo rápido que va el ARM emulado: 216 en el PlusCart y el UnoCart, 64 en el Chameleon Cart. Stella admite de 50 a 300.",
-    "Memory like": "Memoria como",
     "PlusCart and UnoCart": "PlusCart y UnoCart",
     "Stella's ARM runs at {0} to {1} MHz: {2} MHz becomes {3}.": "El ARM de Stella va de {0} a {1} MHz: {2} MHz pasa a ser {3}.",
     "{0} MHz": "{0} MHz",
@@ -1403,7 +1402,8 @@
     "Save among mine": "Guardar en los míos",
     "{0} copy": "{0} (copia)",
     "Use in this project": "Usar en este proyecto",
-    "The Chameleon Cart's Cortex-M0+ runs ELF games only, not ACE files nor TinyELF.": "El Cortex-M0+ del Chameleon Cart solo ejecuta juegos ELF, ni archivos ACE ni TinyELF."
+    "The Chameleon Cart's Cortex-M0+ runs ELF games only, not ACE files nor TinyELF.": "El Cortex-M0+ del Chameleon Cart solo ejecuta juegos ELF, ni archivos ACE ni TinyELF.",
+    "Memory configuration": "Configuración de memoria"
   },
   "total": 1398
 }

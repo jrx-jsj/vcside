@@ -3512,7 +3512,7 @@ void App::cartridgesDialog() {
     ImGui::InputText("##name", &edited.name);
     row(T("ARM clock (MHz)"), T("Passed to the program in MP_CLOCK_HZ and how fast the emulated ARM runs: 216 on the PlusCart and UnoCart, 64 on the Chameleon Cart. Stella takes 50 to 300."));
     if (ImGui::InputInt("##clock", &edited.clockMhz, 0)) edited.clockMhz = std::clamp(edited.clockMhz, 1, 1000);
-    row(T("Memory like"), T("Which cartridge's memory the space report measures against: the PlusCart's loader buffer or the Chameleon Cart's flash and RAM. With the Chameleon's, only ELF projects can use it."));
+    row(T("Memory configuration"), T("Which cartridge's memory the space report measures against: the PlusCart's loader buffer or the Chameleon Cart's flash and RAM. With the Chameleon's, only ELF projects can use it."));
     std::string memory = edited.memory;
     if (ImGui::BeginCombo("##memory", armCartridgeMemoryName(memory).c_str())) {
       for (const char* option : {"pluscart", "chameleon"})
