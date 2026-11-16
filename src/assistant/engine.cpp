@@ -148,6 +148,11 @@ std::vector<std::string> helperArguments(const std::string& modelPath, int port,
           "--port", std::to_string(port),
           "-c", std::to_string(contextTokens),
           "-np", "1",          // one chat at a time: all the memory goes to one context
+          // the context's cache in 8 bits (it needs flash attention): half the memory of the default 16 bits, which for a
+          // 4B or 8B model with 16K tokens is over a gigabyte, with hardly any loss in the answers
+          "-fa", "on",
+          "-ctk", "q8_0",
+          "-ctv", "q8_0",
           "--no-webui",
           "--no-warmup"};
   arguments.insert(arguments.end(), extra.begin(), extra.end());

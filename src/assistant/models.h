@@ -17,6 +17,7 @@ struct CatalogModel {
   std::string id, name, sizeClass, file, url, sha256, license, note;
   int64_t bytes = 0;
   int memoryGb = 0;  // memory the model needs to run comfortably
+  bool recommended = false;  // the one offered first ("recommended": true in the catalogue)
   // Embedding models only (the "embedding_models" list): how the helper pools the vectors, what goes in
   // front of a question and of a document, and the cosine similarity below which a match is not kept.
   std::string pooling, queryPrefix, documentPrefix;
@@ -57,8 +58,9 @@ struct Recommendation {
   std::string device;             // the GPU it runs on ("Apple M1 Pro"); empty on the CPU
   double memoryGb = 0;            // the GPU's free memory, or the computer's memory
 };
-// The largest model that runs well here: entirely on the best GPU when one has room for it,
-// otherwise on the CPU within 60% of the RAM and never above 8 GB (larger ones are too slow without a GPU).
+// The catalogue's recommended model (or its first one), if it runs well here: entirely on the best GPU when one has room
+// for it, otherwise on the CPU within 60% of the RAM. The built-in models only answer (Ask mode), and for that the
+// recommended one is enough: the larger ones stay in the list for whoever wants them.
 Recommendation recommend(const std::vector<CatalogModel>& catalog, const Hardware& hardware);
 std::string formatBytes(int64_t bytes);  // "4.7 GB"
 

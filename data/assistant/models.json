@@ -10,8 +10,9 @@
       "sha256": "7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5",
       "bytes": 2497280256,
       "memory_gb": 4,
+      "recommended": true,
       "license": "Apache-2.0",
-      "note": "Any laptop with 8 GB of memory. Plain chat with the knowledge base; the agent may be unreliable."
+      "note": "Recommended: answers about your project and the 2600 with the knowledge base, in about 3.5 GB of memory. Any laptop with 8 GB."
     },
     {
       "id": "qwen3-8b",
@@ -23,7 +24,7 @@
       "bytes": 5027783488,
       "memory_gb": 8,
       "license": "Apache-2.0",
-      "note": "Recommended for 16 GB machines. The smallest size meant for the agent."
+      "note": "Better answers and translations, in about 6 GB of memory. For 16 GB machines."
     },
     {
       "id": "qwen3-14b",

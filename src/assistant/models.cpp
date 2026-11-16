@@ -43,6 +43,7 @@ std::vector<CatalogModel> loadList(const std::string& jsonPath, const char* list
     model.note = text(item, "note");
     model.bytes = item.value("bytes", (int64_t)0);
     model.memoryGb = item.value("memory_gb", 0);
+    model.recommended = item.value("recommended", false);
     model.pooling = text(item, "pooling");
     model.queryPrefix = text(item, "query_prefix");
     model.documentPrefix = text(item, "document_prefix");
@@ -116,24 +117,16 @@ std::vector<Device> probeDevices(const std::string& helperPath) {
 }
 
 Recommendation recommend(const std::vector<CatalogModel>& catalog, const Hardware& hardware) {
-  Recommendation result;
-  auto largest = [&](auto fits) {
-    const CatalogModel* best = nullptr;
-    for (auto& model : catalog)
-      if (fits(model) && (!best || model.memoryGb > best->memoryGb)) best = &model;
-    return best;
-  };
+  if (catalog.empty()) return {};
+  const CatalogModel* model = &catalog.front();
+  for (auto& entry : catalog)
+    if (entry.recommended) model = &entry;
   if (const Device* gpu = hardware.bestGpu()) {
     double freeGb = gpu->freeMiB / 1024.0;
-    if (const CatalogModel* model = largest([&](const CatalogModel& m) { return m.memoryGb <= freeGb; })) {
-      return {model, true, gpu->name, freeGb};
-    }
+    if (model->memoryGb <= freeGb) return {model, true, gpu->name, freeGb};
   }
-  const CatalogModel* model = largest([&](const CatalogModel& m) { return m.memoryGb * 10 <= hardware.ramGb * 6 && m.memoryGb <= 8; });
-  if (model) {
-    return {model, false, "", (double)hardware.ramGb};
-  }
-  return result;
+  if (model->memoryGb * 10 <= hardware.ramGb * 6) return {model, false, "", (double)hardware.ramGb};
+  return {};
 }
 
 std::string formatBytes(int64_t bytes) {

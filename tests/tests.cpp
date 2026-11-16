@@ -4340,24 +4340,34 @@ static void testBundledModel() {
       CHECK(model.sha256.size() == 64 && model.url.rfind("https://", 0) == 0 && model.bytes > 0 && !model.license.empty());
       CHECK(model.url.size() > model.file.size() && model.url.compare(model.url.size() - model.file.size(), model.file.size(), model.file) == 0);
     }
-    // the machine decides: GPU memory first, otherwise the CPU within 60% of the RAM and at most 8 GB
+    // the catalogue's recommended model (Qwen3 4B), on the GPU if it fits there, otherwise on the CPU within 60% of the RAM
     auto pick = [&](int ramGb, std::vector<Device> devices) {
       Hardware hardware;
       hardware.ramGb = ramGb, hardware.devices = std::move(devices), hardware.probed = true;
       return recommend(catalog, hardware);
     };
-    CHECK(pick(8, {}).model && pick(8, {}).model->memoryGb == 4 && !pick(8, {}).onGpu);
-    CHECK(pick(16, {}).model && pick(16, {}).model->memoryGb == 8);   // 8 <= 60% of 16
-    CHECK(pick(64, {}).model && pick(64, {}).model->memoryGb == 8);   // no GPU: never above 8 GB
+    int marked = 0;
+    for (auto& model : catalog) marked += model.recommended;
+    CHECK(marked == 1);
+    CHECK(pick(8, {}).model && pick(8, {}).model->id == "qwen3-4b" && !pick(8, {}).onGpu);
+    CHECK(pick(64, {}).model && pick(64, {}).model->id == "qwen3-4b");   // more memory does not change it
     CHECK(pick(2, {}).model == nullptr);
+    CHECK(pick(6, {}).model == nullptr);                                 // 4 GB is more than 60% of 6
     Device appleGpu{"MTL0", "Apple M1 Pro", 12124, 12123, true};
     Recommendation apple = pick(16, {appleGpu, Device{"BLAS", "Accelerate", 0, 0, false}});
-    CHECK(apple.model && apple.model->memoryGb == 8 && apple.onGpu && apple.device == "Apple M1 Pro");  // 11.8 GB free: 8 fits, 12 does not
+    CHECK(apple.model && apple.model->id == "qwen3-4b" && apple.onGpu && apple.device == "Apple M1 Pro");
     Recommendation big = pick(32, {Device{"CUDA0", "NVIDIA RTX", 24576, 23000, true}});
-    CHECK(big.model && big.model->memoryGb == 12 && big.onGpu);
+    CHECK(big.model && big.model->id == "qwen3-4b" && big.onGpu);
     Recommendation small = pick(16, {Device{"Vulkan0", "Intel UHD", 2048, 1800, true}});
-    CHECK(small.model && !small.onGpu && small.model->memoryGb == 8);   // the GPU is too small: the CPU path
+    CHECK(small.model && !small.onGpu && small.model->id == "qwen3-4b");   // the GPU is too small: the CPU path
     CHECK(pick(16, {Device{"BLAS", "Accelerate", 0, 0, false}}).onGpu == false);
+    // without a marked model, the catalogue's first one
+    std::vector<CatalogModel> unmarked = catalog;
+    for (auto& model : unmarked) model.recommended = false;
+    Hardware plenty;
+    plenty.ramGb = 64, plenty.probed = true;
+    CHECK(recommend(unmarked, plenty).model == &unmarked.front());
+    CHECK(recommend({}, plenty).model == nullptr);
     // the helper's device list
     std::vector<Device> listed = parseDeviceList("Available devices:\n  MTL0: Apple M1 Pro (12124 MiB, 12123 MiB free)\n  BLAS: Accelerate (0 MiB, 0 MiB free)\nnoise\n  Vulkan0: AMD Radeon RX 6600 (8176 MiB, 8000 MiB free)\n");
     CHECK(listed.size() == 3 && listed[0].gpu && listed[0].freeMiB == 12123 && !listed[1].gpu && listed[2].name == "AMD Radeon RX 6600");
@@ -4391,6 +4401,7 @@ static void testBundledModel() {
       return false;
     };
     CHECK(has("--host", "127.0.0.1") && has("--port", "4242") && has("-m", "/m/model.gguf") && has("-c", "8192") && has("-np", "1"));
+    CHECK(has("-fa", "on") && has("-ctk", "q8_0") && has("-ctv", "q8_0"));  // the context's cache in 8 bits
     int port = freeLoopbackPort();
     CHECK(port > 1023 && port < 65536);
   }

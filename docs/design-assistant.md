@@ -424,6 +424,8 @@ Read these numbers with care: one model, one run; the questions were written by 
   2. otherwise the largest that fits in 60% of the RAM and needs at most 8 GB, because larger models are too slow on a CPU;
   3. if none fits, the smallest is preselected and the panel warns that it may be slow.
   The choice is saved, shown as "recommended" in the model list and explained in the download card ("It fits in the 11.8 GB free on the GPU Apple M1 Pro"); the user can pick any other model. The thresholds are a first guess, to be replaced by measurements in the phase 6 evaluation.
+- **Since 2026-11-16 the recommended model is Qwen3 4B, whatever the machine.** The built-in models only answer (Ask mode: a small model never gets the agent), and for answering with the knowledge base and the project the 4B did well in use, in half the memory of the 8B. The catalogue marks it (`"recommended": true`) and `recommend()` offers that one, on the GPU if it fits there, otherwise on the CPU within 60% of the RAM; the 8B and 14B stay in the list. Its known weak spot is the translation of answers: it sometimes loses a code marker, and then the answer is shown in English.
+- **The context's cache is in 8 bits** (`-fa on -ctk q8_0 -ctv q8_0`). With the default 16 bits, the cache of a 4B or 8B Qwen3 with 16K tokens is about 2.3 GB, as much as the 4B model itself; in 8 bits it is about half, with hardly any loss in the answers.
 
 ## Tutor mode (idea for later)
 
