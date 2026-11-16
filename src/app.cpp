@@ -779,7 +779,7 @@ void App::measureElf() {
     return;
   }
   std::error_code errorCode;
-  ElfLimits limits = elfLimits(project_->elfCartridge, project_->elfFlashKb, project_->elfRamKb);
+  ElfLimits limits = elfLimits(project_->memoryCartridge(), project_->elfFlashKb, project_->elfRamKb);
   bool useChameleon = limits.cartridge == ElfCartridge::Chameleon && fs::exists(chameleonPath, errorCode) &&
                       fs::last_write_time(chameleonPath, errorCode) >= fs::last_write_time(rom, errorCode) &&
                       readElf(readFile(chameleonPath), chameleonElf, &error) && chameleonElf.type == 2;
@@ -2285,6 +2285,26 @@ MenuBar App::buildMenuBar(bool native) {
     buildMenu.push_back(sub(T("Format"), formats));
     buildMenu.push_back(sub(T("TV standard"), tvItems));
     buildMenu.push_back(sub(T("Emulator"), emulatorItems));
+    if (project_->runsOnArmCartridge()) {
+      // what the emulators imitate: the ARM clock (how much the ARM does per frame)
+      std::vector<MenuItem> cartridgeItems;
+      std::string current = project_->armCartridge();
+      for (auto& id : armCartridgeIds(project_->language, project_->format)) {
+        std::string label = id == "custom" ? std::string(T("Custom...")) : armCartridgeName(id);
+        MenuItem cartridgeItem = item(label, "", set([id](Project& project) { project.cartridge = id; }), true, current == id);
+        if (id == "custom") {
+          cartridgeItem.action = [this, apply = cartridgeItem.action] {
+            apply();
+            projectSettings();  // where its clock is set
+          };
+          if (current == "custom") cartridgeItem.hint = F("{0} MHz", {std::to_string(project_->cartridgeClockMhz)});
+        } else {
+          cartridgeItem.hint = F("{0} MHz", {std::to_string(id == "chameleon" ? Project::kChameleonClockMhz : Project::kUcaClockMhz)});
+        }
+        cartridgeItems.push_back(cartridgeItem);
+      }
+      buildMenu.push_back(sub(T("Emulated cartridge"), cartridgeItems));
+    }
     buildMenu.push_back(item(T("Emulator options..."), "", [this] { showEmuOptions_ = true; }));
     buildMenu.push_back(item(T("Project settings..."), "", [this] { projectSettings(); }));
     buildMenu.push_back(sub(T("Illegal opcodes"), illegal));
@@ -3343,7 +3363,15 @@ void App::emulatorOptionsDialog() {
         ImGui::TableNextColumn();
         ImGui::SetNextItemWidth(-1);
         std::string next = value;
-        if (option.type == "int" || option.type == "text") {
+        bool fromCartridge = project_->runsOnArmCartridge() && (option.id == "armClock" || option.id == "dev.arm.mips");
+        if (fromCartridge) {
+          // the emulated cartridge's clock replaces it (Build > Emulated cartridge)
+          int clock = project_->armClockMhz();
+          if (option.id == "dev.arm.mips") clock = std::clamp(clock, kStellaArmMipsMin, kStellaArmMipsMax);
+          ImGui::AlignTextToFramePadding();
+          ImGui::TextDisabled("%s", F("{0}: {1}", {armCartridgeName(project_->armCartridge()), std::to_string(clock)}).c_str());
+          wrappedTooltip(std::string(T("Set by Build > Emulated cartridge.")));
+        } else if (option.type == "int" || option.type == "text") {
           std::string hint = T("default");
           if (option.max > 0) hint += " (" + std::to_string(option.min) + "-" + std::to_string(option.max) + ")";
           ImGuiInputTextFlags flags = option.type == "int" ? ImGuiInputTextFlags_CharsDecimal : 0;
@@ -4203,7 +4231,7 @@ void App::newProjectDialog() {
     bool made = Project::create(target.string(), npName_, npLanguage, npTvId_, &created, &error, example, formats.empty() ? "" : npFormat_,
                                 {npChameleonBuild_, npAceBuild_, npAceDefault_});
     if (made && created.language == Language::ElfC) {  // the cartridge; its own sizes are left unset
-      created.elfCartridge = npElfCartridge_;
+      created.cartridge = npElfCartridge_;
       created.elfFlashKb = npFlashKb_ == defaultElfFlashKb(npElfCartridge_) ? 0 : npFlashKb_;
       created.elfRamKb = npRamKb_ == defaultElfRamKb(npElfCartridge_) ? 0 : npRamKb_;
       made = created.save(&error);

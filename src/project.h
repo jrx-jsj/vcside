@@ -56,10 +56,26 @@ struct Project {
   std::string buildFlags;       // more arguments for DASM (e.g. "-DPAL=1 -T1")
   int spaceWarnPercent = 90;    // warn when a bank or RAM area is fuller than this
   int stackReserve = 8;         // bytes of 2600 RAM to keep free for the stack
-  // ELF: the cartridge the space report measures against, "chameleon" or "pluscart"
-  // (PlusCart and UnoCart), and its flash and RAM in KB (0: the cartridge's own sizes).
-  std::string elfCartridge = "chameleon";
+  // ELF, ACE and TinyELF Basic: the cartridge the emulators imitate (its ARM clock) and the
+  // space report measures against: "unocart", "pluscart", "chameleon" (ELF only) or "custom";
+  // empty: the language's own (see armCartridge()). A custom one has its own clock and the
+  // memory of cartridgeBase ("pluscart" or "chameleon"). The flash and RAM in KB: 0 for the
+  // cartridge's own sizes.
+  std::string cartridge;
+  std::string cartridgeBase = "pluscart";
+  int cartridgeClockMhz = kUcaClockMhz;
   int elfFlashKb = 0, elfRamKb = 0;
+  // The cartridge's ARM clock is what emulators pass to an ELF program in MP_CLOCK_HZ and
+  // how much the ARM does per 6507 cycle: TinyELF Basic sizes its work per frame by it.
+  static constexpr int kUcaClockMhz = 216;       // PlusCart and UnoCart: the UCA firmware runs the STM32F407 at 216 MHz
+  static constexpr int kChameleonClockMhz = 64;  // STM32G070
+  // True for the projects whose ROM runs on a cartridge's ARM: ELF, ACE and TinyELF Basic.
+  bool runsOnArmCartridge() const;
+  // The cartridge in effect: `cartridge` when this language allows it, else its default
+  // (ELF: chameleon; ACE and TinyELF Basic: pluscart). Empty when runsOnArmCartridge() is false.
+  std::string armCartridge() const;
+  int armClockMhz() const;           // the clock of armCartridge()
+  std::string memoryCartridge() const;  // "pluscart" or "chameleon": how the space report measures it
   // Launch options per emulator: option id (emulators.json) -> value. Unset = not passed.
   std::map<std::string, std::map<std::string, std::string>> emulatorOptions;
   std::map<std::string, std::string> emulatorArgs;  // extra arguments per emulator, before the ROM
@@ -176,6 +192,11 @@ bool formatSupported(const std::string& emulator, const std::string& formatId);
 // The format a ROM file shows by itself, from its first bytes: "ACE" for an ACE header
 // (ACE-2600, ACE-UF00, ACE-PC00, ACE-UC00), else "" (the emulator detects it).
 std::string romFormat(const std::string& path);
+// The cartridges an ELF, ACE or TinyELF Basic project can choose to emulate, in menu order
+// (the Chameleon Cart only for ELF: its Cortex-M0+ runs neither ACE nor TinyELF), and
+// their names for people.
+std::vector<std::string> armCartridgeIds(Language language, const std::string& format);
+std::string armCartridgeName(const std::string& id);
 const char* languageId(Language language);
 Language languageFromId(const std::string& id);
 const char* illegalId(IllegalOpcodes policy);

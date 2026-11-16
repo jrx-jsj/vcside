@@ -34,8 +34,13 @@ struct EmulatorLaunch {
   std::vector<std::string> notes;  // for the output panel
 };
 
+// Stella's -dev.arm.mips range: its ELF ARM speed in MIPS (CartELF.hxx), passed to the
+// program as its clock.
+constexpr int kStellaArmMipsMin = 50, kStellaArmMipsMax = 300;
+
 // The arguments the project's options add for an emulator (shown in the options
-// dialog) and the Gopher2600 preferences they set.
+// dialog) and the Gopher2600 preferences they set. For an ELF, ACE or TinyELF Basic project
+// the emulated cartridge's clock replaces the ARM clock options (armClock, dev.arm.mips).
 std::vector<std::string> emulatorOptionArgs(const Project& project, const EmulatorInfo& emulator,
                                             std::map<std::string, std::string>* preferences = nullptr);
 

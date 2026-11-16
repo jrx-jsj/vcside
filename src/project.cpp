@@ -60,7 +60,7 @@ IllegalOpcodes illegalFromId(const std::string& id) {
 // The keys VCSIDE writes; the others are kept as they are.
 static const char* kKnownKeys[] = {"name", "language", "main", "output", "format", "tv", "emulator", "illegal_opcodes",
                                    "include_dirs", "build_command", "tool_paths", "build_flags", "space_warn_percent",
-                                   "stack_reserve", "elf_cartridge", "elf_flash_kb", "elf_ram_kb", "emulator_options",
+                                   "stack_reserve", "cartridge", "cartridge_base", "cartridge_clock_mhz", "elf_cartridge", "elf_flash_kb", "elf_ram_kb", "emulator_options",
                                    "emulator_args", "source_dir", "resources_dir", "generated_dir", "build_dir"};
 
 bool Project::fromJson(const std::string& text, const std::string& path, std::string* error) {
@@ -90,7 +90,10 @@ bool Project::fromJson(const std::string& text, const std::string& path, std::st
     parsed.buildFlags = document.value("build_flags", "");
     parsed.spaceWarnPercent = document.value("space_warn_percent", 90);
     parsed.stackReserve = document.value("stack_reserve", 8);
-    parsed.elfCartridge = document.value("elf_cartridge", parsed.elfCartridge) == "pluscart" ? "pluscart" : "chameleon";
+    // "elf_cartridge" (chameleon or pluscart) is how projects before 2026-11-16 kept it
+    parsed.cartridge = document.value("cartridge", document.value("elf_cartridge", std::string()));
+    parsed.cartridgeBase = document.value("cartridge_base", parsed.cartridgeBase) == "chameleon" ? "chameleon" : "pluscart";
+    parsed.cartridgeClockMhz = std::clamp(document.value("cartridge_clock_mhz", parsed.cartridgeClockMhz), 1, 1000);
     parsed.elfFlashKb = std::max(0, document.value("elf_flash_kb", 0));
     parsed.elfRamKb = std::max(0, document.value("elf_ram_kb", 0));
     if (document.contains("emulator_options") && document["emulator_options"].is_object())
@@ -137,9 +140,15 @@ std::string Project::toJson() const {
   if (!buildFlags.empty()) document["build_flags"] = buildFlags;
   if (spaceWarnPercent != 90) document["space_warn_percent"] = spaceWarnPercent;
   if (stackReserve != 8) document["stack_reserve"] = stackReserve;
+  if (runsOnArmCartridge()) {
+    document["cartridge"] = armCartridge();
+    if (armCartridge() == "custom") {
+      document["cartridge_clock_mhz"] = cartridgeClockMhz;
+      if (language == Language::ElfC) document["cartridge_base"] = cartridgeBase;
+    }
+  }
   if (language == Language::ElfC) {
-    document["elf_cartridge"] = elfCartridge;
-    if (elfFlashKb > 0 && elfCartridge == "chameleon") document["elf_flash_kb"] = elfFlashKb;
+    if (elfFlashKb > 0 && memoryCartridge() == "chameleon") document["elf_flash_kb"] = elfFlashKb;
     if (elfRamKb > 0) document["elf_ram_kb"] = elfRamKb;
   }
   json optionsJson = json::object(), argsJson = json::object();
@@ -563,6 +572,43 @@ const std::vector<std::string>& tvStandardIds() {
 }
 
 std::string tvLabel(const std::string& tv) { return tv == "AUTO" ? std::string(T("Multiple (in the code)")) : tv; }
+
+bool Project::runsOnArmCartridge() const {
+  return language == Language::ElfC || language == Language::AceC || language == Language::TinyElfBasic || format == "ELF" ||
+         format == "ACE";
+}
+
+std::vector<std::string> armCartridgeIds(Language language, const std::string& format) {
+  bool elf = language == Language::ElfC || (language != Language::AceC && language != Language::TinyElfBasic && format == "ELF");
+  if (elf) return {"unocart", "pluscart", "chameleon", "custom"};
+  return {"unocart", "pluscart", "custom"};
+}
+
+std::string armCartridgeName(const std::string& id) {
+  if (id == "unocart") return "UnoCart";
+  if (id == "pluscart") return "PlusCart";
+  if (id == "chameleon") return "Chameleon Cart";
+  return T("Custom");
+}
+
+std::string Project::armCartridge() const {
+  if (!runsOnArmCartridge()) return "";
+  auto allowed = armCartridgeIds(language, format);
+  if (std::find(allowed.begin(), allowed.end(), cartridge) != allowed.end()) return cartridge;
+  return language == Language::ElfC ? "chameleon" : "pluscart";
+}
+
+int Project::armClockMhz() const {
+  std::string id = armCartridge();
+  if (id == "custom") return cartridgeClockMhz;
+  return id == "chameleon" ? kChameleonClockMhz : kUcaClockMhz;
+}
+
+std::string Project::memoryCartridge() const {
+  std::string id = armCartridge();
+  if (id == "custom") return cartridgeBase == "chameleon" ? "chameleon" : "pluscart";
+  return id == "chameleon" ? "chameleon" : "pluscart";
+}
 
 std::vector<std::string> tvStandardsFor(Language language) {
   if (language == Language::BatariBasic || isC(language) || language == Language::TinyElfBasic) return {"NTSC", "PAL", "PAL60"};
@@ -1257,7 +1303,6 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
       newProject.output = "build/" + projName + ".ace";
       if (aceBuild) newProject.buildCommand = "make ace";
       newProject.emulator = "gopher2600";                         // the only one that runs ACE
-      newProject.emulatorOptions["gopher2600"]["armClock"] = "168";  // the STM32F407's MHz
     }
   }
   // what git leaves out: each person's state of the project (.vcsproj.user) and the build

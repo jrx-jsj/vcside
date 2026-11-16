@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Juan Sánchez Jurado
 #include "emulator_launch.h"
 
+#include <algorithm>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -33,8 +34,14 @@ std::vector<std::string> emulatorOptionArgs(const Project& project, const Emulat
                                             std::map<std::string, std::string>* preferences) {
   std::vector<std::string> arguments;
   auto found = project.emulatorOptions.find(emulator.id);
-  static const std::map<std::string, std::string> none;
-  const auto& set = found == project.emulatorOptions.end() ? none : found->second;
+  std::map<std::string, std::string> set;
+  if (found != project.emulatorOptions.end()) set = found->second;
+  // An ELF, ACE or TinyELF Basic project runs at its emulated cartridge's ARM clock: Gopher2600's
+  // ARM clock preference, Stella's ELF speed (in MIPS, 50 to 300, its developer settings).
+  if (project.runsOnArmCartridge()) {
+    set["armClock"] = std::to_string(project.armClockMhz());
+    set["dev.arm.mips"] = std::to_string(std::clamp(project.armClockMhz(), kStellaArmMipsMin, kStellaArmMipsMax));
+  }
   bool developer = false;
   for (auto& emulatorOption : emulator.options) {  // in the knowledge base's order, so the command line is stable
     auto configured = set.find(emulatorOption.id);
@@ -213,6 +220,13 @@ bool prepareEmulatorLaunch(const Project& project, const KnowledgeBase& knowledg
   if (auto found = project.emulatorArgs.find(project.emulator); found != project.emulatorArgs.end())
     for (auto& arguments : splitCommand(found->second)) optionArguments.push_back(arguments);
   launch.args.insert(launch.args.end() - 1, optionArguments.begin(), optionArguments.end());
+  if (project.runsOnArmCartridge()) {
+    int clock = project.armClockMhz();
+    if (project.emulator == "stella" && (clock < kStellaArmMipsMin || clock > kStellaArmMipsMax))
+      launch.notes.push_back(F("Stella's ARM runs at {0} to {1} MHz: {2} MHz becomes {3}.",
+                               {std::to_string(kStellaArmMipsMin), std::to_string(kStellaArmMipsMax), std::to_string(clock),
+                                std::to_string(std::clamp(clock, kStellaArmMipsMin, kStellaArmMipsMax))}));
+  }
   if (!tvSupported(project.emulator, project.tv))
     launch.notes.push_back(F("{0} has no {1} TV standard: it chooses one itself.",
                              {project.emulator == "stella" ? "Stella" : project.emulator == "test7800" ? "Test7800" : "Gopher2600", project.tv}));

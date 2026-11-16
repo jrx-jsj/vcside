@@ -87,7 +87,7 @@ There is no clock line. The core loop, in our words:
 2. if A12 is set (a cartridge address), put the byte on the data output and switch the pins to output;
 3. otherwise release the bus. If wanted, read the data input to snoop a TIA or RIOT write.
 
-There are roughly 140 ARM cycles at 168 MHz for every 6507 cycle (1.19 MHz), so a game either runs its logic between bus cycles or keeps the 6507 busy (NOPs, overblank) while it computes.
+There are roughly 180 ARM cycles at 216 MHz (the UCA firmware's clock; the STM32F407 is rated for 168) for every 6507 cycle (1.19 MHz), so a game either runs its logic between bus cycles or keeps the 6507 busy (NOPs, overblank) while it computes.
 
 ZackAttack's Strong-ARM framework (`vcsLib.c`) is the origin of the vcsLib names: `InjectRomByte`, `YieldDataBus`, `SnoopDataBus`, `vcsWrite3`, `vcsLda2`, `vcsSta3`, `vcsJmp3`, `StartOverblank`… The ELF loaders later took the same API. **An ACE template can carry its own vcsLib-compatible bus library**, so the same C game builds for both ELF and ACE.
 
@@ -95,7 +95,7 @@ ZackAttack's Strong-ARM framework (`vcsLib.c`) is the origin of the vcsLib names
 
 - it lets the ARM run until it has read the address register six times per 6507 access, then takes `ODR` as the cartridge's answer (`ace.go`, `AccessPassive`);
 - the firmware callbacks are a stub that only returns;
-- its ARM clock is the `hardware.arm7.clock` preference: 70 MHz by default, the Harmony's. An ACE project should set 168.
+- its ARM clock is the `hardware.arm7.clock` preference: 70 MHz by default, the Harmony's. VCSIDE sets it from the project's emulated cartridge (216 MHz on the PlusCart and UnoCart, see design.md).
 
 ## Proof of concept (`tools/ace_poc`, CC0)
 
@@ -135,7 +135,7 @@ Still to do: a real PlusCart or UnoCart.
 
 ## The ACE template (`data/templates/ace`, CC0, phase 3)
 
-Language **C for ACE** (`ace-c`), offered in *New project* next to C for ELF, with the same example (the animated sprite). It builds with its Makefile, like ELF; the project gets `format: "ACE"`, `build/<name>.ace`, Gopher2600 and its ARM clock at 168 MHz (the `armClock` option, Gopher2600's `hardware.arm7.clock`).
+Language **C for ACE** (`ace-c`), offered in *New project* next to C for ELF, with the same example (the animated sprite). It builds with its Makefile, like ELF; the project gets `format: "ACE"`, `build/<name>.ace`, Gopher2600 and the PlusCart as its emulated cartridge (the ARM clock at 216 MHz, Gopher2600's `hardware.arm7.clock`; until 2026-11-16 the `armClock` option at 168).
 
 ```
 data/templates/ace/
@@ -226,7 +226,7 @@ The protocol, from the UCA firmware (`esp8266.c`, `main.c`, `global.h`, `cartrid
    - `.ace` files are ROMs: cartridge icon, a Makefile that names one is detected as an ACE project (format ACE, Gopher2600), and the assistant treats them as binary.
    - A double click on any ROM in the project tree runs it with the project's emulator and options. The format comes from its header (`romFormat`: ACE), from the project for its own ROM, or AUTO for the rest. An ACE ROM goes to Gopher2600 even in a Stella project, with a note.
 2. **Finish the proof of concept — done 2026-11-10, except real hardware.** The picture checked with a Gopher2600 macro. The debugger reads `ACE_debugging.elf` (DWARF 4, linked at `0x08020000`). Wolf3D's failure explained (Gopher2600's SRAM for big files and an unmapped flash register). The UnoCart's data layout handled by the firmware's pointers. Missing: running it on a real PlusCart or UnoCart.
-3. **Template — done 2026-11-11, except real hardware.** `data/templates/ace` and the `ace-animation` example, as above: the program runs from SRAM, its own bus library and overblank program, the music player unchanged. Language "C for ACE" in *New project*, Gopher2600 at 168 MHz, tests that build both.
+3. **Template — done 2026-11-11, except real hardware.** `data/templates/ace` and the `ace-animation` example, as above: the program runs from SRAM, its own bus library and overblank program, the music player unchanged. Language "C for ACE" in *New project*, Gopher2600 at 168 MHz (216 since 2026-11-16, the emulated cartridge), tests that build both.
 4. **Space report — done 2026-11-11.** The file, the SRAM and Gopher2600's SRAM, as above, in the *Space* panel, the status bar and the build's diagnostics. The cart choice was dropped: for `ACE-UF00` both carts have the same limits.
 5. **Shared C — done 2026-11-11.** `make ace` in an ELF project, as described in "ELF games as ACE files" above.
 6. **Sending to the PlusCart — done 2026-11-11, not tried on a cart.** *Build > Serve to the PlusCart (Wi-Fi)*, as described in "Sending the ROM to the PlusCart" above. For any project, not only ACE. The UnoCart has no Wi-Fi: its ROMs go on its SD card.

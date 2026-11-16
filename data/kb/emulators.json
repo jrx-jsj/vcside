@@ -1641,8 +1641,8 @@
     {
      "id": "dev.arm.mips",
      "group": "ARM (DPC+, CDFJ, ELF)",
-     "label": "ARM speed limit",
-     "description": "For ELF ROMs: maximum ARM instructions per 6507 instruction (50-300).",
+     "label": "ARM speed (MIPS)",
+     "description": "For ELF ROMs: the emulated ARM's speed in millions of instructions a second (50-300; 300 without the developer settings), passed to the program in MP_CLOCK_HZ. In ELF projects it comes from Build > Emulated cartridge.",
      "type": "int",
      "arg": "-dev.arm.mips",
      "sources": [
@@ -1654,8 +1654,8 @@
      "max": 300,
      "i18n": {
       "es": {
-       "label": "Límite de velocidad del ARM",
-       "description": "Para ROMs ELF: instrucciones ARM como máximo por cada instrucción del 6507 (50-300)."
+       "label": "Velocidad del ARM (MIPS)",
+       "description": "Para ROMs ELF: la velocidad del ARM emulado en millones de instrucciones por segundo (50-300; 300 sin los ajustes de desarrollo), que el programa recibe en MP_CLOCK_HZ. En los proyectos ELF sale de Compilar > Cartucho emulado."
       }
      }
     },
@@ -2147,7 +2147,7 @@
      "id": "armClock",
      "group": "ARM (DPC+, CDFJ, ELF)",
      "label": "ARM clock (MHz)",
-     "description": "Speed of the emulated ARM: 70 (the default, Harmony and Melody), 168 for ACE files (the PlusCart's and UnoCart's STM32F407).",
+     "description": "Speed of the emulated ARM: 70 (the default, Harmony and Melody). ELF programs get it in MP_CLOCK_HZ. In ELF, ACE and TinyELF Basic projects it comes from Build > Emulated cartridge (216 on the PlusCart and UnoCart, 64 on the Chameleon Cart).",
      "type": "int",
      "sources": [
       "gopher2600-0.56.1"
@@ -2158,7 +2158,7 @@
      "i18n": {
       "es": {
        "label": "Reloj del ARM (MHz)",
-       "description": "Velocidad del ARM emulado: 70 (por defecto, Harmony y Melody), 168 para archivos ACE (el STM32F407 del PlusCart y el UnoCart)."
+       "description": "Velocidad del ARM emulado: 70 (por defecto, Harmony y Melody). Los programas ELF la reciben en MP_CLOCK_HZ. En los proyectos ELF, ACE y TinyELF Basic sale de Compilar > Cartucho emulado (216 en el PlusCart y el UnoCart, 64 en el Chameleon Cart)."
       }
      }
     },

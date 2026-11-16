@@ -755,7 +755,6 @@
     "Playing 4-bit samples by writing AUDV with AUDC = 0 is an old 2600 technique; who did it first is still to be found. The mix goes through Chris Brenner's formula of the TIA's output, in Thomas Jentzsch's form. On the overblank's lines the samples are played by the ELF loader's own overblank program (United Carts of Atari firmware, Stella, Gopher2600), whose write to $2D becomes a write to AUDV0.": "Tocar muestras de 4 bits escribiendo AUDV con AUDC = 0 es una técnica antigua de la 2600; aún falta averiguar quién la usó primero. La mezcla pasa por la fórmula de Chris Brenner de la salida de la TIA, en la forma de Thomas Jentzsch. En las líneas del overblank toca las muestras el propio programa de overblank del cargador ELF (firmware United Carts of Atari, Stella, Gopher2600), cuya escritura en $2D pasa a ser una escritura en AUDV0.",
     "Plays an A of the current octave while the button is held.": "Toca un La de la octava actual mientras se mantiene pulsado el botón.",
     "PlusCart / UnoCart": "PlusCart / UnoCart",
-    "PlusCart or UnoCart": "PlusCart o UnoCart",
     "PlusCart/UnoCart RAM {0}/{1}  ·  CCM RAM {2}/{3}": "PlusCart/UnoCart RAM {0}/{1}  ·  RAM CCM {2}/{3}",
     "PlusCart/UnoCart {0}": "{0} del PlusCart/UnoCart",
     "position": "posición",
@@ -1128,7 +1127,6 @@
     "What each note of the song writes with this instrument. A note tuned by hand keeps its own AUDC and AUDF list.": "Lo que escribe cada nota de la canción con este instrumento. Una nota afinada a mano tiene su propia lista de AUDC y AUDF.",
     "What saving writes for the program: all the tables in <name>.gfx.asm, each sprite and playfield in <name>.<item>.gfx.asm, or the items of each group together in <name>.<group>.gfx.asm (those with no group stay in <name>.gfx.asm). Files an earlier choice wrote are removed. C projects: .gfx.h.": "Lo que se escribe al guardar para el programa: todas las tablas en <nombre>.gfx.asm, cada sprite y playfield en <nombre>.<elemento>.gfx.asm, o los elementos de cada grupo juntos en <nombre>.<grupo>.gfx.asm (los que no tienen grupo se quedan en <nombre>.gfx.asm). Se borran los archivos que escribió una elección anterior. Proyectos en C: .gfx.h.",
     "What the player writes to AUDC, AUDF and AUDV on every video frame of this pattern.": "Lo que escribe el reproductor en AUDC, AUDF y AUDV en cada cuadro de vídeo de este patrón.",
-    "What the space report measures the game against.": "Con qué se compara el espacio del juego en el informe.",
     "What you hear is the TIA counter by counter, as Chris Brenner described it (\"TIA Sounding Off in the Digital Domain\"), with the two channels mixed by his formula as Thomas Jentzsch simplified it. The pitches are those of Ron Fries' TIASOUND and of the tables by Eckhard Stolberg and Paul Slocum.": "Lo que se oye es el TIA contador a contador, como lo describió Chris Brenner («TIA Sounding Off in the Digital Domain»), con los dos canales mezclados por su fórmula tal como la simplificó Thomas Jentzsch. Los tonos son los de TIASOUND de Ron Fries y los de las tablas de Eckhard Stolberg y Paul Slocum.",
     "Where a dragged panel will dock": "Dónde se acoplará un panel arrastrado",
     "Where the build leaves the ROM, relative to the project. Run and debug open it.": "Dónde deja la ROM la compilación, relativo al proyecto. Ejecutar y depurar la abren.",
@@ -1378,7 +1376,20 @@
     "The words of TinyELF Basic": "Las palabras de TinyELF Basic",
     "This word is in Stefan Lenz's BASIC, but TinyELF Basic is built without it.": "Esta palabra existe en el BASIC de Stefan Lenz, pero TinyELF Basic se compila sin ella.",
     "Options": "Opciones",
-    "option": "opción"
+    "option": "opción",
+    "Emulated cartridge": "Cartucho emulado",
+    "The cartridge the emulators imitate (its ARM clock: how much the ARM does per frame) and, for ELF, the one the space report measures against.": "El cartucho que imitan los emuladores (su reloj del ARM: cuánto trabaja el ARM en cada cuadro) y, en ELF, aquel con el que se mide el informe de espacio.",
+    " ({0} MHz)": " ({0} MHz)",
+    "ARM clock (MHz)": "Reloj del ARM (MHz)",
+    "Passed to the program in MP_CLOCK_HZ and how fast the emulated ARM runs: 216 on the PlusCart and UnoCart, 64 on the Chameleon Cart. Stella takes 50 to 300.": "Lo recibe el programa en MP_CLOCK_HZ y marca lo rápido que va el ARM emulado: 216 en el PlusCart y el UnoCart, 64 en el Chameleon Cart. Stella admite de 50 a 300.",
+    "Memory like": "Memoria como",
+    "Which cartridge's memory the space report measures against: the PlusCart's loader buffer or the Chameleon Cart's flash and RAM.": "Con la memoria de qué cartucho se mide el informe de espacio: el búfer del cargador del PlusCart o la flash y la RAM del Chameleon Cart.",
+    "PlusCart and UnoCart": "PlusCart y UnoCart",
+    "Stella's ARM runs at {0} to {1} MHz: {2} MHz becomes {3}.": "El ARM de Stella va de {0} a {1} MHz: {2} MHz pasa a ser {3}.",
+    "Custom...": "Personalizado...",
+    "{0} MHz": "{0} MHz",
+    "{0}: {1}": "{0}: {1}",
+    "Set by Build > Emulated cartridge.": "Lo fija Compilar > Cartucho emulado."
   },
-  "total": 1377
+  "total": 1384
 }
