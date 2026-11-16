@@ -12,6 +12,7 @@
 #include <nlohmann/json.hpp>
 #include <sstream>
 #include <cctype>
+#include <chrono>
 
 #include "gfx.h"
 #include "music/export.h"
@@ -810,6 +811,10 @@ std::vector<std::string> Project::runArgs(Toolchain& toolchain, bool debug, std:
     if (error) *error = F("{0} cannot run {1} cartridges: choose Gopher2600 in Build > Emulator.", {tool->name, format});
     return {};
   }
+  if (emulator == "test7800" && !hasA7800Side()) {
+    if (error) *error = T("Test7800 runs only dual ELF games, with a 7800 side (vcsInjectDmaData, vcsSnoopRead): choose Gopher2600 or Stella in Build > Emulator.");
+    return {};
+  }
   if (language == Language::TinyElfBasic && emulator != "gopher2600") {
     if (error) *error = F("{0} cannot run TinyELF Basic (its ARM code is for the PlusCart's and UnoCart's Cortex-M4): choose Gopher2600 in Build > Emulator.", {tool->name});
     return {};
@@ -1470,6 +1475,59 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
   if (!newProject.save(error)) return false;
   if (result) *result = newProject;
   return true;
+}
+
+// Read again when the ROM changes, and the sources at most every two seconds (the menu and
+// the settings form ask every frame).
+bool Project::hasA7800Side() const {
+  if (format != "ELF" || language == Language::TinyElfBasic || language == Language::AceC) return false;
+  static const char* kCalls[] = {"vcsInjectDmaData", "vcsSnoopRead"};
+  auto names7800 = [](const std::string& text) {
+    for (const char* call : kCalls)
+      if (text.find(call) != std::string::npos) return true;
+    return false;
+  };
+  auto readText = [](const fs::path& path) {
+    std::ifstream stream(path, std::ios::binary);
+    std::ostringstream text;
+    text << stream.rdbuf();
+    return text.str();
+  };
+  struct Cached {
+    fs::file_time_type romTime;
+    std::chrono::steady_clock::time_point checked;
+    bool fromRom = false, result = false;
+  };
+  static std::map<std::string, Cached> cache;
+  std::error_code errorCode;
+  fs::path rom = outputPath();
+  auto romTime = fs::last_write_time(rom, errorCode);
+  bool haveRom = !errorCode;
+  auto now = std::chrono::steady_clock::now();
+  auto found = cache.find(file + "|" + rom.string());
+  if (found != cache.end()) {
+    const Cached& cached = found->second;
+    if (haveRom && cached.fromRom && cached.romTime == romTime) return cached.result;
+    if (!haveRom && !cached.fromRom && now - cached.checked < std::chrono::seconds(2)) return cached.result;
+  }
+  Cached fresh;
+  fresh.checked = now, fresh.fromRom = haveRom;
+  if (haveRom) {
+    fresh.romTime = romTime;
+    fresh.result = names7800(readText(rom));  // the undefined symbols' names, for the loader
+  } else {
+    fs::path sources = sourceDir.empty() ? fs::path(dir) : fs::path(abs(sourceDir));
+    for (fs::recursive_directory_iterator entry(sources, errorCode), end; !errorCode && entry != end && !fresh.result; entry.increment(errorCode)) {
+      std::string extension = entry->path().extension().string();
+      if (entry->is_regular_file(errorCode) && (extension == ".c" || extension == ".h" || extension == ".S")) fresh.result = names7800(readText(entry->path()));
+    }
+  }
+  cache[file + "|" + rom.string()] = fresh;
+  return fresh.result;
+}
+
+bool Project::emulatorRuns(const std::string& emulatorId) const {
+  return formatSupported(emulatorId, format) && (emulatorId != "test7800" || hasA7800Side());
 }
 
 bool formatSupported(const std::string& emulator, const std::string& formatId) {

@@ -2278,8 +2278,9 @@ MenuBar App::buildMenuBar(bool native) {
     }
     for (auto& emulatorId : emulatorIds()) {
       Tool* tool = tools_.get(emulatorId);
-      MenuItem emulatorItem = item(tool->name, "", set([emulatorId](Project& project) { project.emulator = emulatorId; }), true, project_->emulator == emulatorId);
-      if (!formatSupported(emulatorId, project_->format))  // Test7800: a 7800, for ELF games with a 7800 side
+      bool runs = project_->emulatorRuns(emulatorId);  // Test7800: a 7800, for ELF games with a 7800 side
+      MenuItem emulatorItem = item(tool->name, "", set([emulatorId](Project& project) { project.emulator = emulatorId; }), runs, project_->emulator == emulatorId);
+      if (!runs)
         emulatorItem.hint = emulatorId == "test7800" ? std::string(T("dual ELF only, with a 7800 side")) : F("no {0}", {project_->format});
       else
         emulatorItem.hint = tool->found() ? T("found") : T("not found");
@@ -3326,7 +3327,7 @@ void App::emulatorOptionsDialog() {
   if (ImGui::BeginTabBar("emus")) {
     for (auto& id : emulatorIds()) {
       const EmulatorInfo* emulator = kb_.emulator(id);
-      if (!emulator || (!formatSupported(id, project_->format) && project_->emulator != id)) continue;  // Test7800: ELF only
+      if (!emulator || (!project_->emulatorRuns(id) && project_->emulator != id)) continue;  // Test7800: dual ELF games only
       ImGuiTabItemFlags tabFlags = emuOptionsTab_ == id ? ImGuiTabItemFlags_SetSelected : 0;
       if (!ImGui::BeginTabItem(emulator->name.c_str(), nullptr, tabFlags)) continue;
       auto& currentValues = project_->emulatorOptions[id];

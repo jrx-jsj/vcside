@@ -1033,6 +1033,12 @@ static void testElfSpace() {
   CHECK(Project::create(dir.string(), "rainbow", Language::ElfC, "NTSC", &project, &error));
   CHECK(project.buildCommand == "make" && project.format == "ELF" && project.output == "build/rainbow.bin" && project.main == "src/main.c");
   CHECK(project.armCartridge() == "chameleon" && project.toJson().find("\"cartridge\": \"chameleon\"") != std::string::npos);
+  // Test7800 only for an ELF game with a 7800 side: none in the sources, then a ROM that names a 7800 call
+  CHECK(!project.hasA7800Side() && !project.emulatorRuns("test7800") && project.emulatorRuns("stella"));
+  fs::create_directories(fs::path(project.outputPath()).parent_path(), errorCode);
+  std::ofstream(project.outputPath(), std::ios::binary) << std::string("\x7f" "ELF") << std::string(40, '\0') << "vcsSnoopRead";
+  CHECK(project.hasA7800Side() && project.emulatorRuns("test7800"));
+  fs::remove(project.outputPath(), errorCode);
   project.useCartridge(*cartridgeLibrary().find("pluscart"));
   {
     Project reread;

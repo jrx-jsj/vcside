@@ -139,6 +139,11 @@ struct Project {
   // the file when the project has no generatedDir or the file is not in the project.
   std::string generatedFolder(const std::string& sourcePath, const std::string& kind) const;
   std::string outputPath() const { return abs(output); }
+  // An ELF game with a 7800 side, which Test7800 runs: its ROM (or, before it is built, its C
+  // sources) names one of the 7800-only vcsLib calls (vcsInjectDmaData, vcsSnoopRead).
+  bool hasA7800Side() const;
+  // Whether an emulator runs this project: its format, and Test7800 a 7800 side.
+  bool emulatorRuns(const std::string& emulatorId) const;
   std::string stem() const;  // output path without extension (for .lst/.sym)
 
   // DASM run that writes the emitted blocks (-f2) to <stem>.ras, for the space report.

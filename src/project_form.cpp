@@ -214,6 +214,7 @@ void ProjectForm::render(TextEditor& text, ImFont* mono, const KnowledgeBase& kb
     {
       std::vector<std::pair<std::string, std::string>> items;
       for (auto& emulatorId : emulatorIds()) {
+        if (!project_.emulatorRuns(emulatorId) && emulatorId != project_.emulator) continue;  // Test7800: dual ELF games only
         Tool* tool = toolchain.get(emulatorId);
         items.push_back({emulatorId, tool ? tool->name : emulatorId});
       }
