@@ -2279,7 +2279,10 @@ MenuBar App::buildMenuBar(bool native) {
     for (auto& emulatorId : emulatorIds()) {
       Tool* tool = tools_.get(emulatorId);
       MenuItem emulatorItem = item(tool->name, "", set([emulatorId](Project& project) { project.emulator = emulatorId; }), true, project_->emulator == emulatorId);
-      emulatorItem.hint = !formatSupported(emulatorId, project_->format) ? F("no {0}", {project_->format}) : tool->found() ? T("found") : T("not found");
+      if (!formatSupported(emulatorId, project_->format))  // Test7800: a 7800, for ELF games with a 7800 side
+        emulatorItem.hint = emulatorId == "test7800" ? std::string(T("dual ELF only, with a 7800 side")) : F("no {0}", {project_->format});
+      else
+        emulatorItem.hint = tool->found() ? T("found") : T("not found");
       emulatorItems.push_back(emulatorItem);
     }
     const IllegalOpcodes policies[] = {IllegalOpcodes::Allow, IllegalOpcodes::StableOnly, IllegalOpcodes::Warn, IllegalOpcodes::Forbid};

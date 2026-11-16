@@ -1405,7 +1405,8 @@
     "Game in flash, variables in RAM": "Juego en flash, variables en RAM",
     "Game loaded into a RAM buffer": "Juego cargado en un búfer de RAM",
     "{0} MHz, game in flash: {1} KB of flash, {2} KB of RAM": "{0} MHz, juego en flash: {1} KB de flash, {2} KB de RAM",
-    "{0} MHz, game loaded into RAM: {1} KB buffer": "{0} MHz, juego cargado en RAM: búfer de {1} KB"
+    "{0} MHz, game loaded into RAM: {1} KB buffer": "{0} MHz, juego cargado en RAM: búfer de {1} KB",
+    "dual ELF only, with a 7800 side": "solo ELF dual, con parte de 7800"
   },
-  "total": 1400
+  "total": 1401
 }
