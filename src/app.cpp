@@ -3092,7 +3092,9 @@ void App::updateCChecks() {
   if (!anyC || !project_ || !isC(project_->language) || project_->buildCommand.empty()) return;
   // the Makefile's commands: once per project, and again when the Makefile changes
   std::error_code errorCode;
-  auto makefileTime = fs::last_write_time(fs::path(project_->dir) / "Makefile", errorCode);
+  // the Makefile make reads: elf/Makefile for "make -C elf" (known after the first dry run)
+  std::string makeDir = !dryRunMakeDir_.empty() && dryRunFor_.rfind(project_->dir + "|", 0) == 0 ? dryRunMakeDir_ : project_->dir;
+  auto makefileTime = fs::last_write_time(fs::path(makeDir) / "Makefile", errorCode);
   std::string key = project_->dir + "|" + (errorCode ? std::string() : std::to_string((long long)makefileTime.time_since_epoch().count()));
   if (dryRunJob_ && dryRunJob_->finished()) {
     dryRunOutput_ = dryRunJob_->output();
@@ -3108,6 +3110,7 @@ void App::updateCChecks() {
     bool usesMake = !args.empty() && fs::path(args[0]).stem().string().find("make") != std::string::npos;
     if (usesMake) {
       args.insert(args.end(), {"-n", "-B"});  // prints every command, runs none
+      dryRunMakeDir_ = makeFolder(args, dryRunWorkDir_.empty() ? project_->dir : dryRunWorkDir_);  // make -C elf: paths from elf/
       dryRunJob_ = std::make_unique<Job>();
       if (dryRunJob_->start(args, dryRunWorkDir_, dryRunEnv_)) dryRunStartedFor_ = key;
       else dryRunJob_.reset();
@@ -3127,7 +3130,7 @@ void App::updateCChecks() {
     }
     if (file->checkJob || file->checkDueAt < 0 || now < file->checkDueAt) continue;
     file->checkDueAt = -1;
-    CompileCommand command = compileCommandFor(dryRunOutput_, project_->dir, file->path);
+    CompileCommand command = compileCommandFor(dryRunOutput_, dryRunMakeDir_.empty() ? project_->dir : dryRunMakeDir_, file->path);
     if (command.empty()) continue;
     // the editor's text, unsaved changes included, in a folder of its own
     fs::path folder = fs::temp_directory_path(errorCode) / ("vcside-check-" + std::to_string((uintptr_t)this)) / std::to_string((uintptr_t)file.get());

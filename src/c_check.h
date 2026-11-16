@@ -22,8 +22,12 @@ struct CompileCommand {
   bool empty() const { return compiler.empty(); }
 };
 
-// The command for source (absolute) in the dry run of a Makefile run in projectDir.
-CompileCommand compileCommandFor(const std::string& dryRunOutput, const std::string& projectDir, const std::string& source);
+// The folder make runs its Makefile in: workDir, changed by its -C options ("make -C elf").
+std::string makeFolder(const std::vector<std::string>& makeArgs, const std::string& workDir);
+
+// The command for source (absolute) in the dry run of a Makefile run in makeDir (its paths are
+// relative to it, or to the folder a recursive make says it enters).
+CompileCommand compileCommandFor(const std::string& dryRunOutput, const std::string& makeDir, const std::string& source);
 
 // The arguments that check checkedCopy (the editor's text) as if it were at original.
 std::vector<std::string> syntaxCheckArgs(const CompileCommand& command, const std::string& checkedCopy, const std::string& original);

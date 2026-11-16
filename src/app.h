@@ -290,7 +290,7 @@ class App {
   void updateCChecks();
   std::unique_ptr<Job> dryRunJob_;
   std::string dryRunOutput_, dryRunFor_;  // its output, and the project and Makefile time it is for
-  std::string dryRunStartedFor_, dryRunWorkDir_;
+  std::string dryRunStartedFor_, dryRunWorkDir_, dryRunMakeDir_;  // dryRunMakeDir_: where make reads the Makefile (-C)
   EnvVars dryRunEnv_;  // the build's environment (PATH with the toolchain), also for the checks
   std::map<std::string, int> symbols_;
   // What the sources define now, before building: the open files as they are in the

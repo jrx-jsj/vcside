@@ -58,21 +58,47 @@ static std::vector<std::string> readingFlags(const std::vector<std::string>& wor
   return flags;
 }
 
-CompileCommand compileCommandFor(const std::string& dryRunOutput, const std::string& projectDir, const std::string& source) {
-  std::string wanted = normalised(projectDir, source);
+std::string makeFolder(const std::vector<std::string>& makeArgs, const std::string& workDir) {
+  fs::path folder(workDir);
+  for (size_t index = 1; index < makeArgs.size(); index++) {
+    const std::string& word = makeArgs[index];
+    std::string change;
+    if (word == "-C" || word == "--directory") change = index + 1 < makeArgs.size() ? makeArgs[++index] : "";
+    else if (word.compare(0, 2, "-C") == 0) change = word.substr(2);
+    else if (word.compare(0, 12, "--directory=") == 0) change = word.substr(12);
+    if (!change.empty()) folder = fs::path(change).is_absolute() ? fs::path(change) : folder / change;
+  }
+  return folder.lexically_normal().generic_string();
+}
+
+CompileCommand compileCommandFor(const std::string& dryRunOutput, const std::string& makeDir, const std::string& source) {
+  std::string wanted = normalised(makeDir, source);
   CompileCommand firstCompile, found;
+  // a recursive make says where it runs: "make[1]: Entering directory '/p/elf'" (` in old makes)
+  std::vector<std::string> folders = {makeDir};
   std::istringstream in(dryRunOutput);
   for (std::string line; std::getline(in, line) && found.empty();) {
+    if (line.rfind("make", 0) == 0 && line.find(": Entering directory ") != std::string::npos) {
+      size_t start = line.find_first_of("'`", line.find(": Entering directory "));
+      size_t end = line.rfind('\'');
+      if (start != std::string::npos && end != std::string::npos && end > start) folders.push_back(line.substr(start + 1, end - start - 1));
+      continue;
+    }
+    if (line.rfind("make", 0) == 0 && line.find(": Leaving directory ") != std::string::npos) {
+      if (folders.size() > 1) folders.pop_back();
+      continue;
+    }
+    const std::string& folder = folders.back();
     std::vector<std::string> words = splitCommand(line);
     if (words.empty() || !isCompiler(words[0])) continue;
     bool compilesSource = false, compilesWanted = false;
     for (auto& word : words) {
       if (!isSource(word)) continue;
       compilesSource = true;
-      compilesWanted = compilesWanted || normalised(projectDir, word) == wanted;
+      compilesWanted = compilesWanted || normalised(folder, word) == wanted;
     }
     if (!compilesSource) continue;
-    CompileCommand command{words[0], readingFlags(words, projectDir)};
+    CompileCommand command{words[0], readingFlags(words, folder)};
     if (compilesWanted) found = command;
     else if (firstCompile.empty()) firstCompile = command;
   }

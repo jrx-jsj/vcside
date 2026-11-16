@@ -2014,6 +2014,14 @@ static void testCCheck() {
   // a link line that also compiles (CDFJ's arm code): its flags without the link's
   command = compileCommandFor("arm-none-eabi-gcc -mcpu=arm7tdmi -nostdlib -T arm.ld -Wl,-Map=x.map -o build/arm.elf src/main.c src/a.c -lgcc\n", "/p", "/p/src/a.c");
   CHECK(command.flags == std::vector<std::string>{"-mcpu=arm7tdmi"});
+  // make -C elf (Mists of Aldar): the Makefile's paths are elf/'s
+  CHECK(makeFolder({"make", "-C", "elf"}, "/p") == "/p/elf" && makeFolder({"make", "-Celf", "all"}, "/p") == "/p/elf" && makeFolder({"make"}, "/p") == "/p");
+  command = compileCommandFor("arm-none-eabi-gcc -mthumb -Iinclude -DMISTS -c src/main.c -o ../build/elf/main.o\n", makeFolder({"make", "-C", "elf"}, "/p"), "/p/elf/src/main.c");
+  CHECK(command.flags == (std::vector<std::string>{"-mthumb", "-I", "/p/elf/include", "-DMISTS"}));
+  // a recursive make says where it goes
+  command = compileCommandFor("make[1]: Entering directory '/p/sub'\ngcc -DA -c x.c\nmake[1]: Leaving directory '/p/sub'\ngcc -DB -c x.c\n", "/p", "/p/x.c");
+  CHECK(command.flags == std::vector<std::string>{"-DB"});
+  CHECK(compileCommandFor("make[1]: Entering directory `/p/sub'\ngcc -DA -c x.c\n", "/p", "/p/sub/x.c").flags == std::vector<std::string>{"-DA"});
 
   auto args = syntaxCheckArgs({"arm-none-eabi-gcc", {"-std=c11"}}, "/tmp/check/game.c", "/p/src/game.c");
   CHECK(args.size() == 9 && args[2] == "-iquote" && args[3] == "/p/src" && args[4] == "-fsyntax-only" && args[7] == "c" && args[8] == "/tmp/check/game.c");
