@@ -812,7 +812,7 @@ std::vector<std::string> Project::runArgs(Toolchain& toolchain, bool debug, std:
     return {};
   }
   if (emulator == "test7800" && !hasA7800Side()) {
-    if (error) *error = T("Test7800 runs only dual ELF games, with a 7800 side (vcsInjectDmaData, vcsSnoopRead): choose Gopher2600 or Stella in Build > Emulator.");
+    if (error) *error = T("Test7800 runs only dual ELF games, with a 7800 side (a .elf7800 section): choose Gopher2600 or Stella in Build > Emulator.");
     return {};
   }
   if (language == Language::TinyElfBasic && emulator != "gopher2600") {
@@ -1481,12 +1481,9 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
 // the settings form ask every frame).
 bool Project::hasA7800Side() const {
   if (format != "ELF" || language == Language::TinyElfBasic || language == Language::AceC) return false;
-  static const char* kCalls[] = {"vcsInjectDmaData", "vcsSnoopRead"};
-  auto names7800 = [](const std::string& text) {
-    for (const char* call : kCalls)
-      if (text.find(call) != std::string::npos) return true;
-    return false;
-  };
+  // the firmware starts a game in MARIA mode when it has a .elf7800 section (the section's
+  // name is in the ROM; in the sources, the attribute that makes it)
+  auto names7800 = [](const std::string& text) { return text.find(".elf7800") != std::string::npos; };
   auto readText = [](const fs::path& path) {
     std::ifstream stream(path, std::ios::binary);
     std::ostringstream text;

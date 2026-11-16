@@ -140,7 +140,7 @@ struct Project {
   std::string generatedFolder(const std::string& sourcePath, const std::string& kind) const;
   std::string outputPath() const { return abs(output); }
   // An ELF game with a 7800 side, which Test7800 runs: its ROM (or, before it is built, its C
-  // sources) names one of the 7800-only vcsLib calls (vcsInjectDmaData, vcsSnoopRead).
+  // sources) has the .elf7800 section, which tells the firmware to start it in MARIA mode.
   bool hasA7800Side() const;
   // Whether an emulator runs this project: its format, and Test7800 a 7800 side.
   bool emulatorRuns(const std::string& emulatorId) const;
