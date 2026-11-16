@@ -49,7 +49,8 @@ def main():
     questions = json.load(open(args.questions))["questions"]
     system = open(os.path.join(args.data, "assistant", "system.txt")).read()
     port = free_port()
-    server = subprocess.Popen([args.helper, "-m", args.model, "--host", "127.0.0.1", "--port", str(port), "-c", "8192", "-np", "1", "--no-webui", "--no-warmup"],
+    server = subprocess.Popen([args.helper, "-m", args.model, "--host", "127.0.0.1", "--port", str(port), "-c", "8192", "-np", "1", "--no-webui", "--no-warmup",
+                               "-fa", "on", "-ctk", "q8_0", "-ctv", "q8_0"],  # as VCSIDE starts it
                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
         for _ in range(180):
