@@ -28,6 +28,12 @@ bool usingSecretFile();
 // Moves the keys of these accounts to the store now chosen (from the other one).
 void moveSecrets(const std::vector<std::string>& accounts, bool toFile);
 
+// Always in the file (keys.json, 0600: plain text that only the user's account can read),
+// whatever the assistant's choice: the PlusStore's app password (plusstore.h).
+bool loadFileSecret(const std::string& account, std::string* secret);
+bool saveFileSecret(const std::string& account, const std::string& secret);
+bool removeFileSecret(const std::string& account);
+
 bool loadSecret(const std::string& account, std::string* secret);
 bool saveSecret(const std::string& account, const std::string& secret);
 bool removeSecret(const std::string& account);

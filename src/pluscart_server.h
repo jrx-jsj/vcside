@@ -11,6 +11,8 @@
 //   per entry: its type, a space, its size in 6 digits, a space and its name.
 // - The same with "Range: bytes=<first>-<last>": that part of the file at <path> (up to
 //   32 KB per request, several requests on one keep-alive connection).
+// A browser gets a page instead: GET / lists the ROMs with a link to download each
+// (GET /rom/<name>) and says how to point the PlusCart here.
 #pragma once
 #include <atomic>
 #include <memory>
@@ -32,6 +34,8 @@ struct PlusStoreRequest {
   std::string path;
   bool hasRange = false;
   long first = 0, last = 0;
+  std::string browserPath;  // any other GET: "/", "/rom/<name>"... (decoded)
+  std::string host;         // the Host header, for the page
 };
 PlusStoreRequest parsePlusStoreRequest(const std::string& header);
 // %XX and '+' (for a space), as the firmware encodes names in the path.
@@ -39,6 +43,8 @@ std::string decodePlusStorePath(const std::string& encoded);
 // The menu text: the status line with `message`, then the ROMs (with their sizes) at the
 // top, or just ".." anywhere else.
 std::string plusStoreMenu(const std::vector<ServedRom>& roms, const std::string& path, const std::string& message);
+// The page for a browser: the ROMs, their sizes and links, and the address to give the PlusCart.
+std::string plusCartLoaderPage(const std::vector<ServedRom>& roms, const std::string& message, const std::string& host);
 // The complete HTTP answer to a request.
 std::string plusStoreResponse(const PlusStoreRequest& request, const std::vector<ServedRom>& roms, const std::string& message,
                               std::string* logLine);

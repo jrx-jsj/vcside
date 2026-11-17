@@ -88,6 +88,13 @@ void App::shutdown() {
   saveSettings();
 }
 
+static void readPlusStoreSettings(const json& settings, PlusStoreSettings& plusStore) {
+  json saved = settings.value("plusstore", json::object());
+  if (!saved.is_object()) return;
+  plusStore.folder = saved.value("folder", std::string(kPlusStoreDefaultFolder));
+  plusStore.createFolders = saved.value("create_folders", true);
+}
+
 void App::loadSettings() {
   json settings;
   try {
@@ -112,6 +119,7 @@ void App::loadSettings() {
   zoom_ = std::clamp(settings.value("zoom", settings.value("editor_zoom", 1.0f)), 0.5f, 3.0f);
   tools_.loadSettings(settings.value("tools", std::map<std::string, std::string>{}));
   assistant_.load(settings.value("assistant", nlohmann::json::object()));
+  readPlusStoreSettings(settings, plusStoreSettings_);
   // A new docked panel needs the default layout once (imgui.ini would keep it floating).
   if (settings.value("layout_version", 0) < kLayoutVersion) {
     resetLayout_ = true;
@@ -131,6 +139,7 @@ void App::saveSettings() {
             {"theme", themeId_},
             {"tools", tools_.userPaths()},
             {"assistant", assistant_.save()},
+            {"plusstore", {{"folder", plusStoreSettings_.folder}, {"create_folders", plusStoreSettings_.createFolders}}},
             {"layout_version", kLayoutVersion}};
   std::ofstream(configDir() + "settings.json") << settings.dump(2) << "\n";
   settingsSeen_ = ++gSettingsSaved;
@@ -156,6 +165,7 @@ void App::syncSettings() {
   themes_.load(dataDir() + "/themes", configDir() + "themes");
   useTheme(settings.value("theme", themeId_), false);  // this window's ImGui style
   tools_.loadSettings(settings.value("tools", std::map<std::string, std::string>{}));
+  readPlusStoreSettings(settings, plusStoreSettings_);
   for (auto& file : files_) file->editor.setGutterWidthChars(gutterChars(*file));
   for (auto& file : files_) updatePageSeparators(*file);
 }
@@ -847,6 +857,71 @@ void App::togglePlusCart() {
   if (address.empty()) address = T("this computer's address on the network");
   output_ += F("PlusCart: serving the project's ROM at {0}. On the PlusCart (on the same network): Setup > API Host, enter {0}, and its menu lists the ROM; choose it to run it. After each build, choose it again. To use the PlusStore again, set the API Host back to pluscart.firmaplus.de.",
                {address}) + "\n";
+}
+
+static void wrappedTooltip(const std::string& text);
+
+void App::uploadToPlusStore() {
+  if (!project_ || plusStore_.busy()) return;
+  outputScroll_ = true;
+  if (!plusStore_.available()) {
+    output_ += std::string(T("PlusStore: uploading needs HTTPS, which VCSIDE cannot use on this system yet.")) + "\n";
+    return;
+  }
+  fs::path rom = project_->outputPath();
+  output_ += F("PlusStore: uploading {0} to \"{1}\"...", {rom.filename().string(), plusStoreSettings_.folder}) + "\n";
+  plusStore_.upload(rom.string(), rom.filename().string(), plusStoreSettings_);
+}
+
+void App::pollPlusStore() {
+  for (auto& line : plusStore_.takeLog()) {
+    output_ += line + "\n";
+    outputScroll_ = true;
+  }
+  std::string url = plusStore_.takeUrlToOpen();
+  if (!url.empty()) SDL_OpenURL(url.c_str());
+}
+
+void App::plusStoreDialog() {
+  if (showPlusStore_) {
+    ImGui::OpenPopup("###plusstore");
+    showPlusStore_ = false;
+  }
+  char title[96];
+  snprintf(title, sizeof title, "%s###plusstore", T("PlusStore"));
+  float fontSize = ImGui::GetFontSize();
+  ImGui::SetNextWindowSize(ImVec2(fontSize * 34, 0), ImGuiCond_Appearing);
+  bool open = true;
+  if (!theme::beginModal(title, &open)) return;
+  ImGui::PushTextWrapPos(ImGui::GetContentRegionAvail().x);
+  ImGui::TextWrapped("%s", T("Build > Upload to the PlusStore puts the project's ROM in your PlusStore account, with the name of the built file: the PlusCart lists it in its menu, in that folder."));
+  ImGui::Spacing();
+  ImGui::TextUnformatted(T("Folder in the account"));
+  ImGui::SetNextItemWidth(-1);
+  bool changed = ImGui::InputTextWithHint("##folder", kPlusStoreDefaultFolder, &plusStoreSettings_.folder);
+  if (plusStoreFolderParts(plusStoreSettings_.folder).empty())
+    ImGui::TextColored(theme::colv(theme::Role::MsgError), "%s", T("Folder names separated by /, inside the account (no . or ..)."));
+  changed |= ImGui::Checkbox(T("Create the folders that are missing"), &plusStoreSettings_.createFolders);
+  if (changed) saveSettings();
+  ImGui::Separator();
+  std::string account = plusStore_.account();
+  if (!plusStore_.available()) {
+    ImGui::TextWrapped("%s", T("Uploading needs HTTPS, which VCSIDE cannot use on this system yet."));
+  } else if (plusStore_.busy()) {
+    ImGui::TextDisabled("%s", T("Working... (the browser page may be waiting for you)"));
+    if (theme::dialogButton(T("Cancel"))) plusStore_.cancel();
+  } else if (account.empty()) {
+    ImGui::TextWrapped("%s", T("Not authorized yet. The first upload (or this button) opens the PlusStore's login page in the browser: log in there and grant access. VCSIDE gets its own app password, never yours, and keeps it for the next uploads."));
+    if (theme::dialogButton(T("Authorize..."))) plusStore_.signIn();
+  } else {
+    ImGui::TextWrapped("%s", F("Authorized for the account {0}. VCSIDE keeps its app password in its keys file (keys.json in its settings folder), which only your user account can read.", {account}).c_str());
+    if (theme::dialogButton(T("Sign out"))) plusStore_.signOut();
+    wrappedTooltip(std::string(T("Revokes VCSIDE's app password on the PlusStore and forgets it here.")));
+  }
+  ImGui::PopTextWrapPos();
+  ImGui::Spacing();
+  if (theme::dialogEscape() || theme::dialogButton(T("Close"))) ImGui::CloseCurrentPopup();
+  ImGui::EndPopup();
 }
 
 void App::pollSpace() {
@@ -2011,6 +2086,7 @@ void App::frame() {
   }
   pollBuild();
   pollSpace();
+  pollPlusStore();
   refreshLiveSymbols();  // the cycle counts use the constants as they are written now
 
   // global shortcuts
@@ -2082,6 +2158,7 @@ void App::frame() {
   goToAddressDialog();
   emulatorOptionsDialog();
   cartridgesDialog();
+  plusStoreDialog();
 }
 
 // The menu bar as data: ImGui draws it on Windows and Linux, macOS puts it in the
@@ -2116,6 +2193,7 @@ MenuBar App::buildMenuBar(bool native) {
   }
   std::vector<MenuItem> settings = {item(native ? T("Tools...") : T("Tools"), native ? "Ctrl+," : "", [this] { showTools_ = true; }),
                                     item(T("Assistant..."), "", [this] { assistant_.openSettings(); }),
+                                    item(T("PlusStore..."), "", [this] { showPlusStore_ = true; }),
                                     sub(T("Language"), langs)};
   if (native) bar.push_back(sub("VCSIDE", settings));
 
@@ -2211,6 +2289,8 @@ MenuBar App::buildMenuBar(bool native) {
                              item(T("Run"), "", [this] { run(false); }, canBuild),
                              item(T("Serve to the PlusCart (Wi-Fi)"), "", [this] { togglePlusCart(); }, project_.has_value() || plusCart_.running(),
                                   plusCart_.running()),
+                             item(plusStore_.busy() ? T("Uploading to the PlusStore...") : T("Upload to the PlusStore"), "", [this] { uploadToPlusStore(); },
+                                  project_.has_value() && !plusStore_.busy() && plusStore_.available()),
                              MenuItem::sep(),
                              item(T("Toggle breakpoint"), "F9", onEditor([](TextEditor& textEditor) { textEditor.toggleBreakpoint(textEditor.cursor().line); }), hasFile),
                              item(T("Clear all breakpoints"), "", [this] {

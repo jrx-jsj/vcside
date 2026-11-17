@@ -21,6 +21,7 @@
 #include "c_syntax.h"
 #include "elf_space.h"
 #include "pluscart_server.h"
+#include "plusstore.h"
 #include "emulator_launch.h"
 #include "i18n.h"
 #include "gfx.h"
@@ -914,6 +915,22 @@ static void testPlusCartServer() {
   request.path = "/other.bin";
   CHECK(plusStoreResponse(request, roms, "", nullptr).find("416") != std::string::npos);
   CHECK(!parsePlusStoreRequest("GET /index.html HTTP/1.0\r\n\r\n").valid);
+  {  // a browser: the page, the ROM whole, and nothing else
+    PlusStoreRequest page = parsePlusStoreRequest("GET / HTTP/1.1\r\nHost: 192.168.1.20\r\nAccept: text/html\r\n\r\n");
+    CHECK(!page.valid && page.browserPath == "/" && page.host == "192.168.1.20");
+    std::string answer = plusStoreResponse(page, roms, "VCSIDE: <game>", nullptr);
+    CHECK(answer.find("200 OK") != std::string::npos && answer.find("text/html") != std::string::npos);
+    CHECK(answer.find("href=\"/rom/my%20game.ace\"") != std::string::npos && answer.find("<code>192.168.1.20</code>") != std::string::npos);
+    CHECK(answer.find("VCSIDE: &lt;game&gt;") != std::string::npos && answer.find("39.1 KB") != std::string::npos);
+    PlusStoreRequest download = parsePlusStoreRequest("GET /rom/my%20game.ace HTTP/1.1\r\nHost: x\r\n\r\n");
+    std::string downloadLog;
+    answer = plusStoreResponse(download, roms, "", &downloadLog);
+    CHECK(answer.find("attachment; filename=\"my game.ace\"") != std::string::npos && answer.substr(answer.find("\r\n\r\n") + 4) == rom);
+    CHECK(downloadLog.find("my game.ace") != std::string::npos);
+    CHECK(plusStoreResponse(parsePlusStoreRequest("GET /rom/other.bin HTTP/1.1\r\n\r\n"), roms, "", nullptr).find("404") != std::string::npos);
+    CHECK(plusStoreResponse(parsePlusStoreRequest("GET /favicon.ico HTTP/1.1\r\n\r\n"), roms, "", nullptr).find("404") != std::string::npos);
+    CHECK(plusCartLoaderPage({}, "", "").find("No ROM yet") != std::string::npos);
+  }
 #ifndef _WIN32
   // a real connection on the loopback, with the requests one after another
   PlusCartServer server;
@@ -965,6 +982,47 @@ static void testPlusCartServer() {
   CHECK(log.size() == 2);  // the menu, and the ROM once
 #endif
   fs::remove_all(dir, errorCode);
+}
+
+static void testPlusStore() {
+  CHECK((plusStoreFolderParts(" My ROMs / VCSIDE/") == std::vector<std::string>{"My ROMs", "VCSIDE"}));
+  CHECK(plusStoreFolderParts("My ROMs\\Games").size() == 2 && plusStoreFolderParts("").empty() && plusStoreFolderParts("///").empty());
+  CHECK(plusStoreFolderParts("My ROMs/../x").empty() && plusStoreFolderParts("./x").empty());
+  PlusStoreLogin login{"https://plusstore.firmaplus.de", "juan s", "secret"};
+  CHECK(plusStoreDavUrl(login, {"My ROMs", "VCSIDE"}, "my game.bin") ==
+        "https://plusstore.firmaplus.de/remote.php/dav/files/juan%20s/My%20ROMs/VCSIDE/my%20game.bin");
+  CHECK(plusStoreDavUrl(login, {"My ROMs"}, "") == "https://plusstore.firmaplus.de/remote.php/dav/files/juan%20s/My%20ROMs/");
+  CHECK(encodePathSegment("a+b&c/ñ") == "a%2Bb%26c%2F%C3%B1");
+  CHECK(base64("") == "" && base64("f") == "Zg==" && base64("fo") == "Zm8=" && base64("foo") == "Zm9v" && base64("user:pass") == "dXNlcjpwYXNz");
+  LoginFlowStart start;
+  CHECK(parseLoginFlowStart(R"({"poll":{"token":"abc","endpoint":"https://plusstore.firmaplus.de/login/v2/poll"},"login":"https://plusstore.firmaplus.de/login/v2/flow/xyz"})", &start));
+  CHECK(start.token == "abc" && start.loginUrl.find("/flow/xyz") != std::string::npos);
+  CHECK(!parseLoginFlowStart(R"({"login":"http://x/","poll":{"token":"a","endpoint":"http://x/"}})", &start));  // only https
+  CHECK(!parseLoginFlowStart("<html>", &start));
+  PlusStoreLogin granted;
+  CHECK(parseLoginFlowResult(R"({"server":"https://plusstore.firmaplus.de/","loginName":"juan","appPassword":"p4ss"})", &granted));
+  CHECK(granted.server == "https://plusstore.firmaplus.de" && granted.loginName == "juan" && granted.appPassword == "p4ss");
+  CHECK(!parseLoginFlowResult(R"({"server":"https://x","loginName":"","appPassword":"p"})", &granted));
+  PlusStoreLogin kept = loginFromSecret(loginToSecret(login));
+  CHECK(kept.server == login.server && kept.loginName == login.loginName && kept.appPassword == login.appPassword);
+  CHECK(!loginFromSecret("not json").valid());
+  {  // always in the keys file, whatever the assistant's choice (useSecretFile)
+    namespace fs = std::filesystem;
+    fs::path keys = fs::temp_directory_path() / "vcside-test-keys.json";
+    std::error_code errorCode;
+    fs::remove(keys, errorCode);
+    assistant::setSecretFile(keys.string());
+    assistant::useSecretFile(false);
+    std::string read;
+    CHECK(assistant::saveFileSecret("PlusStore login", loginToSecret(login)) && fs::exists(keys));
+    CHECK(assistant::loadFileSecret("PlusStore login", &read) && loginFromSecret(read).appPassword == "secret");
+#ifndef _WIN32
+    CHECK((fs::status(keys).permissions() & (fs::perms::group_all | fs::perms::others_all)) == fs::perms::none);
+#endif
+    CHECK(assistant::removeFileSecret("PlusStore login") && !assistant::loadFileSecret("PlusStore login", &read));
+    assistant::setSecretFile("");
+    fs::remove(keys, errorCode);
+  }
 }
 
 static void testElfSpace() {
@@ -6200,6 +6258,7 @@ int main() {
   testElfSpace();
   testTinyElfBasic(kb);
   testPlusCartServer();
+  testPlusStore();
   testMusic();
   testSong();
   testMusicExport();

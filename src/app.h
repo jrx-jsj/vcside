@@ -33,6 +33,7 @@
 #include "elf_space.h"
 #include "find_in_files.h"
 #include "pluscart_server.h"
+#include "plusstore.h"
 #include "image_viewer.h"
 #include "space.h"
 #include "theme_ui.h"
@@ -350,6 +351,13 @@ class App {
   PlusCartServer plusCart_;
   void togglePlusCart();
   void updatePlusCartRoms();
+  // Or the ROM uploaded to the user's PlusStore account (Build > Upload to the PlusStore).
+  PlusStoreUploader plusStore_;
+  PlusStoreSettings plusStoreSettings_;  // global (settings.json), Settings > PlusStore...
+  bool showPlusStore_ = false;
+  void uploadToPlusStore();
+  void pollPlusStore();
+  void plusStoreDialog();
   bool finishBasicBuild();
   void measureBasic(long romSize);
   void measureTinyElf(long romSize);

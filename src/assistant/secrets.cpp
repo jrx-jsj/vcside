@@ -103,6 +103,32 @@ void moveSecrets(const std::vector<std::string>& accounts, bool toFile) {
   if (changed) writeFile(keys);
 }
 
+bool loadFileSecret(const std::string& account, std::string* secret) {
+  if (account.empty() || filePath_.empty()) return false;
+  std::lock_guard<std::mutex> lock(mutex_);
+  auto keys = readFile();
+  auto found = keys.find(account);
+  if (found == keys.end()) return false;
+  *secret = found->second;
+  return true;
+}
+
+bool saveFileSecret(const std::string& account, const std::string& secret) {
+  if (account.empty() || secret.empty() || filePath_.empty()) return false;
+  std::lock_guard<std::mutex> lock(mutex_);
+  auto keys = readFile();
+  keys[account] = secret;
+  return writeFile(keys);
+}
+
+bool removeFileSecret(const std::string& account) {
+  if (filePath_.empty()) return false;
+  std::lock_guard<std::mutex> lock(mutex_);
+  auto keys = readFile();
+  if (!keys.erase(account)) return false;
+  return writeFile(keys);
+}
+
 bool loadSecret(const std::string& account, std::string* secret) {
   if (account.empty()) return false;
   if (fileActive()) {

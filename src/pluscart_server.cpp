@@ -86,8 +86,20 @@ PlusStoreRequest parsePlusStoreRequest(const std::string& header) {
   PlusStoreRequest request;
   size_t lineEnd = header.find('\n');
   std::string requestLine = header.substr(0, lineEnd);
+  std::istringstream headerLines(header.substr(lineEnd == std::string::npos ? header.size() : lineEnd + 1));
+  for (std::string line; std::getline(headerLines, line);) {
+    if (!line.empty() && line.back() == '\r') line.pop_back();
+    if (lower(line).compare(0, 5, "host:") == 0) request.host = line.substr(line.find_first_not_of(' ', 5) == std::string::npos ? line.size() : line.find_first_not_of(' ', 5));
+  }
   const std::string prefix = "GET /api.php?p=";
-  if (requestLine.compare(0, prefix.size(), prefix) != 0) return request;
+  if (requestLine.compare(0, prefix.size(), prefix) != 0) {
+    if (requestLine.compare(0, 5, "GET /") == 0) {
+      size_t pathEnd = requestLine.find(' ', 4);
+      request.browserPath = decodePlusStorePath(requestLine.substr(4, pathEnd == std::string::npos ? std::string::npos : pathEnd - 4));
+      request.browserPath = request.browserPath.substr(0, request.browserPath.find('?'));
+    }
+    return request;
+  }
   size_t pathEnd = requestLine.find(' ', prefix.size());
   if (pathEnd == std::string::npos) return request;
   request.valid = true;
@@ -123,8 +135,124 @@ std::string plusStoreMenu(const std::vector<ServedRom>& roms, const std::string&
   return menu;
 }
 
+namespace {
+std::string escapeHtml(const std::string& text) {
+  std::string escaped;
+  for (char character : text) {
+    switch (character) {
+      case '&': escaped += "&amp;"; break;
+      case '<': escaped += "&lt;"; break;
+      case '>': escaped += "&gt;"; break;
+      case '"': escaped += "&quot;"; break;
+      default: escaped += character;
+    }
+  }
+  return escaped;
+}
+
+std::string encodeUrlPath(const std::string& text) {
+  std::string encoded;
+  char hex[4];
+  for (unsigned char character : text) {
+    if (std::isalnum(character) || character == '-' || character == '_' || character == '.' || character == '~') {
+      encoded += (char)character;
+    } else {
+      std::snprintf(hex, sizeof hex, "%%%02X", character);
+      encoded += hex;
+    }
+  }
+  return encoded;
+}
+
+std::string sizeText(long bytes) {
+  char text[32];
+  std::snprintf(text, sizeof text, "%.1f", bytes / 1024.0);
+  return bytes < 1024 ? F("{0} bytes", {std::to_string(bytes)}) : F("{0} KB ({1} bytes)", {text, std::to_string(bytes)});
+}
+
+std::string httpAnswer(const std::string& status, const std::string& type, const std::string& body, const std::string& extra = "") {
+  return "HTTP/1.0 " + status + "\r\nContent-Type: " + type + "\r\nContent-Length: " + std::to_string(body.size()) + "\r\n" + extra +
+         "Cache-Control: no-store\r\nConnection: keep-alive\r\n\r\n" + body;
+}
+}  // namespace
+
+// The website's look (vcside.com: a cartridge label on wood), with no outside files: the
+// computer serving it may have no internet.
+std::string plusCartLoaderPage(const std::vector<ServedRom>& roms, const std::string& message, const std::string& host) {
+  std::string address = host.substr(0, host.find(':'));
+  std::string page = R"(<!doctype html>
+<html lang="LANG"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VCSIDE PlusCart Loader</title>
+<style>
+:root { --ink: #141414; --paper: #f4ecdc; --line: #d9ccb2; --muted: #6b604f; --red: #d8402a; --orange: #ee7a22; --yellow: #f4b52c; --wood: #3b2416; }
+* { box-sizing: border-box; }
+body { margin: 0; color: var(--ink); background-color: var(--wood); font: 17px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+  background-image: repeating-linear-gradient(92deg, rgba(255,255,255,.03) 0 3px, transparent 3px 11px), repeating-linear-gradient(88deg, rgba(0,0,0,.12) 0 2px, transparent 2px 23px); }
+.wrap { max-width: 820px; margin: 24px auto; padding: 0 16px; }
+.cart { background: #1b1b1b; border-radius: 10px 10px 4px 4px; padding: 14px 14px 0; box-shadow: 0 18px 40px rgba(0,0,0,.45), inset 0 2px 0 #333; }
+.label { background: #0d0d0d; color: #fff; border-radius: 4px; overflow: hidden; }
+.stripes { height: 14px; background: linear-gradient(to bottom, var(--yellow) 0 33.3%, var(--orange) 33.3% 66.6%, var(--red) 66.6% 100%); }
+.top { padding: 22px 24px 18px; }
+h1 { font: 900 clamp(40px, 9vw, 64px)/.95 system-ui, sans-serif; letter-spacing: -2px; margin: 0; }
+.sub { font-weight: 700; text-transform: uppercase; letter-spacing: 3px; color: var(--yellow); margin: 6px 0 0; font-size: 14px; }
+.ridges { height: 22px; margin: 14px -14px 0; background: repeating-linear-gradient(to right, #222 0 10px, #161616 10px 20px); border-radius: 0 0 4px 4px; }
+.sheet { background: var(--paper); border-radius: 4px; padding: 28px clamp(18px, 4vw, 40px); box-shadow: 0 18px 40px rgba(0,0,0,.4); margin-top: 28px; }
+.sheet h2 { font: 900 24px/1.2 system-ui, sans-serif; margin: 0 0 12px; }
+.sheet h2 + p { margin-top: 0; }
+.rom { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding: 14px 0; border-top: 1px solid var(--line); }
+.rom:last-of-type { border-bottom: 1px solid var(--line); }
+.rom .name { font: 600 17px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; word-break: break-all; }
+.rom .size { color: var(--muted); font-size: 15px; }
+.rom .info { margin-right: auto; }
+.btn { display: inline-block; background: var(--orange); color: var(--ink); font-weight: 800; text-decoration: none; padding: 8px 18px; border-radius: 3px; }
+.btn:hover { background: var(--yellow); }
+code { font: .9em ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: #00000010; padding: .08em .3em; border-radius: 3px; }
+.muted { color: var(--muted); font-size: 15px; }
+</style></head><body><div class="wrap">
+<div class="cart"><div class="label"><div class="stripes"></div><div class="top"><h1>VCSIDE</h1><p class="sub">PlusCart Loader</p></div></div><div class="ridges"></div></div>
+<div class="sheet">
+)";
+  page.replace(page.find("LANG"), 4, currentLanguage().empty() ? std::string("en") : currentLanguage());
+  page += "<h2>" + escapeHtml(message.empty() ? std::string("VCSIDE") : message) + "</h2>\n";
+  if (roms.empty()) {
+    page += "<p>" + escapeHtml(T("No ROM yet: build the project in VCSIDE and reload this page.")) + "</p>\n";
+  } else {
+    page += "<p>" + escapeHtml(roms.size() == 1 ? T("The ROM VCSIDE serves now, as last built:") : T("The ROMs VCSIDE serves now, as last built:")) + "</p>\n";
+    for (auto& rom : roms) {
+      long size = (long)readFile(rom.path).size();
+      page += "<div class=\"rom\"><div class=\"info\"><div class=\"name\">" + escapeHtml(rom.name) + "</div><div class=\"size\">" + sizeText(size) +
+              "</div></div><a class=\"btn\" href=\"/rom/" + encodeUrlPath(rom.name) + "\" download>" + escapeHtml(T("Download")) + "</a></div>\n";
+    }
+  }
+  page += "<h2 style=\"margin-top:28px\">" + escapeHtml(T("On the PlusCart")) + "</h2>\n<p>" +
+          F(escapeHtml(T("In its menu, {0}: {1}. Its menu then lists the ROMs above, read again after every build. For the PlusStore again, set the API Host back to {2}.")).c_str(),
+            {"<b>Setup &rarr; API Host</b>",
+             "<code>" + escapeHtml(address.empty() ? std::string(T("this computer's address")) : address) + "</code>",
+             "<code>pluscart.firmaplus.de</code>"}) +
+          "</p>\n<p class=\"muted\">" + F(escapeHtml(T("Served by VCSIDE while {0} is on.")).c_str(), {"<i>" + escapeHtml(T("Build")) + " &rarr; " + escapeHtml(T("Serve to the PlusCart (Wi-Fi)")) + "</i>"}) +
+          "</p>\n</div></div></body></html>\n";
+  return page;
+}
+
 std::string plusStoreResponse(const PlusStoreRequest& request, const std::vector<ServedRom>& roms, const std::string& message,
                               std::string* logLine) {
+  if (!request.valid && !request.browserPath.empty()) {  // a browser
+    if (request.browserPath == "/" || request.browserPath == "/index.html")
+    {
+      // opened on this computer as localhost: the PlusCart needs the address on the network
+      std::string host = request.host.substr(0, request.host.rfind(':') == std::string::npos || request.host.back() == ']' ? std::string::npos : request.host.rfind(':'));
+      if (host == "localhost" || host.compare(0, 4, "127.") == 0 || host == "[::1]") host = localNetworkAddress();
+      return httpAnswer("200 OK", "text/html; charset=utf-8", plusCartLoaderPage(roms, message, host));
+    }
+    if (request.browserPath.compare(0, 5, "/rom/") == 0) {
+      if (const ServedRom* rom = findRom(roms, request.browserPath.substr(4))) {
+        if (logLine) *logLine = F("PlusCart: {0} downloaded from a browser.", {rom->name});
+        return httpAnswer("200 OK", "application/octet-stream", readFile(rom->path),
+                          "Content-Disposition: attachment; filename=\"" + rom->name + "\"\r\n");
+      }
+    }
+    return httpAnswer("404 Not Found", "text/plain; charset=utf-8", "Not found\n");
+  }
   if (!request.valid) return "HTTP/1.0 400 Bad Request\r\nContent-Length: 0\r\nConnection: keep-alive\r\n\r\n";
   if (!request.hasRange) {
     std::string menu = plusStoreMenu(roms, request.path, message);
