@@ -1407,9 +1407,7 @@
     "{0} MHz, game in flash: {1} KB of flash, {2} KB of RAM": "{0} MHz, juego en flash: {1} KB de flash, {2} KB de RAM",
     "{0} MHz, game loaded into RAM: {1} KB buffer": "{0} MHz, juego cargado en RAM: búfer de {1} KB",
     "dual ELF only, with a 7800 side": "solo ELF dual, con parte de 7800",
-    "Test7800 runs only dual ELF games, with a 7800 side (a .elf7800 section): choose Gopher2600 or Stella in Build > Emulator.": "Test7800 solo ejecuta juegos ELF duales, con parte de 7800 (una sección .elf7800): elige Gopher2600 o Stella en Compilar > Emulador.",
-    "Gopher2600 runs TinyELF Basic at {0} MHz, not {1}: above about 100 MHz TinyELF does more work between two frames than Gopher2600 lets the ARM run, and it shows no more frames.": "Gopher2600 ejecuta TinyELF Basic a {0} MHz, no a {1}: por encima de unos 100 MHz TinyELF hace entre dos fotogramas más trabajo del que Gopher2600 deja correr al ARM, y deja de mostrar fotogramas.",
-    "Gopher2600 runs TinyELF Basic at 70 MHz at most: above about 100 MHz TinyELF does more work between two frames than Gopher2600 lets the ARM run.": "Gopher2600 ejecuta TinyELF Basic a 70 MHz como mucho: por encima de unos 100 MHz TinyELF hace entre dos fotogramas más trabajo del que Gopher2600 deja correr al ARM."
+    "Test7800 runs only dual ELF games, with a 7800 side (a .elf7800 section): choose Gopher2600 or Stella in Build > Emulator.": "Test7800 solo ejecuta juegos ELF duales, con parte de 7800 (una sección .elf7800): elige Gopher2600 o Stella en Compilar > Emulador."
   },
-  "total": 1404
+  "total": 1402
 }

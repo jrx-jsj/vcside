@@ -3375,14 +3375,9 @@ void App::emulatorOptionsDialog() {
           // the emulated cartridge's clock replaces it (Build > Emulated cartridge)
           int clock = project_->armClockMhz();
           if (option.id == "dev.arm.mips") clock = std::clamp(clock, kStellaArmMipsMin, kStellaArmMipsMax);
-          std::string tip = T("Set by Build > Emulated cartridge.");
-          if (option.id == "armClock" && gopherArmClockMhz(*project_) != clock) {
-            clock = gopherArmClockMhz(*project_);
-            tip += "\n" + std::string(T("Gopher2600 runs TinyELF Basic at 70 MHz at most: above about 100 MHz TinyELF does more work between two frames than Gopher2600 lets the ARM run."));
-          }
           ImGui::AlignTextToFramePadding();
           ImGui::TextDisabled("%s", F("{0}: {1}", {project_->armCartridgeInfo().name, std::to_string(clock)}).c_str());
-          wrappedTooltip(tip);
+          wrappedTooltip(std::string(T("Set by Build > Emulated cartridge.")));
         } else if (option.type == "int" || option.type == "text") {
           std::string hint = T("default");
           if (option.max > 0) hint += " (" + std::to_string(option.min) + "-" + std::to_string(option.max) + ")";

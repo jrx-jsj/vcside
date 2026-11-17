@@ -38,19 +38,6 @@ struct EmulatorLaunch {
 // program as its clock.
 constexpr int kStellaArmMipsMin = 50, kStellaArmMipsMax = 300;
 
-// Gopher2600 stops an ARM run after 1,500,000 ARM cycles without a sync with the
-// 6507 (cycleLimit in hardware/memory/cartridge/arm/arm.go), whatever the clock.
-// TinyELF Basic sizes the work it does between two frames from the clock (its
-// budget is clock / 650000 statements), so above about 100 MHz a program with
-// long statements passes that limit and Gopher2600 stops showing frames (measured:
-// fine at 70 and 100 MHz, no frames at 140, 168 and 216). VCSIDE runs TinyELF
-// Basic in Gopher2600 at its default clock at most.
-constexpr int kGopherTinyElfMaxClockMhz = 70;
-
-// The ARM clock Gopher2600 gets for the project: the emulated cartridge's, but at
-// most kGopherTinyElfMaxClockMhz for TinyELF Basic.
-int gopherArmClockMhz(const Project& project);
-
 // The arguments the project's options add for an emulator (shown in the options
 // dialog) and the Gopher2600 preferences they set. For an ELF, ACE or TinyELF Basic project
 // the emulated cartridge's clock replaces the ARM clock options (armClock, dev.arm.mips).
