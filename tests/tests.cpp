@@ -920,12 +920,16 @@ static void testPlusCartServer() {
   std::string error;
   CHECK(server.start(0, &error) && server.port() > 0);
   server.setRoms(roms, "VCSIDE: game");
-  int client = socket(AF_INET, SOCK_STREAM, 0);
   sockaddr_in address{};
   address.sin_family = AF_INET;
   address.sin_port = htons((uint16_t)server.port());
   inet_pton(AF_INET, "127.0.0.1", &address.sin_addr);
+  int quiet = socket(AF_INET, SOCK_STREAM, 0);  // a connection that asks nothing (a browser's preconnection)
+  CHECK(connect(quiet, (sockaddr*)&address, sizeof address) == 0);
+  int client = socket(AF_INET, SOCK_STREAM, 0);
   CHECK(connect(client, (sockaddr*)&address, sizeof address) == 0);
+  timeval readLimit{5, 0};  // a server stuck on the quiet connection fails here instead of hanging
+  setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, &readLimit, sizeof readLimit);
   std::string requests = "GET /api.php?p=" + headers + "\r\n";
   requests += "GET /api.php?p=/my%20game.ace" + headers + "Range: bytes=0-32767\r\n\r\n";
   requests += "GET /api.php?p=/my%20game.ace" + headers + "Range: bytes=32768-39999\r\n\r\n";
@@ -948,10 +952,13 @@ static void testPlusCartServer() {
     received.append(buffer, (size_t)count);
   }
   close(client);
+  close(quiet);
   CHECK(complete() && received.find("2 040000 my game.ace\n") != std::string::npos);
-  size_t firstBody = received.find("\r\n\r\n", received.find("206")) + 4;
-  CHECK(received.compare(firstBody, 32768, rom, 0, 32768) == 0);
-  CHECK(received.size() >= 7232 && received.compare(received.size() - 7232, 7232, rom, 32768, 7232) == 0);
+  if (complete()) {
+    size_t firstBody = received.find("\r\n\r\n", received.find("206")) + 4;
+    CHECK(received.compare(firstBody, 32768, rom, 0, 32768) == 0);
+    CHECK(received.size() >= 7232 && received.compare(received.size() - 7232, 7232, rom, 32768, 7232) == 0);
+  }
   server.stop();
   CHECK(!server.running());
   auto log = server.takeLog();

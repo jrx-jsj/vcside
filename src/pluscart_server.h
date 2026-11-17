@@ -13,6 +13,7 @@
 //   32 KB per request, several requests on one keep-alive connection).
 #pragma once
 #include <atomic>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -59,6 +60,13 @@ class PlusCartServer {
   std::vector<ServedRom> roms();
 
   std::thread thread_;
+  // One thread per connection, so a quiet one (a browser's preconnection) does not hold
+  // up the others: each with its "finished" flag, joined by serve().
+  struct Connection {
+    std::thread thread;
+    std::shared_ptr<std::atomic<bool>> finished;
+  };
+  std::vector<Connection> connections_;  // serve()'s thread only
   std::atomic<bool> running_{false}, stopping_{false};
   long long listener_ = -1;
   int port_ = 0;

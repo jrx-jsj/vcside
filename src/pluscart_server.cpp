@@ -220,11 +220,26 @@ void PlusCartServer::serve() {
   SocketHandle listener = (SocketHandle)listener_;
   while (!stopping_) {
     if (!waitReadable(listener, 200)) continue;
+    for (auto connection = connections_.begin(); connection != connections_.end();) {  // the finished ones
+      if (connection->finished->load()) {
+        connection->thread.join();
+        connection = connections_.erase(connection);
+      } else {
+        ++connection;
+      }
+    }
     SocketHandle client = accept(listener, nullptr, nullptr);
     if (client == kInvalidSocket) continue;
-    handleConnection((long long)client);
-    closeSocket(client);
+    auto finished = std::make_shared<std::atomic<bool>>(false);
+    connections_.push_back({std::thread([this, client, finished] {
+                              handleConnection((long long)client);
+                              closeSocket(client);
+                              *finished = true;
+                            }),
+                            finished});
   }
+  for (auto& connection : connections_) connection.thread.join();  // each sees stopping_ within 200 ms
+  connections_.clear();
 }
 
 // One connection: requests one after another (keep-alive) until the PlusCart closes it,
