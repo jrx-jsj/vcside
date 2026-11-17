@@ -30,6 +30,12 @@ static std::string buildDir(const Project& project) {
   return (fs::path(project.outputPath()).parent_path() / "").string();  // with the separator, as Stella keeps it
 }
 
+int gopherArmClockMhz(const Project& project) {
+  int clock = project.armClockMhz();
+  if (project.language == Language::TinyElfBasic) clock = std::min(clock, kGopherTinyElfMaxClockMhz);
+  return clock;
+}
+
 std::vector<std::string> emulatorOptionArgs(const Project& project, const EmulatorInfo& emulator,
                                             std::map<std::string, std::string>* preferences) {
   std::vector<std::string> arguments;
@@ -39,7 +45,7 @@ std::vector<std::string> emulatorOptionArgs(const Project& project, const Emulat
   // An ELF, ACE or TinyELF Basic project runs at its emulated cartridge's ARM clock: Gopher2600's
   // ARM clock preference, Stella's ELF speed (in MIPS, 50 to 300, its developer settings).
   if (project.runsOnArmCartridge()) {
-    set["armClock"] = std::to_string(project.armClockMhz());
+    set["armClock"] = std::to_string(gopherArmClockMhz(project));
     set["dev.arm.mips"] = std::to_string(std::clamp(project.armClockMhz(), kStellaArmMipsMin, kStellaArmMipsMax));
   }
   bool developer = false;
@@ -226,6 +232,9 @@ bool prepareEmulatorLaunch(const Project& project, const KnowledgeBase& knowledg
       launch.notes.push_back(F("Stella's ARM runs at {0} to {1} MHz: {2} MHz becomes {3}.",
                                {std::to_string(kStellaArmMipsMin), std::to_string(kStellaArmMipsMax), std::to_string(clock),
                                 std::to_string(std::clamp(clock, kStellaArmMipsMin, kStellaArmMipsMax))}));
+    if (project.emulator == "gopher2600" && gopherArmClockMhz(project) != clock)
+      launch.notes.push_back(F("Gopher2600 runs TinyELF Basic at {0} MHz, not {1}: above about 100 MHz TinyELF does more work between two frames than Gopher2600 lets the ARM run, and it shows no more frames.",
+                               {std::to_string(gopherArmClockMhz(project)), std::to_string(clock)}));
   }
   if (!tvSupported(project.emulator, project.tv))
     launch.notes.push_back(F("{0} has no {1} TV standard: it chooses one itself.",

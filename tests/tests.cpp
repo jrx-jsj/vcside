@@ -713,6 +713,10 @@ static void testEmulatorOptions(const KnowledgeBase& kb) {
     CHECK(cartridgeLibrary().remove(added.id) && armProject.armCartridge() == "fast-2" && armProject.armCartridgeInfo().flashKb == 128);  // its copy
     armProject.language = Language::TinyElfBasic, armProject.cartridge = "chameleon";  // no Chameleon for TinyELF
     CHECK(armProject.armCartridge() == "pluscart" && armProject.armClockMhz() == 216 && armProject.armCartridgeChoices().size() == 3);
+    armPrefs.clear();
+    emulatorOptionArgs(armProject, *gopher, &armPrefs);  // Gopher2600's ARM cycle limit: TinyELF at 70 MHz at most
+    CHECK(armPrefs["hardware.arm7.clock"] == "70" && gopherArmClockMhz(armProject) == kGopherTinyElfMaxClockMhz);
+    CHECK(has(emulatorOptionArgs(armProject, *stella), {"-dev.arm.mips", "216"}));
     CHECK(!armProject.canUse(*cartridgeLibrary().find("chameleon")) && armProject.canUse(*cartridgeLibrary().find(fastId)));
     CHECK(cartridgeLibrary().remove(fastId) && cartridgeLibrary().mine().empty());
     armProject.cartridge = "unocart";
