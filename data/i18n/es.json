@@ -1300,16 +1300,10 @@
     "ORG back to {0}: what follows shares the RAM up to {1} with the variables above.": "ORG de vuelta a {0}: lo que sigue comparte la RAM hasta {1} con las variables de arriba.",
     "ORG in SEG.U: what follows starts at {0}.": "ORG en SEG.U: lo que sigue empieza en {0}.",
     "Label in SEG.U: the address of what follows, no bytes of its own.": "Etiqueta en SEG.U: la dirección de lo que sigue, sin bytes propios.",
-    "make ace: the same game as an ACE file for the PlusCart and the UnoCart (runs in Gopher2600). Adds ace/.": "make ace: el mismo juego como archivo ACE para el PlusCart y el UnoCart (funciona en Gopher2600). Añade ace/.",
     "Cartridges": "Cartuchos",
     "PlusCart / UnoCart (ELF ROM)": "PlusCart / UnoCart (ROM ELF)",
     "make: the ROM. Always built: the emulators run it, and the Chameleon image is made from it.": "make: la ROM. Se compila siempre: es la que ejecutan los emuladores, y la imagen del Chameleon sale de ella.",
     "make chameleon: the game linked with the Chameleon Cart's firmware, to flash. Adds chameleon/. The space report measures against the Chameleon, the tighter one.": "make chameleon: el juego enlazado con el firmware del Chameleon Cart, para grabarlo. Añade chameleon/. El informe de espacio mide contra el Chameleon, el más justo.",
-    "ACE file (PlusCart, UnoCart)": "Archivo ACE (PlusCart, UnoCart)",
-    "Default build": "Build por defecto",
-    "ELF ROM (make)": "ROM ELF (make)",
-    "ACE file (make ace)": "Archivo ACE (make ace)",
-    "What F7 builds and F5 runs (the ACE file in Gopher2600). The Chameleon image is built with make chameleon: it needs the firmware and no emulator runs it.": "Lo que compila F7 y ejecuta F5 (el archivo ACE, en Gopher2600). La imagen del Chameleon se compila con make chameleon: necesita el firmware y ningún emulador la ejecuta.",
     "Atari 7800 (Chameleon Cart ELF games)": "Atari 7800 (juegos ELF del Chameleon Cart)",
     "Atari 7800 emulator by JetSetIlly, for the 7800 side of Chameleon Cart ELF games that run on both consoles. macOS: Test7800.app in Applications; Windows and Linux: unpack the release into the test7800 folder of VCSIDE's tools folder.": "Emulador de Atari 7800 de JetSetIlly, para la parte 7800 de los juegos ELF del Chameleon Cart que funcionan en las dos consolas. macOS: Test7800.app en Aplicaciones; Windows y Linux: descomprime la versión en la carpeta test7800 de la carpeta de herramientas de VCSIDE.",
     "Example: one game for the 2600 and the 7800 (Chameleon Cart)": "Ejemplo: un juego para la 2600 y la 7800 (Chameleon Cart)",
@@ -1458,5 +1452,5 @@
     "PlusStore: {0} uploaded to \"{1}\" ({2} bytes, {3}).": "PlusStore: {0} subida a «{1}» ({2} bytes, {3}).",
     "PlusStore: the PlusCart lists it in its menu, in that folder.": "PlusStore: el PlusCart la muestra en su menú, en esa carpeta."
   },
-  "total": 1451
+  "total": 1445
 }

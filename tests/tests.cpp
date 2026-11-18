@@ -1617,22 +1617,17 @@ static void testElfSpace() {
     CHECK(std::system(command.c_str()) == 0 && fs::exists(elfDir / "build" / "walker.bin"));
     command = "cd \"" + dir.string() + "\" && \"" + make + "\" > make.log 2>&1";  // the template without an example
     CHECK(std::system(command.c_str()) == 0 && fs::exists(dir / "build" / "rainbow.bin"));
-    // make ace: the same games as ACE files, with vcsLib on the ACE bus library
-    for (auto& [projectDir, aceName] : {std::pair{elfDir, "walker.ace"}, std::pair{dir, "rainbow.ace"}}) {
-      command = "cd \"" + projectDir.string() + "\" && \"" + make + "\" ace > make-ace.log 2>&1";
-      CHECK(std::system(command.c_str()) == 0 && romFormat((projectDir / "build" / aceName).string()) == "ACE");
-    }
   }
   // VCSIDE The Game in C, on ELF: the shared rules, menu and screen, the shared graphics and
   // song (with the game's three effects), the menu's first system from the project's TV
-  // standard; it builds as ELF and, with make ace, as ACE
+  // standard; it builds as ELF
   for (const char* tvStandard : {"NTSC", "PAL", "PAL60"}) {
     fs::path gameDir = dir / (std::string("elf-game-") + tvStandard);
     CHECK(Project::create(gameDir.string(), "game", Language::ElfC, tvStandard, &project, &error, "game"));
     CHECK(project.format == "ELF" && project.buildCommand == "make" && project.output == "build/game.bin");
     for (auto fileName : {"Makefile", "include/vcsLib.h", "src/main.c", "src/game.c", "src/game.h", "src/menu.c", "src/menu.h", "src/screen.c",
                           "src/screen.h", "src/hero.gfx.h", "src/enemy.gfx.h", "src/room.gfx.h", "src/title.gfx.h", "src/music.h",
-                          "ace/vcslib_ace.c", "chameleon/support.c"})
+                          "chameleon/support.c"})
       CHECK(fs::exists(inProject(gameDir, fileName)));
     {  // its effects all end (one that holds its volume keeps its voice for good)
       std::ifstream songFile(inProject(gameDir, "src/theme.vcsmusic"));
@@ -1649,8 +1644,8 @@ static void testElfSpace() {
     CHECK(gameMusicText.find("MUSIC_EFFECT_SHOT") != std::string::npos && gameMusicText.find("MUSIC_EFFECT_HIT") != std::string::npos &&
           gameMusicText.find("MUSIC_EFFECT_LOSE") != std::string::npos && gameMusicText.find("#define MUSIC_TIA_EFFECTS 1 ") != std::string::npos);
     if (!gcc.empty() && !make.empty() && std::string(tvStandard) == "NTSC") {
-      std::string command = "cd \"" + gameDir.string() + "\" && \"" + make + "\" > make.log 2>&1 && \"" + make + "\" ace > make-ace.log 2>&1";
-      CHECK(std::system(command.c_str()) == 0 && fs::exists(gameDir / "build" / "game.bin") && romFormat((gameDir / "build" / "game.ace").string()) == "ACE");
+      std::string command = "cd \"" + gameDir.string() + "\" && \"" + make + "\" > make.log 2>&1";
+      CHECK(std::system(command.c_str()) == 0 && fs::exists(gameDir / "build" / "game.bin"));
     }
   }
   // the dual example: one ELF for the 2600 (TIA) and the 7800 (MARIA), always with the
@@ -1669,13 +1664,13 @@ static void testElfSpace() {
     CHECK(dualMusicText.find("#define MUSIC_TIA 1") != std::string::npos && dualMusicText.find("MUSIC_EFFECT_FIRE") != std::string::npos &&
           dualMusicText.find("MUSIC_EFFECT_BUMP") != std::string::npos);
     if (!gcc.empty() && !make.empty()) {
-      std::string command = "cd \"" + dualDir.string() + "\" && \"" + make + "\" > make.log 2>&1 && \"" + make + "\" ace > make-ace.log 2>&1";
-      CHECK(std::system(command.c_str()) == 0 && fs::exists(dualDir / "build" / "both.bin") && romFormat((dualDir / "build" / "both.ace").string()) == "ACE");
+      std::string command = "cd \"" + dualDir.string() + "\" && \"" + make + "\" > make.log 2>&1";
+      CHECK(std::system(command.c_str()) == 0 && fs::exists(dualDir / "build" / "both.bin"));
     }
   }
   // VCSIDE The Game for the 2600 and the 7800: the 2600 side is VCSIDE The Game's main.c
   // unchanged but for elf_main's name; the 7800 side draws the same game with its own art; it
-  // always has the Chameleon image's glue and builds as ELF and ACE
+  // always has the Chameleon image's glue
   {
     CHECK(Project::examples(Language::ElfC)[3].first == "game-dual");
     fs::path gameDualDir = dir / "game-dual";
@@ -1710,46 +1705,32 @@ static void testElfSpace() {
     CHECK(elfMainAt != std::string::npos && !tiaRunText.empty() &&
           trimmed(gameMainText.substr(elfMainAt + elfMain.size())) == trimmed(tiaRunText.substr(tiaRun.size())));
     if (!gcc.empty() && !make.empty()) {
-      std::string command = "cd \"" + gameDualDir.string() + "\" && \"" + make + "\" > make.log 2>&1 && \"" + make + "\" ace > make-ace.log 2>&1";
-      CHECK(std::system(command.c_str()) == 0 && fs::exists(gameDualDir / "build" / "game.bin") && romFormat((gameDualDir / "build" / "game.ace").string()) == "ACE");
+      std::string command = "cd \"" + gameDualDir.string() + "\" && \"" + make + "\" > make.log 2>&1";
+      CHECK(std::system(command.c_str()) == 0 && fs::exists(gameDualDir / "build" / "game.bin"));
     }
   }
-  // the ACE files an ELF project gets for make ace, and its TV system
-  for (auto fileName : {"ace/ace.h", "ace/ace.c", "ace/start.S", "ace/memory.c", "ace/ace.ld", "ace/vcslib_ace.c", "ace/main_ace.c"})
-    CHECK(fs::exists(inProject(elfDir, fileName)));
+  // ACE games are ACE projects: an ELF project has no ace/ and no make ace
   {
-    std::ifstream elfMakefile(elfDir / "Makefile"), elfStart(elfDir / "ace" / "start.S");
-    std::string makefileText((std::istreambuf_iterator<char>(elfMakefile)), {}), startText((std::istreambuf_iterator<char>(elfStart)), {});
-    CHECK(makefileText.find("ACE_SYSTEM ?= 0\n") != std::string::npos && startText.find("\"walker          \"") != std::string::npos);
-    fs::path palElf = dir / "pal-elf";
-    CHECK(Project::create(palElf.string(), "palgame", Language::ElfC, "PAL", &project, &error));
-    std::ifstream palMakefile(palElf / "Makefile");
-    std::string palText((std::istreambuf_iterator<char>(palMakefile)), {});
-    CHECK(palText.find("ACE_SYSTEM ?= 1\n") != std::string::npos);
+    std::ifstream elfMakefile(elfDir / "Makefile");
+    std::string makefileText((std::istreambuf_iterator<char>(elfMakefile)), {});
+    CHECK(!fs::exists(elfDir / "ace") && makefileText.find("\nace: ") == std::string::npos && makefileText.find("ACE_SYSTEM") == std::string::npos);
   }
-  // the builds besides the ROM, chosen when the project is made: only those get their glue
-  // folder, their Makefile target and their lines in VCSIDE.md
-  for (auto [chameleonBuild, aceBuild] : {std::pair{false, false}, std::pair{true, false}, std::pair{false, true}}) {
-    fs::path buildsDir = dir / ("elf-builds-" + std::to_string(chameleonBuild) + std::to_string(aceBuild));
-    CHECK(Project::create(buildsDir.string(), "solo", Language::ElfC, "NTSC", &project, &error, "game", "", {chameleonBuild, aceBuild}));
-    CHECK(fs::exists(buildsDir / "chameleon") == chameleonBuild && fs::exists(buildsDir / "ace") == aceBuild);
+  // the build besides the ROM, chosen when the project is made: only then it gets its glue
+  // folder, its Makefile target and its lines in VCSIDE.md
+  for (bool chameleonBuild : {false, true}) {
+    fs::path buildsDir = dir / ("elf-builds-" + std::to_string(chameleonBuild));
+    CHECK(Project::create(buildsDir.string(), "solo", Language::ElfC, "NTSC", &project, &error, "game", "", {chameleonBuild}));
+    CHECK(fs::exists(buildsDir / "chameleon") == chameleonBuild && !fs::exists(buildsDir / "ace"));
+    CHECK(project.buildCommand == "make" && project.format == "ELF");
     std::ifstream makefileIn(buildsDir / "Makefile"), notesIn(buildsDir / "VCSIDE.md");
     std::string makefileText((std::istreambuf_iterator<char>(makefileIn)), {}), notesText((std::istreambuf_iterator<char>(notesIn)), {});
     CHECK(makefileText.find("{{") == std::string::npos && notesText.find("{{") == std::string::npos);
-    CHECK((makefileText.find("\nchameleon: ") != std::string::npos) == chameleonBuild && (makefileText.find("\nace: ") != std::string::npos) == aceBuild);
-    CHECK((notesText.find("make chameleon") != std::string::npos) == chameleonBuild && (notesText.find("make ace") != std::string::npos) == aceBuild);
-    if (!gcc.empty() && !make.empty() && !chameleonBuild && !aceBuild) {
+    CHECK((makefileText.find("\nchameleon: ") != std::string::npos) == chameleonBuild && makefileText.find("\nace: ") == std::string::npos);
+    CHECK((notesText.find("make chameleon") != std::string::npos) == chameleonBuild && notesText.find("make ace") == std::string::npos);
+    if (!gcc.empty() && !make.empty() && !chameleonBuild) {
       std::string command = "cd \"" + buildsDir.string() + "\" && \"" + make + "\" > make.log 2>&1";
       CHECK(std::system(command.c_str()) == 0 && fs::exists(buildsDir / "build" / "solo.bin"));
     }
-  }
-  {  // the ACE file as the default build: F7 runs make ace, F5 runs it in Gopher2600
-    fs::path aceDefaultDir = dir / "elf-ace-default";
-    CHECK(Project::create(aceDefaultDir.string(), "both", Language::ElfC, "NTSC", &project, &error, "", "", {false, true, true}));
-    CHECK(project.buildCommand == "make ace" && project.output == "build/both.ace" && project.format == "ACE" && project.emulator == "gopher2600");
-    CHECK(fs::exists(aceDefaultDir / "ace") && !fs::exists(aceDefaultDir / "chameleon"));
-    CHECK(Project::create((dir / "elf-ace-nodefault").string(), "solo", Language::ElfC, "NTSC", &project, &error, "", "", {false, false, true}));
-    CHECK(project.buildCommand == "make" && project.format == "ELF");  // no ACE build: the ELF ROM
   }
   CHECK(!Project::create((dir / "none-elf").string(), "x", Language::ElfC, "NTSC", &project, &error, "nope") && !error.empty());
   // the ACE template: Gopher2600 at the PlusCart's clock, the header's 16-character name,
@@ -1814,6 +1795,11 @@ static void testElfSpace() {
   for (auto fileName : {"Makefile", "include/vcsLib.h", "src/main.c", "src/music.h", "ace/vcslib_ace.c", "ace/main_ace.c", "ace/ace.c", "ace/start.S"})
     CHECK(fs::exists(inProject(aceVcsLibDir, fileName)));
   CHECK(!fs::exists(aceVcsLibDir / "include" / "ace.h") && !fs::exists(aceVcsLibDir / "shared.json") && !fs::exists(aceVcsLibDir / "chameleon"));
+  {  // its TV system and the header's 16-character name
+    std::ifstream vcsLibMakefile(aceVcsLibDir / "Makefile"), vcsLibStart(aceVcsLibDir / "ace" / "start.S");
+    std::string makefileText((std::istreambuf_iterator<char>(vcsLibMakefile)), {}), startText((std::istreambuf_iterator<char>(vcsLibStart)), {});
+    CHECK(makefileText.find("ACE_SYSTEM ?= 1\n") != std::string::npos && startText.find("\"both            \"") != std::string::npos);
+  }
   if (!gcc.empty() && !make.empty()) {
     std::string command = "cd \"" + aceVcsLibDir.string() + "\" && \"" + make + "\" ace > make-ace.log 2>&1 && \"" + make + "\" > make.log 2>&1";
     CHECK(std::system(command.c_str()) == 0 && romFormat((aceVcsLibDir / "build" / "both.ace").string()) == "ACE" && fs::exists(aceVcsLibDir / "build" / "both.bin"));

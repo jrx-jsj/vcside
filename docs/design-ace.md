@@ -182,7 +182,9 @@ The Makefile fails if the start code does not follow the 40-byte header, since t
 
 ## ELF games as ACE files (`make ace`, phase 5)
 
-A new ELF project also builds as an ACE file: `make ace` writes `build/<name>.ace` and `build/ACE_debugging.elf` from the same `src/`, unchanged. A double click on the `.ace` in the project tree runs it in Gopher2600.
+**2026-11-18:** the new-project dialog no longer offers the ACE file for ELF projects (nobody was going to use it: an ACE game is a *C for ACE* project). What follows is what the "ELF game on vcsLib" ACE example still uses.
+
+An ELF project built as an ACE file: `make ace` writes `build/<name>.ace` and `build/ACE_debugging.elf` from the same `src/`, unchanged. A double click on the `.ace` in the project tree runs it in Gopher2600.
 
 - **`ace/`** in the project holds the ACE template's bus library, start code, `memcpy`/`memset` and linker script (VCSIDE copies them from `data/templates/ace` when it creates the project, listed in the ELF template's `shared.json`, so the repository has one copy), plus two files of the ELF template:
   - `vcslib_ace.c`: every vcsLib function the ELF template declares, each feeding the same 6507 instructions as an ELF loader. The exception is `vcsRead4`: it is `lda` plus `sta $1FF0` (7 or 8 cycles instead of 4), the bus library's way of reading. The library gained `ace_code` (any instruction's bytes) for `ldx`, `ldy`, `stx`, `sty`, `sta abs` and `vcsWrite6`.
@@ -209,7 +211,7 @@ The protocol, from the UCA firmware (`esp8266.c`, `main.c`, `global.h`, `cartrid
   - At the top the cart adds its own *Setup* (and offline ROMs), so the user can always set the host back.
 - **A ROM:** the same request with `Range: bytes=<first>-<last>`, at most 32 KB each, all on one keep-alive connection. The cart reads exactly that many bytes after the blank line that ends the headers. It downloads the first 96 KB, and the last 16 bytes of bigger files, before choosing how to run it. The type comes from the extension (`.ace`, `.elf`…) or, for `.bin`, from the contents.
 
-**What VCSIDE serves:** the project's ROM and, in an ELF project built with `make ace`, `build/<name>.ace` too. Files are read again on each request, so a new build is on the cart the next time it is chosen. The *Output* panel says which address to enter and each time the cart asks for its menu or a ROM.
+**What VCSIDE serves:** the project's ROM and, in a project built with both `make` and `make ace` (the "ELF game on vcsLib" ACE example), both files. Files are read again on each request, so a new build is on the cart the next time it is chosen. The *Output* panel says which address to enter and each time the cart asks for its menu or a ROM.
 
 **Limits and notes:**
 

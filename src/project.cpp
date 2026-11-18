@@ -1421,14 +1421,14 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
       if (error) *error = F("Template not found in {0}", {(exampleName.empty() ? templateDir : exampleDir).string()});
       return false;
     }
-    // the ELF project's other builds, each with its glue folder: the Chameleon image and the
-    // ACE file (ACE's vcsLib example is the ACE build alone)
+    // the ELF project's other build, with its glue folder: the Chameleon image; ACE's vcsLib
+    // example is the ELF project built with make ace
     // the dual example always has the Chameleon image: it is the only cartridge that runs it on a 7800
-    const bool chameleonBuild = !ace && (elfBuilds.chameleon || example == "dual" || example == "game-dual"), aceBuild = vcsLibOnAce || (!ace && elfBuilds.ace);
+    const bool chameleonBuild = !ace && (elfBuilds.chameleon || example == "dual" || example == "game-dual"), aceBuild = vcsLibOnAce;
     std::string extraBuilds, glue;
     if (aceBuild)
       extraBuilds += " `make ace`: the same game as `build/" + projName + ".ace` (vcsLib on VCSIDE's ACE bus library in `ace/`)" +
-                     (vcsLibOnAce || elfBuilds.aceDefault ? ", what F7 builds." : ".");
+                     ", what F7 builds.";
     if (chameleonBuild) extraBuilds += " `make chameleon CHAMELEON_FW=...`: the Chameleon Cart image (`chameleon/`).";
     if (aceBuild && chameleonBuild) glue = ", `ace/` and `chameleon/` (the other cartridges' glue)";
     else if (aceBuild) glue = ", `ace/` (the ACE build's glue)";
@@ -1461,7 +1461,7 @@ bool Project::create(const std::string& dirIn, const std::string& projName, Lang
     writeMusicIncludes(musicFolder, generatedMusic, tvStandard);
     newProject.main = "src/main.c";
     newProject.buildCommand = "make";
-    const bool aceOutput = ace || (aceBuild && elfBuilds.aceDefault);  // F7 builds the ACE file
+    const bool aceOutput = ace;  // F7 builds the ACE file
     newProject.format = aceOutput ? "ACE" : "ELF";
     if (aceOutput) {
       newProject.output = "build/" + projName + ".ace";

@@ -890,7 +890,8 @@ void App::plusStoreDialog() {
   char title[96];
   snprintf(title, sizeof title, "%s###plusstore", T("PlusStore"));
   float fontSize = ImGui::GetFontSize();
-  ImGui::SetNextWindowSize(ImVec2(fontSize * 34, 0), ImGuiCond_Appearing);
+  // the height fits the rows every frame (the account state and wrapped lines change it): never a scrollbar
+  ImGui::SetNextWindowSize(ImVec2(fontSize * 34, 0), ImGuiCond_Always);
   bool open = true;
   if (!theme::beginModal(title, &open)) return;
   ImGui::PushTextWrapPos(ImGui::GetContentRegionAvail().x);
@@ -4390,7 +4391,7 @@ void App::newProjectDialog() {
     }
     if (languageFromId(kLangIds[npLang_]) == Language::ElfC) {
       // the cartridges: the ELF ROM always (the emulators run it and the Chameleon image is
-      // made from it); the Chameleon image and the ACE file get their folder and make target
+      // made from it); the Chameleon image gets its folder and make target
       row(T("Cartridges"));
       ImGui::BeginDisabled();
       bool elfRom = true;
@@ -4403,19 +4404,6 @@ void App::newProjectDialog() {
       }
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("%s", T("make chameleon: the game linked with the Chameleon Cart's firmware, to flash. Adds chameleon/. The space report measures against the Chameleon, the tighter one."));
-      ImGui::Checkbox(T("ACE file (PlusCart, UnoCart)"), &npAceBuild_);
-      if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("%s", T("make ace: the same game as an ACE file for the PlusCart and the UnoCart (runs in Gopher2600). Adds ace/."));
-      if (!npAceBuild_) npAceDefault_ = false;
-      // what F7 builds and F5 runs: the Chameleon image needs its firmware and no emulator runs it
-      row(T("Default build"));
-      const char* defaultBuilds[] = {T("ELF ROM (make)"), T("ACE file (make ace)")};
-      ImGui::BeginDisabled(!npAceBuild_);
-      int defaultBuild = npAceDefault_ ? 1 : 0;
-      if (ImGui::Combo("##defaultbuild", &defaultBuild, defaultBuilds, npAceBuild_ ? 2 : 1)) npAceDefault_ = defaultBuild == 1;
-      ImGui::EndDisabled();
-      if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-        ImGui::SetTooltip("%s", T("What F7 builds and F5 runs (the ACE file in Gopher2600). The Chameleon image is built with make chameleon: it needs the firmware and no emulator runs it."));
       // the cartridge the emulators imitate and the space report measures against
       row(T("Emulated cartridge"));
       Project elfProject;
@@ -4481,7 +4469,7 @@ void App::newProjectDialog() {
     error.clear();
     std::string example = startIds[npExample_];
     bool made = Project::create(target.string(), npName_, npLanguage, npTvId_, &created, &error, example, formats.empty() ? "" : npFormat_,
-                                {npChameleonBuild_, npAceBuild_, npAceDefault_});
+                                {npChameleonBuild_});
     if (made && created.language == Language::ElfC) {  // the emulated cartridge
       if (const ArmCartridge* chosen = cartridgeLibrary().find(npElfCartridge_)) created.useCartridge(*chosen);
       made = created.save(&error);

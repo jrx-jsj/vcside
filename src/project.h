@@ -63,11 +63,10 @@ CartridgeLibrary& cartridgeLibrary();
 
 enum class IllegalOpcodes { Allow, StableOnly, Warn, Forbid };
 
-// An ELF project's builds besides its ROM, each with its glue folder and its Makefile
-// target: make chameleon (chameleon/) and make ace (ace/).
-// aceDefault: F7 builds the ACE file (make ace) and F5 runs it, instead of the ELF ROM.
+// An ELF project's builds besides its ROM, with its glue folder and its Makefile target:
+// make chameleon (chameleon/). ACE games are ACE projects (C for ACE).
 struct ElfBuilds {
-  bool chameleon = true, ace = true, aceDefault = false;
+  bool chameleon = true;
 };
 
 struct Project {

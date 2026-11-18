@@ -60,7 +60,7 @@ ACE has no such arguments: the ACE templates take the system from the project's 
 
 MARIA's screen: a DLL with one zone per room line and one display list of three 160B objects (32 + 32 + 16 bytes) shared by every line. The ARM serves each line's 80 bytes with `vcsInjectDmaData` from buffers it packs in the VBLANK (the walls, the floor and one per row of the hero); 160B gives 12 colours, enough for the hero's five, the floor and the walls (`game_colours`). A loop in the 7800's RAM reads 19 served bytes in each VBLANK (background, palettes, the TIA's six sound registers) and then the controllers, which the ARM snoops. The 2600's playfield walls (4 pixels at the sides, 8 lines top and bottom) and the hero's two lines per row are drawn the same way on both, so the pictures match.
 
-The Chameleon image is always made (it is the only cartridge that runs the 7800 side); `make ace` builds with the 7800 calls stubbed. Build > *Run on the Atari 7800 (Test7800)* runs it in Test7800 without changing the project's emulator. Checked in Test7800 (NTSC, PAL, joystick, button, PAUSE), Stella and Gopher2600; what only real hardware can tell is in [sources.md](sources.md#atari-7800-on-the-chameleon-cart-2026-11-15).
+The Chameleon image is always made (it is the only cartridge that runs the 7800 side). Build > *Run on the Atari 7800 (Test7800)* runs it in Test7800 without changing the project's emulator. Checked in Test7800 (NTSC, PAL, joystick, button, PAUSE), Stella and Gopher2600; what only real hardware can tell is in [sources.md](sources.md#atari-7800-on-the-chameleon-cart-2026-11-15).
 
 ## ELF: VCSIDE The Game for the 2600 and the 7800 (`elf-game-dual`, 2026-11-15)
 

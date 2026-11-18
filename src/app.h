@@ -417,7 +417,7 @@ class App {
   std::string npFormat_ = "4K";                // DASM and batari Basic: the cartridge (formats.json id)
   std::string npCdfjDriver_, npCdfjError_;    // CDFJ: the user's own driver, chosen before Create
   std::string npElfCartridge_ = "chameleon";  // ELF: the emulated cartridge's id
-  bool npChameleonBuild_ = true, npAceBuild_ = false, npAceDefault_ = false;  // ELF: the builds besides the ROM, and F7's
+  bool npChameleonBuild_ = true;  // ELF: the Chameleon image besides the ROM
 
   // settings
   std::vector<std::string> recent_;
