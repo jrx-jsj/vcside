@@ -49,6 +49,7 @@
 #include "assistant/context_items.h"
 #include "assistant/edits.h"
 #include "assistant/creative_tools.h"
+#include "assistant/guided.h"
 #include "file_operations.h"
 #include "assemble_check.h"
 #include "find_in_files.h"
@@ -4929,7 +4930,7 @@ static void testNativeToolCalls() {
     Provider remote;
     remote.baseUrl = "https://openrouter.ai/api/v1", remote.model = "x/y";
     CHECK(!nlohmann::json::parse(chatRequestBody(remote, {{"user", "hi"}})).contains("temperature"));
-    nlohmann::json schema = {{"type", "object"}, {"properties", {{"line", {{"type", "integer"}}}}}, {"required", {"line"}}};
+    nlohmann::ordered_json schema = {{"type", "object"}, {"properties", {{"line", {{"type", "integer"}}}}}, {"required", {"line"}}};
     auto shaped = nlohmann::json::parse(withResponseSchema(chatRequestBody(local, {{"user", "hi"}}), schema));
     CHECK(shaped["response_format"]["type"] == "json_schema" && shaped["response_format"]["json_schema"]["schema"]["properties"]["line"]["type"] == "integer" && shaped["messages"].size() == 1);
   }
@@ -5483,6 +5484,86 @@ static void testCreativeTools() {
   auto fromEditor = call("music_set_song", {{"path", "song.vcsmusic"}, {"name", "x"}});
   CHECK(fromEditor.proposed && vcs::music::fromJson(fromEditor.edit.after, &song, &error) && song.speed == 9 && song.name == "x");
   fs::remove_all(root);
+}
+
+static void testGuided(const KnowledgeBase& kb) {
+  using namespace vcs::assistant;
+  using nlohmann::json;
+  const std::string file =
+      "\tprocessor 6502\n\tinclude \"2600.h\"\n\tSEG.U Variables\n\tORG $80\nFrame   ds 1\n\tSEG Code\n\tORG $F000\n"
+      "Reset\n\tsei\n\tcld\n\tldx #0\n"
+      "; once a frame: the game's logic\nStartFrame\n\tlda #2\n\tsta VBLANK\n\tinc Frame\n\tjmp StartFrame\n"
+      "Colours .byte 1, 2, 3\n";
+  GuidedInput input;
+  input.request = "count the presses of the fire button";
+  input.projectDir = "/tmp/none", input.file = "src/main.asm", input.fileText = file, input.kb = &kb;
+  input.inProject = [](const std::string& word) { return word == "frame" || word == "reset" || word == "startframe"; };
+  std::string why;
+  GuidedInput basic = input;
+  basic.file = "game.bas";
+  CHECK(!Guided::applies(basic, &why) && !why.empty() && Guided::applies(input, &why));
+  Guided guided;
+  GuidedStep step, next;
+  CHECK(guided.start(input, &step, &why) && guided.stage() == 1);
+  // the first question: the 2600's recipes, the answer held to their ids
+  CHECK(step.prompt.find("fire-button-action") != std::string::npos && step.prompt.find("7800-") == std::string::npos && step.schema["properties"]["recipes"]["items"]["enum"].size() >= 10);
+  EditProposal proposal;
+  std::string message;
+  CHECK(guided.answer(R"({"recipes": ["fire-button-action", "nonsense"]})", &next, &proposal, &message) == Guided::Outcome::Ask && guided.recipes() == std::vector<std::string>({"fire-button-action"}));
+  // the second: the routines (labels with code; the data table is not one), with the comment above each
+  CHECK(next.schema["properties"]["routine"]["enum"].dump() == "[\"Reset\",\"StartFrame\"]" && next.prompt.find("once a frame: the game's logic") != std::string::npos);
+  CHECK(guided.answer(R"({"routine": "StartFrame"})", &step, &proposal, &message) == Guided::Outcome::Ask && guided.routine() == "StartFrame" && guided.stage() == 3);
+  // the third: the variants with their slots, the keys in the order the model decides them
+  CHECK(step.prompt.find("fire-button-action/once-per-press") != std::string::npos && step.prompt.find("<slot PRESSED") != std::string::npos && step.prompt.find("14: \tlda #2") != std::string::npos);
+  CHECK(step.schema["properties"].begin().key() == "variant" && step.schema["properties"]["slots"]["required"].size() == 3 && step.temperature < 0.2);
+  // an action that cannot be written goes back with the reason, at a higher temperature
+  auto bad = guided.answer(R"({"variant": "fire-button-action/once-per-press", "after_line": 16, "slots": {"PRESSED": [{"do": "call", "target": "Nowhere"}]}, "new_variables": [], "summary": "x"})", &next, &proposal, &message);
+  CHECK(bad == Guided::Outcome::Ask && next.prompt.find("is not a routine or a label of the file") != std::string::npos && next.temperature > 0.3 && guided.attempts() == 1);
+  // a good one: the recipe's code with the action in its slot, the variables declared where the file declares its own
+  auto good = guided.answer(R"({"variant": "fire-button-action/once-per-press", "after_line": 16, "slots": {"HELD": [], "NOT_HELD": [], "PRESSED": [{"do": "inc", "target": "Presses"}]}, "new_variables": [], "summary": "Counts presses."})",
+                            &next, &proposal, &message);
+  CHECK(good == Guided::Outcome::Proposal && message == "Counts presses." && proposal.relative == "src/main.asm" && proposal.before == file);
+  CHECK(proposal.after.find("Frame   ds 1\nFireWas ds 1\nPresses ds 1\n") != std::string::npos);
+  CHECK(proposal.after.find("\tinc Frame\n\tlda INPT4              ; bit 7: 0 = pressed\n\tbmi .FireUp\n\tlda FireWas\n") != std::string::npos);
+  CHECK(proposal.after.find("\tsta FireWas\n\tinc Presses\n\tjmp .FireDone\n.FireUp\n\tlda #0\n\tsta FireWas\n.FireDone\n\tjmp StartFrame\n") != std::string::npos);
+  CHECK(proposal.firstLine == 19 && proposal.lastLine == 30);
+  // a slot's name from the other variant is taken for the one it must have meant; set, write, call and goto are written too
+  Guided again;
+  again.start(input, &step, &why);
+  again.answer(R"({"recipes": ["fire-button-action"]})", &next, &proposal, &message);
+  again.answer(R"({"routine": "StartFrame"})", &step, &proposal, &message);
+  auto mixed = again.answer(R"({"variant": "fire-button-action/once-per-press", "after_line": 16, "slots": {"HELD": [{"do": "set", "target": "Frame", "value": "0"}, {"do": "write", "target": "AUDV0", "value": "8"}, {"do": "add", "target": "Frame", "value": "-2"}, {"do": "goto", "target": "Reset"}], "NOT_HELD": [], "PRESSED": []}, "new_variables": [], "summary": ""})",
+                            &next, &proposal, &message);
+  CHECK(mixed == Guided::Outcome::Proposal && proposal.after.find("\tlda #0\n\tsta Frame\n\tlda #8\n\tsta AUDV0\n\tlda Frame\n\tsec\n\tsbc #2\n\tsta Frame\n\tjmp Reset\n") != std::string::npos);
+  // no recipe with holes: the lines are the model's own, placed as DASM wants them, and checked like any change
+  Guided own;
+  own.start(input, &step, &why);
+  own.answer(R"({"recipes": []})", &next, &proposal, &message);
+  own.answer(R"({"routine": "StartFrame"})", &step, &proposal, &message);
+  CHECK(step.prompt.find("Variant") == std::string::npos && step.schema["properties"].begin().key() == "after_line");
+  auto invented = own.answer(R"({"after_line": 16, "new_lines": ["lda INPT4", "bpl Nowhere"], "new_variables": [], "summary": ""})", &next, &proposal, &message);
+  CHECK(invented == Guided::Outcome::Ask && next.prompt.find("Nowhere") != std::string::npos);
+  auto written = own.answer(R"({"after_line": 16, "new_lines": ["17: lda INPT4", "bmi .Skip", "inc Presses", ".Skip:"], "new_variables": ["Presses"], "summary": "ok"})", &next, &proposal, &message);
+  CHECK(written == Guided::Outcome::Proposal && proposal.after.find("\tinc Frame\n\tlda INPT4\n\tbmi .Skip\n\tinc Presses\n.Skip\n\tjmp StartFrame\n") != std::string::npos && proposal.after.find("Presses ds 1") != std::string::npos);
+  // three tries and it gives up, saying why
+  Guided stubborn;
+  stubborn.start(input, &step, &why);
+  stubborn.answer(R"({"recipes": []})", &next, &proposal, &message);
+  stubborn.answer(R"({"routine": "StartFrame"})", &step, &proposal, &message);
+  const char* wrong = R"({"after_line": 16, "new_lines": ["bra Reset"], "new_variables": [], "summary": ""})";
+  CHECK(stubborn.answer(wrong, &next, &proposal, &message) == Guided::Outcome::Ask && stubborn.answer(wrong, &next, &proposal, &message) == Guided::Outcome::Ask);
+  CHECK(stubborn.answer(wrong, &next, &proposal, &message) == Guided::Outcome::Failed && message.find("bra") != std::string::npos);
+  // the assembler's verdict goes back too
+  GuidedInput judged = input;
+  judged.assemble = [](const std::string&, const std::string& text, std::string* errors) {
+    if (text.find("inc Presses") != std::string::npos) *errors = "main.asm (20): error: out of range\n";
+    return true;
+  };
+  Guided withJudge;
+  withJudge.start(judged, &step, &why);
+  withJudge.answer(R"({"recipes": []})", &next, &proposal, &message);
+  withJudge.answer(R"({"routine": "StartFrame"})", &step, &proposal, &message);
+  CHECK(withJudge.answer(R"({"after_line": 16, "new_lines": ["inc Presses"], "new_variables": ["Presses"], "summary": ""})", &next, &proposal, &message) == Guided::Outcome::Ask && next.prompt.find("out of range") != std::string::npos);
 }
 
 static void testProjectIndex() {
@@ -6428,6 +6509,7 @@ int main() {
   testFileOperations();
   testAssembleCheck();
   testCreativeTools();
+  testGuided(kb);
   testFindInFiles();
   testProjectIndex();
   testEmbeddings();

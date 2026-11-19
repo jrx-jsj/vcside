@@ -113,7 +113,20 @@ struct LanguageWords {
 };
 
 // A how-to entry (data/kb/techniques.json): what a programmer wants to do, with the registers and the steps.
+// A recipe's code with holes (docs/design-assistant.md, "Recipes with holes"): the control flow is written and checked once, here;
+// who uses it only says what goes in each hole. In `code`, {NAME} alone on a line is a slot (a few straight lines of code),
+// {L} is replaced by a label prefix that is free in the file, and {Name} inside a line is one of `variables` (a RAM byte).
+struct RecipeTemplate {
+  std::string id, title;
+  std::vector<std::string> code;
+  std::vector<std::pair<std::string, std::string>> slots;  // name, what it is for
+  std::vector<std::string> variables;
+  bool optional = false;  // it does something with every slot empty
+  std::string left;       // what it leaves to do, said to the user
+};
+
 struct Technique {
+  std::vector<RecipeTemplate> templates;
   std::string id, title, summary, example, note;
   std::vector<std::string> keywords, steps, related, sources;
   bool verified = true;

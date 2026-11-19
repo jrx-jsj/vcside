@@ -223,6 +223,20 @@ bool KnowledgeBase::load(const std::string& dir, std::string* error) {
       technique.related = stringList(item, "related");
       technique.sources = stringList(item, "sources");
       technique.verified = item.value("verified", true);
+      if (item.contains("templates") && item["templates"].is_array())
+        for (auto& entry : item["templates"]) {
+          RecipeTemplate recipe;
+          recipe.id = stringValue(entry, "id");
+          recipe.title = stringValue(entry, "title");
+          recipe.code = stringList(entry, "code");
+          recipe.variables = stringList(entry, "variables");
+          recipe.optional = entry.value("optional", false);
+          recipe.left = stringValue(entry, "left");
+          if (entry.contains("slots") && entry["slots"].is_object())
+            for (auto slot = entry["slots"].begin(); slot != entry["slots"].end(); ++slot)
+              if (slot.value().is_string()) recipe.slots.push_back({slot.key(), slot.value().get<std::string>()});
+          if (!recipe.id.empty() && !recipe.code.empty()) technique.templates.push_back(recipe);
+        }
       if (!technique.id.empty()) techniques_.push_back(technique);
     }
   } else if (!techniquesDocument.is_null()) ok = false;

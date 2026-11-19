@@ -197,7 +197,7 @@ std::string proposalProblems(const std::string& request, const std::string& befo
             if (name.find(part) != std::string::npos) return true;
           return false;
         };
-        bool saysPressed = has({"press", "fire", "jump", "shoot", "pushed", "down"}) && !has({"not", "no", "release", "skip", "idle", "up"});
+        bool saysPressed = has({"press", "fire", "jump", "shoot", "pushed", "down"}) && !has({"not", "no", "release", "skip", "idle", "up", "done", "end", "exit", "out"});
         bool saysReleased = has({"release", "notpress", "nofire", "nojump", "skip", "idle"});
         if (op == "bmi" && saysPressed)
           problems += "- After lda INPT4, bmi branches when the button is NOT pressed (bit 7 = 1 means released); \"" + label + "\" sounds like the pressed case. Use bpl to branch when it is pressed, or bmi to skip the code.\n";

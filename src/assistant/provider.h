@@ -79,7 +79,7 @@ void parseOpenAiStreamData(const std::string& data, std::vector<Event>& events, 
 std::string chatRequestBody(const Provider& provider, const std::vector<Message>& messages, const nlohmann::json* tools = nullptr);
 // The same request with the answer held to a JSON schema (OpenAI's response_format, which llama.cpp's server turns into a grammar:
 // the model cannot write anything else). For the questions with closed answers of the guided procedure.
-std::string withResponseSchema(const std::string& body, const nlohmann::json& schema);
+std::string withResponseSchema(const std::string& body, const nlohmann::ordered_json& schema);
 constexpr double kLocalTemperature = 0.1;  // for a model that runs on this computer
 // The Anthropic Messages API: the system prompt is its own field, not a message.
 std::string anthropicRequestBody(const Provider& provider, const std::vector<Message>& messages, int maxTokens = 4096, const nlohmann::json* tools = nullptr);
@@ -98,7 +98,7 @@ class ChatRequest {
   ~ChatRequest();
   void start(const Provider& provider, std::vector<Message> messages, const nlohmann::json* tools = nullptr);
   // The next start() asks for an answer of this shape (a JSON schema); only that one.
-  void setSchema(const nlohmann::json& schema) { nextSchema_ = schema; }
+  void setSchema(const nlohmann::ordered_json& schema) { nextSchema_ = schema; }
   void cancel() { cancel_ = true; }
   bool running() const { return running_; }
   std::vector<Event> poll();  // takes what arrived since the last call
@@ -109,7 +109,7 @@ class ChatRequest {
   std::mutex mutex_;
   std::deque<Event> events_;
   std::atomic<bool> running_{false}, cancel_{false};
-  nlohmann::json schema_, nextSchema_;
+  nlohmann::ordered_json schema_, nextSchema_;
   void push(Event event);
 };
 

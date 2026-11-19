@@ -1,0 +1,12 @@
+[
+ {"id": "empty-beep", "project": "empty", "file": "src/main.asm", "request": "make a beep while the fire button is pressed", "must": ["INPT4", "AUD[CFV]0"], "must_not": ["SWCHA"]},
+ {"id": "empty-count", "project": "empty", "file": "src/main.asm", "request": "count in a new variable how many times the fire button is pressed (once per press)", "must": ["INPT4", "\\b(inc|adc)\\b"], "must_not": ["SWCHA"]},
+ {"id": "empty-reset", "project": "empty", "file": "src/main.asm", "request": "restart the game when the console's Reset switch is pressed", "must": ["SWCHB", "Reset"], "must_not": []},
+ {"id": "empty-stick", "project": "empty", "file": "src/main.asm", "request": "keep a horizontal position in a new variable and move it left and right with the joystick", "must": ["SWCHA", "\\b(inc|dec|adc|sbc)\\b"], "must_not": ["INPT4"]},
+ {"id": "empty-tick", "project": "empty", "file": "src/main.asm", "request": "play a short high tone on channel 0 whenever the Frame counter is a multiple of 64", "must": ["Frame", "AUD[CFV]0"], "must_not": []},
+ {"id": "game-select", "project": "game", "file": "src/main.asm", "request": "while the console's Select switch is held, do not move the hero", "must": ["SWCHB"], "must_not": []},
+ {"id": "game-colour", "project": "game", "file": "src/main.asm", "request": "count in a new variable the frames the fire button is held", "must": ["INPT4", "\\b(inc|adc)\\b"], "must_not": ["SWCHA"]},
+ {"id": "osito-jump", "project": "osito", "file": "ositopanda.asm", "request": "el oso debe saltar cuando se pulse el botón del joystick", "must": ["INPT4"], "must_not": ["SWCHA"]},
+ {"id": "osito-sound", "project": "osito", "file": "ositopanda.asm", "request": "play the steps sound effect when the fire button is pressed", "must": ["INPT4", "SFX_TRIGGER", "sfxSTEPS"], "must_not": ["SWCHA"]},
+ {"id": "osito-held", "project": "osito", "file": "ositopanda.asm", "request": "count in a new variable the frames the fire button is held", "must": ["INPT4", "\\b(inc|adc)\\b"], "must_not": ["SWCHA"]}
+]

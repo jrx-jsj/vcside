@@ -33,6 +33,6 @@ std::string withoutThinking(std::string text);
 
 // One question answered whole, on the calling thread (command-line tools and tests of the procedures; the interface uses the
 // classes above). schema: the answer's shape, or null. False with *error set if the server does not answer.
-bool chatOnce(const Provider& provider, const std::vector<Message>& messages, const nlohmann::json* schema, int maxTokens, std::string* text, std::string* error, int idleSeconds = 120);
+bool chatOnce(const Provider& provider, const std::vector<Message>& messages, const nlohmann::ordered_json* schema, int maxTokens, std::string* text, std::string* error, int idleSeconds = 120, double temperature = -1);
 
 }  // namespace vcs::assistant

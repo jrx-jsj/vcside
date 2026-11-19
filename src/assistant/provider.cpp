@@ -93,12 +93,13 @@ bool cachesClaude(const Provider& provider) {
 }
 }  // namespace
 
-std::string withResponseSchema(const std::string& body, const nlohmann::json& schema) {
-  json request = json::parse(body, nullptr, false);
+std::string withResponseSchema(const std::string& body, const nlohmann::ordered_json& schema) {
+  // ordered all the way: the server's grammar asks for the keys in the order the schema gives them
+  nlohmann::ordered_json request = nlohmann::ordered_json::parse(body, nullptr, false);
   if (!request.is_object() || !schema.is_object() || schema.empty() || request.contains("system")) return body;  // (the Anthropic dialect has no such field)
-  request["response_format"] = {{"type", "json_schema"}, {"json_schema", {{"name", "answer"}, {"strict", true}, {"schema", schema}}}};
+  request["response_format"] = nlohmann::ordered_json{{"type", "json_schema"}, {"json_schema", nlohmann::ordered_json{{"name", "answer"}, {"strict", true}, {"schema", schema}}}};
   request.erase("tools");
-  return request.dump(-1, ' ', false, json::error_handler_t::replace);
+  return request.dump(-1, ' ', false, nlohmann::ordered_json::error_handler_t::replace);
 }
 
 std::string chatRequestBody(const Provider& provider, const std::vector<Message>& messages, const nlohmann::json* tools) {
@@ -320,7 +321,7 @@ void ChatRequest::start(const Provider& provider, std::vector<Message> messages,
   events_.clear();
   nlohmann::json toolList = tools ? *tools : nlohmann::json::array();
   schema_ = nextSchema_;  // the answer's shape for this request only
-  nextSchema_ = nlohmann::json();
+  nextSchema_ = nlohmann::ordered_json();
   thread_ = std::thread([this, provider, messages, toolList]() mutable { run(provider, std::move(messages), std::move(toolList)); });
 }
 

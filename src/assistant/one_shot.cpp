@@ -88,19 +88,20 @@ bool OneShotRequest::poll(std::string* text, std::string* error) {
   return true;
 }
 
-bool chatOnce(const Provider& provider, const std::vector<Message>& messages, const nlohmann::json* schema, int maxTokens, std::string* text, std::string* error, int idleSeconds) {
+bool chatOnce(const Provider& provider, const std::vector<Message>& messages, const nlohmann::ordered_json* schema, int maxTokens, std::string* text, std::string* error, int idleSeconds, double temperature) {
   std::string body = chatRequestBody(provider, messages);
   if (schema) body = withResponseSchema(body, *schema);
-  json request = json::parse(body, nullptr, false);
+  nlohmann::ordered_json request = nlohmann::ordered_json::parse(body, nullptr, false);
   if (!request.is_object()) return *error = "no request", false;
   request["stream"] = false;
   request.erase("stream_options");
   request["max_tokens"] = maxTokens;
+  if (temperature >= 0) request["temperature"] = temperature;
   HttpRequest http;
   http.method = "POST";
   http.url = chatUrl(provider);
   http.headers = chatHeaders(provider);
-  http.body = request.dump(-1, ' ', false, json::error_handler_t::replace);
+  http.body = request.dump(-1, ' ', false, nlohmann::ordered_json::error_handler_t::replace);
   http.connectSeconds = 3;
   http.idleSeconds = idleSeconds;
   std::atomic<bool> never{false};

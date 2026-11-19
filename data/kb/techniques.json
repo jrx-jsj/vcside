@@ -464,6 +464,50 @@
    "note": "The structure comes from the register descriptions; the exact cycle windows of the six writes were not worked out for this entry. Use a known 48-pixel routine and check it in an emulator."
   },
  {
+  "templates": [
+   {
+    "id": "while-held",
+    "title": "Something on every frame the button is held, and something else while it is not",
+    "code": [
+     "lda INPT4              ; bit 7: 0 = pressed",
+     "bmi .{L}Up",
+     "{HELD}",
+     "jmp .{L}Done",
+     ".{L}Up",
+     "{NOT_HELD}",
+     ".{L}Done"
+    ],
+    "slots": {
+     "HELD": "runs on every frame the button is held",
+     "NOT_HELD": "runs on every frame it is not held (may be empty)"
+    },
+    "variables": []
+   },
+   {
+    "id": "once-per-press",
+    "title": "Something once, on the frame the button goes down",
+    "code": [
+     "lda INPT4              ; bit 7: 0 = pressed",
+     "bmi .{L}Up",
+     "lda {FireWas}",
+     "bne .{L}Done          ; it was down already: not a new press",
+     "lda #1",
+     "sta {FireWas}",
+     "{PRESSED}",
+     "jmp .{L}Done",
+     ".{L}Up",
+     "lda #0",
+     "sta {FireWas}",
+     ".{L}Done"
+    ],
+    "slots": {
+     "PRESSED": "runs once per press, on the frame the button goes down"
+    },
+    "variables": [
+     "FireWas"
+    ]
+   }
+  ],
   "id": "fire-button-action",
   "title": "Do something when the fire button is pressed (once per press)",
   "keywords": [
@@ -507,6 +551,43 @@
   "note": "After a reset the RAM is clear, so FireWas starts as 'pressed' and a button held during the start does not count as a new press."
  },
  {
+  "templates": [
+   {
+    "id": "jump-on-press",
+    "title": "The fire button starts a jump: a height that rises and falls back to 0 (about 13 frames, 21 lines high)",
+    "code": [
+     "lda {JumpHeight}",
+     "ora {JumpSpeed}",
+     "bne .{L}Air            ; in the air: no new jump",
+     "lda INPT4              ; bit 7: 0 = pressed",
+     "bmi .{L}Done",
+     "lda #6",
+     "sta {JumpSpeed}         ; take off",
+     "{TAKEOFF}",
+     ".{L}Air",
+     "lda {JumpHeight}",
+     "clc",
+     "adc {JumpSpeed}",
+     "sta {JumpHeight}",
+     "dec {JumpSpeed}         ; gravity",
+     "lda {JumpHeight}",
+     "bne .{L}Done",
+     "sta {JumpSpeed}         ; back on the ground (A = 0)",
+     "{LANDED}",
+     ".{L}Done"
+    ],
+    "slots": {
+     "TAKEOFF": "runs once when the jump starts, for example a sound (may be empty)",
+     "LANDED": "runs once when it lands (may be empty)"
+    },
+    "variables": [
+     "JumpHeight",
+     "JumpSpeed"
+    ],
+    "optional": true,
+    "left": "The drawing is left to do: the kernel has to show the sprite JumpHeight lines higher (JumpHeight goes from 0 up to 21 and back)."
+   }
+  ],
   "id": "jump-with-gravity",
   "title": "Make a character jump and fall (gravity)",
   "keywords": [
@@ -548,6 +629,41 @@
   "note": "The routine was written for this entry from the register descriptions and checked by hand, not run in an emulator."
  },
  {
+  "templates": [
+   {
+    "id": "four-directions",
+    "title": "Something for each direction of joystick 0 that is pushed",
+    "code": [
+     "lda SWCHA              ; joystick 0 in bits 7-4: right, left, down, up; 0 = pushed",
+     "and #$80",
+     "bne .{L}NoRight",
+     "{RIGHT}",
+     ".{L}NoRight",
+     "lda SWCHA",
+     "and #$40",
+     "bne .{L}NoLeft",
+     "{LEFT}",
+     ".{L}NoLeft",
+     "lda SWCHA",
+     "and #$20",
+     "bne .{L}NoDown",
+     "{DOWN}",
+     ".{L}NoDown",
+     "lda SWCHA",
+     "and #$10",
+     "bne .{L}NoUp",
+     "{UP}",
+     ".{L}NoUp"
+    ],
+    "slots": {
+     "RIGHT": "runs while the stick is pushed right (may be empty)",
+     "LEFT": "runs while it is pushed left (may be empty)",
+     "DOWN": "runs while it is pushed down (may be empty)",
+     "UP": "runs while it is pushed up (may be empty)"
+    },
+    "variables": []
+   }
+  ],
   "id": "move-with-joystick",
   "title": "Move a sprite with the joystick",
   "keywords": [
@@ -654,6 +770,29 @@
   "example": "Random: lda Seed           ; never 0\n        lsr\n        bcc .NoTap\n        eor #$B4\n.NoTap  sta Seed\n        rts                ; A = the new number"
  },
  {
+  "templates": [
+   {
+    "id": "reset-and-select",
+    "title": "Something while the Reset switch is pressed, something while Select is",
+    "code": [
+     "lda SWCHB              ; bit 0 Reset, bit 1 Select; 0 = pressed",
+     "and #$01",
+     "bne .{L}NoReset",
+     "{RESET}",
+     ".{L}NoReset",
+     "lda SWCHB",
+     "and #$02",
+     "bne .{L}NoSelect",
+     "{SELECT}",
+     ".{L}NoSelect"
+    ],
+    "slots": {
+     "RESET": "runs while the Reset switch is pressed (may be empty)",
+     "SELECT": "runs while the Select switch is pressed (may be empty)"
+    },
+    "variables": []
+   }
+  ],
   "id": "console-switches",
   "title": "Read RESET, SELECT and the difficulty switches",
   "keywords": [
