@@ -1385,6 +1385,18 @@ void AssistantPanel::handleToolCall(const PanelContext& context, const ToolCall&
         return;
       }
     }
+    if (context.assembleWith && proposalRejects_ < 2 && result.edit.preview.empty()) {
+      // the assembler as a judge: what it says of the project with this change goes back to the model, unless the project
+      // did not assemble before the change either (then it is not the change's fault)
+      std::string errors, before;
+      if (context.assembleWith(result.edit.relative, result.edit.after, &errors) && !errors.empty() &&
+          !(!result.edit.created && context.assembleWith(result.edit.relative, result.edit.before, &before) && !before.empty())) {
+        proposalRejects_++;
+        addToolResult(context, describeCall(call), "The change was NOT shown to the user, because the project does not assemble with it. The assembler says:\n" + errors + "Fix it and call edit_file again.", true);
+        continueAgent(context);
+        return;
+      }
+    }
     pendingEdit_ = result.edit;
     pendingEditActive_ = true;
     if (allowedEdit_.count(pendingEdit_.path) && !pendingEdit_.privileged) decideEdit(context, true, false);  // this file was allowed for the session

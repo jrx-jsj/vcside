@@ -15,6 +15,7 @@
 
 #include "about.h"
 #include "file_operations.h"
+#include "assemble_check.h"
 #include "folder_dialog.h"
 #include "assistant/markdown_view.h"
 #include "doc_markdown.h"
@@ -3307,6 +3308,13 @@ void App::assistantPanel() {
     std::ofstream out(path, std::ios::binary);
     out << text;
     return (bool)out;
+  };
+  context.assembleWith = [this](const std::string& relative, const std::string& text, std::string* errors) {
+    if (!project_ || projectUnsaved_) return false;
+    AssembleCheck check = assembleWith(*project_, tools_, relative, text);
+    if (!check.judged) return false;
+    *errors = check.ok ? std::string() : check.errors;
+    return true;
   };
   assistant_.draw(context, mono_, &showAssistant_);
 }

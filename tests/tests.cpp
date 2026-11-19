@@ -50,6 +50,7 @@
 #include "assistant/edits.h"
 #include "assistant/creative_tools.h"
 #include "file_operations.h"
+#include "assemble_check.h"
 #include "find_in_files.h"
 #include "assistant/domain_checks.h"
 #include "assistant/validate.h"
@@ -5212,6 +5213,39 @@ static void testInvalidUtf8() {
   fs::remove_all(root);
 }
 
+static void testAssembleCheck() {
+  namespace fs = std::filesystem;
+  Toolchain toolchain;
+  toolchain.detect();
+  Tool* dasm = toolchain.get("dasm");
+  if (!dasm || !dasm->found()) {
+    printf("  (no DASM here: the assembler-as-judge test is skipped)\n");
+    return;
+  }
+  fs::path root = fs::temp_directory_path() / "vcside_assemble_check";
+  fs::remove_all(root);
+  fs::create_directories(root);
+  std::string good = "  processor 6502\n  org $F000\nStart\n  lda #0\n  jmp Start\n  org $FFFC\n  .word Start\n  .word Start\n";
+  std::ofstream(root / "main.asm") << good;
+  Project project;
+  project.dir = root.string(), project.file = (root / "demo.vcsproj").string();
+  project.language = Language::Dasm, project.main = "main.asm", project.output = "build/demo.bin", project.name = "demo";
+  AssembleCheck fine = assembleWith(project, toolchain, "main.asm", good);
+  CHECK(fine.judged && fine.ok && fine.errors.empty());
+  std::string bad = good;
+  bad.replace(bad.find("lda #0"), 6, "bra Start\n  lda Nowhere");
+  AssembleCheck broken = assembleWith(project, toolchain, "main.asm", bad);
+  CHECK(broken.judged && !broken.ok && !broken.errors.empty() && broken.errors.find("vcside-check-") == std::string::npos);
+  CHECK(fs::exists(root / "main.asm") && !fs::exists(root / "build"));  // the project itself is not touched
+  std::ifstream unchanged(root / "main.asm");
+  std::stringstream text;
+  text << unchanged.rdbuf();
+  CHECK(text.str() == good);
+  project.buildCommand = "make";
+  CHECK(!assembleWith(project, toolchain, "main.asm", good).judged);  // a build of its own: not judged
+  fs::remove_all(root);
+}
+
 static void testFileOperations() {
   namespace fs = std::filesystem;
   using namespace vcs::fileops;
@@ -6392,6 +6426,7 @@ int main() {
   testChatTabs();
   testInvalidUtf8();
   testFileOperations();
+  testAssembleCheck();
   testCreativeTools();
   testFindInFiles();
   testProjectIndex();

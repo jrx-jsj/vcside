@@ -51,6 +51,9 @@ struct PanelContext {
   // Writes a file: into the editor buffer when it is open (one undoable step), else to disk.
   // remove = true deletes a file the assistant created (the user's "undo everything").
   std::function<bool(const std::string& path, const std::string& text, bool remove)> applyEdit;
+  // The project built in a temporary copy with one file's proposed text: false if this project cannot be judged that way; else
+  // *errors is what the assembler said (empty: it assembled).
+  std::function<bool(const std::string& relative, const std::string& text, std::string* errors)> assembleWith;
 };
 
 class AssistantPanel {
