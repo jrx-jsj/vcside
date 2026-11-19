@@ -88,4 +88,34 @@ bool OneShotRequest::poll(std::string* text, std::string* error) {
   return true;
 }
 
+bool chatOnce(const Provider& provider, const std::vector<Message>& messages, const nlohmann::json* schema, int maxTokens, std::string* text, std::string* error, int idleSeconds) {
+  std::string body = chatRequestBody(provider, messages);
+  if (schema) body = withResponseSchema(body, *schema);
+  json request = json::parse(body, nullptr, false);
+  if (!request.is_object()) return *error = "no request", false;
+  request["stream"] = false;
+  request.erase("stream_options");
+  request["max_tokens"] = maxTokens;
+  HttpRequest http;
+  http.method = "POST";
+  http.url = chatUrl(provider);
+  http.headers = chatHeaders(provider);
+  http.body = request.dump(-1, ' ', false, json::error_handler_t::replace);
+  http.connectSeconds = 3;
+  http.idleSeconds = idleSeconds;
+  std::atomic<bool> never{false};
+  std::string answer;
+  HttpResult sent = httpRequest(http, [&](const char* bytes, size_t size) { return answer.append(bytes, size), answer.size() < (4u << 20); }, never);
+  if (sent.status / 100 != 2 || !sent.error.empty()) return *error = sent.error.empty() ? "HTTP " + std::to_string(sent.status) + " " + answer.substr(0, 300) : sent.error, false;
+  json reply = json::parse(answer, nullptr, false);
+  if (reply.is_object() && reply.contains("choices") && reply["choices"].is_array() && !reply["choices"].empty() && reply["choices"][0].contains("message") &&
+      reply["choices"][0]["message"].contains("content") && reply["choices"][0]["message"]["content"].is_string())
+    *text = reply["choices"][0]["message"]["content"].get<std::string>();
+  else if (reply.is_object() && reply.contains("content") && reply["content"].is_array() && !reply["content"].empty() && reply["content"][0].contains("text") && reply["content"][0]["text"].is_string())
+    *text = reply["content"][0]["text"].get<std::string>();
+  else return *error = "the server answered something unexpected", false;
+  *text = withoutThinking(sanitizeUtf8(*text));
+  return true;
+}
+
 }  // namespace vcs::assistant

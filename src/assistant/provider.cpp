@@ -34,6 +34,9 @@ std::string openAiRequestBody(const Provider& provider, const std::vector<Messag
   body["stream"] = true;
   // The bundled helper runs a model that may "think" first; for a fast answer it is told not to.
   if (provider.builtin) body["chat_template_kwargs"] = {{"enable_thinking", false}};
+  // A model on this computer writes code and tool calls, not prose: a low temperature, so one run is like the next (the helper's
+  // own default, 0.8, made the same request end in a different place each time).
+  if (provider.builtin || provider.isLocal()) body["temperature"] = kLocalTemperature;
   body["stream_options"] = {{"include_usage", true}};
   body["messages"] = json::array();
   for (auto& message : messages) body["messages"].push_back({{"role", message.role}, {"content", message.content}});
@@ -89,6 +92,14 @@ bool cachesClaude(const Provider& provider) {
   return provider.baseUrl.find("openrouter.ai") != std::string::npos && provider.model.rfind("anthropic/", 0) == 0;
 }
 }  // namespace
+
+std::string withResponseSchema(const std::string& body, const nlohmann::json& schema) {
+  json request = json::parse(body, nullptr, false);
+  if (!request.is_object() || !schema.is_object() || schema.empty() || request.contains("system")) return body;  // (the Anthropic dialect has no such field)
+  request["response_format"] = {{"type", "json_schema"}, {"json_schema", {{"name", "answer"}, {"strict", true}, {"schema", schema}}}};
+  request.erase("tools");
+  return request.dump(-1, ' ', false, json::error_handler_t::replace);
+}
 
 std::string chatRequestBody(const Provider& provider, const std::vector<Message>& messages, const nlohmann::json* tools) {
   std::string body = provider.dialect == "anthropic" ? anthropicRequestBody(provider, messages, 4096, tools) : openAiRequestBody(provider, messages, tools);
@@ -308,6 +319,8 @@ void ChatRequest::start(const Provider& provider, std::vector<Message> messages,
   running_ = true;
   events_.clear();
   nlohmann::json toolList = tools ? *tools : nlohmann::json::array();
+  schema_ = nextSchema_;  // the answer's shape for this request only
+  nextSchema_ = nlohmann::json();
   thread_ = std::thread([this, provider, messages, toolList]() mutable { run(provider, std::move(messages), std::move(toolList)); });
 }
 
@@ -319,6 +332,7 @@ void ChatRequest::run(Provider provider, std::vector<Message> messages, nlohmann
   bool anthropic = provider.dialect == "anthropic";
   bool withTools = tools.is_array() && !tools.empty();
   request.body = chatRequestBody(provider, messages, withTools ? &tools : nullptr);
+  if (schema_.is_object() && !schema_.empty()) request.body = withResponseSchema(request.body, schema_), withTools = false;
   // A busy service (429, 500, 502, 503, 504) before it has said anything is tried again, up to three times, after a pause: "This
   // model is currently experiencing high demand" is usually over in seconds. When the service says how long to wait (Retry-After,
   // Google's retryDelay) that is the pause (pauseBeforeRetry).

@@ -4919,6 +4919,19 @@ static void testNativeToolCalls() {
   provider.dialect = "anthropic";
   auto anthropicTools = nativeTools({"read_file"}, true);
   CHECK(nlohmann::json::parse(chatRequestBody(provider, {{"user", "hi"}}, &anthropicTools))["tools"][0]["input_schema"]["required"][0] == "path");
+  {  // a model on this computer: a low temperature; a remote one keeps its own. And an answer held to a schema.
+    Provider local;
+    local.baseUrl = "http://127.0.0.1:11434/v1", local.model = "qwen3:8b";
+    CHECK(nlohmann::json::parse(chatRequestBody(local, {{"user", "hi"}}))["temperature"] == kLocalTemperature);
+    local.builtin = true;
+    CHECK(nlohmann::json::parse(chatRequestBody(local, {{"user", "hi"}}))["temperature"] == kLocalTemperature);
+    Provider remote;
+    remote.baseUrl = "https://openrouter.ai/api/v1", remote.model = "x/y";
+    CHECK(!nlohmann::json::parse(chatRequestBody(remote, {{"user", "hi"}})).contains("temperature"));
+    nlohmann::json schema = {{"type", "object"}, {"properties", {{"line", {{"type", "integer"}}}}}, {"required", {"line"}}};
+    auto shaped = nlohmann::json::parse(withResponseSchema(chatRequestBody(local, {{"user", "hi"}}), schema));
+    CHECK(shaped["response_format"]["type"] == "json_schema" && shaped["response_format"]["json_schema"]["schema"]["properties"]["line"]["type"] == "integer" && shaped["messages"].size() == 1);
+  }
   // Claude models get cache breakpoints (system text, last message); other models and services get none
   Provider claude;
   claude.dialect = "openai", claude.baseUrl = "https://openrouter.ai/api/v1", claude.model = "anthropic/claude-sonnet-5.5";
