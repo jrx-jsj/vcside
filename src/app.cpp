@@ -3249,9 +3249,9 @@ void App::assistantPanel() {
   context.readOpenFile = [this](const std::string& relative, std::string* text) {  // as the editor holds it, unsaved changes included
     if (!project_) return false;
     for (auto& openedFile : files_)
-      if (!openedFile->gfx && !openedFile->music && !openedFile->image && !openedFile->form && !openedFile->path.empty() &&
-          relativeToProject(project_->dir, openedFile->path) == relative) {
-        *text = openedFile->editor.text();
+      if (!openedFile->image && !openedFile->form && !openedFile->path.empty() && relativeToProject(project_->dir, openedFile->path) == relative) {
+        // a graphics or music file open in its editor: as the editor holds it
+        *text = openedFile->gfx ? gfx::toJson(openedFile->gfx->asset()) : openedFile->music ? music::toJson(openedFile->music->song()) : openedFile->editor.text();
         return true;
       }
     return false;
@@ -3273,6 +3273,27 @@ void App::assistantPanel() {
   context.startBuild = [this] { build(0); };
   context.runEmulator = [this] { run(false); };
   context.applyEdit = [this](const std::string& path, const std::string& text, bool remove) {
+    // A graphics or music file: the change goes into its editor (opened if it was not), as one step that Undo takes back; the
+    // user sees it there and saves it, which is also what writes the tables for the program.
+    std::string extension = lower(fs::path(path).extension().string());
+    if (!remove && (extension == ".vcsgfx" || extension == ".vcsmusic")) {
+      gfx::Asset asset;
+      music::Song song;
+      std::string problem;
+      if (extension == ".vcsgfx" ? !gfx::fromJson(text, &asset, &problem) : !music::fromJson(text, &song, &problem)) return false;
+      std::error_code ignored;
+      if (!fs::exists(path, ignored)) {  // a new one: an empty file for the editor to open
+        fs::create_directories(fs::path(path).parent_path(), ignored);
+        std::ofstream created(path, std::ios::binary);
+        if (!created) return false;
+      }
+      OpenFile* opened = openFile(path);
+      if (!opened) return false;
+      if (opened->gfx) opened->gfx->replace(asset);
+      else if (opened->music) opened->music->replace(song);
+      else return false;
+      return true;
+    }
     for (auto& openedFile : files_)
       if (openedFile->path == path) {
         if (openedFile->gfx || openedFile->music || openedFile->image || openedFile->form || remove) return false;

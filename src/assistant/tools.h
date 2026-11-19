@@ -47,6 +47,10 @@ struct EditProposal {
   bool privileged = false;  // changes what Build runs: no session grant covers it
   int changes = 0;
   int firstLine = 0, lastLine = 0;  // the lines of the file the change touches (1-based, in the text before; 0 for a new file)
+  // A graphics or music file: what the change looks like (a drawing in text, a pattern as a tracker shows it), shown instead
+  // of a diff of its JSON; and what the checks said, for the model once the user has accepted.
+  std::string preview, note;
+  std::string tool;  // the tool that proposed it, if not edit_file
 };
 
 struct ToolResult {
@@ -61,11 +65,12 @@ bool toolTier(const std::string& name, Tier* tier);
 // compact: 0 every tool; 1 the small set for small models (read a file or a folder, search, find code, the reference, edit,
 // build); 2 the medium set for large models: everything except project_info and list_files (the open project is already in the
 // context and read_file lists a folder), so there are fewer detours.
-std::vector<std::string> toolNames(int profile, int compact = 0);
+// creative: also the tools that draw sprites and playfields and write music (when the request is about them).
+std::vector<std::string> toolNames(int profile, int compact = 0, bool creative = false);
 // What a tool does, in a sentence (the text after the signature in its line).
 std::string toolDescription(const std::string& name);
 // The tool section of the system prompt: how to write a call, and each tool in one line.
-std::string toolPrompt(int profile, bool native = false, int compact = 0);
+std::string toolPrompt(int profile, bool native = false, int compact = 0, bool creative = false);
 
 // Finds one call in an answer: a ```tool block, a <tool_call> element or a bare JSON object
 // that names a tool. `before` gets the text in front of it. False if there is none.

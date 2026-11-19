@@ -126,6 +126,19 @@ bool GfxEditor::save(const std::string& path, const Profile& project, std::strin
   return true;
 }
 
+void GfxEditor::replace(const gfx::Asset& asset) {
+  undo_.push_back(asset_);
+  if (undo_.size() > 200) undo_.erase(undo_.begin());
+  redo_.clear();
+  asset_ = asset;
+  if (asset_.sprites.empty() && asset_.playfields.empty()) asset_ = blank();
+  committed_ = asset_;
+  dirty_ = true, changed_ = false;
+  int items = (int)(asset_.sprites.size() + asset_.playfields.size());
+  item_ = std::clamp(item_, 0, std::max(0, items - 1));
+  layer_ = 0, frame_ = 0;
+}
+
 void GfxEditor::undo() {
   if (undo_.empty()) return;
   redo_.push_back(asset_);

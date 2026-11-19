@@ -29,6 +29,8 @@ class GfxEditor {
   const std::string& message() const { return message_; }  // what the last import or copy did
 
   gfx::Asset& asset() { return asset_; }
+  // The whole asset replaced (a change the assistant proposed and the user accepted): one step that Undo takes back.
+  void replace(const gfx::Asset& asset);
   static gfx::Asset blank();  // one 8x8 sprite on P0
 
  private:

@@ -104,6 +104,22 @@ bool MusicEditor::exportFolderFile(ExportTarget target, bool quiet) {
   return true;
 }
 
+void MusicEditor::replace(const Song& song) {
+  undo_.push_back(song_);
+  redo_.clear();
+  song_ = song;
+  if (song_.instruments.empty()) song_.instruments = blankSong().instruments;
+  if (song_.patterns.empty()) song_.patterns = blankSong().patterns;
+  if (song_.order.empty()) song_.order = {0};
+  committed_ = song_;
+  order_ = std::clamp(order_, 0, (int)song_.order.size() - 1);
+  row_ = 0, channel_ = std::clamp(channel_, 0, song_.trackCount() - 1);
+  instrument_ = std::clamp(instrument_, 0, (int)song_.instruments.size() - 1);
+  effect_ = std::clamp(effect_, 0, std::max(0, (int)song_.effects.size() - 1));
+  dirty_ = true, changed_ = false, revision_++;
+  musicAudio().updateSong(song_);
+}
+
 void MusicEditor::undo() {
   if (undo_.empty()) return;
   redo_.push_back(song_);

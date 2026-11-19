@@ -48,6 +48,7 @@
 #include "assistant/embeddings.h"
 #include "assistant/context_items.h"
 #include "assistant/edits.h"
+#include "assistant/creative_tools.h"
 #include "file_operations.h"
 #include "find_in_files.h"
 #include "assistant/domain_checks.h"
@@ -5330,6 +5331,113 @@ static void testFindInFiles() {
   fs::remove_all(root);
 }
 
+static void testCreativeTools() {
+  namespace fs = std::filesystem;
+  using namespace vcs::assistant;
+  using nlohmann::json;
+  fs::path root = fs::temp_directory_path() / "vcside_creative_test";
+  fs::remove_all(root);
+  fs::create_directories(root / "gfx");
+  ToolEnv env;
+  env.projectDir = root.string();
+  env.grounding.tv = "NTSC";
+  auto call = [&](const char* name, json args) {
+    ToolCall made{name, args};
+    CallCheck check = repairCall(&made);  // as a call written by a model arrives
+    if (!check.ok) {
+      ToolResult bad;
+      bad.error = true, bad.text = check.message;
+      return bad;
+    }
+    return runTool(env, made);
+  };
+  auto accept = [&](const ToolResult& result) { std::ofstream(result.edit.path, std::ios::binary) << result.edit.after; };
+  // the notes
+  int midi = 0;
+  CHECK(parseNoteName("C4", &midi) && midi == 60 && parseNoteName("f#3", &midi) && midi == 54 && parseNoteName("Bb2", &midi) && midi == 46 && parseNoteName("C-4", &midi) && midi == 60 && parseNoteName("72", &midi) && midi == 72);
+  CHECK(!parseNoteName("H4", &midi) && !parseNoteName("C", &midi) && !parseNoteName("", &midi));
+  CHECK(isCreativeTool("gfx_set_sprite") && isCreativeTool("music_code") && !isCreativeTool("edit_file"));
+  // offered only when asked for, and never to a small model
+  auto has = [](const std::vector<std::string>& names, const char* name) { return std::find(names.begin(), names.end(), name) != names.end(); };
+  CHECK(!has(toolNames(2, 2), "gfx_set_sprite") && has(toolNames(2, 2, true), "gfx_set_sprite") && has(toolNames(2, 2, true), "music_code") && !has(toolNames(2, 1, true), "gfx_set_sprite"));
+  CHECK(!has(toolNames(0, 2, true), "gfx_set_sprite") && has(toolNames(0, 2, true), "gfx_code"));  // read only: the code, not the changes
+  CHECK(toolPrompt(2, false, 2, true).find("gfx_set_playfield") != std::string::npos && toolPrompt(2, false, 2).find("gfx_set_playfield") == std::string::npos);
+  CHECK(wantsCreativeTools("dibuja un sprite de un oso", "main.asm") && wantsCreativeTools("hazlo más alto", "gfx/hero.vcsgfx") && !wantsCreativeTools("arregla el salto", "main.asm"));
+  // a sprite: a new file, shown as a drawing, nothing written until accepted
+  auto sprite = call("gfx_set_sprite", {{"path", "gfx/hero.vcsgfx"}, {"sprite", "hero"}, {"rows", {"..XXXX..", ".XXXXXX.", "XX.XX.XX", "XXXXXXXX"}}, {"colours", {"$1E", "$2A"}}});
+  CHECK(sprite.proposed && sprite.edit.created && sprite.edit.relative == "gfx/hero.vcsgfx" && !fs::exists(root / "gfx" / "hero.vcsgfx"));
+  CHECK(sprite.edit.preview.find("..XXXX.. $1E") != std::string::npos && sprite.edit.preview.find("XX.XX.XX $2A") != std::string::npos);
+  vcs::gfx::Asset asset;
+  std::string error;
+  CHECK(vcs::gfx::fromJson(sprite.edit.after, &asset, &error) && asset.sprites.size() == 1 && asset.sprites[0].name == "hero" && asset.sprites[0].layers[0].height == 4 &&
+        asset.sprites[0].layers[0].bits[0][0] == 0x3C && asset.sprites[0].layers[0].bits[0][2] == 0xDB && asset.sprites[0].layers[0].colours[0][1] == 0x2A && asset.sprites[0].layers[0].colours[0][2] == -1);
+  accept(sprite);
+  // a second frame, the rows as one text, and an animation of both
+  auto second = call("gfx_set_sprite", {{"path", "gfx/hero.vcsgfx"}, {"sprite", "hero"}, {"frame", "1"}, {"pixels", "..XXXX..\n.XXXXXX.\nXXXXXXXX\nX.X..X.X"}});
+  CHECK(second.proposed && !second.edit.created && vcs::gfx::fromJson(second.edit.after, &asset, &error) && asset.sprites[0].frames == 2 && asset.sprites[0].layers[0].bits[1][3] == 0xA5 && asset.sprites[0].layers[0].bits[0][0] == 0x3C);
+  accept(second);
+  auto animation = call("gfx_set_animation", {{"path", "gfx/hero.vcsgfx"}, {"name", "walk"}, {"frames", "0 1"}, {"ticks", 6}});
+  CHECK(animation.proposed && vcs::gfx::fromJson(animation.edit.after, &asset, &error) && asset.sprites[0].animations.size() == 1 && asset.sprites[0].animations[0].steps.size() == 2 && asset.sprites[0].animations[0].steps[1].ticks == 6);
+  CHECK(call("gfx_set_animation", {{"path", "gfx/hero.vcsgfx"}, {"frames", {0, 5}}}).error);  // no such frame
+  // what a model gets wrong is said with the way out
+  auto wide = call("gfx_set_sprite", {{"path", "gfx/hero.vcsgfx"}, {"rows", {"XXXXXXXXXXXX"}}});
+  CHECK(wide.error && wide.text.find("8 pixels wide") != std::string::npos && wide.text.find("P1") != std::string::npos);
+  CHECK(call("gfx_set_sprite", {{"path", "gfx/hero.vcsgfx"}, {"rows", {"..ab.."}}}).error);
+  CHECK(call("gfx_set_sprite", {{"path", "gfx/hero.asm"}, {"rows", {"XX"}}}).error && call("gfx_set_sprite", {{"path", "../x.vcsgfx"}, {"rows", {"XX"}}}).error);
+  CHECK(call("gfx_set_sprite", {{"path", "gfx/hero.vcsgfx"}, {"rows", {"XX"}}, {"colours", {"red"}}}).error);
+  // a playfield: 20 columns mirrored; 40 columns that are a mirror stay symmetric; different halves are said
+  auto field = call("gfx_set_playfield", {{"path", "gfx/hero.vcsgfx"}, {"playfield", "room"}, {"rows", {"XXXXXXXXXXXXXXXXXXXX", "X...................", "X...................XXXX................"}}, {"colour", "$44"}});
+  CHECK(field.proposed && vcs::gfx::fromJson(field.edit.after, &asset, &error) && asset.playfields.size() == 1 && asset.sprites.size() == 1 && asset.playfields[0].rows.size() == 3 && asset.playfields[0].pfColour == 0x44);
+  CHECK(asset.playfields[0].pixel(0, 39) && asset.playfields[0].pixel(1, 0) && asset.playfields[0].pixel(1, 39) && !asset.playfields[0].pixel(1, 20) && !asset.playfields[0].rows[1].asymmetric);
+  CHECK(asset.playfields[0].rows[2].asymmetric && asset.playfields[0].pixel(2, 20) && !asset.playfields[0].pixel(2, 39) && field.edit.note.find("two different halves") != std::string::npos);
+  auto whole = call("gfx_set_playfield", {{"path", "gfx/hero.vcsgfx"}, {"playfield", "room"}, {"rows", {"XX................XXXX................XX"}}});
+  CHECK(whole.proposed && vcs::gfx::fromJson(whole.edit.after, &asset, &error) && !asset.playfields[0].rows[0].asymmetric && asset.playfields[0].pixel(0, 38) && asset.playfields[0].pixel(0, 21));
+  // the code the program uses
+  auto code = call("gfx_code", {{"path", "gfx/hero.vcsgfx"}, {"format", "dasm"}});
+  CHECK(!code.error && !code.proposed && code.text.find(".byte") != std::string::npos && code.text.find("hero.gfx.asm") != std::string::npos);
+  CHECK(call("gfx_code", {{"path", "gfx/none.vcsgfx"}}).error);
+
+  // music: a new song with a tune, a bass line, an instrument and a sound effect
+  auto tune = call("music_set_pattern", {{"path", "song.vcsmusic"}, {"pattern", 0}, {"channel", 0}, {"notes", "C4 . E4 . G4 . off ."}});
+  CHECK(tune.proposed && tune.edit.created && tune.edit.preview.find("C4:0") != std::string::npos && tune.edit.preview.find("off") != std::string::npos);
+  vcs::music::Song song;
+  CHECK(vcs::music::fromJson(tune.edit.after, &song, &error) && song.patterns.size() == 1 && song.patterns[0].cells[0][0].note == 60 && song.patterns[0].cells[0][2].note == 64 &&
+        song.patterns[0].cells[0][6].note == vcs::music::kNoteOff && song.patterns[0].cells[0][1].note == vcs::music::kNoNote && song.patterns[0].rows == 32);
+  accept(tune);
+  auto bass = call("music_set_pattern", {{"path", "song.vcsmusic"}, {"channel", 1}, {"notes", {"C2:1", ".", "C2:1", "."}}});
+  CHECK(bass.proposed && vcs::music::fromJson(bass.edit.after, &song, &error) && song.patterns[0].cells[1][0].note == 36 && song.patterns[0].cells[1][0].instrument == 1 && song.patterns[0].cells[0][0].note == 60);
+  accept(bass);
+  auto next = call("music_set_pattern", {{"path", "song.vcsmusic"}, {"pattern", 1}, {"notes", "G4 A4 B4 C5"}, {"rows", 8}});
+  CHECK(next.proposed && vcs::music::fromJson(next.edit.after, &song, &error) && song.patterns.size() == 2 && song.patterns[1].rows == 8 && song.order == std::vector<int>({0, 1}));
+  accept(next);
+  CHECK(call("music_set_pattern", {{"path", "song.vcsmusic"}, {"notes", "C4:9"}}).error && call("music_set_pattern", {{"path", "song.vcsmusic"}, {"notes", "H4"}}).error && call("music_set_pattern", {{"path", "song.vcsmusic"}, {"pattern", 7}, {"notes", "C4"}}).error);
+  auto instrument = call("music_set_instrument", {{"path", "song.vcsmusic"}, {"name", "bass"}, {"kind", "melodic"}, {"volume", "12 10 8 6"}, {"controls", {6}}, {"release", json::array()}});
+  CHECK(instrument.proposed && vcs::music::fromJson(instrument.edit.after, &song, &error) && song.instruments.size() == 3 && song.instruments[2].name == "bass" && song.instruments[2].volumes[0].values == std::vector<int>({12, 10, 8, 6}) &&
+        song.instruments[2].controls == std::vector<int>({6}) && song.instruments[2].releases[0].empty());
+  accept(instrument);
+  CHECK(call("music_set_instrument", {{"path", "song.vcsmusic"}, {"index", 0}, {"volume", {20}}}).error);
+  auto settings = call("music_set_song", {{"path", "song.vcsmusic"}, {"speed", 5}, {"order", {0, 0, 1}}, {"loop_to", 0}, {"export_to", "dasm"}});
+  CHECK(settings.proposed && vcs::music::fromJson(settings.edit.after, &song, &error) && song.speed == 5 && song.order == std::vector<int>({0, 0, 1}) && song.exportTo == "dasm");
+  accept(settings);
+  CHECK(call("music_set_song", {{"path", "song.vcsmusic"}, {"order", {0, 9}}}).error);
+  auto effect = call("music_set_effect", {{"path", "song.vcsmusic"}, {"name", "jump"}, {"instrument", 0}, {"note", "C5"}});
+  CHECK(effect.proposed && vcs::music::fromJson(effect.edit.after, &song, &error) && song.effects.size() == 1 && song.effects[0].note == 72 && song.effects[0].channel == 1 && effect.edit.preview.find("jump") != std::string::npos);
+  accept(effect);
+  auto exported = call("music_code", {{"path", "song.vcsmusic"}});
+  CHECK(!exported.error && exported.text.find("bytes of tables") != std::string::npos && exported.text.size() > 400);
+  // the file open in its editor is what the tools read
+  env.openFileText = [&](const std::string& relative, std::string* text) {
+    if (relative != "song.vcsmusic") return false;
+    vcs::music::Song open = vcs::music::blankSong();
+    open.speed = 9;
+    *text = vcs::music::toJson(open);
+    return true;
+  };
+  auto fromEditor = call("music_set_song", {{"path", "song.vcsmusic"}, {"name", "x"}});
+  CHECK(fromEditor.proposed && vcs::music::fromJson(fromEditor.edit.after, &song, &error) && song.speed == 9 && song.name == "x");
+  fs::remove_all(root);
+}
+
 static void testProjectIndex() {
   namespace fs = std::filesystem;
   using vcs::assistant::ProjectIndex;
@@ -6271,6 +6379,7 @@ int main() {
   testChatTabs();
   testInvalidUtf8();
   testFileOperations();
+  testCreativeTools();
   testFindInFiles();
   testProjectIndex();
   testEmbeddings();

@@ -27,6 +27,8 @@ class MusicEditor {
   void undo();
   void redo();
   Song& song() { return song_; }
+  // The whole song replaced (a change the assistant proposed and the user accepted): one step that Undo takes back.
+  void replace(const Song& song);
   const std::string& message() const { return message_; }
 
  private:

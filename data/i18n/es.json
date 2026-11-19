@@ -285,6 +285,7 @@
     "Controllers": "Mandos",
     "Copied": "Copiado",
     "Copy all": "Copiar todo",
+    "If you apply it, it opens in its editor as one step that Undo takes back; saving there writes the tables for the program.": "Si lo aplicas, se abre en su editor como un solo paso que Deshacer revierte; al guardar ahí se escriben las tablas para el programa.",
     "New file...": "Nuevo archivo...",
     "New folder...": "Nueva carpeta...",
     "Rename...": "Renombrar...",

@@ -2,6 +2,8 @@
 // Copyright (C) 2026 Juan Sánchez Jurado
 #include "assistant/tool_schema.h"
 
+#include <sstream>
+
 #include <algorithm>
 #include <cctype>
 
@@ -13,7 +15,7 @@ namespace {
 
 struct Param {
   const char* name;
-  const char* type;  // "string", "integer", "array"
+  const char* type;  // "string", "integer", "boolean", "array" (search/replace pairs), "strings" and "integers" (lists; one text with lines or numbers will do)
   bool required;
   const char* description;
   std::vector<const char*> aliases;
@@ -45,6 +47,76 @@ const std::vector<Schema>& schemas() {
        {{"path", "string", true, "The .vcsgfx file.", kPath}, {"frame", "integer", false, "Animation frame to draw (0 by default).", {"index"}}}},
       {"music_describe",
        {{"path", "string", true, "The .vcsmusic file.", kPath}, {"pattern", "integer", false, "Pattern to list (0 by default).", {"index"}}}},
+      {"gfx_set_sprite",
+       {{"path", "string", true, "The .vcsgfx file (created if missing).", kPath},
+        {"sprite", "string", false, "The sprite's name (the file's name by default).", {"item", "sprite_name"}},
+        {"rows", "strings", true, "The drawing: one text per row, top first; X is a lit pixel and . an empty one; 8 characters per row for a player.", {"pixels", "lines", "drawing", "bitmap", "data"}},
+        {"colours", "strings", false, "One TIA colour per row ($00-$FE); fewer rows than the drawing: the rest keep the colour above.", {"colors", "row_colours", "row_colors", "palette"}},
+        {"colour", "string", false, "One TIA colour for the whole drawing ($00-$FE).", {"color"}},
+        {"object", "string", false, "The TIA object it is drawn with: P0 (default), P1, M0, M1 or BL.", {"obj", "layer", "player"}},
+        {"frame", "integer", false, "The animation frame to draw (0 by default; a new number adds frames).", {"index"}},
+        {"size", "integer", false, "A player's stretch (1, 2 or 4) or a missile's or the ball's width (1, 2, 4, 8).", {"scale", "width"}},
+        {"dx", "integer", false, "This object's horizontal offset in the sprite, in pixels (for a figure made of two objects).", {"x", "offset_x"}},
+        {"dy", "integer", false, "This object's vertical offset in the sprite, in rows.", {"y", "offset_y"}},
+        {"line_height", "integer", false, "Scanlines per row (2 for a two-line kernel).", {"lineheight", "scanlines"}},
+        {"layer_name", "string", false, "A name for this part of the sprite.", {}}}},
+      {"gfx_set_playfield",
+       {{"path", "string", true, "The .vcsgfx file (created if missing).", kPath},
+        {"playfield", "string", false, "The playfield's name (the file's name by default).", {"item", "playfield_name"}},
+        {"rows", "strings", true, "One text per row, top first; X is a block and . none; 20 characters (left half) or 40 (whole line).", {"pixels", "lines", "drawing", "bitmap", "data"}},
+        {"mirror", "boolean", false, "For 20-character rows: the right half mirrors the left (true, default) or repeats it (false).", {"mirrored", "reflect"}},
+        {"colour", "string", false, "The playfield's TIA colour ($00-$FE).", {"color", "pf", "pf_colour"}},
+        {"background", "string", false, "The background's TIA colour.", {"bk", "background_colour", "background_color", "bg"}},
+        {"line_height", "integer", false, "Scanlines per row.", {"lineheight", "scanlines", "row_height"}},
+        {"row_colours", "strings", false, "A playfield colour per row (needs a kernel that changes COLUPF per row).", {"row_colors", "colours", "colors"}}}},
+      {"gfx_set_animation",
+       {{"path", "string", true, "The .vcsgfx file.", kPath},
+        {"sprite", "string", false, "The sprite's name (needed if the file has several).", {"item"}},
+        {"name", "string", false, "The animation's name (\"anim\" by default).", {"animation"}},
+        {"frames", "integers", true, "The frames in the order they are shown.", {"steps", "sequence", "order"}},
+        {"ticks", "integer", false, "Video frames each one stays (8 by default).", {"speed", "duration"}},
+        {"loop", "boolean", false, "It starts again at the end (true by default).", {"looping", "repeat"}}}},
+      {"gfx_code",
+       {{"path", "string", true, "The .vcsgfx file.", kPath},
+        {"format", "string", false, "dasm, bb (batari Basic) or c; the project's by default.", {"language", "target"}},
+        {"item", "string", false, "Only this sprite or playfield.", {"sprite", "playfield"}}}},
+      {"music_set_song",
+       {{"path", "string", true, "The .vcsmusic file (created if missing).", kPath},
+        {"name", "string", false, "The song's name.", {"title"}},
+        {"speed", "integer", false, "Video frames per row (6 by default; lower is faster).", {"tempo"}},
+        {"swing", "integer", false, "Video frames of the odd rows (0: the same as speed).", {}},
+        {"transpose", "integer", false, "Semitones added to every note.", {}},
+        {"order", "integers", false, "The pattern numbers in playing order.", {"sequence", "patterns"}},
+        {"loop_to", "integer", false, "The order entry the song goes back to at the end (-1: it stops).", {"loop"}},
+        {"export_to", "string", false, "The export written on every save: dasm, bb, c, dpc, cdfj or none.", {"export", "format", "target"}}}},
+      {"music_set_instrument",
+       {{"path", "string", true, "The .vcsmusic file (created if missing).", kPath},
+        {"index", "integer", false, "The instrument's number; the count of instruments adds a new one (the default).", {"instrument", "number", "id"}},
+        {"name", "string", false, "Its name.", {}},
+        {"kind", "string", false, "melodic or drum.", {"type"}},
+        {"volume", "integers", false, "Loudness frame by frame, 0-15.", {"volumes", "envelope", "volume_envelope"}},
+        {"volume_loop", "integer", false, "The frame the volume repeats from while the note is held (-1: it stays on the last).", {"loop"}},
+        {"release", "integers", false, "Loudness frame by frame after the note is released.", {"releases"}},
+        {"controls", "integers", false, "Melodic: the AUDC waveforms it may use (4 and 12 pure, 1 buzz, 6 and 7 bass).", {"audc", "waveforms", "control"}},
+        {"pitch", "integers", false, "Melodic: cents added to the pitch frame by frame (vibrato, slides).", {"pitch_envelope", "vibrato"}},
+        {"drum_control", "integers", false, "Drum: AUDC frame by frame (8 is noise).", {"drum_audc"}},
+        {"drum_frequency", "integers", false, "Drum: AUDF frame by frame, 0-31.", {"drum_audf"}}}},
+      {"music_set_pattern",
+       {{"path", "string", true, "The .vcsmusic file (created if missing).", kPath},
+        {"pattern", "integer", false, "The pattern's number (0 by default); the count of patterns adds a new one.", {"index", "number"}},
+        {"channel", "integer", false, "0 or 1: the TIA's two voices (0 by default).", {"voice", "track"}},
+        {"notes", "strings", true, "A token per row, separated by spaces: C4, F#3, Bb2 (C4 is middle C), . for nothing, off to release; C4:1 uses instrument 1.", {"cells", "melody", "sequence", "tokens"}},
+        {"instrument", "integer", false, "The instrument of the notes that name none (0 by default).", {"default_instrument"}},
+        {"rows", "integer", false, "The pattern's length in rows (as many as notes by default, 16 at least for a new one).", {"length"}},
+        {"name", "string", false, "The pattern's name.", {}}}},
+      {"music_set_effect",
+       {{"path", "string", true, "The .vcsmusic file (created if missing).", kPath},
+        {"name", "string", true, "What happens in the game: jump, shot, pickup...", {"effect", "sound"}},
+        {"instrument", "integer", false, "The instrument that plays it (0 by default).", {}},
+        {"note", "string", false, "The note it plays, such as C5 (C4 by default).", {"pitch"}},
+        {"channel", "integer", false, "The channel it sounds on (1 by default).", {"voice"}}}},
+      {"music_code",
+       {{"path", "string", true, "The .vcsmusic file.", kPath}, {"format", "string", false, "dasm, bb, c, dpc or cdfj; the song's export by default.", {"language", "target"}}}},
       {"edit_file",
        {{"path", "string", true, "The file to change, relative to the project.", kPath},
         {"edits", "array", false, "Search-and-replace pairs [{\"search\": exact old text, \"replace\": new text}]; each search must occur once.", {"changes", "replacements", "patches"}},
@@ -199,11 +271,58 @@ CallCheck repairCall(ToolCall* call) {
     } else if (type == "integer") {
       int number = 0;
       if ((good = coerceInteger(*value, &number))) fixed[param.name] = number;
+    } else if (type == "boolean") {
+      if (value->is_boolean()) fixed[param.name] = value->get<bool>(), good = true;
+      else if (value->is_number()) fixed[param.name] = value->get<double>() != 0, good = true;
+      else if (value->is_string()) {
+        std::string text = normalisedKey(value->get<std::string>());
+        if (text == "true" || text == "yes" || text == "1" || text == "on") fixed[param.name] = true, good = true;
+        else if (text == "false" || text == "no" || text == "0" || text == "off") fixed[param.name] = false, good = true;
+      }
+    } else if (type == "strings") {  // a list of texts, or one text (the tool splits it by lines)
+      if (value->is_string()) fixed[param.name] = *value, good = true;
+      else if (value->is_array()) {
+        json list = json::array();
+        good = true;
+        for (auto& item : *value) {
+          std::string text;
+          if (coerceString(item, &text)) list.push_back(text);
+          else good = false;
+        }
+        if (good) fixed[param.name] = list;
+      }
+    } else if (type == "integers") {  // a list of numbers, one number, or a text of numbers
+      json list = json::array();
+      if (value->is_array()) {
+        good = true;
+        for (auto& item : *value) {
+          int number = 0;
+          if (coerceInteger(item, &number)) list.push_back(number);
+          else good = false;
+        }
+      } else if (value->is_number()) {
+        list.push_back((int)value->get<double>()), good = true;
+      } else if (value->is_string()) {
+        std::string text = value->get<std::string>();
+        for (auto& c : text)
+          if (c == ',' || c == ';' || c == '[' || c == ']') c = ' ';
+        std::istringstream in(text);
+        good = true;
+        for (std::string token; in >> token;) {
+          int number = 0;
+          if (coerceInteger(json(token), &number)) list.push_back(number);
+          else good = false;
+        }
+      }
+      if (good) fixed[param.name] = list;
     } else {
       json edits;
       if ((good = coerceEdits(*value, &edits))) fixed[param.name] = edits;
     }
-    if (!good) problems.push_back(std::string("\"") + param.name + "\" must be " + (type == "integer" ? "a number" : type == "array" ? "a list of {\"search\", \"replace\"} pairs" : "text"));
+    if (!good)
+      problems.push_back(std::string("\"") + param.name + "\" must be " +
+                         (type == "integer" ? "a number" : type == "array" ? "a list of {\"search\", \"replace\"} pairs" : type == "boolean" ? "true or false" : type == "strings" ? "a list of texts"
+                          : type == "integers" ? "a list of numbers" : "text"));
     else if (key != param.name) check.notes.push_back("\"" + key + "\" taken as \"" + param.name + "\"");
     else if (!value->is_string() && type == "string") check.notes.push_back(std::string("\"") + param.name + "\" was not text");
     used.push_back(key);
@@ -244,8 +363,11 @@ json nativeTools(const std::vector<std::string>& names, bool anthropic) {
     if (!schema) continue;
     json properties = json::object(), required = json::array();
     for (auto& param : schema->params) {
-      json property = {{"type", param.type}, {"description", param.description}};
-      if (std::string(param.type) == "array") property["items"] = {{"type", "object"},
+      std::string kind = param.type;
+      json property = {{"type", kind == "strings" || kind == "integers" ? std::string("array") : kind}, {"description", param.description}};
+      if (kind == "strings") property["items"] = {{"type", "string"}};
+      if (kind == "integers") property["items"] = {{"type", "integer"}};
+      if (kind == "array") property["items"] = {{"type", "object"},
                                                                     {"properties", {{"search", {{"type", "string"}}}, {"replace", {{"type", "string"}}}}},
                                                                     {"required", json::array({"search", "replace"})}};
       properties[param.name] = property;

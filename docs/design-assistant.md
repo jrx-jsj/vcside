@@ -627,3 +627,92 @@ A run in Agent mode went badly: `find_code` failed with "needs a query", `read_f
   results and should not travel with a project folder or reach git. Chats that an older version left in a project's `.vcsai/chats` are not brought across (beta). The project's search index is there too (`index/<project>/`): VCSIDE no longer creates a `.vcsai` folder in projects.
 - Which chats were open, and which one was in front, is kept per project in `open.tabs` in that folder; opening the project shows them again, as it does the files.
 - In Ask mode the assistant gives code as plain blocks and no diff; the chat's reference entries ("From the knowledge base: ...") are links to their cards.
+
+## Tools for graphics and music (2026-11-20)
+
+- **Why.** A model cannot use a mouse on a pixel grid or play notes on a keyboard, but it can write a sprite as rows of `X` and `.`, a
+  playfield as rows of 20 or 40 characters and a melody as note names. Nine tools (`src/assistant/creative_tools.*`) let the agent make
+  things in `.vcsgfx` and `.vcsmusic` files, which the editors then export to code as they always do.
+- **The tools.** `gfx_set_sprite` (one frame of one TIA object: rows, a colour per row, size, offsets for a figure made of two objects),
+  `gfx_set_playfield` (rows of 20 or 40 blocks, mirrored or repeated, colours, line height), `gfx_set_animation` (frames in order and their
+  time), `gfx_code` (the tables the editor exports: DASM, batari Basic or C). `music_set_song` (speed, order, loop, export),
+  `music_set_instrument` (volume and release envelopes, AUDC waveforms, pitch envelope, drums), `music_set_pattern` (one channel of a
+  pattern as tokens: `C4 . E4 . off`), `music_set_effect` (a sound the game starts), `music_code` (the exported player and tables).
+- **One thing per call, checked.** Each call reads the file as the editor holds it (unsaved changes included), changes one thing and
+  answers with what a person would look at: the drawing in text, the pattern as a tracker shows it, plus what the checks say: what the
+  project's kernel cannot show (`gfx::check`), rows whose two halves differ (the kernel pays for them), notes the TIA plays more than 30
+  cents out of tune with their instrument. Mistakes a model makes are answered with the way out (a 12-pixel row for a player: "8 pixels
+  wide; split it in two objects, P1 with dx 8").
+- **Nothing is written without the user.** The tools are proposals like `edit_file`: the card shows the drawing or the pattern (not a
+  diff of the JSON); *Apply* opens the file in its editor and replaces its content as one step that Undo takes back. Saving there writes
+  the tables for the program, so the export is the editor's own.
+- **Offered when asked for.** Nine more descriptions in every request cost tokens, so they are in the tool list only when the question is
+  about graphics or sound or is asked with a `.vcsgfx` or `.vcsmusic` file in front (`wantsCreativeTools`), then for the rest of the chat;
+  never for a small model, which works in Ask mode.
+- **Not tried with a model yet.** The tools are tested as functions (a model's sloppy arguments included); how well a model draws with
+  them is not measured.
+
+## AI completion: evaluation (2026-11-20, not built)
+
+What exists: the popup of the editor, from the knowledge base (instructions, registers, directives) and the project's symbols. It is exact
+and costs nothing. What is evaluated here is *ghost text*: a suggestion of the rest of the line, or of a few lines, in grey, taken with Tab.
+
+- **How it is done in general.** A small code model trained to *fill in the middle* gets the text before the cursor, the text after it and
+  some extra pieces of other files; it answers with what goes between. The request is sent after a short pause in typing, cancelled if the
+  user types on, limited in time and length, cached by what surrounds the cursor, and the answer is trimmed against the text that follows.
+  A chat model (the built-in Qwen3) cannot do this: it has no fill-in-the-middle tokens. It needs a second, smaller model.
+- **What is particular here: the knowledge base is the main source.** A 1-2B code model has seen little 6502 and less DASM for the 2600.
+  It would be given, as the extra pieces: the reference entries of the registers and instructions named in the lines around the cursor
+  (address, direction, bits), the recipe whose words match the nearest comment or label (its code is a pattern to continue), the
+  definitions of the project's symbols used nearby, and `VCSIDE.md`. And its answer would be *checked before it is shown* with what the
+  editor already knows: every mnemonic is a 6502 one (no 65C02), every operand is a register, a symbol of the project or a local label, a
+  read-only register is not written, the fire button is not looked for in SWCHA. A suggestion that fails is not shown. No general editor
+  can do that filter; it is what could make a small model useful in this niche.
+- **Three steps, the first two without a model.**
+  1. *A better popup* (cheap, certain): after `sta`/`stx`/`sty` only registers that can be written, after `lda`/`bit`/`cmp` the readable
+     ones; after a register and `#`, its bit fields as constants; the cycles of the line beside the candidate.
+  2. *Recipes as snippets*: a comment or label that matches a recipe ("; read the fire button") offers its code as ghost text, with the
+     names to change marked. Exact, instant, and the same content the assistant uses.
+  3. *Fill-in-the-middle with a small model*, behind the "extra completion" option that already exists and is off: a second helper process
+     (as the search model has), one line by default (assembly is a language of lines) and several only after a comment or a label, the
+     filter above, the popup taking precedence when it is open.
+- **Cost of step 3.** A model of about 1.5B parameters: 1 to 1.6 GB on disk and in memory besides the chat model; with a licence that
+  allows shipping it (to be checked model by model: sizes of the same family have different licences). On an Apple Silicon laptop the
+  figures published for that size are around one second per suggestion with a warm cache; nothing is published for plain CPUs.
+- **The risk, and how to decide.** Nobody has measured a model that small on 2600 assembly. Before building the interface: a test set made
+  from the templates and examples (hide a line or a block, ask for it, count suggestions that are identical, that pass the filter, that
+  assemble). If fewer than about a third of the shown suggestions are right, step 3 is not worth its gigabyte and steps 1 and 2 are the
+  feature.
+- **Recommendation.** Do 1 and 2; build the test set; decide 3 with numbers.
+
+## Small local models in Agent mode: what can still be gained (evaluation, 2026-11-20)
+
+Where it stands: eight runs of "the bear must jump when the button is pressed" with the built-in 8B model. The harness now catches its
+typical mistakes, and it still did not produce a whole, correct change; a frontier model did it in five calls. Small models are therefore
+kept to Ask mode. What follows is what could change that at little cost, in the order of expected gain per effort.
+
+1. **Sampling (an hour).** The helper runs with its default temperature (0.8), which is for prose. Tool calls and code want 0.1-0.3. The
+   runs varied a lot from one to the next; part of that is this.
+2. **Constrained output (a day).** The helper can force an answer to follow a grammar or a JSON schema. Three kinds of failure seen in the
+   runs cannot happen then: tabs and line ends inside JSON, the tool's name inside the arguments, `edit_file` called with the arguments
+   of `read_file`. The same for edit blocks.
+3. **Selection instead of invention (the main bet, a week).** Today the model is asked to find the place, quote it exactly, write the code,
+   declare the variable and keep everything else: five things at once. A harness can lead it through small questions with closed answers:
+   which recipe applies (one of a list), which routine it goes in (one of the project's), after which of these numbered lines (a number),
+   then only the new lines. VCSIDE places them, declares the RAM byte among the variables, and runs the checks. The model chooses and
+   fills in; it does not navigate. This is the difference between an agent and a guided procedure, and small models do the second well.
+4. **The assembler as a judge (two days).** A proposed change can be assembled in a copy of the project before it is shown. DASM takes
+   milliseconds; its first error goes back to the model with the line. It catches what the text checks cannot (a branch out of range, a
+   label defined twice).
+5. **Recipes with holes (with 3).** The recipes of the knowledge base become templates: the names to bind to the project (the variable, the
+   routine to call) are marked, and the model only binds them. "Jump with gravity" would no longer be written from memory.
+6. **Several tries, the checks pick (cheap to build, costs time).** Three answers at a low temperature, the first that passes the checks
+   and assembles is shown. Tripling the time is acceptable only if 1-5 leave a pass rate worth multiplying.
+7. **Another model of the same size (a day to measure).** A model trained for code may do better than a general one at equal size; a
+   larger quantisation of the same model too. It is a download and a run of the test tasks, no code.
+8. **Training a model for the 2600 (not cheap).** A fine-tune needs a corpus of verified examples that does not exist; the knowledge base
+   could seed one. Not before 1-7 are exhausted.
+
+A set of ten tasks with known answers (the jump, a sound on a pickup, a second player, a score digit...) run across models after each
+step is what turns this from opinion into numbers; without it, each of these is a guess. **Recommendation:** 1 and 2 now, then the test
+set, then 3 with 4 and 5, measuring whether the built-in model can leave Ask mode for the tasks the recipes cover.

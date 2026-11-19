@@ -20,6 +20,7 @@
 #include "assistant/markdown.h"
 #include "assistant/markdown_view.h"
 #include "assistant/secrets.h"
+#include "assistant/creative_tools.h"
 #include "assistant/domain_checks.h"
 #ifdef __APPLE__
 #include "platform/apple_backends.h"
@@ -147,7 +148,7 @@ std::string AssistantPanel::providerKey() const {
 
 nlohmann::json AssistantPanel::nativeToolList(const Provider& provider) const {
   if (!useNativeTools()) return nlohmann::json::array();
-  return nativeTools(toolNames(settings_.toolProfile, toolSet()), provider.dialect == "anthropic");
+  return nativeTools(toolNames(settings_.toolProfile, toolSet(), creativeTools_), provider.dialect == "anthropic");
 }
 
 // A model that runs on this computer, or whose name says it has 14 billion parameters or fewer ("qwen3-8b"): short prompt, small
@@ -203,9 +204,9 @@ std::string AssistantPanel::systemPrompt() const {
       bool keep = agentMode();
       text = text.substr(0, open) + (keep ? text.substr(open + 16, close - open - 16) : std::string()) + text.substr(close + 17);
     }
-    if (!text.empty()) return text + (agentMode() ? "\n" + toolPrompt(settings_.toolProfile, useNativeTools(), toolSet()) + agentRule : askRule) + englishRule;
+    if (!text.empty()) return text + (agentMode() ? "\n" + toolPrompt(settings_.toolProfile, useNativeTools(), toolSet(), creativeTools_) + agentRule : askRule) + englishRule;
   }
-  return std::string(kFallbackPrompt) + (agentMode() ? "\n" + toolPrompt(settings_.toolProfile, useNativeTools(), toolSet()) + agentRule : askRule) + englishRule;
+  return std::string(kFallbackPrompt) + (agentMode() ? "\n" + toolPrompt(settings_.toolProfile, useNativeTools(), toolSet(), creativeTools_) + agentRule : askRule) + englishRule;
 }
 
 void AssistantPanel::newChat() {
@@ -217,6 +218,7 @@ void AssistantPanel::newChat() {
   streaming_.clear(), error_.clear(), lastRequest_.clear();
   promptTokens_ = completionTokens_ = droppedTurns_ = 0;
   agentSteps_ = 0, nudged_ = false, blockRetries_ = 0, proposalRejects_ = 0, callCounts_.clear(), turnText_.clear();
+  creativeTools_ = false;
   placements_.clear(), notice_.clear(), pendingEditFromChat_ = false;
   pendingEditActive_ = false, pendingRun_.clear(), allowedRun_.clear(), allowedEdit_.clear(), originals_.clear();
   privilegedTouched_ = waitingBuild_ = false;
@@ -264,6 +266,7 @@ void AssistantPanel::loadTab(int index) {
   streaming_.clear(), error_.clear(), lastRequest_.clear();
   promptTokens_ = completionTokens_ = droppedTurns_ = 0;
   agentSteps_ = 0, nudged_ = false, blockRetries_ = 0, proposalRejects_ = 0, callCounts_.clear(), turnText_.clear();
+  creativeTools_ = false;
   placements_.clear(), notice_.clear(), pendingEditFromChat_ = false;
   pendingEditActive_ = false, pendingRun_.clear(), waitingBuild_ = false;
   originals_ = tab.originals, allowedRun_ = tab.allowedRun, allowedEdit_ = tab.allowedEdit, privilegedTouched_ = tab.privilegedTouched;
@@ -974,6 +977,7 @@ void AssistantPanel::dispatch(const PanelContext& context, const std::string& qu
   for (size_t k = 0; k + 1 < chat_.messages.size(); k++) historyTokens += estimateTokens(chat_.messages[k].english.empty() ? chat_.messages[k].content : chat_.messages[k].english);
   historyTokens = std::min(historyTokens, window / 4);
   // Code and hex take more tokens than prose (about 2.8 characters each, not 3.5): the estimates are raised by a quarter.
+  creativeTools_ = creativeTools_ || wantsCreativeTools(question, context.fileRelative);  // once on, it stays for the chat
   exampleFile_ = context.fileRelative.empty() ? "game.asm" : context.fileRelative;  // the example of the prompt names a file the model really has
   int fixedTokens = (estimateTokens(systemPrompt()) + estimateTokens(attachments.projectInfo + attachments.projectNotes.substr(0, 4000) + attachments.projectMap + attachments.excerpts + attachments.grounding + modelQuestion)) * 5 / 4 + historyTokens;
   size_t chipChars = (size_t)std::clamp((window - reserve - fixedTokens) * 14 / 5, 1200, window * 2);
@@ -1125,7 +1129,7 @@ void AssistantPanel::finishAnswer(const PanelContext& context, const std::string
       }
     bool edited = false, looked = false;
     for (auto& entry : callCounts_) {
-      edited = edited || entry.first.rfind("edit_file", 0) == 0;
+      edited = edited || (entry.first.rfind("edit_file", 0) == 0 || entry.first.rfind("gfx_set", 0) == 0 || entry.first.rfind("music_set", 0) == 0);
       looked = looked || entry.first.rfind("read_file", 0) == 0 || entry.first.rfind("find_code", 0) == 0 || entry.first.rfind("search", 0) == 0;
     }
     bool blockInAnswer = false;  // an edit block in the answer is the change itself (a small model works that way)
@@ -1343,7 +1347,7 @@ void AssistantPanel::handleToolCall(const PanelContext& context, const ToolCall&
     int callsLeft = (smallModel() ? kMaxToolCalls : kMaxToolCalls * 2) - agentSteps_;
     if (agentMode() && profile >= 1 && ((agentSteps_ >= 4 && (agentSteps_ - 4) % 3 == 0) || (agentSteps_ >= 4 && callsLeft <= 3 && callsLeft >= 1))) {
       bool edited = false;
-      for (auto& entry : callCounts_) edited = edited || entry.first.rfind("edit_file", 0) == 0;
+      for (auto& entry : callCounts_) edited = edited || (entry.first.rfind("edit_file", 0) == 0 || entry.first.rfind("gfx_set", 0) == 0 || entry.first.rfind("music_set", 0) == 0);
       std::string request;
       for (size_t i = chat_.messages.size(); i-- > 0;)
         if (chat_.messages[i].role == "user" && chat_.messages[i].kind.empty()) {
@@ -1365,7 +1369,7 @@ void AssistantPanel::handleToolCall(const PanelContext& context, const ToolCall&
       continueAgent(context);
       return;
     }
-    if (context.kb && proposalRejects_ < 2 && !result.edit.created) {
+    if (context.kb && proposalRejects_ < 2 && !result.edit.created && result.edit.preview.empty()) {
       // before the user is asked to look at it: a mistake the checks can tell goes back to the model, with what is wrong and the fix
       std::string request;
       for (size_t i = chat_.messages.size(); i-- > 0;)
@@ -1421,7 +1425,7 @@ void AssistantPanel::decideEdit(const PanelContext& context, bool apply, bool al
   pendingEditActive_ = false, pendingEditFromChat_ = false;
   auto answer = [&](const std::string& forTheModel, const std::string& forTheUser, bool error) {  // a chat block only tells the user
     if (fromChat) notice_ = forTheUser;
-    else addToolResult(context, "edit_file " + edit.relative, forTheModel, error), continueAgent(context);
+    else addToolResult(context, (edit.tool.empty() ? std::string("edit_file") : edit.tool) + " " + edit.relative, forTheModel, error), continueAgent(context);
   };
   if (!apply) {
     answer("The user rejected this edit. Do not repeat it; ask what they want instead.", T("Change discarded. Nothing was written."), false);
@@ -1444,7 +1448,7 @@ void AssistantPanel::decideEdit(const PanelContext& context, bool apply, bool al
   originals_.emplace(edit.path, std::make_pair(edit.created, edit.before));
   if (edit.privileged) privilegedTouched_ = true;
   if (allowFile && !edit.privileged) allowedEdit_.insert(edit.path);
-  answer("The user applied this edit.", F("Applied to {0}. Ctrl+Z in the editor undoes it, or \"{1}\".", {edit.relative, T("Undo everything this conversation changed")}), false);
+  answer("The user applied this edit." + (edit.note.empty() ? std::string() : "\n" + edit.note), F("Applied to {0}. Ctrl+Z in the editor undoes it, or \"{1}\".", {edit.relative, T("Undo everything this conversation changed")}), false);
 }
 
 // Every change of an answer, one after another: each is placed again in the file as the previous ones left it, so two changes
@@ -1612,8 +1616,14 @@ void AssistantPanel::agentCards(const PanelContext& context) {
     ImGui::TextUnformatted(title.c_str());
     if (pendingEdit_.privileged) ImGui::TextColored(theme::colv(theme::Role::MsgWarning), "%s", T("This changes what Build runs, so it is asked each time."));
     ImGui::PushFont(monoFont_);
-    drawDiff(pendingEdit_.before, pendingEdit_.after);
+    if (pendingEdit_.preview.empty()) drawDiff(pendingEdit_.before, pendingEdit_.after);
+    else ImGui::TextUnformatted(pendingEdit_.preview.c_str());  // a graphics or music file: the drawing or the pattern, not its JSON
     ImGui::PopFont();
+    if (!pendingEdit_.preview.empty()) {
+      ImGui::PushStyleColor(ImGuiCol_Text, theme::colv(theme::Role::UiTextDim));
+      ImGui::TextWrapped("%s", T("If you apply it, it opens in its editor as one step that Undo takes back; saving there writes the tables for the program."));
+      ImGui::PopStyleColor();
+    }
     ImGui::Spacing();
     if (theme::primaryButton(T("Apply"))) decideEdit(context, true, false);
     if (!pendingEdit_.privileged && !pendingEditFromChat_) {
