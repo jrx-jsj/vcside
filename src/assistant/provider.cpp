@@ -322,6 +322,7 @@ void ChatRequest::start(const Provider& provider, std::vector<Message> messages,
   nlohmann::json toolList = tools ? *tools : nlohmann::json::array();
   schema_ = nextSchema_;  // the answer's shape for this request only
   nextSchema_ = nlohmann::ordered_json();
+  temperature_ = nextTemperature_, nextTemperature_ = -1;
   thread_ = std::thread([this, provider, messages, toolList]() mutable { run(provider, std::move(messages), std::move(toolList)); });
 }
 
@@ -334,6 +335,10 @@ void ChatRequest::run(Provider provider, std::vector<Message> messages, nlohmann
   bool withTools = tools.is_array() && !tools.empty();
   request.body = chatRequestBody(provider, messages, withTools ? &tools : nullptr);
   if (schema_.is_object() && !schema_.empty()) request.body = withResponseSchema(request.body, schema_), withTools = false;
+  if (temperature_ >= 0) {
+    nlohmann::ordered_json body = nlohmann::ordered_json::parse(request.body, nullptr, false);
+    if (body.is_object()) body["temperature"] = temperature_, request.body = body.dump(-1, ' ', false, nlohmann::ordered_json::error_handler_t::replace);
+  }
   // A busy service (429, 500, 502, 503, 504) before it has said anything is tried again, up to three times, after a pause: "This
   // model is currently experiencing high demand" is usually over in seconds. When the service says how long to wait (Retry-After,
   // Google's retryDelay) that is the pause (pauseBeforeRetry).

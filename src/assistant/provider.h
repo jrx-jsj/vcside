@@ -99,6 +99,8 @@ class ChatRequest {
   void start(const Provider& provider, std::vector<Message> messages, const nlohmann::json* tools = nullptr);
   // The next start() asks for an answer of this shape (a JSON schema); only that one.
   void setSchema(const nlohmann::ordered_json& schema) { nextSchema_ = schema; }
+  // The next start() is asked with this temperature (negative: the usual one); only that one.
+  void setTemperature(double temperature) { nextTemperature_ = temperature; }
   void cancel() { cancel_ = true; }
   bool running() const { return running_; }
   std::vector<Event> poll();  // takes what arrived since the last call
@@ -110,6 +112,7 @@ class ChatRequest {
   std::deque<Event> events_;
   std::atomic<bool> running_{false}, cancel_{false};
   nlohmann::ordered_json schema_, nextSchema_;
+  double temperature_ = -1, nextTemperature_ = -1;
   void push(Event event);
 };
 

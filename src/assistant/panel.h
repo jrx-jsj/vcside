@@ -22,6 +22,7 @@
 #include "assistant/models.h"
 #include "assistant/project_index.h"
 #include "assistant/prompt.h"
+#include "assistant/guided.h"
 #include "assistant/provider.h"
 #include "assistant/settings.h"
 #include "assistant/tools.h"
@@ -195,6 +196,12 @@ class AssistantPanel {
   std::map<std::string, int> callCounts_;
   std::string exampleFile_ = "game.asm";  // the file the prompt's example reads and edits: the one the user works on
   int openProvider_ = -1;  // the service whose settings are open in the settings window (one at a time)
+  // the guided procedure in progress (a small model, Agent chosen, a change asked on an assembly file), or null
+  std::unique_ptr<Guided> guided_;
+  bool startGuided(const PanelContext& context, const std::string& request);
+  void askGuided(const GuidedStep& step);
+  void guidedAnswer(const PanelContext& context, const std::string& answer, const std::string& note);
+  bool guidedOffered() const;  // Agent is chosen and the model is a small one: changes go through the guided procedure
   bool creativeTools_ = false;  // this chat is about graphics or music: their tools are offered too
   int proposalRejects_ = 0;  // times, in this message, a change was sent back to the model by the checks
   int blockRetries_ = 0;  // times, in this message, the model was sent back an edit block that does not fit the file

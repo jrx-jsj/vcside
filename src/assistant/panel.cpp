@@ -219,6 +219,7 @@ void AssistantPanel::newChat() {
   promptTokens_ = completionTokens_ = droppedTurns_ = 0;
   agentSteps_ = 0, nudged_ = false, blockRetries_ = 0, proposalRejects_ = 0, callCounts_.clear(), turnText_.clear();
   creativeTools_ = false;
+  guided_.reset();
   placements_.clear(), notice_.clear(), pendingEditFromChat_ = false;
   pendingEditActive_ = false, pendingRun_.clear(), allowedRun_.clear(), allowedEdit_.clear(), originals_.clear();
   privilegedTouched_ = waitingBuild_ = false;
@@ -267,6 +268,7 @@ void AssistantPanel::loadTab(int index) {
   promptTokens_ = completionTokens_ = droppedTurns_ = 0;
   agentSteps_ = 0, nudged_ = false, blockRetries_ = 0, proposalRejects_ = 0, callCounts_.clear(), turnText_.clear();
   creativeTools_ = false;
+  guided_.reset();
   placements_.clear(), notice_.clear(), pendingEditFromChat_ = false;
   pendingEditActive_ = false, pendingRun_.clear(), waitingBuild_ = false;
   originals_ = tab.originals, allowedRun_ = tab.allowedRun, allowedEdit_ = tab.allowedEdit, privilegedTouched_ = tab.privilegedTouched;
@@ -643,25 +645,26 @@ bool drawChip(const char* id, const std::string& label, ImVec4 tint, const std::
 // still waiting for a click. A combo as wide as the Send button, so it fits whatever language the labels are in.
 void AssistantPanel::modeSwitch(float width) {
   bool busy = busyWithModel() || pendingEditActive_ || !pendingRun_.empty() || waitingBuild_;
-  bool agentAllowed = !smallModel() || (!settings_.providers.empty() && !settings_.providers[std::clamp(settings_.active, 0, (int)settings_.providers.size() - 1)].builtin &&
-                                       settings_.providers[std::clamp(settings_.active, 0, (int)settings_.providers.size() - 1)].agentAnyway);
+  bool guided = settings_.agent && !agentMode();  // Agent chosen with a small model: VCSIDE leads it
   const char* agentTip = T("Agent: reads your project and makes the changes itself with its tools. Every change, build and run waits for your click.");
   const char* askTip = T("Ask: answers your question and proposes changes in the chat, which you review and apply.");
-  const char* smallTip = T("Agent needs a larger model: this one works in Ask mode. In the settings, a model you know is good enough can be allowed to use Agent.");
+  const char* guidedTip = T("Guided: this model is a small one, so VCSIDE leads it: for a change to the assembly file in front, the model chooses a recipe, the routine and what happens; "
+                            "VCSIDE writes the code, checks it, assembles it and shows it to you. One change at a time. Anything else is answered as in Ask. "
+                            "(A model you know is good enough can be allowed the full Agent mode in the settings.)");
   ImGui::BeginDisabled(busy);
   ImGui::SetNextItemWidth(width);
-  if (ImGui::BeginCombo("##mode", agentMode() ? T("Agent") : T("Ask"))) {
+  if (ImGui::BeginCombo("##mode", guided ? T("Guided") : agentMode() ? T("Agent") : T("Ask"))) {
+    bool small = smallModel() && !agentMode() && !(settings_.agent && agentMode());
     for (int agent = 0; agent < 2; agent++) {
-      bool offered = agent == 0 || agentAllowed;
-      ImGui::BeginDisabled(!offered);
-      if (ImGui::Selectable(agent ? T("Agent") : T("Ask"), agentMode() == (agent == 1))) settings_.agent = agent == 1, changed_ = true;
-      ImGui::EndDisabled();
-      if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("%s", !offered ? smallTip : agent ? agentTip : askTip);
+      const char* label = agent == 0 ? T("Ask") : (smallModel() && !(!settings_.providers.empty() && settings_.providers[std::clamp(settings_.active, 0, (int)settings_.providers.size() - 1)].agentAnyway)) ? T("Guided") : T("Agent");
+      if (ImGui::Selectable(label, settings_.agent == (agent == 1))) settings_.agent = agent == 1, changed_ = true;
+      if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", agent == 0 ? askTip : std::string(label) == T("Guided") ? guidedTip : agentTip);
     }
+    (void)small;
     ImGui::EndCombo();
   }
   ImGui::EndDisabled();
-  if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("%s", !agentAllowed && settings_.agent ? smallTip : agentMode() ? agentTip : askTip);
+  if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("%s", guided ? guidedTip : agentMode() ? agentTip : askTip);
 }
 
 void AssistantPanel::drawContextChips(const PanelContext& context) {
@@ -930,6 +933,85 @@ void AssistantPanel::send(const PanelContext& context, const std::string& questi
   dispatch(context, question, "");
 }
 
+static bool asksForChange(const std::string& request);
+
+bool AssistantPanel::guidedOffered() const {
+  if (!settings_.agent || agentMode() || settings_.providers.empty()) return false;
+  return smallModel();
+}
+
+// The guided procedure for a small model: its questions go out one at a time, each with the shape of its answer, and nothing of
+// them is shown but what stage it is in; the result is a change for the user to review, or the reason there is none.
+bool AssistantPanel::startGuided(const PanelContext& context, const std::string& request) {
+  GuidedInput input;
+  input.request = request;
+  input.projectDir = context.projectDir;
+  input.file = context.fileRelative;
+  input.fileText = context.fileText;
+  input.kb = context.kb;
+  input.batariBasic = context.grounding.batariBasic;
+  std::string ignored;
+  if (!context.projectDir.empty()) readProjectFile(context.projectDir, "VCSIDE.md", &input.notes, &ignored, 8192);
+  input.inProject = [this](const std::string& word) { return index_.knows(word); };
+  input.assemble = context.assembleWith;
+  auto guided = std::make_unique<Guided>();
+  GuidedStep step;
+  std::string why;
+  if (context.projectDir.empty() || !guided->start(input, &step, &why)) return false;  // not a case for it: answered as a question
+  guided_ = std::move(guided);
+  askGuided(step);
+  return true;
+}
+
+void AssistantPanel::askGuided(const GuidedStep& step) {
+  Provider* provider = settings_.provider();
+  if (!provider) {
+    guided_.reset();
+    return;
+  }
+  std::vector<Message> messages = {{"system", step.system}, {"user", step.prompt}};
+  lastRequest_ = withResponseSchema(chatRequestBody(*provider, messages), step.schema);
+  streaming_.clear();
+  streamingReference_.clear();
+  waitingText_ = T(step.label.c_str());
+  requestStartedAt_ = ImGui::GetTime();
+  request_.setSchema(step.schema);
+  request_.setTemperature(step.temperature);
+  request_.start(*provider, messages);
+  scrollDown_ = true;
+}
+
+void AssistantPanel::guidedAnswer(const PanelContext& context, const std::string& answer, const std::string& note) {
+  if (!guided_) return;
+  if (note == "stopped" || !error_.empty() || answer.empty()) {
+    guided_.reset();
+    return;
+  }
+  GuidedStep next;
+  EditProposal proposal;
+  std::string message;
+  Guided::Outcome outcome = guided_->answer(answer, &next, &proposal, &message);
+  if (outcome == Guided::Outcome::Ask) {
+    askGuided(next);
+    return;
+  }
+  ChatMessage said;
+  said.role = "assistant";
+  said.reference = guided_->recipes();  // the recipes it was built from, as links to their cards
+  if (outcome == Guided::Outcome::Proposal) {
+    said.content = F("With the guided procedure, in the routine `{0}` of {1}:", {guided_->routine(), proposal.relative}) + "\n\n" + message;
+    pendingEdit_ = proposal;
+    pendingEditActive_ = true, pendingEditFromChat_ = true;
+  } else {
+    said.content = F("The guided procedure could not make this change: {0}", {message}) + "\n\n" +
+                   T("This model is a small one: it can explain how to do it (ask it as a question), or a larger model can do it in Agent mode.");
+  }
+  guided_.reset();
+  chat_.messages.push_back(said);
+  saveChat(context);
+  scrollDown_ = true;
+}
+
 void AssistantPanel::dispatch(const PanelContext& context, const std::string& question, const std::string& english) {
   Provider* provider = settings_.provider();
   if (!provider) return;
@@ -940,6 +1022,7 @@ void AssistantPanel::dispatch(const PanelContext& context, const std::string& qu
     if (!context.projectDir.empty() && readProjectFile(context.projectDir, "VCSIDE.md", &notes, &ignored, 8192)) attachments.projectNotes = notes;
   }
   std::string modelQuestion = english.empty() ? question : english;
+  if (guidedOffered() && asksForChange(modelQuestion) && startGuided(context, modelQuestion)) return;  // a small model: VCSIDE leads
   auto chips = contextSet_.chips(T("Build errors"));
   std::string skipFile;  // the open file is attached whole: its chunks are not offered again as excerpts
   for (auto& chip : chips)
@@ -1034,6 +1117,14 @@ void AssistantPanel::dispatch(const PanelContext& context, const std::string& qu
 static bool asksForChange(const std::string& request);
 
 void AssistantPanel::finishAnswer(const PanelContext& context, const std::string& note) {
+  if (guided_) {  // an answer to one of the guided procedure's questions: not shown, it moves the procedure on
+    std::string answer = streaming_;
+    streaming_.clear();
+    spentTokens_ += lastUsageSpent_;
+    lastUsageSpent_ = 0;
+    guidedAnswer(context, answer, note);
+    return;
+  }
   if (!streaming_.empty()) {
     ChatMessage answer{"assistant", streaming_ + (note.empty() ? "" : "\n\n[" + note + "]"), streamingReference_, ""};
     if (context.kb) {  // names in its code that exist nowhere: said after the answer, not corrected
@@ -1493,41 +1584,82 @@ void AssistantPanel::undoEverything(const PanelContext& context) {
 }
 
 namespace {
-// A few changed lines with their neighbours, each with its line number in the file: enough to judge an edit at a glance and
-// to see where it goes. Returns how many lines it draws (or would draw, when only measuring).
+// The changed lines with their neighbours, each with its line number in the file: enough to judge an edit at a glance and to see
+// where it goes. A change in two places (a variable declared at the top, the code further down) shows as two groups with "..."
+// between them, not as everything in between rewritten. Returns how many lines it draws (or would draw, when only measuring).
+// The comparison is kept for the last pair of texts: the card is drawn on every frame.
 size_t drawDiff(const std::string& before, const std::string& after, bool measureOnly = false) {
-  auto split = [](const std::string& text) {
-    std::vector<std::string> lines;
-    std::istringstream in(text);
-    std::string line;
-    while (std::getline(in, line)) lines.push_back(line);
-    return lines;
+  struct Row {
+    int kind;  // 0 context, 1 removed, 2 added, 3 gap
+    size_t number;
+    std::string text;
   };
-  auto a = split(before), b = split(after);
-  size_t prefix = 0;
-  while (prefix < a.size() && prefix < b.size() && a[prefix] == b[prefix]) prefix++;
-  size_t suffix = 0;
-  while (suffix < a.size() - prefix && suffix < b.size() - prefix && a[a.size() - 1 - suffix] == b[b.size() - 1 - suffix]) suffix++;
+  static std::string cachedBefore, cachedAfter;
+  static std::vector<Row> rows;
+  if (before != cachedBefore || after != cachedAfter || rows.empty()) {
+    cachedBefore = before, cachedAfter = after;
+    rows.clear();
+    auto split = [](const std::string& text) {
+      std::vector<std::string> lines;
+      std::istringstream in(text);
+      std::string line;
+      while (std::getline(in, line)) lines.push_back(line);
+      return lines;
+    };
+    auto a = split(before), b = split(after);
+    size_t prefix = 0;
+    while (prefix < a.size() && prefix < b.size() && a[prefix] == b[prefix]) prefix++;
+    size_t suffix = 0;
+    while (suffix < a.size() - prefix && suffix < b.size() - prefix && a[a.size() - 1 - suffix] == b[b.size() - 1 - suffix]) suffix++;
+    size_t n = a.size() - prefix - suffix, m = b.size() - prefix - suffix;
+    // what happened to each line of the middle: 0 the same, 1 removed, 2 added
+    std::vector<std::pair<int, size_t>> steps;  // kind, index in a (kept and removed) or in b (added)
+    if (n <= 2500 && m <= 2500) {
+      std::vector<int> table((n + 1) * (m + 1), 0);
+      auto at = [&](size_t i, size_t j) -> int& { return table[i * (m + 1) + j]; };
+      for (size_t i = n; i-- > 0;)
+        for (size_t j = m; j-- > 0;) at(i, j) = a[prefix + i] == b[prefix + j] ? at(i + 1, j + 1) + 1 : std::max(at(i + 1, j), at(i, j + 1));
+      size_t i = 0, j = 0;
+      while (i < n || j < m) {
+        if (i < n && j < m && a[prefix + i] == b[prefix + j]) steps.push_back({0, prefix + i}), i++, j++;
+        else if (j < m && (i == n || at(i, j + 1) >= at(i + 1, j))) steps.push_back({2, prefix + j}), j++;
+        else steps.push_back({1, prefix + i}), i++;
+      }
+    } else {  // too long to compare line by line: the whole middle, old then new
+      for (size_t i = 0; i < n; i++) steps.push_back({1, prefix + i});
+      for (size_t j = 0; j < m; j++) steps.push_back({2, prefix + j});
+    }
+    // the changes with three lines around each; what is far from any change is a gap
+    std::vector<Row> all;
+    for (size_t i = prefix > 3 ? prefix - 3 : 0; i < prefix; i++) all.push_back({0, i + 1, a[i]});
+    for (auto& step : steps) all.push_back({step.first, step.second + 1, step.first == 2 ? b[step.second] : a[step.second]});
+    for (size_t i = a.size() - suffix; i < std::min(a.size(), a.size() - suffix + 3); i++) all.push_back({0, i + 1, a[i]});
+    std::vector<bool> near(all.size(), false);
+    for (size_t i = 0; i < all.size(); i++)
+      if (all[i].kind != 0)
+        for (size_t k = i > 3 ? i - 3 : 0; k < std::min(all.size(), i + 4); k++) near[k] = true;
+    size_t changed = 0;
+    for (size_t i = 0; i < all.size(); i++) {
+      if (!near[i]) {
+        if (rows.empty() || rows.back().kind != 3) rows.push_back({3, 0, ""});
+        continue;
+      }
+      if (all[i].kind != 0 && ++changed > 120) {
+        rows.push_back({3, 0, ""});
+        break;
+      }
+      rows.push_back(all[i]);
+    }
+    while (!rows.empty() && rows.back().kind == 3) rows.pop_back();
+    if (rows.empty()) rows.push_back({3, 0, ""});
+  }
+  if (measureOnly) return rows.size();
   auto dim = theme::colv(theme::Role::UiTextDim);
-  size_t count = 0;
-  auto row = [&](ImVec4 colour, const char* sign, size_t number, const std::string& text) {
-    count++;
-    if (!measureOnly) ImGui::TextColored(colour, "%4zu %s %s", number, sign, text.c_str());
-  };
-  size_t from = prefix > 3 ? prefix - 3 : 0;
-  for (size_t i = from; i < prefix; i++) row(dim, " ", i + 1, a[i]);
-  size_t removedEnd = a.size() - suffix, addedEnd = b.size() - suffix, shown = 0;
-  for (size_t i = prefix; i < removedEnd; i++) {
-    if (++shown > 40) { count++; if (!measureOnly) ImGui::TextColored(dim, "     ..."); break; }
-    row(theme::colv(theme::Role::MsgError), "-", i + 1, a[i]);
+  for (auto& row : rows) {
+    if (row.kind == 3) ImGui::TextColored(dim, "     ...");
+    else ImGui::TextColored(row.kind == 1 ? theme::colv(theme::Role::MsgError) : row.kind == 2 ? theme::colv(theme::Role::MsgInfo) : dim, "%4zu %s %s", row.number, row.kind == 1 ? "-" : row.kind == 2 ? "+" : " ", row.text.c_str());
   }
-  shown = 0;
-  for (size_t i = prefix; i < addedEnd; i++) {
-    if (++shown > 40) { count++; if (!measureOnly) ImGui::TextColored(dim, "     ..."); break; }
-    row(theme::colv(theme::Role::MsgInfo), "+", i + 1, b[i]);
-  }
-  for (size_t i = removedEnd; i < std::min(a.size(), removedEnd + 3); i++) row(dim, " ", i + 1 + addedEnd - removedEnd, a[i]);
-  return count;
+  return rows.size();
 }
 }  // namespace
 
@@ -1561,7 +1693,7 @@ void AssistantPanel::drawEditBlock(const PanelContext& context, const EditBlock&
   ImGui::TextUnformatted(F("Change to {0}", {block.path}).c_str());
   ImGui::PopStyleColor();
   const Placement* placed = finished ? &placementOf(context, key, block) : nullptr;
-  bool exact = placed && placed->ok && block.sections.size() == 1;  // several sections far apart would show the lines between them  // the real lines of the real file, with their numbers, instead of what the model wrote
+  bool exact = placed && placed->ok;  // the real lines of the real file, with their numbers, instead of what the model wrote
   size_t lines = 0;
   if (exact) lines = drawDiff(placed->edit.before, placed->edit.after, true);
   else
@@ -2122,7 +2254,7 @@ void AssistantPanel::draw(const PanelContext& context, ImFont* mono, bool* open)
     for (size_t i = 0; i < chat_.messages.size(); i++) drawMessage(chat_.messages[i], chat_.messages[i].content, context, mono, (int)i);
     if (request_.running() || firstPassPending_ || !streaming_.empty()) {
       ChatMessage live{"assistant", streaming_, {}, ""};  // the knowledge-base footer comes with the finished answer
-      if (streaming_.empty()) {
+      if (streaming_.empty() || guided_) {
         // before the first word: what is going on, and for how long
         ImGui::PushStyleColor(ImGuiCol_Text, theme::colv(theme::Role::UiTextDim));
         ImGui::TextUnformatted(T("Assistant"));
