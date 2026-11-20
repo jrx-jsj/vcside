@@ -19,3 +19,13 @@ python3 tools/assistant_eval/agent_run.py --helper <llama-server> --model <model
 ```
 
 Tasks are few and the checks are regular expressions: use it to see whether a model can use the tools at all, not to rank models.
+
+## The guided procedure (`guided_run.py`)
+
+Measures the procedure that leads a small local model to a change (docs/design-assistant.md, "The guided procedure"):
+
+    build/llm-helper/bin/llama-server -m <model.gguf> --port 8795 -c 16384 &
+    python3 tools/assistant_eval/guided_run.py --url http://127.0.0.1:8795/v1 [--osito <a copy of a real DASM game>] [--runs 2] [--json out.json]
+
+It needs `build/vcside_guided` and `build/vcside_new`. Each task of `guided_tasks.json` runs on a fresh copy of a project and passes when the
+proposal assembles and the lines it adds have what the task asks for (regular expressions on the code). `--only <id>` runs one task.
