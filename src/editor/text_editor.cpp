@@ -577,6 +577,27 @@ void TextEditor::acceptCompletion() {
   if (!completionOpen_ || completions_.empty()) return;
   int wordStart;
   wordAt(cursor_, &wordStart);
+  if (!completions_[completionSel_].insert.empty()) {  // a snippet: its lines take the place of the line being typed
+    std::string text = completions_[completionSel_].insert;
+    while (!text.empty() && text.back() == '\n') text.pop_back();
+    pushUndo(false);
+    std::vector<std::string> added;
+    for (size_t start = 0; start <= text.size();) {
+      size_t end = text.find('\n', start);
+      if (end == std::string::npos) end = text.size();
+      added.push_back(text.substr(start, end - start));
+      start = end + 1;
+    }
+    std::string rest = lines_[cursor_.line].substr(cursor_.col);  // what followed the word stays after the snippet
+    lines_.erase(lines_.begin() + cursor_.line);
+    lines_.insert(lines_.begin() + cursor_.line, added.begin(), added.end());
+    cursor_.line += (int)added.size() - 1;
+    cursor_.col = (int)lines_[cursor_.line].size();
+    if (rest.find_first_not_of(" \t") != std::string::npos) lines_[cursor_.line] += rest;
+    selStart_ = selEnd_ = anchor_ = cursor_;
+    completionOpen_ = false;
+    return;
+  }
   std::string word = completions_[completionSel_].word;
   // keep the case the user started typing in
   std::string typed = lines_[cursor_.line].substr(wordStart, cursor_.col - wordStart);

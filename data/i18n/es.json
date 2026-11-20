@@ -285,6 +285,7 @@
     "Controllers": "Mandos",
     "Copied": "Copiado",
     "Copy all": "Copiar todo",
+    "recipe": "receta",
     "Guided": "Guiado",
     "Guided: this model is a small one, so VCSIDE leads it: for a change to the assembly file in front, the model chooses a recipe, the routine and what happens; VCSIDE writes the code, checks it, assembles it and shows it to you. One change at a time. Anything else is answered as in Ask. (A model you know is good enough can be allowed the full Agent mode in the settings.)": "Guiado: este modelo es pequeño, así que VCSIDE lo dirige: para un cambio en el archivo de ensamblador que tienes delante, el modelo elige una receta, la rutina y lo que ocurre; VCSIDE escribe el código, lo comprueba, lo ensambla y te lo enseña. Un cambio cada vez. Lo demás se responde como en Preguntar. (En los ajustes se puede permitir el modo Agente completo a un modelo que sepas que es suficiente.)",
     "Choosing the recipe": "Eligiendo la receta",

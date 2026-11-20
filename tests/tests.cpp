@@ -52,6 +52,7 @@
 #include "assistant/guided.h"
 #include "file_operations.h"
 #include "assemble_check.h"
+#include "completion_context.h"
 #include "find_in_files.h"
 #include "assistant/domain_checks.h"
 #include "assistant/validate.h"
@@ -5566,6 +5567,30 @@ static void testGuided(const KnowledgeBase& kb) {
   CHECK(withJudge.answer(R"({"after_line": 16, "new_lines": ["inc Presses"], "new_variables": ["Presses"], "summary": ""})", &next, &proposal, &message) == Guided::Outcome::Ask && next.prompt.find("out of range") != std::string::npos);
 }
 
+static void testCompletionContext(const KnowledgeBase& kb) {
+  // where the word is on the line
+  CHECK(lineContext(kb, "\tst", "st").firstWord && lineContext(kb, "Loop st", "st").firstWord);
+  LineContext operand = lineContext(kb, "\tsta WS", "WS");
+  CHECK(!operand.firstWord && operand.mnemonic == "sta");
+  CHECK(lineContext(kb, "Loop\tlda IN", "IN").mnemonic == "lda" && lineContext(kb, "\t.byte CO", "CO").mnemonic.empty() && !lineContext(kb, "\t.byte CO", "CO").firstWord);
+  CHECK(lineContext(kb, "\tlda #5 ; st", "st").mnemonic == "lda");
+  // a store is not offered what can only be read, a load what can only be written
+  const Register* inpt4 = kb.reg("INPT4");
+  const Register* wsync = kb.reg("WSYNC");
+  const Register* swcha = kb.reg("SWCHA");
+  CHECK(inpt4 && wsync && swcha && !registerFits(*inpt4, "sta") && registerFits(*inpt4, "lda") && registerFits(*wsync, "sta") && !registerFits(*wsync, "lda") && !registerFits(*wsync, "bit"));
+  CHECK(registerFits(*swcha, "lda") && registerFits(*swcha, "sta") && registerFits(*inpt4, "inc"));
+  CHECK(registerDetail(*inpt4).find("R") != std::string::npos && registerDetail(*inpt4).find("$") != std::string::npos);
+  // recipes as snippets
+  auto fire = recipeSnippets(kb, "fire", "Start\n\tlda #0\n", "\t");
+  CHECK(fire.size() == 2 && fire[0].name == "fire-button-action/while-held" && fire[1].name == "fire-button-action/once-per-press");
+  CHECK(fire[1].text.find("; needs RAM: FireWas ds 1\n") == 0 && fire[1].text.find("\tlda INPT4") != std::string::npos && fire[1].text.find("\n.FireUp\n") != std::string::npos &&
+        fire[1].text.find("\t; <PRESSED: runs once per press") != std::string::npos && fire[1].text.find("{") == std::string::npos);
+  CHECK(recipeSnippets(kb, "fire", "Start\n.FireUp\n", "  ")[0].text.find(".Fire2Up") != std::string::npos);  // the labels do not clash with the file's
+  CHECK([&] { for (auto& snippet : recipeSnippets(kb, "joy", "", "\t")) if (snippet.name == "move-with-joystick/four-directions") return true; return false; }() && recipeSnippets(kb, "fi", "", "\t").empty() && recipeSnippets(kb, "zzz", "", "\t").empty());
+  CHECK(!recipeSnippets(kb, "jump", "", "\t").empty());
+}
+
 static void testProjectIndex() {
   namespace fs = std::filesystem;
   using vcs::assistant::ProjectIndex;
@@ -6510,6 +6535,7 @@ int main() {
   testAssembleCheck();
   testCreativeTools();
   testGuided(kb);
+  testCompletionContext(kb);
   testFindInFiles();
   testProjectIndex();
   testEmbeddings();

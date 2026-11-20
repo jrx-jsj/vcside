@@ -716,3 +716,54 @@ kept to Ask mode. What follows is what could change that at little cost, in the 
 A set of ten tasks with known answers (the jump, a sound on a pickup, a second player, a score digit...) run across models after each
 step is what turns this from opinion into numbers; without it, each of these is a guess. **Recommendation:** 1 and 2 now, then the test
 set, then 3 with 4 and 5, measuring whether the built-in model can leave Ask mode for the tasks the recipes cover.
+
+## What was built from the two evaluations above (2026-11-20)
+
+**Local models**
+- *Temperature 0.1* for the built-in model and for local servers (`kLocalTemperature`); remote services keep their own.
+- *Answers held to a schema.* A request can carry a JSON schema (`withResponseSchema`, `ChatRequest::setSchema`); llama.cpp's server
+  turns it into a grammar, so the answer cannot be malformed. The schema is kept ordered end to end: the grammar asks for the keys in the
+  schema's order, and a model must decide the variant before it fills its slots (with sorted keys it wrote RIGHT and could then not write LEFT).
+- *The assembler as a judge* (`src/assemble_check.*`): a change that `edit_file` or the guided procedure proposes is built in a temporary
+  copy of the project before the user sees it; what DASM says goes back to the model. Only projects DASM builds by itself. If the project
+  did not assemble before the change either, the change is not blamed.
+
+**The guided procedure** (`src/assistant/guided.*`; in the panel, the mode *Guided*, which is what *Agent* becomes for a small model)
+- For a change to the assembly file in front, VCSIDE asks three questions with closed answers: which recipes apply (one or two ids of the
+  knowledge base), which routine of the file the code goes in (one of its labels), and then the change itself.
+- *Recipes with holes.* A recipe may carry templates (`templates` in `data/kb/techniques.json`): its code with the branches and labels
+  written and checked once, slots where something happens, and the RAM bytes it needs. Four recipes have them: the fire button (while held;
+  once per press), the joystick's four directions, the Reset and Select switches, and a jump with gravity.
+- *Actions, not assembly.* What goes in a slot is a list of actions that VCSIDE writes: `inc`, `dec`, `set`, `add`, `sub` (a RAM variable; a
+  new name is declared where the file declares its own), `write` (a register), `call` (a routine, with A, X or Y loaded), `goto`. The model
+  chooses and names; it writes no control flow. With no template for the chosen recipes, it writes the lines itself, as before.
+- Then the checks of any proposed change and the assembler; what fails goes back, twice at most, at a higher temperature (at 0.1 the same
+  answer came back). On the last try an action that cannot be written is left out and said. The result is a proposal the user reviews.
+- A request that is not a change, or with no assembly file in front, is answered as in Ask mode.
+
+**Measured** (`tools/assistant_eval/guided_run.py`, ten tasks on the two DASM templates and a real game; a task passes if the proposal
+assembles and its lines have what the task needs). With the built-in Qwen3 4B, on an Apple M1 Pro:
+
+| Step | Passed |
+|---|---|
+| free code in the third question | 0 of 10 |
+| recipes with holes, the slots as assembly lines | 1 of 10 |
+| the slots as actions | 4 of 10 |
+| fixes to the procedure (slot names, a check that blamed the template) | 7 of 10 |
+| ordered schema, every slot asked for | 16 of 20 (two runs), about 6 seconds a task |
+
+The two tasks that still fail are the ones with no template for them ("every 64th frame") or where the model picks the wrong action. The
+criteria are loose: they look for registers and instructions in the added lines, not for behaviour in an emulator. As a free agent the 8B
+model passed none of these in the runs of 2026-11-11.
+
+**Completion** (`src/completion_context.*`; steps 1 and 2 of the evaluation, no model)
+- The popup knows where the word is: an operand is not offered instructions or directives; `sta`, `stx`, `sty` are not offered registers
+  that can only be read, nor `lda`, `bit`, `cmp`... the ones that can only be written; a register shows its address and access.
+- Recipes as snippets: when the first word of a line starts a recipe's word ("fire", "jump", "joystick"), the popup offers its templates;
+  accepting one inserts the code, with free labels, the slots as comments to replace and the RAM it needs in a first comment.
+
+**Not done**
+- Fill-in-the-middle completion with a small model, and trying other local models of the same size: both need a model download, which
+  waits for the user's word. The test set to decide the first is not built.
+- Guided changes in batari Basic or C; changes that need two places of the code (a jump's drawing in the kernel); templates for more
+  recipes (sound, collisions, timers).

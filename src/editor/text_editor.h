@@ -27,6 +27,8 @@ struct Token {
 struct Completion {
   std::string word, detail;
   TokenKind kind = TokenKind::Text;
+  // A snippet: accepting it puts this text (several lines, each written whole) in place of the line being typed, not `word`.
+  std::string insert = {};
 };
 
 struct EditorHooks {

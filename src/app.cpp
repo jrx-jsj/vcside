@@ -16,6 +16,7 @@
 #include "about.h"
 #include "file_operations.h"
 #include "assemble_check.h"
+#include "completion_context.h"
 #include "folder_dialog.h"
 #include "assistant/markdown_view.h"
 #include "doc_markdown.h"
@@ -1676,12 +1677,23 @@ EditorHooks App::asmHooks() {
         if (symbol.name == word) return liveSymbolText({symbol, files_[activeFile_]->path}, true);
     return {};
   };
-  editorHooks.complete = [this](const std::string& prefix, const std::string&) {
+  editorHooks.complete = [this](const std::string& prefix, const std::string& line) {
     std::vector<Completion> completions;
+    // where the word is: an operand is not offered instructions, and a store is not offered a register that can only be read
+    LineContext where = lineContext(kb_, line, prefix);
     for (auto& entry : kb_.complete(prefix, 40)) {
       TokenKind kind = entry.kind == KbEntry::Mnemonic ? TokenKind::Mnemonic
                     : entry.kind == KbEntry::Register ? TokenKind::Register
                                                    : TokenKind::Directive;
+      if (!where.firstWord && entry.kind != KbEntry::Register) continue;
+      if (entry.kind == KbEntry::Register) {
+        const Register* reg = kb_.reg(entry.word);
+        if (reg && !where.mnemonic.empty() && !registerFits(*reg, where.mnemonic)) continue;
+        if (reg) {
+          completions.push_back({entry.word, registerDetail(*reg) + "  " + entry.summary, kind});
+          continue;
+        }
+      }
       if (entry.kind == KbEntry::Mnemonic) {
         const Instruction* instruction = kb_.instruction(entry.word);
         if (instruction && instruction->illegal) {
@@ -1712,6 +1724,16 @@ EditorHooks App::asmHooks() {
              liveSymbol.symbol.kind == SourceSymbol::Macro ? TokenKind::Directive : liveSymbol.symbol.kind == SourceSymbol::Label ? TokenKind::Label : TokenKind::Symbol);
     for (auto& [name, value] : symbols_)
       if (matches(name) && !builtGone(name)) push(name, T("symbol"), TokenKind::Symbol);
+    // the recipes with holes as snippets, when the first word of a line names what one does ("fire", "jump", "joystick")
+    if (where.firstWord && activeFile_ >= 0 && completions.size() < 60) {
+      size_t blanks = line.find_first_not_of(" \t");
+      std::string indent = blanks == std::string::npos || blanks == 0 ? std::string("\t") : line.substr(0, blanks);
+      for (auto& snippet : recipeSnippets(kb_, prefix, files_[activeFile_]->editor.text(), indent)) {
+        Completion completion{snippet.name, T("recipe") + std::string(": ") + snippet.title, TokenKind::Directive};
+        completion.insert = snippet.text;
+        completions.push_back(completion);
+      }
+    }
     return completions;
   };
   return editorHooks;
