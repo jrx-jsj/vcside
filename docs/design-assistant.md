@@ -762,8 +762,28 @@ model passed none of these in the runs of 2026-11-11.
 - Recipes as snippets: when the first word of a line starts a recipe's word ("fire", "jump", "joystick"), the popup offers its templates;
   accepting one inserts the code, with free labels, the slots as comments to replace and the RAM it needs in a first comment.
 
+**Fill-in-the-middle, measured** (`tools/assistant_eval/fim_run.py`, 2026-11-20). A 1.5B code model with fill-in-the-middle tokens
+(8-bit quantisation, 1.6 GB), llama.cpp's `/infill`, 150 instruction lines hidden in the DASM templates, on an Apple M1 Pro:
+
+| Cursor | Context | Identical to the hidden line | Pass the editor's filter | Right, of those that pass | Seconds each |
+|---|---|---|---|---|---|
+| start of the line | the file | 27% | 82% | 30% | 1.5 |
+| start of the line | the file and the knowledge base | 27% | 82% | 29% | 1.4 |
+| after the mnemonic | the file | 43% | 87% | 46% | 1.5 |
+| after the mnemonic | the file and the knowledge base | 47% | 88% | 50% | 1.3 |
+
+- A whole line is right three times in ten: at the line set as the bar (a third of what is shown), no better. After the mnemonic it is
+  right half the time, but there the popup already offers the names that exist, with certainty and at once.
+- The knowledge base as extra context adds little (four points after the mnemonic, nothing for whole lines): what decides the next line of a
+  kernel is the program's own logic, not what a register is. And the filter lets most wrong suggestions through, because they are valid
+  assembly that uses real names: it removes nonsense, not wrong guesses.
+- **Decision:** not shipped. A gigabyte and a half and more than a second per suggestion for a line that is wrong seven times in ten is worse
+  than no suggestion. The popup and the recipes as snippets are the completion. To look at again if a better small model appears: the test
+  is one command.
+- Limits of the measure: "identical" is strict (another line that would also work counts as wrong); one model, one machine; the requests
+  alternated two contexts, which a real editor's cache would not (the time per suggestion would be lower).
+
 **Not done**
-- Fill-in-the-middle completion with a small model, and trying other local models of the same size: both need a model download, which
-  waits for the user's word. The test set to decide the first is not built.
+- Trying other local models of the same size as the built-in one in the guided procedure (a download each).
 - Guided changes in batari Basic or C; changes that need two places of the code (a jump's drawing in the kernel); templates for more
   recipes (sound, collisions, timers).
